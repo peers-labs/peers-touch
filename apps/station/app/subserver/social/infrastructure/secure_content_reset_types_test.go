@@ -87,6 +87,8 @@ func TestResetTaskAllowlistMatchesIntentAndProfile(t *testing.T) {
 		{"planless three", "", ResetIntentSchemaActivation, "three", "social-search-suite", false},
 		{"planless four", "", ResetIntentSchemaActivation, "four", "social-search-suite", false},
 		{"planless corpdebug", "", ResetIntentSchemaActivation, "corpdebug", "social-search-suite", false},
+		{"planless fedlab-a", "", ResetIntentSchemaActivation, "fedlab-a", "social-search-suite", false},
+		{"planless fedlab-b", "", ResetIntentSchemaActivation, "fedlab-b", "social-search-suite", false},
 		{"planless final cut denied", "", ResetIntentFinalCut, "three", "social-search-suite", true},
 		{"planless empty audit task denied", "", ResetIntentSchemaActivation, "three", "", true},
 		{"planless unknown profile denied", "", ResetIntentSchemaActivation, "unknown", "social-search-suite", true},
@@ -109,6 +111,12 @@ func TestResetTaskAllowlistMatchesIntentAndProfile(t *testing.T) {
 			} else if test.profileID == "corpdebug" {
 				deployment = "corpdebug-station"
 				scope = "corpdebug-station-social-private"
+			} else if test.profileID == "fedlab-a" {
+				deployment = "station-fedlab-a"
+				scope = "station-fedlab-a-social-private"
+			} else if test.profileID == "fedlab-b" {
+				deployment = "station-fedlab-b"
+				scope = "station-fedlab-b-social-private"
 			}
 			request := SecureContentResetAuditRequestV1{
 				SchemaVersion:         SecureContentResetSchemaVersion,

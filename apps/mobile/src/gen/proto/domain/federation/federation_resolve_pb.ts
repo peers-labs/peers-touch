@@ -6,13 +6,15 @@ import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { ActorProfile } from "../actor/actor_pb";
 import { file_domain_actor_actor } from "../actor/actor_pb";
+import type { ActorProfileEnvelope } from "./profile_pb";
+import { file_domain_federation_profile } from "./profile_pb";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file domain/federation/federation_resolve.proto.
  */
 export const file_domain_federation_federation_resolve: GenFile = /*@__PURE__*/
-  fileDesc("Cipkb21haW4vZmVkZXJhdGlvbi9mZWRlcmF0aW9uX3Jlc29sdmUucHJvdG8SH3BlZXJzX3RvdWNoLm1vZGVsLmZlZGVyYXRpb24udjEiUAoYRmVkZXJhdGlvblJlc29sdmVSZXF1ZXN0EiQKDWZlZGVyYXRpb25faWQYASABKAlSDWZlZGVyYXRpb25faWQSDgoGaGFuZGxlGAIgASgJIvADChVGZWRlcmF0aW9uUmVzb2x2ZVZpZXcSKgoQZmVkZXJhdGVkX2hhbmRsZRgBIAEoCVIQZmVkZXJhdGVkX2hhbmRsZRIyChRob21lX3N0YXRpb25fcGVlcl9pZBgCIAEoCVIUaG9tZV9zdGF0aW9uX3BlZXJfaWQSMAoTaG9tZV9zdGF0aW9uX2RvbWFpbhgDIAEoCVITaG9tZV9zdGF0aW9uX2RvbWFpbhIaCghpc19sb2NhbBgEIAEoCFIIaXNfbG9jYWwSHgoKZnJvbV9jYWNoZRgFIAEoCFIKZnJvbV9jYWNoZRI5Cgdwcm9maWxlGAYgASgLMigucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JQcm9maWxlEiAKC2xvY2F0b3Jfc2VxGAcgASgEUgtsb2NhdG9yX3NlcRIsChFpc3N1ZWRfYXRfdW5peF9tcxgIIAEoA1IRaXNzdWVkX2F0X3VuaXhfbXMSLgoSZXhwaXJlc19hdF91bml4X21zGAkgASgDUhJleHBpcmVzX2F0X3VuaXhfbXMSKAoPc2lnbmluZ19rZXlfa2lkGAogASgJUg9zaWduaW5nX2tleV9raWQSJAoNZmVkZXJhdGlvbl9pZBgLIAEoCVINZmVkZXJhdGlvbl9pZEJMWkpnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS90b3VjaC9mZWRlcmF0aW9uL2FwaS9wYjtwYmIGcHJvdG8z", [file_domain_actor_actor]);
+  fileDesc("Cipkb21haW4vZmVkZXJhdGlvbi9mZWRlcmF0aW9uX3Jlc29sdmUucHJvdG8SH3BlZXJzX3RvdWNoLm1vZGVsLmZlZGVyYXRpb24udjEiUAoYRmVkZXJhdGlvblJlc29sdmVSZXF1ZXN0EiQKDWZlZGVyYXRpb25faWQYASABKAlSDWZlZGVyYXRpb25faWQSDgoGaGFuZGxlGAIgASgJIr8EChVGZWRlcmF0aW9uUmVzb2x2ZVZpZXcSKgoQZmVkZXJhdGVkX2hhbmRsZRgBIAEoCVIQZmVkZXJhdGVkX2hhbmRsZRIyChRob21lX3N0YXRpb25fcGVlcl9pZBgCIAEoCVIUaG9tZV9zdGF0aW9uX3BlZXJfaWQSMAoTaG9tZV9zdGF0aW9uX2RvbWFpbhgDIAEoCVITaG9tZV9zdGF0aW9uX2RvbWFpbhIaCghpc19sb2NhbBgEIAEoCFIIaXNfbG9jYWwSHgoKZnJvbV9jYWNoZRgFIAEoCFIKZnJvbV9jYWNoZRI5Cgdwcm9maWxlGAYgASgLMigucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JQcm9maWxlEiAKC2xvY2F0b3Jfc2VxGAcgASgEUgtsb2NhdG9yX3NlcRIsChFpc3N1ZWRfYXRfdW5peF9tcxgIIAEoA1IRaXNzdWVkX2F0X3VuaXhfbXMSLgoSZXhwaXJlc19hdF91bml4X21zGAkgASgDUhJleHBpcmVzX2F0X3VuaXhfbXMSKAoPc2lnbmluZ19rZXlfa2lkGAogASgJUg9zaWduaW5nX2tleV9raWQSJAoNZmVkZXJhdGlvbl9pZBgLIAEoCVINZmVkZXJhdGlvbl9pZBJNCg5zaWduZWRfcHJvZmlsZRgMIAEoCzI1LnBlZXJzX3RvdWNoLm1vZGVsLmZlZGVyYXRpb24udjEuQWN0b3JQcm9maWxlRW52ZWxvcGVCTFpKZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvZmVkZXJhdGlvbi9hcGkvcGI7cGJiBnByb3RvMw", [file_domain_actor_actor, file_domain_federation_profile]);
 
 /**
  * @generated from message peers_touch.model.federation.v1.FederationResolveRequest
@@ -125,6 +127,15 @@ export type FederationResolveView = Message<"peers_touch.model.federation.v1.Fed
    * @generated from field: string federation_id = 11 [json_name = "federation_id"];
    */
   federationId: string;
+
+  /**
+   * Original verified Home Station proof, including its device-key bindings.
+   * This is independent of Social projections. Clients bind its Actor PTID,
+   * handle, Home Station and key fingerprint before retaining a trust pin.
+   *
+   * @generated from field: peers_touch.model.federation.v1.ActorProfileEnvelope signed_profile = 12;
+   */
+  signedProfile?: ActorProfileEnvelope | undefined;
 };
 
 /**

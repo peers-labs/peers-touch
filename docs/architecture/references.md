@@ -11,6 +11,7 @@ image embeds targeting that exact asset are counted as diagram references.
 | Diagram ID | Module | Viewpoint | Diagram | Referenced by |
 |---|---|---|---|---:|
 | `cross-client-runtime.reuse-topology` | `cross-client-runtime` | `reuse-topology` | [source](./platform/client/cross-client-runtime/architecture.svg) | 3 |
+| `project.actor-feed-log-target` | `project` | `runtime-topology` | [source](./actor-feed-log-target.svg) | 1 |
 | `project.authority-map` | `project` | `authority-map` | [source](./authority-map.svg) | 3 |
 | `project.engineering-control-plane` | `project` | `control-plane` | [source](./engineering-control-plane.svg) | 2 |
 | `project.journey.cross-station` | `project` | `dynamic-flow` | [source](./journey-cross-station.svg) | 2 |
@@ -34,6 +35,15 @@ image embeds targeting that exact asset are counted as diagram references.
   - [docs/architecture/README.md](./README.md)
   - [docs/architecture/platform/client/cross-client-runtime/README.md](./platform/client/cross-client-runtime/README.md)
   - [docs/architecture/platform/client/cross-client-runtime/design.md](./platform/client/cross-client-runtime/design.md)
+
+## `project.actor-feed-log-target`
+
+- Module: `project`
+- Viewpoint: `runtime-topology`
+- Diagram spec: [docs/architecture/actor-feed-log-target.diagram.json](./actor-feed-log-target.diagram.json)
+- SVG asset: [docs/architecture/actor-feed-log-target.svg](./actor-feed-log-target.svg)
+- Referenced by:
+  - [docs/architecture/domains/social/federation/actor-feed-log.md](./domains/social/federation/actor-feed-log.md)
 
 ## `project.authority-map`
 
@@ -156,4 +166,3 @@ image embeds targeting that exact asset are counted as diagram references.
 - SVG asset: [docs/architecture/platform/client/ui-system/architecture.svg](./platform/client/ui-system/architecture.svg)
 - Referenced by:
   - [docs/architecture/platform/client/ui-system/design.md](./platform/client/ui-system/design.md)
-

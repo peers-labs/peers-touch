@@ -580,6 +580,15 @@ Desktop/Mobile 默认落点、alive policy、组件树和 runtime registry 已�
 
 ## 11. 架构验证与尚未冻结事项
 
+Social Mobile Search 复用原 `MobileSearchSimulatorProvisioner` 和四场景 Suite。
+普通消息 Search 仍只准备 iOS/Android；Social 选择另加独立 Desktop 签名作者。
+原 Desktop build、启动、身份和清理由原 Runtime Cell、共享 Mobile Provisioner
+及 Mixed Runtime 组合。首场景前完成三客户端启动、登录、两接收者恢复密钥和
+公开帖子/历史评论种子；四场景只使用已有客户端和原资源引用。
+Mobile 无签名公开写继续拒绝，私密内容由原 Mobile Owner 按场景发布。
+block 删除友情并永久撤销旧 grant；新请求/接受只恢复后续夹具的关系连续性，
+不能复活旧私密引用。源码、结构和打包检查不能替代该 Native Journey。
+
 需验证：Chat 默认落点与 Search 按需显示；同账号跨页面连续性；账号/Station/联邦切换无回写；域内附件随父对象权限过滤与撤回；Federation 对端不可见不泄漏存在性；功能直达真实入口；权限过滤与撤权；迟到 upsert 不复活已删对象；D 区内容不外发；partial/cancel/cursor expiry；索引重建无数据丢失；按原对象 anchor 打开；中文与规模 corpus。另需否定证明：公网/OS 文件/外部 connector 无法通过任何配置、Applet 或 MCP 路径成为来源。
 
 这些是完整目标的证明义务，不是已完成的测试结果。Desktop 已选择共享 CJK/拉丁分词与既有 SQLCipher/FTS5；Station 引擎、语义 analyzer、预算、离线授权期限和 contributor 资源限制需后续领域/测量输入。当前显式执行计划和 registry 只登记真实已实施切片。

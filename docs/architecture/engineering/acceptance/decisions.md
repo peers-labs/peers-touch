@@ -1798,20 +1798,53 @@ focus or HID delivery.
   baseline; an intermediate mismatch cannot be cleared by a later sample.
   The Driver owns all operator sampling and the exact-PID AX primitive.
   macOS uses one bounded native observation implementation for operator-only,
-  operator plus panel, focused control and pointer reads. Each observation
-  owns one subprocess and releases it before returning; no persistent worker
-  or cached operator/panel state supplies a sample. The same subprocess
-  initializes AX/AppKit once and independently reads two consecutive stable
-  focus samples. Pointer observation uses the same ctypes boundary for
+  operator plus panel, focused control and pointer reads. An operator scope
+  owns one private read-only subprocess from prelaunch baseline through owned
+  stop; the parent and shared picker close it on every exit, including baseline
+  construction and staging failure. No process survives its scope, restarts
+  after failure, or supplies cached operator/panel state. Each request performs
+  two fresh stable focus reads. The child retains actual AX control/window
+  references and uses `CFEqual` both for stability and against the immutable
+  baseline. Title, value, counts, hash equality and enumeration order never
+  identify those objects. Missing objects or role fail closed. Every fresh
+  read after baseline rejects a different object or identity field immediately;
+  A→B→A cannot clear an intermediate failure.
+  The shared control reader returns only those object/identity fields to the
+  scoped focus consumer. It does not read titles, values, window enumeration
+  or sheet counts within that focus deadline. General control observation
+  still reads those display fields with its existing bounds and error policy.
+  Exact-PID panel presence remains a separate native read in the same scope.
+  Pointer observation uses the same ctypes boundary for
   CoreGraphics and releases its event; it does not initialize a separate Quartz
   Python module. Focus must stabilize within the original one-second deadline,
   including child initialization; control and full observation retain their
   two- and three-second subprocess limits respectively.
+  Bootstrap binds one random scope ID, parent PID and fixed monotonic scope
+  deadline, bounded by the owning operation and Cell lease. Private pipes admit
+  one in-flight request, exact scope/sequence/mode/target PID and finite deadlines;
+  each message is at most 4096 bytes. EOF, parent exit, cancellation, expiry,
+  malformed input or a stale reply closes or fails the scope. Each request
+  binds separate focus and observation deadlines. Startup consumes the original
+  one-second focus deadline; the enclosing read retains its original three-second
+  deadline. Panel inspection consumes its remaining observation time and original
+  AX read cap, never renews focus or scope, and cannot admit a late focus result.
+  Close releases
+  all CF references and acknowledges cleanup without sampling AX. Cross-request
+  retained focus references are bounded by four, with at most six during a fresh
+  read. Parent shutdown closes pipes and reaps the exact child. Cleanup failure
+  blocks proof and remains separate from the original primary failure.
   Probe failure diagnostics retain the original child exception type and code
   location separately from the adapter's response-decoding exception. Code
   function and line identify the failure without exporting Accessibility
   values, exception messages or private window titles. A passing replay
   cannot establish the cause of an earlier observation failure.
+  When the parent expires before receiving a child reply, the same private
+  child emits fixed, content-free phase labels through its stderr pipe.
+  The parent reads at most 4096 bytes without waiting and retains only known
+  labels plus observed child liveness. Raw stderr is discarded. These labels
+  identify the last entered stage, not a native result or successful sample.
+  Both success and failure drain the pipe, and scope cleanup closes it.
+  No observation, focus, scope or cleanup deadline is extended for diagnostics.
   Failed AXWindows reads retain their measured attribute-read duration.
   Shared AX attribute reads preserve their status, attribute name, returned-value
   presence and duration. Only explicit NoValue or AttributeUnsupported may
@@ -1820,11 +1853,23 @@ focus or HID delivery.
   focus deadline, cap messaging waits at the lesser of 0.5 seconds and remaining
   time, and reject expiry before or after a native call. Failure releases any
   returned CF value and stops subsequent reads.
+  One-shot AX mutations use the remaining time of their original operation
+  deadline. The 0.5-second observation cap must not become their inherited
+  message timeout. Timeout setup, invocation and reply consume that same
+  deadline; an expired reply or any nonzero AX status fails without replay.
+  This does not extend the selection subprocess or operator-read budgets.
   The shared control reader retains the actual queried application PID in
   `actualControlRequestPid` on that same exception. Operator sampling may
   receive caller PID zero or a chooser target while querying another frontmost
   application; the caller PID cannot identify the failed AX recipient.
   Original status, read duration, deadline and code origin remain unchanged.
+  Window focus flags come from the application's actual `AXFocusedWindow`,
+  falling back only to `AXMainWindow` on explicit optional absence.
+  `AXWindows` enumeration order never identifies the focused window.
+  Both reads consume the same focus deadline. Operator scope owns their copied
+  CF references until comparison/replacement or final close; general control
+  reads release them immediately. Failure cannot fall back to the first
+  enumerated window.
   Chooser Home lookup first requires an AXStaticText node inside the AXOutline
   sidebar, then reads its AXValue. Structural nodes are not text candidates;
   an actual eligible-node read failure still stops selection. The selector
@@ -1841,11 +1886,34 @@ focus or HID delivery.
   must transition absent/present/absent; macOS can expose a panel inside the
   existing AX window without changing window or sheet counts. Unavailable
   native observation fails closed rather than reporting an absent panel.
-  The shared path finder checks all controls at a depth before descending
-  into file-list contents. It retains the original depth bound and releases
+  After checking every owner-window identifier, the finder inspects each
+  window's actual `AXDefaultButton` and requires the same `OKButton` identifier.
+  That direct native reference can establish panel presence without scanning
+  a wide XPC file-list tree. Explicit optional absence or a different identifier
+  continues the original depth walk; failed or late reads remain failures.
+  The same AX read cap, exact-PID windows and returned panel root are retained,
+  and the copied button reference is released on every exit.
+  The shared path finder checks all controls at a depth across every exact-PID
+  owner window before descending into file-list contents. The first verified
+  panel path ends that lookup; unrelated later windows cannot invalidate its
+  presence. It retains the original depth bound and releases
   copied child arrays on every exit. A failed read still propagates when no
   earlier native target exists; traversal order cannot convert refusal to
   optional absence.
+  The bounded process-owned panel button owner also checks one depth before
+  traversing deeper file-list descendants. Its node/depth limits and original
+  action deadline remain unchanged, and all retained nodes are released.
+  Native file-row selection uses the container's advertised mutable attribute:
+  ListView owns `AXSelectedRows`, while a column list may own
+  `AXSelectedChildren`. The selected value is the actual descendant row, not
+  a filename or a copied local object. An already available ListView row must
+  not be rejected and sent to Search merely because it lacks the column
+  attribute. Native panel completion still proves the exact staged file.
+  A known semantic selection-unavailable result must bind the requested
+  staged path. In non-intrusive mode it raises the original Driver's typed
+  blocker with the exact closed reason and owner PID, without exporting the
+  path or waiting for a commit that was not selected. Only an independently
+  admitted exclusive caller may retain its native fallback.
   The local Binding admits this capability only from its prepared Cell.
   The shared picker uses the visible trigger and real panel, checks closure
   and fixture identity, and leaves product and receiver oracles with the Gate.

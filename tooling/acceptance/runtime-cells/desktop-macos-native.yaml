@@ -39,6 +39,7 @@
   "cleanup": {
     "resources": [
       "probe-process",
+      "native-operator-observation",
       "ports",
       "storage",
       "gui-session-lease"

@@ -261,7 +261,7 @@ class EnvironmentContractTests(unittest.TestCase):
 
         self.assertEqual("cross-station-social-native", contract.id)
         self.assertEqual(
-            {"station-four", "station-five-arm"},
+            {"station-four", "station-five-arm", "relay"},
             set(contract.services),
         )
         bindings = {
@@ -353,29 +353,22 @@ class EnvironmentContractTests(unittest.TestCase):
                 error.exception.resource,
             )
             self.assertIn(
-                "active profile chat-native-disposable at slot 13",
+                "active profile chat-native-disposable; observed four",
                 error.exception.reason,
             )
-        with mock.patch.object(
-            NativeTauriEmbeddedWebDriverProvisioner,
-            "_resolve_active_profile",
-            return_value=(
+        for slot in (6, 12, 13):
+            binding = (
                 "chat-native-disposable",
                 Path("/tmp/chat-native-disposable.env"),
-                12,
-                {},
-            ),
-        ):
-            with self.assertRaises(BlockedError) as error:
-                explicit_provisioner._resolve_active_profile()
-            self.assertEqual(
-                "profile:chat-native-disposable",
-                error.exception.resource,
+                slot,
+                {"PT_STATION_MODE": "remote"},
             )
-            self.assertIn(
-                "active profile chat-native-disposable at slot 13",
-                error.exception.reason,
-            )
+            with self.subTest(slot=slot), mock.patch.object(
+                NativeTauriEmbeddedWebDriverProvisioner,
+                "_resolve_active_profile",
+                return_value=binding,
+            ):
+                self.assertEqual(binding, explicit_provisioner._resolve_active_profile())
 
     def test_station_access_fixture_binds_canonical_reset_authority(self):
         contract = EnvironmentContract.from_yaml(

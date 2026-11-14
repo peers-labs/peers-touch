@@ -382,7 +382,8 @@ func TestFederatedPrivateReconcileCommitsSourceOutboxAndReceiverProjection(
 			moment.GetKind() != realtime.MomentEvent_CREATED ||
 			moment.GetPostId() != wire.GetResource().GetContentId() ||
 			moment.GetAuthorActorPtid() != "ptid:alice" ||
-			moment.GetActorPtid() != "ptid:bob" {
+			moment.GetActorPtid() != "ptid:alice" ||
+			moment.GetTargetActorPtid() != "ptid:bob" {
 			t.Fatalf("receiver Moment event = %+v", event)
 		}
 	case <-time.After(time.Second):

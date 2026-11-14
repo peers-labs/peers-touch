@@ -441,6 +441,21 @@ class LaunchContextContractTests(unittest.TestCase):
 
 @unittest.skipUnless(os.name == "posix", "POSIX socketpair contract")
 class LaunchContextProtocolTests(unittest.TestCase):
+    def test_authenticated_idle_does_not_expire_request_or_close_budget(self) -> None:
+        context = new_context(SyntheticHandler(), request_timeout_seconds=0.05)
+        client, _binding = connect_client(context)
+        try:
+            for _ in range(2):
+                threading.Event().wait(0.12)
+                self.assertIsNone(context.channel_error)
+                self.assertEqual(client.invoke(
+                    "synthetic.echo", "echo", {}, timeout_seconds=0.05,
+                ), {"echo": {}})
+            threading.Event().wait(0.12)
+            self.assertIsNone(context.channel_error)
+        finally:
+            self.assertTrue(close_context(context, client).succeeded)
+
     def test_silent_peer_cannot_stall_handshake_past_deadline(self) -> None:
         parent_endpoint, child_endpoint = socket.socketpair()
         descriptor = child_endpoint.detach()
@@ -511,42 +526,44 @@ class LaunchContextProtocolTests(unittest.TestCase):
     def test_partial_request_cannot_stall_parent_broker_past_deadline(
         self,
     ) -> None:
-        handler = SyntheticHandler()
-        context = new_context(handler, request_timeout_seconds=0.05)
-        binding = context.bind_child()
-        child_descriptor = os.dup(binding.pass_fds[0])
-        context.activate()
-        binding.close_parent_copy()
-        endpoint = socket.socket(fileno=child_descriptor)
-        try:
-            send_test_frame(
-                endpoint,
-                {
-                    "type": "handshake",
-                    "workspaceId": IDENTITY["workspace_id"],
-                    "gateId": IDENTITY["gate_id"],
-                    "evidenceRunId": IDENTITY["evidence_run_id"],
-                    "provisioningRunId": IDENTITY["provisioning_run_id"],
-                },
-            )
-            self.assertEqual(
-                receive_test_frame(endpoint),
-                {"type": "handshake", "status": "OK"},
-            )
-
-            started = time.monotonic()
-            endpoint.sendall(struct.pack("!I", 64) + b"{")
-            deadline = time.monotonic() + 0.5
-            while context.channel_error is None and time.monotonic() < deadline:
-                time.sleep(0.01)
-        finally:
-            endpoint.close()
-
-        self.assertLess(time.monotonic() - started, 0.5)
-        self.assertIsInstance(context.channel_error, EphemeralLaunchTimeout)
-        self.assertEqual(handler.calls, [])
-        context.quiesce()
-        self.assertTrue(context.close().succeeded)
+        for partial in (struct.pack("!I", 64)[:1], struct.pack("!I", 64) + b"{"):
+            with self.subTest(partial_bytes=len(partial)):
+                handler = SyntheticHandler()
+                context = new_context(handler, request_timeout_seconds=0.05)
+                binding = context.bind_child()
+                child_descriptor = os.dup(binding.pass_fds[0])
+                context.activate()
+                binding.close_parent_copy()
+                endpoint = socket.socket(fileno=child_descriptor)
+                try:
+                    send_test_frame(
+                        endpoint,
+                        {
+                            "type": "handshake",
+                            "workspaceId": IDENTITY["workspace_id"],
+                            "gateId": IDENTITY["gate_id"],
+                            "evidenceRunId": IDENTITY["evidence_run_id"],
+                            "provisioningRunId": IDENTITY["provisioning_run_id"],
+                        },
+                    )
+                    self.assertEqual(
+                        receive_test_frame(endpoint),
+                        {"type": "handshake", "status": "OK"},
+                    )
+                    threading.Event().wait(0.12)
+                    self.assertIsNone(context.channel_error)
+                    started = time.monotonic()
+                    endpoint.sendall(partial)
+                    deadline = time.monotonic() + 0.5
+                    while context.channel_error is None and time.monotonic() < deadline:
+                        time.sleep(0.01)
+                finally:
+                    endpoint.close()
+                self.assertLess(time.monotonic() - started, 0.5)
+                self.assertIsInstance(context.channel_error, EphemeralLaunchTimeout)
+                self.assertEqual(handler.calls, [])
+                context.quiesce()
+                self.assertTrue(context.close().succeeded)
 
     def test_partial_acknowledgement_cannot_stall_close_past_deadline(
         self,

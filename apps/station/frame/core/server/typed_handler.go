@@ -505,7 +505,7 @@ func NewSimpleHandler(
 
 			logger.Error(ctx, "Handler error", "error", err)
 			resp.WriteHeader(http.StatusInternalServerError)
-			http.Error(nil, fmt.Sprintf("Internal server error: %v", err), http.StatusInternalServerError)
+			return err
 		}
 		return err
 	}

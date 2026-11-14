@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	profilepb "github.com/peers-labs/peers-touch/station/frame/touch/federation/profile/pb"
 	modelpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
+	"google.golang.org/protobuf/proto"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -68,15 +70,15 @@ var cachedActorUpdateColumns = []string{
 	"visibility",
 	"locator_seq",
 	"cached_until_unix_ms",
+	"federation_profile_envelope",
 	"updated_at",
 }
 
-// Cached is the in-process projection returned by Lookup. It carries
-// the touch_actor row plus the cached envelope expiry so the caller
-// (resolver) can build its own response without re-reading the DB.
+// Cached retains the original signed proof alongside its disposable Actor
+// projection. Resolver verifies the proof against the current signed locator.
 type Cached struct {
-	Actor          *db.Actor
-	CachedUntilUTC time.Time
+	Actor    *db.Actor
+	Envelope *profilepb.ActorProfileEnvelope
 }
 
 // UpsertInput is the verified-envelope view the cache needs to persist
@@ -130,15 +132,34 @@ func Lookup(ctx context.Context, handle string) (*Cached, error) {
 		return nil, fmt.Errorf("federation cache: select: %w", err)
 	}
 
-	now := time.Now()
-	if row.CachedUntilUnixMs <= 0 || now.UnixMilli() >= row.CachedUntilUnixMs {
+	return cachedFromRow(&row, canon, time.Now())
+}
+
+func cachedFromRow(row *db.Actor, canon string, now time.Time) (*Cached, error) {
+	if row == nil || row.Origin != originRemoteCached || row.FederatedHandle != canon ||
+		row.CachedUntilUnixMs <= 0 || now.UnixMilli() >= row.CachedUntilUnixMs ||
+		len(row.FederationProfileEnvelope) == 0 {
 		return nil, ErrCacheMiss
 	}
-
-	return &Cached{
-		Actor:          &row,
-		CachedUntilUTC: time.UnixMilli(row.CachedUntilUnixMs).UTC(),
-	}, nil
+	if len(row.FederationProfileEnvelope) > 1<<20 {
+		return nil, errors.New("federation cache: profile proof exceeds byte limit")
+	}
+	envelope := &profilepb.ActorProfileEnvelope{}
+	if err := proto.Unmarshal(row.FederationProfileEnvelope, envelope); err != nil {
+		return nil, fmt.Errorf("federation cache: decode profile proof: %w", err)
+	}
+	wire, err := proto.MarshalOptions{Deterministic: true}.Marshal(envelope)
+	if err != nil || !bytes.Equal(wire, row.FederationProfileEnvelope) {
+		return nil, errors.New("federation cache: profile proof is noncanonical")
+	}
+	if envelope.GetExpiresAtUnixMs() != row.CachedUntilUnixMs ||
+		envelope.GetHomeStationPeerId() != row.HomeStationPeerID ||
+		envelope.GetHomeStationDomain() != row.HomeStationDomain ||
+		envelope.GetFederatedHandle() != "@"+canon ||
+		actorPTID(envelope) != row.PTID || len(envelope.GetSignature()) != 64 {
+		return nil, ErrIdentityConflict
+	}
+	return &Cached{Actor: row, Envelope: envelope}, nil
 }
 
 // Upsert writes (or refreshes) a remote_cached touch_actor row from a
@@ -183,6 +204,10 @@ func upsert(
 	in UpsertInput,
 	now time.Time,
 ) error {
+	proof, err := proto.MarshalOptions{Deterministic: true}.Marshal(in.Envelope)
+	if err != nil || len(proof) > 1<<20 {
+		return errors.New("federation cache: cannot encode bounded profile proof")
+	}
 	existing, err := findExistingActor(ctx, rds, canon, actorPTID(in.Envelope))
 	if err != nil {
 		return err
@@ -192,6 +217,7 @@ func upsert(
 			return err
 		}
 		row := buildRow(canon, in, now, existing)
+		row.FederationProfileEnvelope = proof
 		result := rds.WithContext(ctx).
 			Model(&db.Actor{}).
 			Where("id = ? AND origin = ?", existing.ID, originRemoteCached).
@@ -207,6 +233,7 @@ func upsert(
 	}
 
 	row := buildRow(canon, in, now, &db.Actor{})
+	row.FederationProfileEnvelope = proof
 	// ON CONFLICT (federated_handle) DO UPDATE — Postgres-friendly upsert
 	// that keeps INSERT semantics (preserves CreatedAt) while letting a
 	// repeated call simply refresh the federation columns.

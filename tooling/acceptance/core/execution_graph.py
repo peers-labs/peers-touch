@@ -7,6 +7,7 @@ from typing import Any, Mapping
 
 from .execution_budget import ExecutionBudgetError, digest
 from .execution_identity import validate_execution_inputs
+from .result_contracts import DEVELOPMENT_RESULT_KINDS
 
 
 class ExecutionGraph(dict[str, Any]):
@@ -222,8 +223,10 @@ def prerequisite_results(
                 if (
                     manifest.get("source") != dict(source)
                     or ref.workspace_id != store.workspace_id
-                    or result.get("artifactKind") != "development-functional-result"
-                    or result.get("verificationClass") != "FUNCTIONAL_CHECK"
+                    or result.get("verificationClass") not in DEVELOPMENT_RESULT_KINDS
+                    or result.get("artifactKind") != DEVELOPMENT_RESULT_KINDS.get(
+                        result.get("verificationClass"),
+                    )
                     or result.get("developmentRunId") != ref.run_id
                     or any(sealed.get(key) != result.get(key) for key in (
                         "id", "status", "completionStatus", "proofStatus",
@@ -231,7 +234,7 @@ def prerequisite_results(
                     ))
                     or sealed.get("secretScan", {}).get("status") != "passed"
                 ):
-                    raise ExecutionBudgetError(f"{producer}: original functional result changed")
+                    raise ExecutionBudgetError(f"{producer}: original development result changed")
             else:
                 read_gate_proof(store, producer, source, result=result)
         except (EvidenceError, KeyError, TypeError, ValueError, OSError) as error:

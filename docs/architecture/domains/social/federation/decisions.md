@@ -2,7 +2,7 @@
 
 > **Status**: draft
 > **Version**: v0.2
-> **Created**: 2026-06-17 | **Updated**: 2026-09-06
+> **Created**: 2026-06-17 | **Updated**: 2026-11-08
 > **Owner**: Architecture Team
 
 ---
@@ -18,6 +18,7 @@
 | D-05 | 不引入办公、任务、项目等上层形态 | accepted |
 | D-06 | Runtime projection 继续拥有 Feed 新鲜度 | accepted |
 | D-07 | Friend Request 由 receiver Home Station 授权并复用共享 Federation transport | accepted |
+| D-08 | 评论点赞与投票延伸原交互权威 | accepted |
 
 ---
 
@@ -236,3 +237,27 @@ Federation mechanics provide retry/dedup without becoming a second Social servic
   `docs/architecture/engineering/api-governance/decisions.md`.
 
 Owner accepted D-07 with AO-D01..AO-D06 and revised MP-D30 on 2026-09-06.
+
+---
+
+## D-08: 评论点赞与投票延伸原交互权威
+
+**Status**: accepted
+**Date**: 2026-11-08
+**Owner**: Social / Federation / Desktop
+
+**Decision**：采用 [交互合同 §3–5](./interaction-completion.md#3-公开交互权威)。
+公开评论反应和 typed ballot 属于 Actor 原签名设备链，评论引用同时绑定父帖。
+投票定义在创建后不可变；选票用完整选项集合替换，按 Actor 当前有效序号去重。
+作者 Home Station 在原交互事务中判定截止并签发绑定事件、定义和接受时间的回执。
+Native 验 Actor 事件和接纳回执后重放计数。私密 typed target 与 opaque ballot
+继续走原设备签名 private interaction command/result、原权限快照和投影。
+
+**Rationale**：设备签名时间不能证明实际提交时间；HTTP 成功码和 UI toggle
+不能证明提交、目标归属或计数。原 Owner 扩展使引用、签名、权限、去重和回读闭合。
+
+**Alternatives**：无签名投票 RPC、客户端时间裁决、单独交互子服务均不满足该合同。
+
+**Consequences**：同步生成协议、所有 Native verifier、Runtime、peers-ui、
+原型和原 Gate。作者站遗漏、时钟错误和停机是明确边界；回执不证明汇总完整性。
+精确重试保留原命令字节，结果未知与提交后回读等待分别呈现。

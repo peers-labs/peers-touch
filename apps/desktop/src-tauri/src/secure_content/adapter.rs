@@ -207,6 +207,31 @@ impl SecureContentTransport {
         )
     }
 
+    pub fn submit_private_poll_vote(
+        &self,
+        post_id: &str,
+        request_bytes: &[u8],
+    ) -> Result<social::VotePrivatePollResponse, NativeTransportError> {
+        let request = social::VotePrivatePollRequest::decode(request_bytes)
+            .map_err(|_| invalid_local_request("private poll request bytes are malformed"))?;
+        if request.encode_to_vec() != request_bytes
+            || request.post_id != post_id
+            || request.command_id.trim().is_empty()
+            || request.actor_signing_key_id.trim().is_empty()
+            || request.actor_device_signature.len() != 64
+            || request.option_set_sha256.len() != 32
+        {
+            return Err(invalid_local_request(
+                "private poll request bytes are not canonical",
+            ));
+        }
+        self.post_proto_bytes_with_retry_after(
+            &format!("/api/v1/social/moments/{post_id}/poll/vote"),
+            request_bytes,
+            RetryAfterSemantics::Exact,
+        )
+    }
+
     pub fn submit_private_reaction(
         &self,
         post_id: &str,
@@ -883,7 +908,7 @@ fn canonical_actor_federated_handle(
     })
 }
 
-fn canonical_federated_handle(value: &str) -> Option<String> {
+pub(crate) fn canonical_federated_handle(value: &str) -> Option<String> {
     if value.trim().is_empty() || value.trim() != value || value.as_bytes().contains(&0) {
         return None;
     }

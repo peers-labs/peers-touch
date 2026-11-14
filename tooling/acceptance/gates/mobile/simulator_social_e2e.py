@@ -38,6 +38,7 @@ from tooling.acceptance.gates.mobile.messaging_journey import (
     MobileMessagingJourney,
     MessagingActor,
 )
+from tooling.acceptance.gates.mobile.moments_cutover import assert_public_composer_denial
 from tooling.acceptance.gates.mobile.simulator_e2e import (
     SimulatorCallbackRoutingGate,
     SimulatorGateBlocked,
@@ -937,6 +938,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                     sender_session,
                     receiver_session,
                     sender,
+                    receiver,
                     journey_id,
                     state,
                 ),
@@ -1039,23 +1041,26 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         sender_session: Any,
         receiver_session: Any,
         sender: MessagingActor,
+        receiver: MessagingActor,
         journey_id: str,
         state: dict[str, Any],
     ) -> dict[str, Any]:
-        text = f"mps09-public-{journey_id}"
+        text = f"mps09-private-{journey_id}"
+        denial = assert_public_composer_denial(self, sender_session, f"public-{journey_id}")
         published = self._mapping(
             sender_session.call_action(
                 "moments.publish",
-                {"text": text, "audienceKind": 1},
+                {"text": text, "audienceKind": 6,
+                 "audience": {"kind": "CUSTOM_ALLOW", "actorPtids": [receiver.ptid]}},
             ),
-            "MPS-09 public seed Moment",
+            "MPS-09 private seed Moment",
         )
         post_id = self._text(
             published.get("postId"),
-            "MPS-09 public seed post ID",
+            "MPS-09 private seed post ID",
         )
-        state["publicPostId"] = post_id
-        state["publicPostText"] = text
+        state["privatePostId"] = post_id
+        state["privatePostText"] = text
 
         receiver_session.call_action(
             "navigation.apply",
@@ -1111,6 +1116,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             "receiverAssertion": f"receiver-post:{post_id}",
             "supportingObservation": f"timeline-author:{sender.ptid}",
             "post": receiver_post,
+            **denial,
         }
 
     def _run_ios_search_profile(
@@ -1422,8 +1428,8 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         state: Mapping[str, Any],
     ) -> dict[str, Any]:
         post_id = self._text(
-            state.get("publicPostId"),
-            "MPS-09 public post state",
+            state.get("privatePostId"),
+            "MPS-09 private post state",
         )
         for index in range(11):
             session.call_action(
@@ -4716,10 +4722,18 @@ return {
         journey_id: str,
     ) -> dict[str, Any]:
         text = f"mobile-moment-{journey_id}"
+        rejected = self._mapping(sender_session.call_action(
+            "moments.publish", {"text": text, "audienceKind": 1},
+        ), "Mobile public write denial")
+        if rejected.get("rejected") is not True or rejected.get("code") != "FEED_SIGNED_WRITE_REQUIRED":
+            raise GateError("Mobile accepted an unsigned public write")
+        for session in (sender_session, receiver_session):
+            self._prepare_private_keys(session)
         published = self._mapping(
             sender_session.call_action(
                 "moments.publish",
-                {"text": text, "audienceKind": 1},
+                {"text": text, "audienceKind": 6,
+                 "audience": {"kind": "CUSTOM_ALLOW", "actorPtids": [receiver.ptid]}},
             ),
             "published Moment",
         )
@@ -4804,6 +4818,8 @@ return {
         )
         return {
             "scenario": "moments",
+            "publicWriteRejected": True,
+            "audience": "CUSTOM_ALLOW",
             "post": receiver_post,
             "reactionCommitted": True,
             "reactionRolledBack": True,

@@ -46,6 +46,15 @@ beforeEach(() => {
 });
 
 describe('Moments reaction routes', () => {
+  it('rejects public publishing before any unsigned request can leave Mobile', async () => {
+    const result = await createMomentsGateway(session).createMoment({
+      kind: 'text', text: 'retained draft',
+      audience: { kind: Audience_Kind.PUBLIC },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe('FEED_SIGNED_WRITE_REQUIRED');
+    expect(commandMock).not.toHaveBeenCalled();
+  });
   it('uses the canonical Station author-delete route', async () => {
     await createMomentsGateway(session).deletePost('post/1');
 

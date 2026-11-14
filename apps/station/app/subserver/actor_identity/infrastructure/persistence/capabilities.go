@@ -16,6 +16,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/domain"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/gorm"
@@ -156,6 +157,18 @@ func (r *Repository) BuildLocalEndpointManifestSnapshot(
 		manifestActor := &actormodel.ActorRef{
 			Ptid: requestedActor.GetPtid(),
 			Kind: actorKind,
+		}
+		// Routing hint is read from the original identity profile, never copied
+		// from the requesting peer. Standalone identity stores may omit it.
+		if tx.Migrator().HasTable(&db.Actor{}) {
+			var profile db.Actor
+			err := tx.Where("ptid = ?", requestedActor.GetPtid()).Take(&profile).Error
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			if err == nil {
+				manifestActor.Acct = profile.FederatedHandle
+			}
 		}
 		entries := make(
 			[]*actormodel.ActorEndpointManifestEntry,

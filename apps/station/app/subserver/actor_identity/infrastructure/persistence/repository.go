@@ -290,6 +290,16 @@ func (r *Repository) Enroll(
 }
 
 // List returns verified devices, including terminal revoked records.
+// ResolveRetainedIdentityPublicKey returns the continuity root established by
+// enrollment or a verified remote profile. It never trusts caller-supplied keys.
+func (r *Repository) ResolveRetainedIdentityPublicKey(ctx context.Context, ptid string) ([]byte, error) {
+	var identity ActorIdentityModel
+	if err := r.db.WithContext(ctx).Where("ptid = ?", ptid).Take(&identity).Error; err != nil {
+		return nil, mapPersistenceError("actor_identity.resolve_retained_identity", err)
+	}
+	return append([]byte(nil), identity.PublicKey...), nil
+}
+
 func (r *Repository) List(ctx context.Context, ptid string) ([]domain.Device, error) {
 	var models []ActorDeviceModel
 	if err := r.db.WithContext(ctx).

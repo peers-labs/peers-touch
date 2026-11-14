@@ -4,7 +4,7 @@
   "product_area": "social",
   "owners": [
     "apps/desktop/src/acceptance/moments/harness.ts",
-    "apps/desktop/src/pages/MomentsPage.tsx",
+    "apps/desktop/src/pages/moments/**",
     "apps/desktop/src/store/moments.ts",
     "apps/station/app/subserver/social/**",
     "model/domain/social/**",
@@ -44,7 +44,11 @@
       "Alice publishes private text and media from the Native Desktop Moment composer",
       "Bob reads authorized plaintext and media in Native Desktop HOME and detail surfaces before and after restart",
       "Eve cannot render private parent, comment or media while unauthorized",
-      "public Moment continuity is proven by Native publish plus anonymous HTTP read"
+      "public Moment continuity is proven by Native publish plus anonymous HTTP read",
+      "AS20 activates the actual root-comment and reply LIKE controls on Alice and Bob, then checks both Native painted counters and viewer states",
+      "AS23 reads the same comment identities and retained LIKE counts after replacement-device recovery",
+      "same-station-regression activates Alice's private root/reply LIKE and unlike controls through her original Home Station",
+      "committed Native comment commands are retried with their original durable command identity; two retries leave the confirmed counter and revision stable"
     ]
   },
   "negative": [
@@ -52,6 +56,8 @@
     "development FUNCTIONAL_PASS artifacts are not treated as formal Acceptance proof",
     "no Scenario may rebuild, redeploy, register an account, or create a fresh Suite Runtime after the one Suite provisioning pass",
     "the Suite may keep at most three Native Desktop clients active concurrently",
-    "cross-Station private delivery is proved only by the dedicated cross-Station Social feature and Gate"
+    "private cross-Station media and recovery coverage remains with the dedicated feature; this Gate consumes AS20/AS23 specifically for comment interaction continuity",
+    "a scenario PASS, an API response or a Harness-only action cannot replace comment-button activation, unobscured Native frame capture and bilateral readback",
+    "committed command retry proves durable local replay; lost-ACK server redelivery requires separate real fault evidence"
   ]
 }

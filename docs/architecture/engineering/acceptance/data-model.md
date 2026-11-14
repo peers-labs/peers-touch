@@ -1591,6 +1591,42 @@ Identity and proof rules:
   Cell 消费并重新核验 source/binary。Driver 的操作员采样是唯一实现，运行时
   picker 冻结自己的真实基线且保持各阶段原始失败，不恢复焦点或触碰剪贴板。
 
+macOS Driver 私有观察协议（不是业务 API、proto 或可持久化资格）：
+
+```typescript
+type NativeObservationBootstrap = {
+  scopeId: string
+  parentProcessId: number
+  scopeDeadlineMonotonicSeconds: number
+}
+type NativeObservationRequest = {
+  scopeId: string
+  sequence: number
+  mode: "operator" | "operator-panel" | "close"
+  targetProcessId: number
+  deadlineMonotonicSeconds: number
+  focusDeadlineMonotonicSeconds: number | null
+}
+```
+
+scope ID 为32位随机 lowercase hex；bootstrap 只接收一次，parent PID 必须等于
+实际父进程。每条消息最多4096字节，拒绝重复/未知字段、非有限时间、过期或超过
+scope 的 deadline。sequence 从1严格递增，operator/close 的 target PID 为0，
+operator-panel 为正整数。完整 observation 保留原3秒期限；独立 focus deadline
+从 parent 请求开始计算原1秒，包含首次初始化，并且不能晚于 observation deadline。
+close 的 focus deadline 必须为 null；其它请求必须为有限时间。面板读取继续消费
+原 AX read cap 和剩余 observation 时间，不把 focus deadline 续期或施加给面板。
+response 原样绑定 scope/sequence/mode/target PID；
+成功含原四字段 `operatorState`，panel mode 另含 typed exact-PID `panel`；
+失败只含原 safe `error`，close 只含 `closed: true`，不产生通过样本。
+
+`CREATED → BASELINE_READY → OBSERVING → CLOSED` 为正常 lifecycle。
+任一失败保持 FAILED；只允许关闭，不重启、不重建 baseline。close 幂等。
+真实 AX 控件/窗口通过 CFEqual 比较；缺失或不可验证的对象不能成为空身份。
+跨请求保留 baseline 和最近采样四个引用，读取峰值六个；替换、失败与关闭均释放。
+焦点摘要绑定 scope、原七个身份字段及实际对象比较，标题/value/counts 不进入摘要。
+当前对象/字段偏离 baseline 立即失败，即使随后恢复。引用和原生正文不写入报告。
+
 ### 16.1 Native Adapter Diagnostic
 
 Native adapter observation 使用跨平台 typed fields；业务 Gate 不解析 AX、EWMH

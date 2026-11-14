@@ -325,6 +325,7 @@ const (
 	MomentEvent_DELETED          MomentEvent_Kind = 2
 	MomentEvent_COMMENTED        MomentEvent_Kind = 3
 	MomentEvent_REACTED          MomentEvent_Kind = 4
+	MomentEvent_UPDATED          MomentEvent_Kind = 5
 )
 
 // Enum value maps for MomentEvent_Kind.
@@ -335,6 +336,7 @@ var (
 		2: "DELETED",
 		3: "COMMENTED",
 		4: "REACTED",
+		5: "UPDATED",
 	}
 	MomentEvent_Kind_value = map[string]int32{
 		"KIND_UNSPECIFIED": 0,
@@ -342,6 +344,7 @@ var (
 		"DELETED":          2,
 		"COMMENTED":        3,
 		"REACTED":          4,
+		"UPDATED":          5,
 	}
 )
 
@@ -1684,8 +1687,10 @@ type MomentEvent struct {
 	Removed          bool                   `protobuf:"varint,7,opt,name=removed,proto3" json:"removed,omitempty"`
 	Audience         string                 `protobuf:"bytes,8,opt,name=audience,proto3" json:"audience,omitempty"`
 	OccurredTsUnixMs int64                  `protobuf:"varint,9,opt,name=occurred_ts_unix_ms,json=occurredTsUnixMs,proto3" json:"occurred_ts_unix_ms,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Authenticated stream recipient. actor_ptid identifies the operation actor.
+	TargetActorPtid string `protobuf:"bytes,10,opt,name=target_actor_ptid,json=targetActorPtid,proto3" json:"target_actor_ptid,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *MomentEvent) Reset() {
@@ -1779,6 +1784,13 @@ func (x *MomentEvent) GetOccurredTsUnixMs() int64 {
 		return x.OccurredTsUnixMs
 	}
 	return 0
+}
+
+func (x *MomentEvent) GetTargetActorPtid() string {
+	if x != nil {
+		return x.TargetActorPtid
+	}
+	return ""
 }
 
 // GroupFederationEvent notifies a member's Home Station client that a
@@ -2761,7 +2773,7 @@ const file_domain_realtime_event_proto_rawDesc = "" +
 	"\x10KIND_UNSPECIFIED\x10\x00\x12\n" +
 	"\n" +
 	"\x06FRIEND\x10\x01\x12\t\n" +
-	"\x05GROUP\x10\x02\"\xb3\x03\n" +
+	"\x05GROUP\x10\x02\"\xec\x03\n" +
 	"\vMomentEvent\x12C\n" +
 	"\x04kind\x18\x01 \x01(\x0e2/.peers_touch.model.realtime.v1.MomentEvent.KindR\x04kind\x12\x17\n" +
 	"\apost_id\x18\x02 \x01(\tR\x06postId\x12*\n" +
@@ -2773,13 +2785,16 @@ const file_domain_realtime_event_proto_rawDesc = "" +
 	"\rreaction_kind\x18\x06 \x01(\tR\freactionKind\x12\x18\n" +
 	"\aremoved\x18\a \x01(\bR\aremoved\x12\x1a\n" +
 	"\baudience\x18\b \x01(\tR\baudience\x12-\n" +
-	"\x13occurred_ts_unix_ms\x18\t \x01(\x03R\x10occurredTsUnixMs\"R\n" +
+	"\x13occurred_ts_unix_ms\x18\t \x01(\x03R\x10occurredTsUnixMs\x12*\n" +
+	"\x11target_actor_ptid\x18\n" +
+	" \x01(\tR\x0ftargetActorPtid\"_\n" +
 	"\x04Kind\x12\x14\n" +
 	"\x10KIND_UNSPECIFIED\x10\x00\x12\v\n" +
 	"\aCREATED\x10\x01\x12\v\n" +
 	"\aDELETED\x10\x02\x12\r\n" +
 	"\tCOMMENTED\x10\x03\x12\v\n" +
-	"\aREACTED\x10\x04\"\xa6\x03\n" +
+	"\aREACTED\x10\x04\x12\v\n" +
+	"\aUPDATED\x10\x05\"\xa6\x03\n" +
 	"\x14GroupFederationEvent\x12\x1d\n" +
 	"\n" +
 	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\x12\x1d\n" +

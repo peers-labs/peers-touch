@@ -339,12 +339,22 @@ function validateDeliveryResilienceContract({
     [desktopOrchestratorText, '.list_remote_private_moments(&cursor, 100)', 'Station-backed Desktop reconcile'],
     [desktopOrchestratorText, 'PrivateReadState::RemoteSourceUnavailable', 'source-unavailable projection'],
     [privateNativeText, "projection.state === 'REMOTE_SOURCE_UNAVAILABLE'", 'offline-readable private Moment projection'],
-    [desktopMomentCardText, '<SocialPrivateState state={deliveryNotice} compact />', 'remote delivery status rendering'],
   ];
   for (const [text, fragment, label] of requiredFragments) {
     if (!text.includes(fragment)) {
       fail(`${label} is missing`);
     }
+  }
+  const deliveryBindings = new Set(
+    [...desktopMomentCardText.matchAll(
+      /\b(?:const|let)\s+([\w$]+)\s*=\s*privateDeliveryNoticeState\(\s*[\w$]+\??\.remoteDeliveryState\s*\)/gu,
+    )].map((match) => match[1]),
+  );
+  const renderedStates = [...desktopMomentCardText.matchAll(
+    /<SocialPrivateState\b[^>]*\bstate\s*=\s*\{\s*([\w$]+)\s*\}[^>]*\bcompact(?:\s|\/|>)/gu,
+  )];
+  if (!renderedStates.some((match) => deliveryBindings.has(match[1]))) {
+    fail('remote delivery status rendering is missing');
   }
 }
 

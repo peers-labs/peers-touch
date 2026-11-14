@@ -287,7 +287,8 @@ def verify_original_surfaces() -> list[str]:
             gate.surface()
         source = session.execute_script.call_args_list[1].args[0]
         result = subprocess.run(
-            ["node", "-e", PAINT_STYLE_JS + """
+            ["node", "-e", PAINT_STYLE_JS + "\nconst desktop = "
+             + json.dumps(platform == "desktop") + ";\n" + """
 const assert = require('node:assert/strict');
 global.window = {visualViewport: null};
 global.innerWidth = 390; global.innerHeight = 800;
@@ -305,22 +306,25 @@ const make = (parent, top = 0, bottom = 800) => ({
     if (node === this) return true; } return false; },
   querySelector: () => null, querySelectorAll: () => [],
 });
-const root = make(null), thread = make(root), card = make(root, 50, 160);
+const root = make(null), card = make(root, 50, 160);
+const thread = make(desktop ? card : root);
 const body = make(card, 100, 150), anchor = make(thread, 200, 260);
 const comment = make(anchor, 210, 240), cover = make(null);
 root.dataset = {postId: 'post', sourceId: 'device.social', anchorCommentId: 'comment'};
 card.dataset = {postId: 'post'}; body.innerText = 'original body';
 thread.dataset = {momentsCommentThread: 'post'};
-anchor.dataset = {momentsComment: 'comment', searchAnchor: 'true',
+anchor.dataset = {momentsComment: 'comment', searchAnchor: 'true', highlighted: 'true',
   scrollAnchorId: 'comment', searchHighlighted: 'true'};
 comment.innerText = 'historical comment';
 root.querySelector = selector => selector.includes('social-moment-card') ? card : null;
 root.querySelectorAll = selector => selector.includes('data-scroll-anchor-id')
   ? [anchor] : selector.includes('social-moment-card') ? [card] : [];
-card.querySelector = () => body; card.querySelectorAll = () => [body];
+card.matches = selector => selector === '[data-acceptance-id="social-moment-card"]';
+card.querySelector = () => desktop ? null : body;
+card.querySelectorAll = selector => !desktop || selector === '.sk-post-body > p' ? [body] : [];
 thread.querySelectorAll = () => [anchor];
-thread.closest = () => ({parentElement: root});
-anchor.querySelector = () => comment;
+thread.closest = () => desktop ? card : {parentElement: root};
+anchor.querySelector = selector => !desktop || selector === '.sk-comment-text' ? comment : null;
 let covered = false;
 global.document = {
   activeElement: anchor,
@@ -328,7 +332,8 @@ global.document = {
     ? [root, thread, card, body, anchor, comment, cover] : [thread],
   elementFromPoint: (_x, y) => covered ? cover
     : y >= 100 && y <= 150 ? body : y >= 210 && y <= 240 ? comment
-    : y >= 200 && y <= 260 ? anchor : root,
+    : y >= 200 && y <= 260 ? anchor
+    : desktop && y >= 50 && y <= 160 ? card : root,
 };
 const observe = new Function(""" + json.dumps(source) + """);
 const sample = () => observe('post', 'comment', 'original body');
@@ -340,6 +345,30 @@ assert.equal(original.anchorFocused, true);
 assert.equal(original.threadVisible, true);
 assert.equal(original.anchorVisible, true);
 const cases = ['exact-original-control'];
+if (desktop) {
+  // The shared card owns this original thread. Neighbor loading/denial cannot
+  // veto it, and the original thread's actual busy state still cannot pass.
+  const rootQuery = root.querySelector;
+  root.querySelector = selector => selector.includes('data-private-moment-state') ? {} : rootQuery(selector);
+  assert.equal(sample().pending, false);
+  root.querySelector = rootQuery;
+  cases.push('neighbor-private-state-isolated');
+  thread.querySelector = selector => selector === '[aria-busy="true"]' ? {} : null;
+  assert.equal(sample().pending, true);
+  thread.querySelector = () => null;
+  assert.equal(sample().pending, false);
+  cases.push('shared-thread-busy-rejected');
+  anchor.dataset.highlighted = 'false';
+  assert.equal(sample().anchorCommentId, '');
+  assert.equal(sample().anchorVisible, false);
+  anchor.dataset.highlighted = 'true';
+  assert.equal(sample().anchorVisible, true);
+  cases.push('shared-unhighlighted-anchor-rejected');
+  card.dataset.postId = 'wrong';
+  assert.equal(sample().postId, '');
+  card.dataset.postId = 'post';
+  cases.push('shared-card-parent-binding');
+}
 root.style.opacity = '0';
 assert.equal(sample().threadVisible, false);
 assert.equal(sample().anchorVisible, false);
@@ -872,7 +901,7 @@ def verify_capture() -> list[str]:
     assert len(verify_visibility()) == 55
     assert len(verify_cleanup()) == 10
     assert len(verify_selectors()) == 6
-    assert len(verify_original_surfaces()) == 53
+    assert len(verify_original_surfaces()) == 57
     assert len(verify_continuity()) == 14
     assert len(verify_continuity_script()) == 7
     assert len(verify_return()) == 11

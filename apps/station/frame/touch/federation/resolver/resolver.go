@@ -23,8 +23,6 @@ import (
 	fedcache "github.com/peers-labs/peers-touch/station/frame/touch/federation/cache"
 	fedprofile "github.com/peers-labs/peers-touch/station/frame/touch/federation/profile"
 	profilepb "github.com/peers-labs/peers-touch/station/frame/touch/federation/profile/pb"
-	modelpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
-	modeldb "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -229,7 +227,11 @@ func (r *Resolver) resolveByHandle(
 	// profile revision changes.
 	if !r.skipCache {
 		if cached, err := fedcache.Lookup(ctx, canon); err == nil && cached != nil {
-			env, cachedLocator := cachedToProtos(cached, canon)
+			env := cached.Envelope
+			cachedLocator := &locatorpb.ActorLocatorRecord{
+				FederatedHandle: canon, HomeStationPeerId: cached.Actor.HomeStationPeerID,
+				HomeStationDomain: cached.Actor.HomeStationDomain, Seq: cached.Actor.LocatorSeq,
+			}
 			if env != nil && cachedLocator != nil {
 				rec, err = r.lookupLocator(ctx, canon)
 				if err != nil {
@@ -254,6 +256,9 @@ func (r *Resolver) resolveByHandle(
 					return nil, ErrTombstoned
 				}
 				if locatorMatchesCachedProfile(rec, cachedLocator) {
+					if err := verifyCachedProfile(cached, canon, rec, r.now()); err != nil {
+						return nil, err
+					}
 					if err := r.rememberRemoteStationKey(ctx, rec); err != nil {
 						return nil, err
 					}
@@ -393,64 +398,21 @@ func (r *Resolver) rememberRemoteStationKey(
 	return nil
 }
 
-// cachedToProtos rebuilds the resolver-return-shape protos from a
-// cached touch_actor row. We deliberately reconstruct rather than
-// store the raw envelope/locator bytes to keep the schema small —
-// the cache holds the projection a UI will render, not the
-// cryptographic transport message.
-//
-// Signing-related fields (signature / signing_key_pem / signing_key_kid)
-// stay zero-valued. Callers that receive a cache hit get a profile they
-// can render but MUST NOT re-emit downstream as a signed envelope: the
-// home station is the only legitimate signer for a given handle.
-func cachedToProtos(c *fedcache.Cached, canon string) (*profilepb.ActorProfileEnvelope, *locatorpb.ActorLocatorRecord) {
-	if c == nil || c.Actor == nil {
-		return nil, nil
+func verifyCachedProfile(c *fedcache.Cached, canon string,
+	rec *locatorpb.ActorLocatorRecord, now time.Time) error {
+	if c == nil || c.Actor == nil || c.Envelope == nil || rec == nil ||
+		c.Actor.PTID != c.Envelope.GetProfile().GetPeersTouch().GetNetworkId() ||
+		c.Envelope.GetHomeStationPeerId() != rec.GetHomeStationPeerId() ||
+		c.Envelope.GetHomeStationDomain() != rec.GetHomeStationDomain() ||
+		c.Envelope.GetExpiresAtUnixMs() != c.Actor.CachedUntilUnixMs {
+		return errors.New("resolver: cached profile identity does not bind its authority")
 	}
-	a := c.Actor
-
-	localPart := canon
-	if at := strings.IndexByte(canon, '@'); at >= 0 {
-		localPart = canon[:at]
+	if err := fedprofile.Verify(c.Envelope, fedprofile.VerifyOptions{
+		ExpectedHandle: canon, ExpectedSigningKeyPEM: rec.GetSigningKeyPem(), Now: now,
+	}); err != nil {
+		return fmt.Errorf("resolver: cached profile proof: %w", err)
 	}
-
-	profile := &modelpb.ActorProfile{
-		Username:          localPart,
-		Acct:              localPart,
-		DisplayName:       a.Name,
-		Note:              a.Summary,
-		Avatar:            a.Icon,
-		Header:            a.Image,
-		Url:               a.Url,
-		ServerDomain:      a.HomeStationDomain,
-		FederatedHandle:   canon,
-		HomeStationPeerId: a.HomeStationPeerID,
-		HomeStationDomain: a.HomeStationDomain,
-		Discoverability:   modelpb.ActorVisibility(a.Visibility),
-		Ref: &modelpb.ActorRef{
-			Ptid: a.PTID,
-			Acct: canon,
-			Kind: modeldb.ActorKindFromShorthand(a.Kind),
-		},
-	}
-	if a.PTID != "" {
-		profile.PeersTouch = &modelpb.PeersTouchInfo{NetworkId: a.PTID}
-	}
-
-	env := &profilepb.ActorProfileEnvelope{
-		FederatedHandle:   canon,
-		HomeStationPeerId: a.HomeStationPeerID,
-		HomeStationDomain: a.HomeStationDomain,
-		ExpiresAtUnixMs:   a.CachedUntilUnixMs,
-		Profile:           profile,
-	}
-	rec := &locatorpb.ActorLocatorRecord{
-		FederatedHandle:   canon,
-		HomeStationPeerId: a.HomeStationPeerID,
-		HomeStationDomain: a.HomeStationDomain,
-		Seq:               a.LocatorSeq,
-	}
-	return env, rec
+	return nil
 }
 
 // tombstoneEnvelope synthesises a placeholder envelope for cache

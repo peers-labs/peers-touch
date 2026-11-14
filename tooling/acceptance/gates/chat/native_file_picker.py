@@ -217,17 +217,16 @@ def select_native_file(
             f"Native file selection source is missing: {resolved_source}"
         )
     operator = runtime_binding.begin_file_chooser()
-    selected_path = runtime_binding.stage_native_file(
-        actor,
-        resolved_source,
-    )
     if operator is not None:
-        return _select_nonintrusive_file(
-            actor=actor, client=client, runtime_binding=runtime_binding,
-            source_path=resolved_source, selected_path=selected_path,
-            operator=operator, trigger=trigger, trigger_selector=trigger_selector,
-            timeout_seconds=timeout_seconds,
-        )
+        with operator:
+            selected_path = runtime_binding.stage_native_file(actor, resolved_source)
+            return _select_nonintrusive_file(
+                actor=actor, client=client, runtime_binding=runtime_binding,
+                source_path=resolved_source, selected_path=selected_path,
+                operator=operator, trigger=trigger, trigger_selector=trigger_selector,
+                timeout_seconds=timeout_seconds,
+            )
+    selected_path = runtime_binding.stage_native_file(actor, resolved_source)
     adapter = runtime_binding.native_adapter
     all_sessions = tuple(sessions)
     cooperative_activation = runtime_binding.request_cooperative_activation(

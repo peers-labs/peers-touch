@@ -68,17 +68,16 @@ const postId = arguments[0], commentId = arguments[1], bodyText = arguments[2];
 const threads = [...document.querySelectorAll('[data-moments-comment-thread]')]
   .filter(node => node.dataset.momentsCommentThread === postId);
 const thread = threads.length === 1 ? threads[0] : null;
-const root = thread?.closest('[data-moments-comments-region]')?.parentElement;
-const cards = root ? [...root.querySelectorAll('[data-acceptance-id="social-moment-card"]')]
-  .filter(node => node.dataset.postId === postId) : [];
-const card = cards.length === 1 ? cards[0] : null;
-const body = [...(card?.querySelectorAll('.ant-typography') || [])]
+const root = thread?.closest('[data-moments-comments-region]');
+const card = root?.matches('[data-acceptance-id="social-moment-card"]')
+  && root.dataset.postId === postId ? root : null;
+const body = [...(card?.querySelectorAll('.sk-post-body > p') || [])]
   .find(node => node.innerText.includes(bodyText));
 const anchors = thread ? [...thread.querySelectorAll('[data-moments-comment]')]
   .filter(node => node.dataset.momentsComment === commentId
-    && node.dataset.searchAnchor === 'true') : [];
+    && node.dataset.highlighted === 'true') : [];
 const anchor = anchors.length === 1 ? anchors[0] : null;
-const commentBody = anchor?.querySelector('div.ant-typography');
+const commentBody = anchor?.querySelector('.sk-comment-text');
 const threadPaint = targetVisibility(root, false);
 const postPaint = targetVisibility(body);
 const anchorPaint = targetVisibility(anchor);
@@ -92,7 +91,8 @@ return {
   anchorFocused: !!anchor && document.activeElement === anchor,
   threadVisible: threadPaint.visible, postVisible: postPaint.visible,
   anchorVisible: anchorPaint.visible && commentPaint.visible,
-  pending: !!root?.querySelector('.ant-spin-spinning,[data-private-moment-state]:not('
+  pending: !!thread?.querySelector('[aria-busy="true"]')
+    || !!root?.querySelector('[data-private-moment-state]:not('
     + '[data-private-moment-state="REMOTE_DELIVERY_PENDING"]):not('
     + '[data-private-moment-state="REMOTE_DELIVERY_RETRYING"])')
     || !card || !thread,
@@ -417,11 +417,14 @@ return {
             self.report.runtime["search"].setdefault("returnContext", {})[name] = {
                 "before": before_return,
             }
-            row = self.receiver.find_element(f'[data-resource-id="{resource_id}"]', 20)
+            # Semantic clicks activate the selected node's actual Open control.
+            row = self.receiver.find_element(
+                f'.pt-search-row[data-resource-id="{resource_id}"] .pt-search-row-target', 20,
+            )
             row.click()
             self.wait_js("!document.querySelector('.pt-search-field')", "original Social route")
             if "comment" in name:
-                target = f'[data-moments-comment="{resource_id}"][data-search-anchor="true"]'
+                target = f'[data-moments-comment="{resource_id}"][data-highlighted="true"]'
                 self.wait_js(
                     f"document.activeElement === document.querySelector({json.dumps(target)})",
                     "exact historical original comment focus",
@@ -505,7 +508,7 @@ return {
             self.receiver.find_element(".pt-search-footer button", 20).click()
             self.settled()
             self.visible("social_source_partial", lambda: self.query + " 原始正文" in self.rows()
-                         and any(copy in self.receiver.find_element(".pt-search-footer").text
+                         and any(copy in self.receiver.find_element(".pt-search-footer").text.casefold()
                                  for copy in ("暂不可用", "unavailable")))
         self.report.runtime["search"]["stationOutage"] = (
             SimulatorSocialGate._restart_source_bound_station(

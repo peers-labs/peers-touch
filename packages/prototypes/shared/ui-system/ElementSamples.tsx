@@ -18,7 +18,7 @@
  * real components (hooks live on the card-mounted component, never called
  * during another component's render), selected per card by id.
  */
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Accordion, ActionGroup, AgentAvatar, Alert, AudioPlayer, Autocomplete, Avatar, AvatarGroup,
   Badge, Block, BrandMark, Breadcrumb, Button, CalendarView, Card, Carousel, Center, Checkbox,
@@ -28,7 +28,11 @@ import {
   Dialog, Divider, DownloadButton, Drawer, EmojiArtwork, EmojiPicker, Empty, FeedbackHost, Field,
   FileDropzone, FilePicker, FileTypeGlyph, Flex, FloatingPanel, Form, FormField, FormFooter,
   FormGroup, Grid, GroupAvatar, GuideStep, Heading, HighlightText, HtmlPreview, Icon, IconButton,
-  Image, ImageChoice, InlineEdit, Layout, Link, List, ListItem, ListItemMeta, ListRow, ListSection,
+  Image, ImageChoice, ImageGrid, IdentityCard, IdentityTrigger, FollowButton, InlineEdit, Layout, Link, List, ListItem, ListItemMeta, ListRow, ListSection,
+  MomentCard, MomentAuthor, MomentTrustMeta, MomentReactionBar, MomentCommentRow, MomentCommentComposer, MomentScopeBar, MomentPoll,
+  MomentComposerSurface, MomentAudiencePicker, MomentCircleCard, MomentCircleEditor,
+  MomentPollComposer, createMomentPollDraft, momentPollDraftError,
+  UserProfileHeader, StatGrid, FeedSortFloat,
   Markdown, MentionPicker, Menu, NavigationToggle, NumberField, OTPField, OverflowHint,
   OverflowToolbar, PageHeader, Paragraph, Pagination, PasswordField, Popover, Progress, QrCode,
   RadioGroup, Rating, ReorderableList, ResizableNavigationRail, ResizablePanel, Result,
@@ -40,6 +44,7 @@ import {
 } from '@peers-touch/ui';
 import type { Availability, ResourceView } from '@peers-touch/ui';
 import { CAPABILITIES, CATEGORIES, type CapabilityRecord } from './registry';
+import { identityCopy } from './identity/identity-copy';
 
 export type SampleCondition = 'normal' | 'long' | 'disabled';
 export interface Ctx {
@@ -410,12 +415,201 @@ const CONTENT: Record<string, Renderer> = Object.fromEntries(CONTENT_IDS.map(id 
 /* Self-contained sample raster (no network): a labelled neutral ink block. */
 const SAMPLE_IMAGE = 'data:image/svg+xml;utf8,' + encodeURIComponent(
   "<svg xmlns='http://www.w3.org/2000/svg' width='240' height='140'><rect width='100%' height='100%' rx='10' fill='#1a1d20'/><text x='50%' y='55%' fill='#ffffff' font-family='sans-serif' font-size='20' text-anchor='middle'>样本图片</text></svg>");
+function IdentityCardStage({ c, trigger = false }: { c: Ctx; trigger?: boolean }) {
+  const [followed, setFollowed] = useState(false);
+  const [blocked, setBlocked] = useState(false);
+  const props = {
+    copy: identityCopy, name: c.L('陈屿', '这是一个用于检验名片边界的很长的显示名称'),
+    station: c.L('邻里书屋', '用于检验多行换行的很长站点显示名称'),
+    bio: '最近在照料窗边的薄荷。', followed, blocked, resolved: true,
+    followAvailability: c.unavailable, blockAvailability: c.unavailable,
+    onToggleFollow: () => setFollowed(value => !value),
+    onToggleBlock: () => setBlocked(value => !value),
+  };
+  return trigger
+    ? <IdentityTrigger {...props}><Button actionId="el.identity" label="打开身份名片" /></IdentityTrigger>
+    : <IdentityCard {...props} />;
+}
+function FollowButtonStage({ c }: { c: Ctx }) {
+  const [following, setFollowing] = useState(false);
+  return <FollowButton actionId="el.follow" following={following} availability={c.unavailable}
+    label={following ? identityCopy.following : identityCopy.follow}
+    onActivate={() => setFollowing(value => !value)} />;
+}
+function ImageGridStage({ c }: { c: Ctx }) {
+  return <ImageGrid images={Array.from({ length: 9 }, (_, index) => ({
+    resourceId: `image-${index}`, name: c.L(`图片 ${index + 1}`, `一张用于检验长替代文本的图片 ${index + 1}`),
+    source: SAMPLE_IMAGE, state: c.disabled ? 'unavailable' as const : 'available' as const,
+    failureReason: '图片不可用',
+  }))} copy={{ title: '图片', close: '关闭', previous: '上一张', next: '下一张',
+    singleImage: '只有一张图片', openImage: (index, total) => `查看图片 ${index}/${total}` }} />;
+}
+function MomentCardStage({ c }: { c: Ctx }) {
+  const [selected, setSelected] = useState(false), [comments, setComments] = useState(true);
+  const [commentLiked, setCommentLiked] = useState(false);
+  const [reactionUnresolved, setReactionUnresolved] = useState(false);
+  return <MomentCard postId="element-moment" copy={{ more: '更多', expand: '展开全文', collapse: '收起' }}
+    text={c.L('窗台的薄荷长出了新叶。', '这是一段用于验证动态长正文与换行的内容。'.repeat(30))}
+    author={<IdentityTrigger copy={identityCopy} name={c.L('陈屿', '很长的动态作者显示名称')} resolved>
+      <MomentAuthor name={c.L('陈屿', '很长的动态作者显示名称')} time="5 分钟前" label="查看名片"
+        avatar={<Avatar name="陈屿" size={48} />} />
+    </IdentityTrigger>}
+    trust={<MomentTrustMeta segments={[{ id: 'local', label: '本站' }, { id: 'audience', label: '公开' }]} />}
+    menuActions={[{ id: 'el.moment.edit', label: c.L('编辑正文', '编辑这条动态的全部公开正文'),
+      availability: c.unavailable }]}
+    actions={<MomentReactionBar postId="element-moment" commentsOpen={comments} commentCount={0}
+      reactions={[{ kind: 'like', emoji: '👍', label: '喜欢', count: selected ? 1 : 0,
+        selected, availability: c.unavailable }]}
+      copy={{ picker: '选择反应', add: '添加反应', selected: '，点击取消', comments: count => `${count} 条评论` }}
+      onToggleComments={() => setComments(value => !value)}
+      onToggleReaction={() => setSelected(value => !value)} />}
+    commentsOpen={comments}
+    comments={<>
+      <ul className="sk-comment-list"><MomentCommentRow commentId="element-comment"
+        avatar={<Avatar name="周禾" size={30} />} author={<button type="button" className="sk-comment-author">周禾</button>}
+        content={c.L('新叶真好。', '这是用于验证评论换行与极长文字的内容。'.repeat(10))} time="刚刚"
+        reaction={{
+          count: commentLiked ? 1 : 0, liked: commentLiked,
+          label: c.L('喜欢', '喜欢这条评论并保留已确认的计数'),
+          pending: reactionUnresolved,
+          error: reactionUnresolved ? '提交结果未知，计数保持不变' : undefined,
+          onActivate: () => c.disabled ? setReactionUnresolved(true) : setCommentLiked(value => !value),
+          retry: reactionUnresolved ? { label: '确认结果', onActivate: () => {
+            setReactionUnresolved(false); setCommentLiked(true);
+          } } : undefined,
+        }}
+        actions={<Button actionId="element.comment.reply" label="回复" className="sk-comment-action"
+          emphasis="quiet" availability={c.unavailable} />} /></ul>
+      <MomentCommentComposer><TextField aria-label="写评论" placeholder="写评论……" disabled={c.disabled} />
+        <IconButton actionId="element.comment.send" iconId="send" label="发送评论"
+          emphasis="primary" availability={c.unavailable} /></MomentCommentComposer>
+    </>} />;
+}
+function MomentPollStage({ c }: { c: Ctx }) {
+  const [choices, setChoices] = useState<number[]>([]);
+  const [unresolved, setUnresolved] = useState(false);
+  const [simulateUnknown, setSimulateUnknown] = useState(false), [closed, setClosed] = useState(false);
+  const [retained, setRetained] = useState<number[]>([]);
+  const options = ['共享书架', '种子交换', '修补旧衣'];
+  const confirm = (next: number[]) => { setChoices(next); setUnresolved(false); };
+  return <div><Checkbox checked={simulateUnknown} onCheckedChange={setSimulateUnknown} label="模拟提交结果未知" />
+    <Checkbox checked={closed} onCheckedChange={setClosed} label="投票已截止" />
+    <MomentPoll postId="element-poll" question={c.L('周末做什么？', '周末想一起参加哪两项社区活动？')}
+    options={options.map((text, index) => ({ text: c.L(text, `${text}：适合邻居一起参与的周末活动`),
+      votes: choices.includes(index) ? 1 : 0 }))}
+    minChoices={1} maxChoices={2} confirmedChoices={choices} totalVotes={choices.length ? 1 : 0}
+    closed={closed} disabled={c.disabled} unresolved={unresolved}
+    status={unresolved ? '提交结果未知，已确认人数保持不变' : undefined}
+    onSubmit={next => { setRetained(next); if (simulateUnknown) setUnresolved(true); else confirm(next); }}
+    onRetry={unresolved ? () => confirm(retained) : undefined}
+    copy={{ submit: '投票', replace: '更新选票', cancel: '取消选择', retry: '确认结果', closed: '投票已截止',
+      choices: (min, max) => `请选择 ${min}–${max} 个选项`, total: count => `${count} 人已投票` }} /></div>;
+}
+function MomentPollComposerStage({ c }: { c: Ctx }) {
+  const [draft, setDraft] = useState(() => ({ ...createMomentPollDraft(), question: '周末活动',
+    options: ['共享书架', '种子交换'] }));
+  const error = momentPollDraftError(draft);
+  return <MomentPollComposer value={draft} onChange={setDraft} disabled={c.disabled}
+    error={error ? '请检查题目、不同选项、选择数量和截止时间' : undefined}
+    copy={{ question: c.L('投票题目', '你希望邻居们在这个周末一起参加什么活动？'),
+      option: index => `选项 ${index}`, add: '添加选项', remove: '移除选项',
+      minimum: '最少选择数', maximum: '最多选择数', expiry: '投票截止时间',
+      description: '填写 2–10 个不同选项，最多选择 1 项即为单选。' }} />;
+}
+function MomentScopeStage({ c }: { c: Ctx }) {
+  const [scope, setScope] = useState<'feed' | 'circles'>('feed');
+  const [query, setQuery] = useState('');
+  return <MomentScopeBar value={scope} onChange={setScope}
+    options={[{ value: 'feed', label: '动态' }, { value: 'circles', label: '圈友' }]}
+    query={query} onQueryChange={setQuery}
+    copy={{ scope: '动态范围', search: c.L('搜索动态与圈友', '搜索当前范围内的动态内容与圈友身份'),
+      action: scope === 'feed' ? '发动态' : '新建圈子' }}
+    actionId="element.scope.create" onAction={() => setQuery('')} disabled={c.disabled} />;
+}
+function SocialProfileStage({ c }: { c: Ctx }) {
+  const statistics = [{ id: 'posts', label: c.L('动态', '由本人发布的动态数量'), value: 12 },
+    { id: 'followers', label: '粉丝', value: 8 }];
+  return <div style={{ display: 'grid', gap: 12, width: '100%' }}>
+    <UserProfileHeader name={c.L('陈屿', '这是一个很长的个人主页显示名称')}
+      station={c.L('邻里书屋', '一个具有很长显示名称的远程站点')}
+      statistics={statistics} actions={<FollowButton actionId="el.profile.follow" following={false}
+        label="关注" availability={c.unavailable} onActivate={() => {}} />} />
+    <StatGrid statistics={statistics} />
+  </div>;
+}
+function MomentComposeStage({ c }: { c: Ctx }) {
+  const [text, setText] = useState('');
+  const [audience, setAudience] = useState('public');
+  const [actors, setActors] = useState<string[]>([]);
+  return <MomentComposerSurface images={[]} disabled={c.disabled} onRemoveImage={() => {}}
+    copy={{ removeImage: '移除图片', retryImage: '重试图片' }}
+    editor={<TextArea value={text} data-compose-value={text} disabled={c.disabled} onValueChange={setText} minimumRows={4}
+      aria-label="动态内容" placeholder={c.L('分享此刻的想法……', '分享一个具有长文案和换行内容的动态，草稿会保留。')} />}
+    toolbar={<Button actionId="element.compose.attach" label="添加图片" emphasis="quiet" availability={c.unavailable} />}
+    audience={<MomentAudiencePicker value={audience} onChange={setAudience} disabled={c.disabled}
+      options={[{ value: 'public', label: '公开' }, { value: 'allow', label: '部分可见' }]}
+      people={[{ id: 'chen', label: c.L('陈屿', '这是一个非常长的圈友显示名称') }]} actorIds={actors}
+      onToggleActor={audience === 'allow' ? id => setActors(list => list.includes(id) ? [] : [id]) : undefined}
+      copy={{ audience: '可见范围', people: '仅这些人可见' }} />}
+    footer={<Button actionId="element.compose.publish" emphasis="primary" label="发布"
+      availability={c.unavailable ?? (text.trim() ? undefined : { kind: 'disabled', reason: '请输入动态内容' })} />} />;
+}
+function MomentCircleStage({ c, editor = false }: { c: Ctx; editor?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState({ name: c.L('小区生活圈', '这是一个很长的圈友受众分组名称'),
+    description: '', memberIds: ['chen'] });
+  const people = [{ id: 'chen', name: c.L('陈屿', '这是一个具有长显示名称的圈友'),
+    avatar: <Avatar name="陈屿" size={28} /> }, { id: 'zhou', name: '周禾', avatar: <Avatar name="周禾" size={28} /> }];
+  return <>
+    {editor ? <Button actionId="element.circle.edit" label="管理圈子" availability={c.unavailable}
+      onActivate={() => setOpen(true)} /> : <MomentCircleCard id="element-circle" name={draft.name}
+      description={c.L('邻居与朋友', '这是一个很长的分组说明，验证窄布局、换行以及成员头像聚合。'.repeat(3))}
+      members={people} copy={{ manage: '管理生活圈', members: '2 位成员' }} onOpen={() => setOpen(true)} />}
+    {open && <MomentCircleEditor id="element-circle" draft={draft} onChange={setDraft} people={people}
+      pending={c.disabled} onDismiss={() => setOpen(false)} onSave={() => setOpen(false)}
+      copy={{ title: '管理圈子', description: '选择只改变草稿，保存后生效。', close: '关闭',
+        cancel: '取消', save: '保存', name: '圈子名称', namePlaceholder: '圈子名称',
+        descriptionLabel: '圈子说明', descriptionPlaceholder: '描述（可选）', nameRequired: '请输入圈子名称',
+        members: count => `${count} 位成员`, candidates: '添加已知人', noCandidates: '已知人都在分组中',
+        self: '我', add: name => `添加 ${name}`, remove: name => `移除 ${name}`, delete: '删除分组' }} />}
+  </>;
+}
+function FeedSortStage({ c }: { c: Ctx }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [sort, setSort] = useState<'recent' | 'hot'>('recent');
+  return <div ref={scrollRef} style={{ height: 180, overflowY: 'auto', width: '100%' }}>
+    <FeedSortFloat value={sort} onChange={setSort} scrollRef={scrollRef}
+      copy={{ label: '动态排序', recent: c.L('最新', '按最新时间排序'), hot: c.L('热门', '按当前热度排序'), top: '回到最顶' }} />
+    <div style={{ height: 500, paddingTop: 50 }}>滚动查看回顶动作</div>
+  </div>;
+}
 const IDENTITY: Record<string, Renderer> = {
   Icon: () => <><Icon iconId="search" label="搜索" /><Icon iconId="bell" /><Icon iconId="lock" /><Icon iconId="settings" /></>,
   BrandMark: () => <BrandMark brandId="github" size={24} label="GitHub" />,
   /* Identity discipline: own tile carries pine, every other tile is ink. */
   Avatar: () => <><Avatar name="林晚" size={44} background="#2f6a50" /><Avatar name="陈屿" size={32} background="#3d434a" /><Avatar size={40} fallback={<Icon iconId="bot" />} /></>,
   AvatarGroup: () => <AvatarGroup><Avatar name="周禾" size={32} background="#3d434a" /><Avatar name="苏禾" size={32} background="#3d434a" /><Avatar size={32} fallback="+3" /></AvatarGroup>,
+  IdentityCard: c => <IdentityCardStage c={c} />,
+  IdentityTrigger: c => <IdentityCardStage c={c} trigger />,
+  FollowButton: c => <FollowButtonStage c={c} />,
+  ImageGrid: c => <ImageGridStage c={c} />,
+  Lightbox: c => <ImageGridStage c={c} />,
+  MomentCard: c => <MomentCardStage c={c} />,
+  MomentCommentRow: c => <MomentCardStage c={c} />,
+  MomentCommentComposer: c => <MomentCardStage c={c} />,
+  MomentPoll: c => <MomentPollStage c={c} />,
+  MomentPollComposer: c => <MomentPollComposerStage c={c} />,
+  MomentScopeBar: c => <MomentScopeStage c={c} />,
+  MomentComposerSurface: c => <MomentComposeStage c={c} />,
+  MomentAudiencePicker: c => <MomentComposeStage c={c} />,
+  MomentCircleCard: c => <MomentCircleStage c={c} />,
+  MomentCircleEditor: c => <MomentCircleStage c={c} editor />,
+  MomentAuthor: c => <MomentCardStage c={c} />,
+  MomentTrustMeta: c => <MomentCardStage c={c} />,
+  MomentReactionBar: c => <MomentCardStage c={c} />,
+  UserProfileHeader: c => <SocialProfileStage c={c} />,
+  StatGrid: c => <SocialProfileStage c={c} />,
+  FeedSortFloat: c => <FeedSortStage c={c} />,
   AgentAvatar: () => <AgentAvatar name="助理" size={40} />,
   GroupAvatar: () => <GroupAvatar name="邻里群" size={44} members={[{ id: '1', name: '林' }, { id: '2', name: '陈' }, { id: '3', name: '周' }, { id: '4', name: '苏' }]} />,
   EmojiArtwork: () => <EmojiArtwork emoji="🌿" label="松绿表情" />,
@@ -547,6 +741,12 @@ const WIDE = new Set<string>([
   'Breadcrumb', 'Steps', 'SideNav', 'SectionNav', 'PageHeader', 'Grid', 'Block', 'Card', 'Divider',
   'ScrollArea', 'Layout', 'Header', 'ResizablePanel', 'ResizableNavigationRail', 'OverflowHint',
   'SurfaceFade', 'Paragraph', 'ListSection', 'ListRow', 'Image', 'ImageViewer', 'HtmlPreview',
+  'ImageGrid', 'Lightbox', 'IdentityCard',
+  'MomentCard', 'MomentAuthor', 'MomentTrustMeta', 'MomentReactionBar',
+  'MomentCommentRow', 'MomentCommentComposer', 'MomentPoll', 'MomentPollComposer',
+  'MomentScopeBar',
+  'MomentComposerSurface', 'MomentAudiencePicker', 'MomentCircleCard', 'MomentCircleEditor',
+  'UserProfileHeader', 'StatGrid', 'FeedSortFloat',
   'VideoPlayer', 'AudioPlayer', 'Carousel', 'CodeBlock', 'CodeEditor', 'CodeDiff', 'DiagramPreview',
   'Markdown', 'Autocomplete', 'CommandPicker', 'SlashCommandMenu', 'MentionPicker', 'EmojiPicker',
   'FileDropzone', 'ReorderableList', 'RichTextEditor', 'CalendarView', 'GuideStep',

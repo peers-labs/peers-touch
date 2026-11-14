@@ -18,6 +18,8 @@ pub struct AuthSessionPayload {
     pub command: String,
     pub status: String,
     pub actor_ptid: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_activation_id: Option<String>,
     #[serde(skip)]
     pub session_token: Option<String>,
     pub name: Option<String>,
@@ -1831,7 +1833,52 @@ pub struct SocialGetRelationshipInput {
 pub struct SocialRelationshipMutationInput {
     pub target_actor_ptid: String,
     pub target_home_station_peer_id: String,
+    #[serde(deserialize_with = "deserialize_relationship_revision")]
     pub observed_revision: i64,
+}
+
+fn deserialize_relationship_revision<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<i64, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Revision { Decimal(String), Number(i64) }
+    match Revision::deserialize(deserializer)? {
+        Revision::Decimal(value) => value.parse::<i64>()
+            .ok().filter(|revision| *revision >= 0 && revision.to_string() == value)
+            .ok_or_else(|| serde::de::Error::custom("revision must be a canonical nonnegative int64")),
+        Revision::Number(value) if (0..=9_007_199_254_740_991).contains(&value) => Ok(value),
+        _ => Err(serde::de::Error::custom("numeric revision exceeds the safe transport range")),
+    }
+}
+
+#[cfg(test)]
+mod social_relationship_input_tests {
+    use super::SocialRelationshipMutationInput;
+
+    fn parse(revision: serde_json::Value) -> Result<SocialRelationshipMutationInput, serde_json::Error> {
+        serde_json::from_value(serde_json::json!({
+            "target_actor_ptid": "ptid:bob",
+            "target_home_station_peer_id": "home-bob",
+            "observed_revision": revision,
+        }))
+    }
+
+    #[test]
+    fn preserves_full_int64_decimal_revisions() {
+        assert_eq!(parse(serde_json::json!("9223372036854775807")).unwrap().observed_revision, i64::MAX);
+        assert_eq!(parse(serde_json::json!(0)).unwrap().observed_revision, 0);
+        assert_eq!(parse(serde_json::json!("9007199254740993")).unwrap().observed_revision, 9_007_199_254_740_993);
+    }
+
+    #[test]
+    fn rejects_noncanonical_or_unsafe_revision_inputs() {
+        for revision in [
+            serde_json::json!(9_007_199_254_740_993_i64), serde_json::json!(-1),
+            serde_json::json!(0.5), serde_json::json!("01"), serde_json::json!("+1"),
+            serde_json::json!(" 1"), serde_json::json!("-1"), serde_json::json!("9223372036854775808"),
+        ] {
+            assert!(parse(revision).is_err());
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1869,8 +1916,28 @@ pub struct SocialCircleRemoveMembersInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialCircleListInput {
+    #[serde(default)]
+    pub cursor: Option<String>,
+    #[serde(default)]
+    pub limit: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialListBlockedActorsInput {
+    #[serde(default)]
+    pub cursor: Option<String>,
+    #[serde(default)]
+    pub limit: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SocialCircleListMembersInput {
     pub circle_id: String,
+    #[serde(default)]
+    pub cursor: Option<String>,
+    #[serde(default)]
+    pub limit: Option<i32>,
 }
 
 // Read-only Federation context and discovery inputs.

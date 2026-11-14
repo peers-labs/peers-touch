@@ -442,6 +442,7 @@ pub struct StationClient {
     executor: Arc<dyn StationRequestExecutor>,
     device_id: Arc<RwLock<Option<String>>>,
     resource_origins: Arc<RwLock<HashMap<String, Vec<String>>>>,
+    expected_scope: Option<StationRequestScope>,
 }
 
 impl StationClient {
@@ -450,6 +451,7 @@ impl StationClient {
             executor,
             device_id: Arc::new(RwLock::new(None)),
             resource_origins: Arc::new(RwLock::new(HashMap::new())),
+            expected_scope: None,
         }
     }
 
@@ -485,6 +487,14 @@ impl StationClient {
 
     pub fn active_scope(&self) -> Option<StationRequestScope> {
         self.executor.active_scope()
+    }
+
+    /// Bind every request in one identity-captured operation, including
+    /// nested manifest/profile reads, before runtime dispatch can select a route.
+    pub fn bound_to_scope(&self, scope: &StationRequestScope) -> Self {
+        let mut client = self.clone();
+        client.expected_scope = Some(scope.clone());
+        client
     }
 
     pub fn active_endpoint_origin(&self) -> Option<String> {
@@ -531,8 +541,18 @@ impl StationClient {
 
     pub fn execute_raw(
         &self,
-        request: StationRequest,
+        mut request: StationRequest,
     ) -> Result<StationResponse, StationClientError> {
+        if let Some(scope) = &self.expected_scope {
+            if request.expected_scope.as_ref().is_some_and(|expected| expected != scope) {
+                return Err(StationClientError::new(
+                    StationClientErrorKind::Cancelled,
+                    "Station request conflicts with its captured scope",
+                    None,
+                ));
+            }
+            request.expected_scope = Some(scope.clone());
+        }
         let replay_policy = request.replay_policy.clone();
         self.executor
             .execute(request)
@@ -2025,6 +2045,51 @@ pub fn probe_station(url: &str) -> (bool, Option<String>, Option<String>, Option
 mod tests {
     use super::*;
     use search_core::model::wire::{HydrationRequest, QueryIntent, SearchResponse};
+
+    struct SwitchedScopeExecutor {
+        captured: StationRequestScope,
+        requests: std::sync::atomic::AtomicUsize,
+    }
+
+    impl StationRequestExecutor for SwitchedScopeExecutor {
+        fn execute(&self, request: StationRequest) -> Result<StationResponse, StationTransportError> {
+            // The original executor rejects this scope before submitting bytes.
+            // A request with None would instead inherit the replacement Station.
+            assert_eq!(request.expected_scope.as_ref(), Some(&self.captured));
+            assert_ne!(request.expected_scope, self.active_scope());
+            self.requests.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Err(StationTransportError::new(
+                StationTransportErrorKind::StaleRoute, "Station switched before dispatch", false,
+            ))
+        }
+        fn active_scope(&self) -> Option<StationRequestScope> {
+            Some(StationRequestScope { station_peer_id: "station-b".into(), lifecycle_generation: 2 })
+        }
+        fn active_station_peer_id(&self) -> Option<String> { Some("station-b".into()) }
+        fn active_endpoint_origin(&self) -> Option<String> { None }
+    }
+
+    #[test]
+    fn captured_scope_survives_switch_for_submission_and_nested_identity_reads() {
+        let scope = StationRequestScope { station_peer_id: "station-a".into(), lifecycle_generation: 1 };
+        let executor = Arc::new(SwitchedScopeExecutor {
+            captured: scope.clone(), requests: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let original = StationClient::new(executor.clone());
+        let client = original.bound_to_scope(&scope);
+        assert_eq!(original.expected_scope, None);
+        for path in [
+            "/api/v1/social/feed/events/submit", "/api/v1/social/feed/read",
+            "/actor/endpoint-manifest", "/actor/federation/profile",
+            "/sub-federation/contexts", "/actor/federation/resolve",
+        ] {
+            let error = client.request_proto_for_device::<(), ()>(
+                Method::POST, path, "captured-token", None, None, "captured-device",
+            ).unwrap_err();
+            assert!(matches!(error.kind, StationClientErrorKind::StaleRoute));
+        }
+        assert_eq!(executor.requests.load(std::sync::atomic::Ordering::SeqCst), 6);
+    }
 
     #[derive(Clone, Copy)]
     enum ReadWait {

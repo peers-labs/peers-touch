@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input, Typography, message } from 'antd';
 import { ArrowLeft, MessageCircle, Send, X } from 'lucide-react';
+import { Button as SocialButton, MomentCommentRow } from '@peers-touch/ui';
+import '@peers-touch/ui/styles.css';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import { MobileAvatar } from '../../components/MobileAvatar';
@@ -18,8 +20,9 @@ import {
   type SocialActorIdentityFallback,
 } from '../../features/social/useSocialActorIdentity';
 import type { Comment } from '../../gen/proto/domain/social/comment_pb';
-import type { Post } from '../../gen/proto/domain/social/post_pb';
+import { ReactionKind, type Post } from '../../gen/proto/domain/social/post_pb';
 import type { PrivateCommentProjection } from '../../services/mobileCommands';
+import { privateReactionTargetKey } from '../../runtimes/privateMomentsRuntime';
 import type { MomentReadSource } from '../../services/gateways/momentsGateway';
 import { MomentFeedItem } from './MomentFeedItem';
 import {
@@ -51,6 +54,8 @@ interface MomentCommentsSectionProps {
     | 'retry'
     | 'submitPrivateComment'
     | 'readPrivateComments'
+    | 'reactComment'
+    | 'retryCommentReaction'
   >;
   readonly onReact: (postId: string, reactionKind: number) => void;
   readonly onOpenAuthor?: (actorPtid: string, federationId: string) => void;
@@ -175,7 +180,7 @@ export function MomentCommentsSection({
   const [sending, setSending] = useState(false);
   const [expanded, setExpanded] = useState(Boolean(commentId));
   const [sendError, setSendError] = useState(false);
-  const commentAnchorRef = useRef<HTMLDivElement>(null);
+  const commentAnchorRef = useRef<HTMLUListElement>(null);
 
   useEffect(() => {
     setExpanded(Boolean(commentId));
@@ -300,7 +305,8 @@ export function MomentCommentsSection({
   useEffect(() => {
     if (!anchorVisible || loading || !canRenderThread) return;
     const frame = requestAnimationFrame(() => {
-      const target = commentAnchorRef.current;
+      const target = Array.from(commentAnchorRef.current?.querySelectorAll<HTMLElement>('[data-comment-id]') ?? [])
+        .find((element) => element.dataset.commentId === commentId);
       target?.scrollIntoView({ block: 'center', behavior: 'auto' });
       target?.focus({ preventScroll: true });
     });
@@ -424,35 +430,36 @@ export function MomentCommentsSection({
         )}
 
         {canRenderThread && visibleComments.length > 0 && (
-          <div
+          <ul
             className="moments-comments-items"
+            ref={commentAnchorRef}
             data-comment-total={comments.length}
             data-comment-visible={visibleComments.length}
           >
             {visibleComments.map((comment) => (
-              <div
+              <CommentItem
                 key={commentViewId(comment)}
-                data-scroll-anchor-id={commentViewId(comment)}
-                data-search-highlighted={commentViewId(comment) === commentId || undefined}
-                ref={commentViewId(comment) === commentId ? commentAnchorRef : undefined}
-                tabIndex={commentViewId(comment) === commentId ? -1 : undefined}
-                style={commentViewId(comment) === commentId ? {
-                  outline: '2px solid var(--brand-primary)',
+                comment={comment}
+                highlighted={commentViewId(comment) === commentId}
+                threadAuthorFallback={threadAuthorFallback}
+                onReply={(target, authorName) => setReplyTarget({ comment: target, authorName })}
+                onDelete={!privateRoute && comment.route === 'PUBLIC' ? handleDelete : undefined}
+                reaction={privateRoute ? {
+                  pending: projection?.runtime.privateSocial?.reactionPendingTargets?.includes(
+                    privateReactionTargetKey(postId, commentViewId(comment), ReactionKind.REACTION_LIKE),
+                  ) ?? false,
+                  command: projection?.runtime.privateSocial?.reactionCommands.find((command) => (
+                    command.postId === postId && command.commentId === commentViewId(comment) && command.kind === ReactionKind.REACTION_LIKE
+                  )),
+                  failed: Boolean(projection?.runtime.privateSocial?.reactionErrorsByTarget?.[
+                    privateReactionTargetKey(postId, commentViewId(comment), ReactionKind.REACTION_LIKE)
+                  ]),
+                  onActivate: () => { void intents.reactComment(postId, commentViewId(comment)).catch(() => undefined); },
+                  onRetry: () => { void intents.retryCommentReaction(postId, commentViewId(comment)).catch(() => undefined); },
                 } : undefined}
-              >
-                <CommentItem
-                  comment={comment}
-                  threadAuthorFallback={threadAuthorFallback}
-                  onReply={(target, authorName) =>
-                    setReplyTarget({ comment: target, authorName })
-                  }
-                  onDelete={
-                    !privateRoute && comment.route === 'PUBLIC' ? handleDelete : undefined
-                  }
-                />
-              </div>
+              />
             ))}
-          </div>
+          </ul>
         )}
 
         {canRenderThread &&
@@ -629,6 +636,14 @@ interface CommentItemProps {
   readonly threadAuthorFallback: SocialActorIdentityFallback | null;
   readonly onReply: (comment: CommentView, authorName: string) => void;
   readonly onDelete?: (commentId: string) => void;
+  readonly highlighted?: boolean;
+  readonly reaction?: {
+    pending: boolean;
+    failed: boolean;
+    command?: import('../../services/mobileCommands').PrivateReactionCommandProjection;
+    onActivate: () => void;
+    onRetry: () => void;
+  };
 }
 
 function CommentItem({
@@ -636,6 +651,8 @@ function CommentItem({
   threadAuthorFallback,
   onReply,
   onDelete,
+  highlighted,
+  reaction,
 }: CommentItemProps) {
   const { t } = useMobileI18n();
   const publicComment = comment.route === 'PUBLIC' ? comment.comment : null;
@@ -645,51 +662,50 @@ function CommentItem({
   const deleted = publicComment?.isDeleted ?? false;
   if (deleted) {
     return (
-      <div className="moments-comment-item moments-comment-item--deleted">
-        <Text type="secondary">{t('mobile.moments.comment.deleted')}</Text>
-      </div>
+      <MomentCommentRow commentId={commentViewId(comment)} avatar={null} author={null}
+        content={<Text type="secondary">{t('mobile.moments.comment.deleted')}</Text>} />
     );
   }
+  const like = comment.route === 'PRIVATE'
+    ? comment.comment.reactions?.find((summary) => summary.kind === ReactionKind.REACTION_LIKE) : undefined;
+  const count = comment.route === 'PUBLIC' ? comment.comment.likesCount
+    : BigInt(like?.count ?? '0');
+  const liked = comment.route === 'PUBLIC' ? comment.comment.isLiked : (like?.reactedByViewer ?? false);
+  const commandPending = reaction?.command && !['REACTION_COMMITTED', 'REACTION_REJECTED'].includes(reaction.command.state);
   return (
-    <div className="moments-comment-item">
-      <MobileAvatar
+    <MomentCommentRow commentId={commentViewId(comment)} highlighted={highlighted}
+      data-scroll-anchor-id={commentViewId(comment)}
+      data-search-highlighted={highlighted || undefined}
+      avatar={<MobileAvatar
         identityKey={authorIdentity.actorPtid}
         src={authorIdentity.avatar}
         name={authorIdentity.displayName}
         size={28}
-      />
-      <div className="moments-comment-item__body">
-        <Text strong className="moments-comment-item__author">
+      />}
+      author={<Text strong>
           {authorIdentity.displayName}
-        </Text>
-        {commentViewReplyTo(comment) && (
-          <Text type="secondary" className="moments-comment-item__reply-badge">
-            {t('moments.comment.reply')}
-          </Text>
-        )}
-        <Paragraph className="moments-comment-item__content">
+        </Text>}
+      content={<>
+        {commentViewReplyTo(comment) && <Text type="secondary">{t('moments.comment.reply')} </Text>}
           {comment.route === 'PUBLIC'
             ? comment.comment.content
             : comment.comment.text}
-        </Paragraph>
-        <div className="moments-comment-item__actions">
-          <button
-            type="button"
-            onClick={() => onReply(comment, authorIdentity.displayName)}
-          >
-            {t('moments.comment.reply')}
-          </button>
-          {onDelete && (
-            <button
-              type="button"
-              onClick={() => onDelete(commentViewId(comment))}
-            >
-              {t('moments.comment.delete')}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
+      </>}
+      actions={<>
+        <SocialButton actionId={`comment.reply.${commentViewId(comment)}`} emphasis="quiet" density="compact"
+          label={t('moments.comment.reply')} onActivate={() => onReply(comment, authorIdentity.displayName)} />
+        {onDelete && <SocialButton actionId={`comment.delete.${commentViewId(comment)}`} emphasis="quiet" density="compact"
+          label={t('moments.comment.delete')} onActivate={() => onDelete(commentViewId(comment))} />}
+      </>}
+      reaction={reaction ? {
+        count, liked, label: t('moments.comment.likeCount', { value: String(count) }),
+        pending: reaction.pending || Boolean(commandPending),
+        error: reaction.command?.errorCode || reaction.failed ? t('mobile.moments.feed.error') : undefined,
+        onActivate: reaction.onActivate,
+        retry: commandPending && !reaction.pending
+          ? { label: t('mobile.moments.feed.retry'), onActivate: reaction.onRetry } : undefined,
+      } : undefined}
+    />
   );
 }
 

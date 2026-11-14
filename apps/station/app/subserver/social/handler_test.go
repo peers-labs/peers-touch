@@ -107,6 +107,7 @@ func newHandlerFixture(t *testing.T) *handlerFixture {
 	if err := gdb.AutoMigrate(
 		&db.Actor{},
 		&db.SocialPublicPost{},
+		&infrastructure.FeedObjectRecord{},
 		&db.SocialMomentDelivery{},
 		&db.SocialComment{},
 		&db.SocialReaction{},
@@ -144,7 +145,7 @@ CREATE TABLE friend_chat_friendships (
 	groups := application.NewNoopGroupMembershipChecker()
 	repos := infrastructure.NewRepos(gdb)
 
-	reactionSvc := application.NewReactionService(gdb, repos)
+	reactionSvc := application.NewReactionService(repos)
 	momentSvc := application.NewMomentService(gdb, repos, resolver, groups, application.NewNoopMediaResolver(), reactionSvc)
 	commentSvc := application.NewCommentService(repos, momentSvc)
 	circleSvc := application.NewCircleService(repos)
@@ -247,11 +248,25 @@ func (f *handlerFixture) seedMoment(
 	if !ok {
 		f.t.Fatalf("seed actor %d has no authenticated PTID", userID)
 	}
-	post, err := f.subserver.momentSvc.CreateMoment(ctx, request, actorPTID)
+	converter := domain.NewPostConverter()
+	post, err := converter.CreateRequestToDomain(request, actorPTID, nil)
+	if err != nil {
+		f.t.Fatalf("convert fixture moment: %v", err)
+	}
+	row, err := converter.DomainToPublicDB(post)
+	if err != nil {
+		f.t.Fatalf("convert fixture public row: %v", err)
+	}
+	row.AuthorID = userID
+	if err := f.gdb.WithContext(ctx).Create(row).Error; err != nil {
+		f.t.Fatalf("seed fixture moment: %v", err)
+	}
+	post.ID, post.CreatedAt, post.UpdatedAt = row.ID, row.CreatedAt, row.UpdatedAt
+	wire, err := converter.DomainToProto(post)
 	if err != nil {
 		f.t.Fatalf("seed moment: %v", err)
 	}
-	return post
+	return wire
 }
 
 func textPostReq(audience *model.Audience, text string) *model.CreatePostRequest {
@@ -382,14 +397,14 @@ func TestMomentRoutesBindCanonicalPostIDField(t *testing.T) {
 	}
 }
 
-func TestPrivateReactionDefersAuthorizationToReactionOwner(t *testing.T) {
+func TestPrivateReactionFailsWithoutItsSignedCommandOwner(t *testing.T) {
 	fixture := newHandlerFixture(t)
-	if err := fixture.subserver.assertReactionTargetReadable(
-		context.Background(),
-		"01M3CSJFM7C6BV8N37J1A4NQHM",
-		"ptid:v1:actor:peers:p:bob:bob-fingerprint",
-	); err != nil {
-		t.Fatalf("private reaction preflight must defer to ReactionService: %v", err)
+	response, err := fixture.subserver.handleReact(
+		fixture.withViewer(2),
+		&model.ReactToPostRequest{PostId: "01M3CSJFM7C6BV8N37J1A4NQHM", Kind: model.ReactionKind_REACTION_LIKE},
+	)
+	if err == nil || response != nil {
+		t.Fatalf("private reaction bypassed signed Owner: %+v, %v", response, err)
 	}
 }
 
@@ -999,17 +1014,12 @@ func TestPublicCommentPointAndListProjectUnifiedResource(t *testing.T) {
 		1,
 		textPostReq(&model.Audience{Kind: model.Audience_PUBLIC}, "public"),
 	)
-	created, err := fixture.subserver.handleCreateComment(
-		fixture.withViewer(1),
-		&model.CreateCommentRequest{
-			PostId:  public.GetId(),
-			Content: "public reply",
-		},
-	)
-	if err != nil {
+	row := &db.SocialComment{PostID: domain.ParseID(public.GetId()), AuthorID: 1,
+		PostClass: db.PostClassPublic, TextBody: "public reply"}
+	if err := fixture.gdb.Create(row).Error; err != nil {
 		t.Fatal(err)
 	}
-	commentID := created.GetComment().GetId()
+	commentID := fmt.Sprintf("%d", row.ID)
 	point, err := fixture.subserver.handleGetMomentCommentResource(
 		fixture.withViewer(1),
 		&privatecontentpb.GetMomentCommentResourceRequest{
@@ -1335,13 +1345,8 @@ func TestSocialPublicReadRoutesUseStrictOptionalJWT(t *testing.T) {
 			),
 		)
 
-	publicPost, err := fixture.subserver.handleCreatePost(
-		fixture.withViewer(41),
-		textPostReq(&model.Audience{Kind: model.Audience_PUBLIC}, "public"),
-	)
-	if err != nil {
-		t.Fatalf("seed public post: %v", err)
-	}
+	publicPost := &model.CreatePostResponse{Post: fixture.seedMoment(41,
+		textPostReq(&model.Audience{Kind: model.Audience_PUBLIC}, "public"))}
 	_, validToken, err := provider.Authenticate(context.Background(), coreauth.Credentials{
 		SubjectID: publicPost.Post.AuthorPtid,
 		SessionID: "live-session",
@@ -1569,18 +1574,11 @@ func TestHandler_CreatePost_RejectsAnonymous(t *testing.T) {
 	}
 }
 
-func TestHandler_CreatePost_AuthorizedUserCreatesPost(t *testing.T) {
+func TestHandler_CreatePost_AuthorizedUserRequiresSignedFeed(t *testing.T) {
 	f := newHandlerFixture(t)
 	resp, err := f.subserver.handleCreatePost(f.withViewer(42), textPostReq(&model.Audience{Kind: model.Audience_PUBLIC}, "hello"))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if resp == nil || resp.Post == nil {
-		t.Fatalf("expected post in response, got %+v", resp)
-	}
-	const expectedAuthorPTID = "ptid:v1:actor:peers:p:user-42:fingerprint-42"
-	if resp.Post.AuthorPtid != expectedAuthorPTID {
-		t.Fatalf("expected author PTID %q, got %q", expectedAuthorPTID, resp.Post.AuthorPtid)
+	if err == nil || !strings.Contains(err.Error(), "FEED_SIGNED_WRITE_REQUIRED") || resp != nil {
+		t.Fatalf("unsigned public create accepted: %+v %v", resp, err)
 	}
 }
 
@@ -1605,79 +1603,46 @@ func TestHandler_React_NotFoundOnUnreadablePost(t *testing.T) {
 	}
 }
 
-func TestHandler_React_AcceptsReactionFromAuthor(t *testing.T) {
+func TestHandler_React_AuthorRequiresSignedFeed(t *testing.T) {
 	f := newHandlerFixture(t)
-	created, err := f.subserver.handleCreatePost(
-		f.withViewer(1),
-		textPostReq(&model.Audience{Kind: model.Audience_PUBLIC}, "shareable"),
-	)
-	if err != nil {
-		t.Fatalf("seed create: %v", err)
-	}
+	created := f.seedMoment(1, textPostReq(&model.Audience{Kind: model.Audience_PUBLIC}, "shareable"))
 	resp, err := f.subserver.handleReact(f.withViewer(1), &model.ReactToPostRequest{
-		PostId: created.Post.Id,
+		PostId: created.Id,
 		Kind:   model.ReactionKind_REACTION_LIKE,
 	})
-	if err != nil {
-		t.Fatalf("expected success, got %v", err)
-	}
-	if !resp.Success {
-		t.Fatal("react reported not-success on a successful path")
-	}
-	// Reactions slice must include LIKE with count=1.
-	var found bool
-	for _, r := range resp.Reactions {
-		if r.Kind == model.ReactionKind_REACTION_LIKE && r.Count >= 1 {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("expected LIKE summary in response, got %+v", resp.Reactions)
+	if err == nil || !strings.Contains(err.Error(), "FEED_SIGNED_WRITE_REQUIRED") || resp != nil {
+		t.Fatalf("unsigned public reaction accepted: %+v %v", resp, err)
 	}
 }
 
-func TestHandler_React_ExpandedKindRoundTrips(t *testing.T) {
+func TestHandler_React_ExpandedKindRequiresSignedFeed(t *testing.T) {
 	f := newHandlerFixture(t)
-	created, err := f.subserver.handleCreatePost(
-		f.withViewer(1),
+	created := f.seedMoment(1,
 		textPostReq(
 			&model.Audience{Kind: model.Audience_PUBLIC},
 			"expanded reaction",
 		),
 	)
-	if err != nil {
-		t.Fatalf("seed create: %v", err)
-	}
 	reacted, err := f.subserver.handleReact(
 		f.withViewer(1),
 		&model.ReactToPostRequest{
-			PostId: created.Post.Id,
+			PostId: created.Id,
 			Kind:   model.ReactionKind_REACTION_HEART_HANDS,
 		},
 	)
-	if err != nil {
-		t.Fatalf("react with expanded kind: %v", err)
-	}
-	if len(reacted.Reactions) != 1 ||
-		reacted.Reactions[0].Kind !=
-			model.ReactionKind_REACTION_HEART_HANDS ||
-		reacted.Reactions[0].Count != 1 ||
-		!reacted.Reactions[0].ReactedByViewer {
-		t.Fatalf("expanded reaction response = %+v", reacted.Reactions)
+	if err == nil || !strings.Contains(err.Error(), "FEED_SIGNED_WRITE_REQUIRED") || reacted != nil {
+		t.Fatalf("unsigned expanded reaction accepted: %+v %v", reacted, err)
 	}
 
 	unreacted, err := f.subserver.handleUnreact(
 		f.withViewer(1),
 		&model.UnreactToPostRequest{
-			PostId: created.Post.Id,
+			PostId: created.Id,
 			Kind:   model.ReactionKind_REACTION_HEART_HANDS,
 		},
 	)
-	if err != nil {
-		t.Fatalf("unreact expanded kind: %v", err)
-	}
-	if len(unreacted.Reactions) != 0 {
-		t.Fatalf("expanded unreact response = %+v", unreacted.Reactions)
+	if err == nil || !strings.Contains(err.Error(), "FEED_SIGNED_WRITE_REQUIRED") || unreacted != nil {
+		t.Fatalf("unsigned expanded unreact accepted: %+v %v", unreacted, err)
 	}
 }
 
@@ -1763,12 +1728,7 @@ func TestHandler_GetMyStats_ReflectsAuthorPostCount(t *testing.T) {
 	const author = uint64(42)
 
 	for i := 0; i < 2; i++ {
-		if _, err := f.subserver.handleCreatePost(
-			f.withViewer(author),
-			textPostReq(&model.Audience{Kind: model.Audience_PUBLIC}, "post"),
-		); err != nil {
-			t.Fatalf("seed post %d: %v", i, err)
-		}
+		f.seedMoment(author, textPostReq(&model.Audience{Kind: model.Audience_PUBLIC}, "post"))
 	}
 
 	resp, err := f.subserver.handleGetMyStats(f.withViewer(author), &model.GetMyMomentsStatsRequest{})

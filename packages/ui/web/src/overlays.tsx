@@ -19,14 +19,22 @@ const focusable = 'button:not(:disabled),a[href],input:not(:disabled),select:not
  * frame and paint over the outer page; the nearest hidden/clip ancestor is
  * the real boundary (the prototype frame in specimens, the window in
  * production where the walk reaches <html> and yields no tighter rect). */
-function nearestClipFrame(anchor: HTMLElement, win: Window): DOMRect | null {
+function nearestClipFrame(anchor: HTMLElement, win: Window): Pick<DOMRect, 'left' | 'right' | 'top' | 'bottom'> | null {
   let node: HTMLElement | null = anchor.parentElement;
   const { body, documentElement } = win.document;
   while (node && node !== body && node !== documentElement) {
     const style = win.getComputedStyle(node);
     if (style.overflowX === 'hidden' || style.overflowX === 'clip'
       || style.overflowY === 'hidden' || style.overflowY === 'clip') {
-      return node.getBoundingClientRect();
+      const rect = node.getBoundingClientRect();
+      const left = rect.left + node.clientLeft + parseFloat(style.paddingLeft);
+      const top = rect.top + node.clientTop + parseFloat(style.paddingTop);
+      return {
+        left,
+        right: left + node.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+        top,
+        bottom: top + node.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom),
+      };
     }
     node = node.parentElement;
   }
@@ -69,7 +77,8 @@ function OverlayLayer({
       if (!anchor || !root.current || modal) return;
       if (!anchor.isConnected) { dismiss.current('outside'); return; }
       const a = anchorPoint ? {left:anchorPoint.x,right:anchorPoint.x,top:anchorPoint.y,bottom:anchorPoint.y} : anchor.getBoundingClientRect();
-      const r = root.current.getBoundingClientRect(), gap = 4;
+      // Entrance transforms change painted bounds, not the layout footprint.
+      const r = { width: root.current.offsetWidth, height: root.current.offsetHeight }, gap = 4;
       let left = a.left, top = a.bottom + gap;
       const edgeBottom = placement.endsWith('-bottom');
       if (placement === 'top') top = a.top - r.height - gap;
@@ -87,6 +96,7 @@ function OverlayLayer({
       // toward the gap so they share the owner's bottom edge.
       const clip = nearestClipFrame(anchor, win);
       const minLeft = clip ? Math.max(gap, clip.left + gap) : gap;
+      const rightEdge = clip ? Math.min(win.innerWidth - gap, clip.right - gap) : win.innerWidth - gap;
       const maxLeft = clip ? Math.min(win.innerWidth - r.width - gap, clip.right - r.width - gap)
         : win.innerWidth - r.width - gap;
       const maxTop = clip ? Math.min(win.innerHeight - r.height - gap, clip.bottom - r.height - gap)
@@ -109,6 +119,7 @@ function OverlayLayer({
       setPosition({
         left: Math.max(minLeft, Math.min(left, maxLeft)),
         top: finalTop,
+        maxWidth: Math.max(0, rightEdge - minLeft),
         maxHeight: win.innerHeight - gap * 2 - finalTop,
       });
     };

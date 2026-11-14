@@ -120,6 +120,20 @@ reset mutation remains behind the reviewed Profile and live descriptor.
 The native runtime runner and two-client regressions cover absent legacy flags,
 unverified targets, false authority and the existing-state mode.
 
+An authenticated second installation may still require identity recovery before
+its Engine exists. Social's public Suite prepares Bob's portable recovery once
+at Suite startup and invokes the original restore owner after the second
+device's authenticated Station binding, before Engine-backed Actor hydration.
+The shared Native launch owner accepts this explicit Suite preparation callback;
+authentication, Station binding, PTID equality, active device and normal hydration
+checks remain mandatory. Recovery failures propagate unchanged. Public Feed
+writer grants remain bound to the original device. Do not skip hydration, copy
+another device's storage, or create a second login/recovery implementation.
+Run `python3 -m unittest
+tooling.acceptance.gates.social.test_public_feed_native` to verify the original
+launch ordering and preserved restore failure; current-source Native execution
+must separately prove second-device read access and typed write denial.
+
 ### What guards against regression
 
 `NativeRuntimeCellRunnerContractTest` verifies shared-Federation selection and

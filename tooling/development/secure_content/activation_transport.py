@@ -140,14 +140,30 @@ def _remote_command(
     ]
 
 
-def _deployment_environment(budget_seconds: int) -> dict[str, str]:
+def _deployment_environment(
+    budget_seconds: int, *, target_profile: str | None = None,
+    source_commit: str | None = None,
+) -> dict[str, str]:
     # The parent owns the reset lease. Deployment acquires its own Profile lease
     # and must not receive descriptor metadata that subprocess closes on exec.
     environment = {
         key: value for key, value in os.environ.items()
         if not key.startswith("PT_MACHINE_LEASE_")
     }
+    for field in (
+        "PT_DEV_PROFILE_FILE", "PT_DEV_PROFILE_FILE_AUTHORITY",
+        "PT_ACCEPTANCE_RUNTIME_PROFILE_ROOT",
+        "PT_ACCEPTANCE_ENVIRONMENT", "PT_ACCEPTANCE_RUN_ID",
+        "PT_AGENT_CAPABILITY_SCENARIO_CONTROL", "PT_AGENT_EXTERNAL_RUNTIME_ROOT",
+        "PT_AGENT_EXTERNAL_START_ARGV_JSON", "PT_AGENT_EXTERNAL_RESUME_ARGV_JSON",
+        "PT_AGENT_EXTERNAL_RESET_ARGV_JSON",
+    ):
+        environment.pop(field, None)
     environment["PT_STATION_LEASE_BUDGET_SECONDS"] = str(budget_seconds)
+    if target_profile is not None:
+        environment["PT_DEV_TARGET_PROFILE"] = target_profile
+    if source_commit is not None:
+        environment["PT_BUILD_SOURCE_COMMIT"] = source_commit
     return environment
 
 
@@ -390,7 +406,10 @@ class ReviewedSchemaActivationTransport:
             profile.get("PT_STATION_URL"),
             "PT_STATION_URL",
         )
-        command_environment = _deployment_environment(budget_seconds)
+        command_environment = _deployment_environment(
+            budget_seconds, target_profile=profile_id,
+            source_commit=source_commit,
+        )
         completed = self.command_runner(
             ["make", "station"],
             cwd=self.repo_root,

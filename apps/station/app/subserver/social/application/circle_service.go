@@ -39,16 +39,8 @@ func (s *CircleService) Create(ctx context.Context, req *model.CreateCircleReque
 	if err := domain.ValidateCircle(c); err != nil {
 		return nil, err
 	}
-	if err := s.repos.Circles.Create(ctx, c); err != nil {
+	if err := s.repos.Circles.Create(ctx, c, req.MemberPtids); err != nil {
 		return nil, fmt.Errorf("create circle: %w", err)
-	}
-	if len(req.MemberPtids) > 0 {
-		added, total, err := s.repos.Circles.AddMembers(ctx, c.ID, req.MemberPtids)
-		if err != nil {
-			logger.Warn(ctx, "circle.create: initial member add partial", "error", err)
-		}
-		c.MemberCount = total
-		_ = added
 	}
 	logger.Info(ctx, "circle.created")
 	return s.conv.CircleToProto(c), nil
@@ -147,7 +139,7 @@ func (s *CircleService) ListMembers(ctx context.Context, req *model.ListCircleMe
 	if _, err := s.assertOwner(ctx, req.CircleId, ownerPTID); err != nil {
 		return nil, err
 	}
-	c, err := domain.DecodeCursor(req.Cursor)
+	c, err := domain.DecodeCircleMemberCursor(req.Cursor, req.CircleId)
 	if err != nil {
 		return nil, fmt.Errorf("invalid cursor: %w", err)
 	}
@@ -170,7 +162,9 @@ func (s *CircleService) ListMembers(ctx context.Context, req *model.ListCircleMe
 	var nextCursor string
 	if hasMore && len(rows) > 0 {
 		last := rows[len(rows)-1]
-		nextCursor = domain.Cursor{CreatedAt: last.AddedAt}.Encode()
+		nextCursor = domain.CircleMemberCursor{
+			CircleID: req.CircleId, AddedAt: last.AddedAt, ActorPTID: last.ActorPTID,
+		}.Encode()
 	}
 	return &model.ListCircleMembersResponse{Members: out, NextCursor: nextCursor, HasMore: hasMore}, nil
 }

@@ -15,7 +15,7 @@ export async function subscribeSearchInvalidations(
   const releases = [
     eventBus.subscribeMany([
       EVENT.MOMENT_CREATED, EVENT.MOMENT_DELETED, EVENT.MOMENT_REVOKED,
-      EVENT.MOMENT_COMMENTED, EVENT.MOMENT_REACTED,
+      EVENT.MOMENT_COMMENTED, EVENT.MOMENT_REACTED, EVENT.MOMENT_UPDATED,
     ], ({ payload }) => { if (matchesCurrentMomentEvent(payload)) social(); }),
     eventBus.subscribe(EVENT.RELATIONSHIP_CHANGED, social),
     eventBus.subscribe(EVENT.MOMENT_RESYNC_REQUESTED, social),

@@ -147,7 +147,7 @@ func (r *momentsStatsRepo) countReactionsReceived(ctx context.Context, authorID 
 			authorID,
 		).
 		Where(
-			"r.actor_id <> ? AND r.post_class = ?",
+			"r.actor_id <> ? AND r.post_class = ? AND r.comment_id = ''",
 			authorID,
 			string(domain.PostClassPublic),
 		).

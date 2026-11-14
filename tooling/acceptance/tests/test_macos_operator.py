@@ -1,0 +1,468 @@
+"""Object-identity, protocol, deadline and complete scope-cleanup regressions."""
+
+import ctypes
+import json
+import os
+import subprocess
+import sys
+import time
+import unittest
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
+
+from tooling.acceptance.core.errors import BlockedError, DriverError
+from tooling.acceptance.drivers.native.base import NativeOperatorObservation
+from tooling.acceptance.drivers.native.macos import MacOSNativeDesktopAdapter
+from tooling.acceptance.drivers.native.macos_ax import AXReadSession
+from tooling.acceptance.drivers.native.macos_operator import (
+    FocusObjects, NativeFocusUnavailable, OperatorScope, _encode, _failure, _read_line,
+)
+
+
+def synthetic_native():
+    """Generic child OS boundary for testing the actual private pipe protocol."""
+    cf = SimpleNamespace(CFRelease=Mock(), CFEqual=Mock(side_effect=lambda a, b: a == b))
+
+    def read(pid, *, deadline, focus_refs):
+        focus_refs.extend((1, 2))
+        return {
+            "actualFrontmostPid": pid, "role": "AXTextField", "subrole": "",
+            "frontmost": True, "focusedWindow": True, "mainWindow": True,
+        }
+
+    return {
+        "core_foundation": cf, "CFRef": ctypes.c_void_p, "ctypes": ctypes,
+        "application_services": SimpleNamespace(
+            AXUIElementCreateSystemWide=Mock(return_value=3),
+            AXUIElementSetMessagingTimeout=Mock(return_value=0),
+        ),
+        "frontmost_pid": lambda: 41, "read_control": read,
+        "pointer_location": lambda: {"x": 100.0, "y": 200.0},
+        "panel_presence": lambda pid: {"processId": pid, "present": True},
+    }
+
+
+_SYNTHETIC_SUPPORT = (
+    "from tooling.acceptance.tests.test_macos_operator import synthetic_native\n"
+    "globals().update(synthetic_native())\n"
+)
+
+
+class FocusObjectTests(unittest.TestCase):
+    def fixture(self, pairs, *, controls=None):
+        native = synthetic_native()
+        live, counts, equal = [], [], []
+        sequence = iter(pairs)
+        fields = iter(controls) if controls else None
+        clock = SimpleNamespace(now=0.0)
+        clock.monotonic = lambda: clock.now
+        clock.sleep = lambda seconds: setattr(clock, "now", clock.now + seconds)
+
+        def read(pid, *, deadline, focus_refs):
+            refs = next(sequence)
+            live.extend(refs)
+            counts.append(len(live))
+            focus_refs.extend(refs)
+            return {
+                "actualFrontmostPid": pid, "role": "AXTextField", "subrole": "",
+                "frontmost": True, "focusedWindow": True, "mainWindow": True,
+                **(next(fields) if fields else {}),
+            }
+
+        def compare(a, b):
+            equal.append((a, b))
+            # Independent copies of one AX object need not share local addresses.
+            return a // 10 == b // 10
+
+        native["core_foundation"].CFRelease = lambda ref: live.remove(ref) if ref in live else None
+        native["core_foundation"].CFEqual = compare
+        native["read_control"] = read
+        objects = FocusObjects("a" * 32, native)
+        session = SimpleNamespace(begin_observation=Mock())
+        return objects, native, clock, session, live, counts, equal
+
+    def observe(
+        self, objects, clock, session, *, mode="operator", pid=0,
+        end=1.0, focus_end=None,
+    ):
+        with patch("tooling.acceptance.drivers.native.macos_operator.time", clock), patch(
+            "tooling.acceptance.drivers.native.macos_operator.AXReadSession", return_value=session,
+        ):
+            return objects.observe(
+                mode, pid, end, focus_end=end if focus_end is None else focus_end,
+            )
+
+    def test_panel_uses_original_observation_budget_after_bounded_focus(self):
+        objects, native, clock, session, live, *_ = self.fixture([(11, 21), (12, 22)])
+        session = object.__new__(AXReadSession)
+        session.deadline = 3.0
+        session.read_budget_seconds = 1.5
+        session.read_deadline = 1.5
+        original_read = native["read_control"]
+
+        def read(*args, **kwargs):
+            # copy_attribute narrows the shared session to the focus budget.
+            session.read_deadline = min(session.read_deadline, kwargs["deadline"])
+            return original_read(*args, **kwargs)
+
+        native["read_control"] = read
+
+        def panel(pid):
+            clock.now = 1.2
+            self.assertLess(clock.now, session.read_deadline)
+            self.assertEqual(session.deadline, 3.0)
+            self.assertLessEqual(session.read_deadline, 1.55)
+            return {"processId": pid, "present": True}
+        native["panel_presence"] = panel
+        with patch("tooling.acceptance.drivers.native.macos_ax.time", clock):
+            result = self.observe(
+                objects, clock, session, mode="operator-panel", pid=42,
+                end=3.0, focus_end=1.0,
+            )
+        self.assertTrue(result["panel"]["present"])
+        objects.close()
+        self.assertEqual(live, [])
+
+    def test_long_panel_budget_never_extends_focus_or_admits_late_panel(self):
+        for stage in ("focus", "panel"):
+            objects, native, clock, session, live, *_ = self.fixture([(11, 21), (12, 22)])
+            if stage == "focus":
+                read = native["read_control"]
+                def late_focus(*args, **kwargs):
+                    self.assertEqual(kwargs["deadline"], 1.0)
+                    result = read(*args, **kwargs)
+                    clock.now = 1.0
+                    return result
+                native["read_control"] = late_focus
+            else:
+                def late_panel(pid):
+                    clock.now = 3.0
+                    return {"processId": pid, "present": True}
+                native["panel_presence"] = late_panel
+            with self.subTest(stage=stage), self.assertRaises(TimeoutError):
+                self.observe(
+                    objects, clock, session, mode="operator-panel", pid=42,
+                    end=3.0, focus_end=1.0,
+                )
+            objects.close()
+            self.assertEqual(live, [])
+
+    def test_title_value_and_counts_do_not_define_identity_and_refs_are_bounded(self):
+        objects, native, clock, session, live, peaks, equals = self.fixture(
+            [(11, 21), (12, 22), (13, 23), (14, 24)],
+            controls=[
+                {"title": "one", "value": "before", "windowCount": 1},
+                {"title": "two", "value": "after", "windowCount": 3},
+                {"title": "three", "value": "changed", "sheetCount": 4},
+                {"title": "four", "value": "changed again", "sheetCount": 0},
+            ],
+        )
+        before = self.observe(objects, clock, session)
+        after = self.observe(objects, clock, session, mode="operator-panel", pid=42)
+        self.assertEqual(before["operatorState"], after["operatorState"])
+        self.assertEqual(after["panel"], {"processId": 42, "present": True})
+        self.assertEqual(len(live), 4)
+        self.assertEqual(max(peaks), 6)
+        self.assertIn((11, 14), equals)
+        self.assertNotIn("title", json.dumps(after))
+        objects.close()
+        objects.close()
+        self.assertEqual(live, [])
+
+    def test_same_role_same_title_different_control_or_window_is_rejected(self):
+        for changed in ((31, 23), (13, 31)):
+            with self.subTest(changed=changed):
+                objects, _, clock, session, live, *_ = self.fixture(
+                    [(11, 21), (12, 22), changed, (14, 24)],
+                )
+                self.observe(objects, clock, session)
+                with self.assertRaisesRegex(ValueError, "frozen baseline"):
+                    self.observe(objects, clock, session)
+                self.assertEqual(objects.baseline, [11, 21])
+                objects.close()
+                self.assertEqual(live, [])
+
+    def test_initial_unstable_objects_require_two_current_equal_samples(self):
+        objects, _, clock, session, live, peaks, equals = self.fixture(
+            [(11, 21), (31, 41), (32, 42)],
+        )
+        result = self.observe(objects, clock, session)
+        self.assertEqual(result["operatorState"]["frontmostPid"], 41)
+        self.assertEqual(len(peaks), 3)
+        self.assertEqual(objects.baseline, [31, 41])
+        self.assertIn((31, 32), equals)
+        objects.close()
+        self.assertEqual(live, [])
+
+    def test_expiry_before_or_after_native_read_releases_all_current_refs(self):
+        for stage in ("before", "after"):
+            objects, native, clock, session, live, *_ = self.fixture([(11, 21)])
+            if stage == "before":
+                clock.now = 1.0
+            else:
+                read = native["read_control"]
+
+                def late(*args, **kwargs):
+                    result = read(*args, **kwargs)
+                    clock.now = 1.0
+                    return result
+
+                native["read_control"] = late
+            with self.subTest(stage=stage), self.assertRaises(TimeoutError):
+                self.observe(objects, clock, session)
+            objects.close()
+            self.assertEqual(live, [])
+
+    def test_missing_objects_or_role_never_admit_an_empty_baseline(self):
+        for refs, fields in (((None, 21), {}), ((11, None), {}), ((11, 21), {"role": ""})):
+            objects, _, clock, session, live, *_ = self.fixture([refs], controls=[fields])
+            with self.subTest(refs=refs, fields=fields), self.assertRaises(
+                NativeFocusUnavailable,
+            ) as caught:
+                self.observe(objects, clock, session)
+            failure = _failure(caught.exception)
+            self.assertEqual(failure["observed"]["actualControlRequestPid"], 41)
+            self.assertEqual(failure["observed"]["actualFrontmostPid"], 41)
+            self.assertEqual(failure["observed"]["controlPresent"], bool(refs[0]))
+            self.assertEqual(failure["observed"]["windowPresent"], bool(refs[1]))
+            self.assertEqual(failure["observed"]["rolePresent"], fields.get("role") != "")
+            self.assertEqual(failure["observed"]["focusReferenceCount"], 2)
+            self.assertEqual(failure["observed"]["errorType"], "NativeFocusUnavailable")
+            self.assertEqual(objects.baseline, [])
+            self.assertNotIn("platformRole", failure["observed"])
+            self.assertNotIn("references", failure["observed"])
+            objects.close()
+            # None is not an owned CF reference.
+            self.assertTrue(all(ref is None for ref in live))
+
+    def test_frontmost_change_and_original_read_failure_propagate(self):
+        original = RuntimeError("private native contents")
+        for failure in ("pid", "read"):
+            objects, native, clock, session, live, *_ = self.fixture(
+                [(11, 21)], controls=[{"actualFrontmostPid": 42}],
+            )
+            if failure == "read":
+                native["read_control"] = Mock(side_effect=original)
+            with self.subTest(failure=failure), self.assertRaises((ValueError, RuntimeError)) as caught:
+                self.observe(objects, clock, session)
+            if failure == "read":
+                self.assertIs(caught.exception, original)
+            objects.close()
+            self.assertEqual(live, [])
+
+    def test_core_remains_sticky_after_focus_returns_and_close_adds_no_sample(self):
+        state = {"frontmostPid": 41, "pointerX": 0.0, "pointerY": 0.0,
+                 "keyboardFocusSha256": "a" * 64}
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+        adapter.snapshot_operator_state.side_effect = (
+            state, {**state, "keyboardFocusSha256": "b" * 64}, state,
+        )
+        observer = NativeOperatorObservation(adapter)
+        with self.assertRaises(BlockedError) as first:
+            observer.sample("changed", target_process_id=42)
+        observer.close()
+        observer.close()
+        with self.assertRaises(BlockedError) as later:
+            observer.sample("returned", target_process_id=42)
+        self.assertIs(first.exception, later.exception)
+        self.assertEqual(adapter.snapshot_operator_state.call_count, 2)
+        adapter.close_operator_observation.assert_called_once()
+
+
+class OperatorProtocolTests(unittest.TestCase):
+    def scope(self, support=_SYNTHETIC_SUPPORT, *, lifetime=5.0):
+        scope = OperatorScope(support, deadline_monotonic=time.monotonic() + lifetime)
+        def release():
+            try:
+                scope.close()
+            except BlockedError:
+                self.assertIsNotNone(scope._process.poll())
+        self.addCleanup(release)
+        return scope
+
+    def test_one_child_reused_for_fresh_reads_and_close_is_terminal(self):
+        scope = self.scope()
+        first = scope.observe("operator", 0)
+        child = scope._process
+        second = scope.observe("operator-panel", 42)
+        self.assertIs(scope._process, child)
+        self.assertEqual(first.operator_state, second.operator_state)
+        self.assertTrue(second.file_chooser.present)
+        scope.close()
+        self.assertEqual(child.poll(), 0)
+        self.assertTrue(child.stdin.closed and child.stdout.closed and child.stderr.closed)
+        self.assertEqual(scope._sequence, 3)
+        with self.assertRaises(DriverError):
+            scope.observe("operator", 0)
+
+    def test_real_pipe_panel_after_one_second_retains_original_budget(self):
+        support = _SYNTHETIC_SUPPORT + """
+import time
+def panel_presence(pid):
+    time.sleep(1.05)
+    return {"processId":pid,"present":True}
+"""
+        scope = self.scope(support, lifetime=10.0)
+        first = scope.observe("operator", 0)
+        after = scope.observe("operator-panel", 42)
+        self.assertEqual(first.operator_state, after.operator_state)
+        self.assertTrue(after.file_chooser.present)
+        scope.close()
+        self.assertEqual(scope._process.poll(), 0)
+
+    def test_foreign_or_extra_response_fields_fail_closed_without_restarting(self):
+        evil = """
+import json, os
+bootstrap = json.loads(input())
+request = json.loads(input())
+request.pop('deadlineMonotonicSeconds')
+request['scopeId'] = 'b' * 32
+request['operatorState'] = {}
+print(json.dumps(request), flush=True)
+input()
+"""
+        scope = self.scope(evil)
+        with self.assertRaises(BlockedError) as first:
+            scope.observe("operator", 0)
+        child = scope._process
+        with self.assertRaises(BlockedError) as later:
+            scope.observe("operator", 0)
+        self.assertIs(first.exception, later.exception)
+        self.assertIs(scope._process, child)
+        with self.assertRaises(BlockedError):
+            scope.close()
+        self.assertIsNotNone(child.poll())
+
+    def test_initial_child_failure_is_reaped_and_never_rebaselined(self):
+        scope = self.scope("raise RuntimeError('private child text')\n")
+        with self.assertRaises(BlockedError) as caught:
+            scope.observe("operator", 0)
+        self.assertNotIn("private child text", str(caught.exception.diagnostic.to_dict()))
+        scope.close()
+        self.assertIsNotNone(scope._process.poll())
+
+    def test_parent_timeout_retains_only_current_child_phase_and_reaps_it(self):
+        for stage in ("support-loading", "frontmost-before"):
+            support = (
+                "import time, sys\n"
+                "sys.stderr.write('private AX title/value must not escape\\n')\n"
+                "sys.stderr.flush()\n"
+                "time.sleep(0.8)\n"
+                + _SYNTHETIC_SUPPORT
+                if stage == "support-loading"
+                else _SYNTHETIC_SUPPORT + """
+import time
+def frontmost_pid():
+    time.sleep(0.8)
+    return 41
+"""
+            )
+            scope = self.scope(support, lifetime=0.5)
+            frozen = scope.deadline
+            with self.subTest(stage=stage), self.assertRaises(BlockedError) as caught:
+                scope.observe("operator", 0)
+            observed = caught.exception.diagnostic.to_dict()["resourceChecks"][0]["observed"]
+            self.assertEqual(observed["errorType"], "TimeoutError")
+            self.assertEqual(observed["observerPhase"], stage)
+            self.assertTrue(observed["observerChildAlive"])
+            self.assertNotIn("private AX", json.dumps(observed))
+            self.assertEqual(scope.deadline, frozen)
+            child = scope._process
+            scope.close()
+            self.assertIsNotNone(child.poll())
+            self.assertTrue(child.stdin.closed and child.stdout.closed and child.stderr.closed)
+            with self.assertRaises(BlockedError) as repeated:
+                scope.observe("operator", 0)
+            self.assertIs(caught.exception, repeated.exception)
+
+    def test_scope_deadline_includes_startup_and_cannot_refresh(self):
+        scope = self.scope(lifetime=0.001)
+        frozen = scope.deadline
+        with self.assertRaises(BlockedError):
+            scope.observe("operator", 0)
+        self.assertEqual(scope.deadline, frozen)
+        scope.close()
+        self.assertIsNotNone(scope._process.poll())
+
+    def test_nested_scope_and_inflight_requests_are_rejected(self):
+        adapter = MacOSNativeDesktopAdapter()
+        with patch(
+            "tooling.acceptance.drivers.native.macos_operator.OperatorScope",
+            return_value=self.scope(),
+        ):
+            observer = adapter.observe_operator()
+            with self.assertRaises(DriverError):
+                adapter.observe_operator()
+            scope = adapter._operator_scope
+            scope._lock.acquire()
+            try:
+                with self.assertRaises(DriverError):
+                    scope.observe("operator", 0)
+            finally:
+                scope._lock.release()
+            observer.close()
+            with self.assertRaises(DriverError):
+                observer.sample("closed", target_process_id=42)
+
+    def test_invalid_requests_child_eof_and_expiry_release_the_child(self):
+        for change in (
+            {"scopeId": "b" * 32}, {"sequence": 0}, {"sequence": 2},
+            {"sequence": True}, {"mode": "unknown"}, {"targetProcessId": 42},
+            {"deadlineMonotonicSeconds": 0}, {"deadlineMonotonicSeconds": float("inf")},
+            {"focusDeadlineMonotonicSeconds": None},
+            {"focusDeadlineMonotonicSeconds": float("inf")},
+            {"focusDeadlineMonotonicSeconds": time.monotonic() + 10},
+            {"extra": True},
+        ):
+            scope = self.scope()
+            scope._start()
+            request = {
+                "scopeId": scope.scope_id, "sequence": 1, "mode": "operator",
+                "targetProcessId": 0, "deadlineMonotonicSeconds": time.monotonic() + 1,
+                "focusDeadlineMonotonicSeconds": time.monotonic() + 0.5,
+                **change,
+            }
+            with self.subTest(change=change):
+                # Allow invalid non-finite JSON only at this hostile boundary.
+                scope._process.stdin.write((json.dumps(request) + "\n").encode())
+                scope._process.wait(timeout=2)
+                self.assertEqual(scope._process.poll(), 0)
+                with self.assertRaises(BlockedError):
+                    scope.close()
+        for exit_mode in ("eof", "expiry"):
+            scope = self.scope(lifetime=0.3)
+            scope._start()
+            if exit_mode == "eof":
+                scope._process.stdin.close()
+            scope._process.wait(timeout=2)
+            self.assertEqual(scope._process.poll(), 0)
+            with self.assertRaises(BlockedError):
+                scope.close()
+
+    def test_message_bound_and_duplicate_fields_are_rejected(self):
+        with self.assertRaises(ValueError):
+            _encode({"oversized": "x" * 4096})
+        read_fd, write_fd = os.pipe()
+        try:
+            for raw in (b'{"a":1,"a":2}\n', b"x" * 4097):
+                os.write(write_fd, raw)
+                with self.assertRaises(ValueError):
+                    _read_line(read_fd, time.monotonic() + 1)
+        finally:
+            os.close(read_fd)
+            os.close(write_fd)
+
+    def test_error_origin_excludes_private_exception_text(self):
+        def native_failure():
+            raise RuntimeError("private AX title/value")
+
+        try:
+            native_failure()
+        except RuntimeError as error:
+            details = _failure(error)
+        self.assertEqual(details["observed"]["failureFunction"], "native_failure")
+        self.assertNotIn("private AX", json.dumps(details))
+
+
+if __name__ == "__main__":
+    unittest.main()

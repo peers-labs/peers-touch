@@ -19,7 +19,9 @@ import { api } from '../../services/desktop_api';
 import {
   socialBlockActor,
   socialFollow,
+  socialUnfollow,
   socialGetRelationshipStatus,
+  socialGetRelationship,
   socialUnblockActor,
   type MomentDraft,
 } from '../../services/social_api';
@@ -38,6 +40,7 @@ import { useSessionStore } from '../../store/session';
 import { useFederationStore } from '../../store/federation';
 import { federationRuntime } from '../../runtimes/federationRuntime';
 import { registerAcceptanceHarness } from '../registry';
+import { feedSearchIdentities, reconcileFeedProjection } from './feedObservation';
 
 declare const __PT_SOURCE_COMMIT__: string;
 
@@ -602,7 +605,8 @@ async function stagePrivateDraft(input: StagePrivateDraftInput) {
     revision: input.revision,
     text: input.text,
     audience: privateAudience(input),
-    mentions: [],
+    mentions: (input.mentions ?? []).map(mention => create(MentionSchema, mention)),
+    poll: input.poll,
     files: (input.files ?? []).map((file) => ({
       intentId: file.intentId,
       filePath: file.filePath,
@@ -619,25 +623,34 @@ async function publishPrivateDraft() {
     throw new Error('moments.acceptance.draftMissing');
   }
   let transientPostId: string | undefined;
+  let errorMessage: string | undefined;
   try {
-    transientPostId = await moments.createPost({
-      kind: draft.files.length > 0 ? 'image' : 'text',
+    const result = await publishTypedPrivateMoment({
+      momentKind: draft.poll ? 'POLL' : draft.files.length > 0 ? 'IMAGE' : 'TEXT',
       text: draft.text,
-      imageIds: [],
-      localFiles: draft.files,
-      audience: draft.audience,
+      files: draft.files,
+      audienceKind: audienceName(draft.audience.kind) as StagePrivateDraftInput['audienceKind'],
+      circleId: draft.audience.target.case === 'circleId' ? String(draft.audience.target.value) : undefined,
+      groupConversationId: draft.audience.target.case === 'groupConversationId' ? draft.audience.target.value : undefined,
+      actorPtids: draft.audience.actorPtids,
+      baseKind: draft.audience.baseKind === Audience_Kind.FOLLOWERS ? 'FOLLOWERS'
+        : draft.audience.baseKind === Audience_Kind.PUBLIC ? 'PUBLIC' : undefined,
       draftId: draft.draftId,
-      draftRevision: draft.revision,
+      revision: draft.revision,
       mentions: draft.mentions,
+      poll: draft.poll,
     });
-  } catch {
+    transientPostId = result.transientPostId;
+  } catch (error) {
     // The production store owns the typed failure projection.
+    errorMessage = error instanceof Error ? error.message : String(error);
   }
   const publish = usePrivateMomentsStore.getState().publish;
   return {
     platform: usePrivateMomentsStore.getState().platform,
     state: publish.state,
     errorCode: publish.errorCode,
+    ...(errorMessage ? { errorMessage } : {}),
     ...(publish.rejectionEvidence
       ? { rejectionEvidence: publish.rejectionEvidence }
       : {}),
@@ -816,6 +829,8 @@ async function publishTypedPrivateMoment(input: StagePrivateDraftInput) {
 export function installAcceptanceHarness(): void {
   rendererArtifactSha256Promise = null;
   registerAcceptanceHarness('moments', {
+    feedSearchIdentities,
+    reconcileFeedProjection,
     async snapshot() {
       const privateState = usePrivateMomentsStore.getState();
       const sessionIdentity = await activeSessionIdentity();
@@ -1206,6 +1221,71 @@ export function installAcceptanceHarness(): void {
       };
     },
 
+    async unfollowActor(input: { actorPtid: string }) {
+      const actorPtid = input?.actorPtid?.trim();
+      if (!actorPtid) throw new Error('moments.acceptance.actorIdentityMissing');
+      const response = await socialUnfollow(actorPtid);
+      const current = await socialGetRelationship(actorPtid);
+      if (!response.success || current.relationship?.following !== false) {
+        throw new Error('moments.acceptance.unfollowProjectionMismatch');
+      }
+      return { following: false, actorPtidSha256: await sha256(actorPtid) };
+    },
+
+    async publicFeedFault(input: {
+      action: 'read' | 'clear' | 'arm';
+      id?: string;
+      kind?: string;
+      target_actor_ptid?: string;
+    }) {
+      return invoke('social_public_feed_acceptance_fault', { input });
+    },
+
+    async publicFeedStatus() {
+      const session = useSessionStore.getState();
+      const identity = {
+        epoch: session.sessionEpoch, actor: session.currentUser?.actorPtid,
+        station: session.stationPeerId,
+      };
+      const status = await invoke<{ pending?: unknown[]; sequence?: unknown }>('social_public_feed_status');
+      const sequence = status.sequence;
+      if (sequence !== undefined && (typeof sequence !== 'string'
+        || !/^(0|[1-9]\d*)$/.test(sequence) || BigInt(sequence) > 18446744073709551615n)) {
+        throw new Error('FEED_HEAD_INVALID');
+      }
+      const current = useSessionStore.getState();
+      if (current.sessionEpoch !== identity.epoch
+        || current.currentUser?.actorPtid !== identity.actor
+        || current.stationPeerId !== identity.station) {
+        throw new Error('MOMENTS_SESSION_STALE');
+      }
+      return { pendingCount: status.pending?.length ?? 0, verifiedSequence: sequence ?? null };
+    },
+
+    async circleProjection() {
+      const session = useSessionStore.getState();
+      const actorPtid = session.currentUser?.actorPtid?.trim();
+      if (!actorPtid) throw new Error('moments.acceptance.actorIdentityMissing');
+      const state = useMomentsStore.getState();
+      const circles = state.circles.map(circle => ({
+        id: String(circle.id),
+        name: circle.name,
+        description: circle.description,
+        memberCount: Number(circle.memberCount),
+        memberPtids: (state.circleMembers[String(circle.id)] ?? []).map(member => member.actorPtid),
+        membersLoaded: Object.prototype.hasOwnProperty.call(state.circleMembers, String(circle.id)),
+        membersError: state.circleMembersErrors[String(circle.id)] ?? null,
+      }));
+      const actorPtidSha256 = await sha256(actorPtid);
+      const current = useSessionStore.getState();
+      if (current.sessionEpoch !== session.sessionEpoch
+        || current.currentUser?.actorPtid?.trim() !== actorPtid
+        || current.stationPeerId !== session.stationPeerId) {
+        throw new Error('MOMENTS_SESSION_STALE');
+      }
+      return { actorPtidSha256, sessionEpoch: session.sessionEpoch, circles };
+    },
+
     async createAudienceCircle(input: { name: string }) {
       if (!input.name?.trim()) {
         throw new Error('moments.acceptance.circleNameMissing');
@@ -1574,6 +1654,120 @@ export function installAcceptanceHarness(): void {
         hasMore: thread.hasMore,
         loaded: thread.loaded,
         state: thread.state,
+      };
+    },
+
+    async replayPrivateCommentLike(input: { postId: string; commentId: string }) {
+      if (!input.postId?.trim() || !input.commentId?.trim()) {
+        throw new Error('moments.acceptance.privateCommentInvalid');
+      }
+      const scope = usePrivateMomentsStore.getState().scope;
+      if (!scope.actorPtid) throw new Error('moments.acceptance.sessionIdentityMissing');
+      const snapshot = await privateMomentsNative.bootstrap({
+        actorPtid: scope.actorPtid,
+        rendererGeneration: scope.rendererGeneration,
+      });
+      const command = snapshot.reactionCommands.find(candidate =>
+        candidate.postId === input.postId && candidate.commentId === input.commentId
+        && candidate.kind === ReactionKind.REACTION_LIKE);
+      if (!command || command.state !== 'REACTION_COMMITTED') {
+        throw new Error('moments.acceptance.committedReactionMissing');
+      }
+      const replays = [];
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        if (usePrivateMomentsStore.getState().scope !== scope) {
+          throw new Error('moments.acceptance.sessionReplaced');
+        }
+        const result = await privateMomentsNative.retryReaction({
+          actorPtid: scope.actorPtid,
+          rendererGeneration: scope.rendererGeneration,
+          commandId: command.commandId,
+        });
+        if (usePrivateMomentsStore.getState().scope !== scope
+          || result.command.commandId !== command.commandId
+          || result.command.postId !== input.postId
+          || result.command.commentId !== input.commentId
+          || result.command.kind !== command.kind
+          || result.command.operation !== command.operation
+          || result.command.state !== 'REACTION_COMMITTED'
+          || result.command.attemptCount !== command.attemptCount) {
+          throw new Error('moments.acceptance.reactionReplayMismatch');
+        }
+        const like = result.reactions.find(summary => summary.kind === ReactionKind.REACTION_LIKE);
+        replays.push({
+          count: Number(like?.count ?? 0n),
+          liked: like?.reactedByViewer ?? false,
+          projectionRevision: result.projectionRevision,
+        });
+      }
+      if (JSON.stringify(replays[0]) !== JSON.stringify(replays[1])) {
+        throw new Error('moments.acceptance.reactionReplayMismatch');
+      }
+      return {
+        commandIdSha256: await sha256(command.commandId),
+        commentIdSha256: await sha256(input.commentId),
+        state: command.state,
+        operation: command.operation,
+        attemptCount: command.attemptCount,
+        nativeRetryCount: replays.length,
+        replays,
+      };
+    },
+
+    async replayPrivatePollVote(input: { postId: string }) {
+      if (!input.postId?.trim()) throw new Error('moments.acceptance.postIdMissing');
+      const scope = usePrivateMomentsStore.getState().scope;
+      if (!scope.actorPtid) throw new Error('moments.acceptance.sessionIdentityMissing');
+      const snapshot = await privateMomentsNative.bootstrap({
+        actorPtid: scope.actorPtid,
+        rendererGeneration: scope.rendererGeneration,
+      });
+      const command = snapshot.reactionCommands.find(candidate =>
+        candidate.postId === input.postId && candidate.operation === 'VOTE_POLL');
+      if (!command || command.state !== 'REACTION_COMMITTED') {
+        throw new Error('moments.acceptance.committedPollMissing');
+      }
+      const replays = [];
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        if (usePrivateMomentsStore.getState().scope !== scope) {
+          throw new Error('moments.acceptance.sessionReplaced');
+        }
+        const result = await privateMomentsNative.retryReaction({
+          actorPtid: scope.actorPtid,
+          rendererGeneration: scope.rendererGeneration,
+          commandId: command.commandId,
+        });
+        if (usePrivateMomentsStore.getState().scope !== scope
+          || result.command.commandId !== command.commandId
+          || result.command.postId !== input.postId
+          || result.command.commentId !== ''
+          || result.command.operation !== 'VOTE_POLL'
+          || result.command.state !== 'REACTION_COMMITTED'
+          || result.command.attemptCount !== command.attemptCount
+          || JSON.stringify(result.command.selectedOpaqueOptionIds)
+            !== JSON.stringify(command.selectedOpaqueOptionIds)
+          || !result.poll) {
+          throw new Error('moments.acceptance.pollReplayMismatch');
+        }
+        replays.push({
+          voteCounts: result.poll.voteCounts,
+          selectedOptions: result.poll.selectedOptions,
+          voterCount: result.poll.voterCount,
+          projectionRevision: result.poll.projectionRevision,
+          exactReplay: result.exactReplay,
+        });
+      }
+      if (JSON.stringify(replays[0]) !== JSON.stringify(replays[1])) {
+        throw new Error('moments.acceptance.pollReplayMismatch');
+      }
+      return {
+        commandIdSha256: await sha256(command.commandId),
+        postIdSha256: await sha256(input.postId),
+        state: command.state,
+        operation: command.operation,
+        attemptCount: command.attemptCount,
+        nativeRetryCount: replays.length,
+        replays,
       };
     },
 

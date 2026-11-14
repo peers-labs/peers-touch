@@ -24,7 +24,7 @@ from tooling.acceptance.provisioners.mobile_native_build import (
     ANDROID_GRADLE_LOCK_CONFIGURATION_REQUIREMENTS,
     ANDROID_GRADLE_LOCK_REQUIREMENTS,
     ANDROID_LOCAL_GRADLE_PROJECTS,
-    ANDROID_TAURI_GENERATED_BUILD_OUTPUTS,
+    TAURI_GENERATED_BUILD_OUTPUTS,
     ANDROIDX_GRADLE_PROPERTY,
     APPLICATION_ID,
     CARGO_CACHE_ROOT_FILES,
@@ -847,11 +847,11 @@ class MobileNativeBuildTest(unittest.TestCase):
             any(
                 path == generated or path.startswith(f"{generated}/")
                 for path in paths
-                for generated in ANDROID_TAURI_GENERATED_BUILD_OUTPUTS
+                for generated in TAURI_GENERATED_BUILD_OUTPUTS
             )
         )
 
-    def test_canonical_inputs_exclude_tauri_android_generated_outputs(self) -> None:
+    def test_canonical_inputs_exclude_tauri_generated_outputs(self) -> None:
         from tooling.acceptance.provisioners.mobile_native_build import (
             _collect_input_tree,
         )
@@ -865,25 +865,32 @@ class MobileNativeBuildTest(unittest.TestCase):
             )
             tracked.parent.mkdir(parents=True)
             tracked.write_text("<manifest />", encoding="utf-8")
-            for generated in ANDROID_TAURI_GENERATED_BUILD_OUTPUTS:
+            icon = root / "apps/mobile/src-tauri/gen/apple/Assets.xcassets/Contents.json"
+            icon.parent.mkdir(parents=True)
+            icon.write_text('{"info":{"version":1}}', encoding="utf-8")
+            project = root / "apps/mobile/src-tauri/gen/apple/project.yml"
+            project.write_text("name: peers\n", encoding="utf-8")
+            for generated in TAURI_GENERATED_BUILD_OUTPUTS:
                 output = root / generated / "generated-output"
                 output.parent.mkdir(parents=True, exist_ok=True)
                 output.write_text("generated", encoding="utf-8")
 
-            paths = _collect_input_tree(
-                root,
-                "apps/mobile/src-tauri/gen/android",
+            paths = (
+                _collect_input_tree(root, "apps/mobile/src-tauri/gen/android")
+                | _collect_input_tree(root, "apps/mobile/src-tauri/gen/apple")
             )
 
         self.assertIn(
             "apps/mobile/src-tauri/gen/android/app/src/main/AndroidManifest.xml",
             paths,
         )
+        self.assertIn("apps/mobile/src-tauri/gen/apple/Assets.xcassets/Contents.json", paths)
+        self.assertIn("apps/mobile/src-tauri/gen/apple/project.yml", paths)
         self.assertFalse(
             any(
                 path == generated or path.startswith(f"{generated}/")
                 for path in paths
-                for generated in ANDROID_TAURI_GENERATED_BUILD_OUTPUTS
+                for generated in TAURI_GENERATED_BUILD_OUTPUTS
             )
         )
 

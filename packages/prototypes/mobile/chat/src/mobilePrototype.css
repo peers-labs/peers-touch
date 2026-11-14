@@ -2065,17 +2065,6 @@ button.mp-chat-details-item:hover { background: var(--pt-subtle); }
 .mp-social-content-addon strong { font-size: 13.5px; }
 .mp-social-content-addon small { font-size: 11.5px; color: var(--pt-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mp-social-video { justify-content: center; flex-direction: column; gap: 5px; background: var(--pt-mediaStage); color: var(--pt-mediaStageText); border-color: var(--pt-mediaStage); }
-.mp-social-poll {
-  margin-top: 9px;
-  padding: 11px 12px;
-  border: 1px solid var(--pt-border);
-  border-radius: var(--pt-radius-md);
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-.mp-social-poll strong { display: flex; align-items: center; gap: 6px; font-size: 13.5px; }
-.mp-social-poll span { font-size: 13px; color: var(--pt-secondary); }
 .mp-social-repost {
   margin-top: 9px;
   padding: 9px 12px;

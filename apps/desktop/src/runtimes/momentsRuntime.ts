@@ -39,6 +39,7 @@ import type {
   PrivateMomentPublishResult,
 } from '../services/privateMomentsNative';
 import { log } from '../utils/logger';
+import { resumePublicFeed } from '../services/publicFeedNative';
 
 const MOMENTS_RECONCILE_INTERVAL_MS = 45_000;
 const MOMENTS_RECONNECT_REFRESH_MIN_INTERVAL_MS = 5_000;
@@ -84,6 +85,8 @@ let lastReconnectRefreshAt = 0;
 let privateProjectionReady = false;
 const pendingMomentEventKeys = new Set<string>();
 const completedMomentEventKeys = new Set<string>();
+// Only painted inline threads hold interest; hidden/closed cards release it.
+const visibleCommentThreads = new Map<string, { generation: number; leases: Set<symbol> }>();
 
 export interface MomentsRuntimeScope {
   readonly actorPtid: string;
@@ -193,6 +196,7 @@ function invalidateScope(): number {
   privateProjectionReady = false;
   pendingMomentEventKeys.clear();
   completedMomentEventKeys.clear();
+  visibleCommentThreads.clear();
   useMomentsNavigationStore.getState().reset();
   resetProjection(generation);
   return generation;
@@ -310,11 +314,11 @@ async function preloadCircleMembers(scope: MomentsRuntimeScope): Promise<void> {
   const store = useMomentsStore.getState();
   const tasks = store.circles
     .map((circle) => String(circle.id ?? ''))
-    .filter((circleId) => circleId && !store.circleMembers[circleId])
-    .map((circleId) => store.loadCircleMembers(circleId));
-
-  await Promise.allSettled(tasks);
-  if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
+    .filter(Boolean);
+  for (let index = 0; index < tasks.length; index += 6) {
+    await Promise.allSettled(tasks.slice(index, index + 6).map(id => store.loadCircleMembers(id)));
+    if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
+  }
 }
 
 export async function ensureCircleMemberProfiles(): Promise<void> {
@@ -390,12 +394,31 @@ async function refreshMomentsProjectionNow(
     ...privatePostIds(),
     ...Object.keys(usePrivateMomentsStore.getState().postsById),
   ])];
-  await moments.syncProjection(label);
+  try {
+    await resumePublicFeed();
+    if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
+    moments.setPublicFeedRecoveryError(null);
+  } catch (error) {
+    if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
+    moments.setPublicFeedRecoveryError(String(error));
+    log.warn('momentsRuntime', 'public feed retained write awaits recovery', { error: String(error) });
+  }
+  try {
+    await moments.syncProjection(label);
+    if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
+    await moments.reconcilePublicPollCommands();
+  } catch (error) {
+    if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
+    if (!/\bFEED_[A-Z_]+\b/.test(String(error))) throw error;
+    log.warn('momentsRuntime', 'public Moments projection unavailable', { label, error: String(error) });
+  }
   if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
   await hydrateVisibleMomentAuthors(scope);
+  await refreshVisiblePublicCommentThreads(scope);
   await Promise.allSettled([
     discovery.loadMe(),
     moments.listMyCircles(),
+    moments.loadMyStats(),
   ]);
   if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
   await preloadCircleMembers(scope);
@@ -535,6 +558,43 @@ async function ensureMomentDetailProjectionNow(
   log.info('momentsRuntime', 'moment detail projection refresh completed');
 }
 
+async function refreshVisiblePublicCommentThreads(scope: MomentsRuntimeScope): Promise<void> {
+  const moments = useMomentsStore.getState();
+  const postIds = [...visibleCommentThreads.entries()]
+    .filter(([postId, interest]) => interest.generation === scope.generation
+      && interest.leases.size > 0 && moments.postsById[postId]
+      && !isPrivateMomentPost(moments.postsById[postId]))
+    .map(([postId]) => postId);
+  await Promise.allSettled(postIds.map(postId => moments.loadComments(postId, true)));
+  if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
+}
+
+/** Section lifetime binding. The original Runtime owns first read and missed-event reconciliation. */
+export function acquireMomentComments(postId: string): () => void {
+  const scope = activeScope;
+  if (!scope || !postId.trim()) return () => undefined;
+  const id = postId.trim(), lease = Symbol(id);
+  const existing = visibleCommentThreads.get(id);
+  const interest = existing ?? { generation: scope.generation, leases: new Set<symbol>() };
+  interest.leases.add(lease);
+  visibleCommentThreads.set(id, interest);
+  if (!existing) runDetached('visible Moment comments acquisition', enqueueScopedProjection(async current => {
+    if (visibleCommentThreads.get(id) !== interest || interest.leases.size === 0
+      || interest.generation !== current.generation) return;
+    const moments = useMomentsStore.getState();
+    if (isPrivateMomentPost(moments.postsById[id]) || usePrivateMomentsStore.getState().postsById[id]) {
+      await usePrivateCommentsStore.getState().loadComments(id);
+    } else if (moments.postsById[id] && moments.comments?.[id] === undefined) {
+      await moments.loadComments(id);
+    }
+    if (!isCurrentScope(current)) throw new MomentsRuntimeScopeChangedError();
+  }).then(() => undefined));
+  return () => {
+    interest.leases.delete(lease);
+    if (interest.leases.size === 0 && visibleCommentThreads.get(id) === interest) visibleCommentThreads.delete(id);
+  };
+}
+
 export async function ensureMomentDetailProjection(
   postId: string, target?: { origin: 'device' | 'station'; commentId?: string },
 ): Promise<void> {
@@ -567,6 +627,11 @@ async function ensureUserMomentsProjectionNow(
     moments.loadUserFeed(trimmedActorPtid, true),
     relationships.loadFollowers(trimmedActorPtid, true),
     relationships.loadFollowing(trimmedActorPtid, true),
+    ...(trimmedActorPtid === scope.actorPtid ? [] : [
+      relationships.loadRelationship(trimmedActorPtid),
+      relationships.loadRelationshipStatus(trimmedActorPtid),
+    ]),
+    ...(trimmedActorPtid === scope.actorPtid ? [moments.loadMyStats()] : []),
   ]);
   if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
   log.info('momentsRuntime', 'user moments projection refresh completed');
@@ -645,11 +710,18 @@ function onMomentCommented(payload: MomentCommentedPayload): void {
   );
 }
 
+function onMomentUpdated(payload: MomentRealtimeBasePayload): void {
+  runScopedMomentEvent(payload, 'moment updated projection refresh',
+    scope => ensureMomentDetailProjectionNow(scope, payload.postId));
+}
+
 function onMomentReacted(payload: MomentReactedPayload): void {
   runScopedMomentEvent(
     payload,
     'moment reacted projection refresh',
-    (scope) => wakePostReactionProjection(scope, payload.postId),
+    (scope) => payload.commentId
+      ? ensureMomentDetailProjectionNow(scope, payload.postId)
+      : wakePostReactionProjection(scope, payload.postId),
   );
 }
 
@@ -793,7 +865,20 @@ function reconcileAuthenticatedRuntime(_reason = 'session'): Promise<void> {
   const desired = desiredScope();
   if (!desired) {
     pendingScopeKey = null;
-    if (activeScope) invalidateScope();
+    if (activeScope) {
+      // Genuine deauthentication only. The window is leaving this actor, so
+      // explicitly fence its native Secure Content runtime. Same-actor
+      // generation churn and cross-actor switches never reach this branch:
+      // those are reconciled by re-activation and native identity transitions,
+      // and tearing the native runtime down mid-switch would orphan the live
+      // lease the new scope is about to use.
+      const detachedActorPtid = activeScope.actorPtid;
+      const detachedGeneration = activeScope.generation;
+      invalidateScope();
+      void usePrivateMomentsStore
+        .getState()
+        .teardownNativeActor(detachedActorPtid, detachedGeneration);
+    }
     return projectionQueue;
   }
 
@@ -919,6 +1004,7 @@ export const momentsRuntime: RuntimeDescriptor = {
       eventBus.subscribe(EVENT.MOMENT_REVOKED, onMomentRevoked),
       eventBus.subscribe(EVENT.MOMENT_COMMENTED, onMomentCommented),
       eventBus.subscribe(EVENT.MOMENT_REACTED, onMomentReacted),
+      eventBus.subscribe(EVENT.MOMENT_UPDATED, onMomentUpdated),
       eventBus.subscribe(EVENT.RELATIONSHIP_CHANGED, onRelationshipChanged),
       eventBus.subscribe(EVENT.MOMENT_RESYNC_REQUESTED, onMomentResyncRequested),
       eventBus.subscribe(EVENT.REALTIME_RESYNC, onRealtimeResync),

@@ -14,9 +14,11 @@ import { resolveChatJourneyLocale, type ChatJourneyLocale } from '../../../share
 import enCommon from '../../../../locales/en/common.json';
 import enChat from '../../../../locales/en/chat.json';
 import enSearch from '../../../../locales/en/search.json';
+import enMoments from '../../../../locales/en/moments.json';
 import zhCommon from '../../../../locales/zh-CN/common.json';
 import zhChat from '../../../../locales/zh-CN/chat.json';
 import zhSearch from '../../../../locales/zh-CN/search.json';
+import zhMoments from '../../../../locales/zh-CN/moments.json';
 import { useEffect, useState } from 'react';
 
 export type Locale = ChatJourneyLocale;
@@ -25,8 +27,8 @@ export type TemplateVars = Record<string, string | number>;
 type Dictionary = Record<string, string>;
 
 const BUNDLES: Record<Locale, Dictionary> = {
-  en: { ...enCommon, ...enChat, ...enSearch } as Dictionary,
-  zh: { ...zhCommon, ...zhChat, ...zhSearch } as Dictionary,
+  en: { ...enCommon, ...enChat, ...enSearch, ...enMoments } as Dictionary,
+  zh: { ...zhCommon, ...zhChat, ...zhSearch, ...zhMoments } as Dictionary,
 };
 
 const EVENT = 'mp-locale-change';

@@ -304,7 +304,8 @@ class AcceptanceRunTest(unittest.TestCase):
             self.assertEqual(latest, [])
             result = json.loads(result_paths[0].read_text(encoding="utf-8"))
 
-        self.assertEqual(result["verificationClass"], "FUNCTIONAL_CHECK")
+        self.assertEqual(result["verificationClass"], "SOURCE_CHECK")
+        self.assertEqual(result["artifactKind"], "development-source-result")
         self.assertEqual(result["proofStatus"], "NOT_APPLICABLE")
 
     def test_station_profiles_are_explicit_runtime_bindings(self) -> None:
@@ -509,11 +510,40 @@ class AcceptanceRunTest(unittest.TestCase):
             "run",
             side_effect=project_plan,
         ) as run:
-            plan, source = module.load_plan(None, store)
+            plan, source = module.load_plan(
+                None, store, execution_plan_path=Path("plans/active/plan.md"),
+            )
 
         self.assertEqual(run.call_args.args[0][0], sys.executable)
+        self.assertNotIn("--active-plan", run.call_args.args[0])
+        self.assertIn("--execution-plan", run.call_args.args[0])
         self.assertEqual(plan["gates"], [])
         self.assertEqual(source, "plans/active/plan.md")
+
+    def test_default_plan_projection_uses_the_real_current_cli(self) -> None:
+        module = load_module()
+        store = mock.Mock(root=Path(tempfile.gettempdir()))
+        original_run = subprocess.run
+
+        def project_plan(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+            return original_run(
+                [*command, "--changed-file", "docs/unmapped-runner-test.md"],
+                **kwargs,
+            )
+
+        with mock.patch.object(module.subprocess, "run", side_effect=project_plan):
+            plan, source = module.load_plan(None, store)
+
+        self.assertEqual(plan["selected_gates"], [])
+        self.assertEqual(source, {"artifactKind": "acceptance-diff-selection", "range": "HEAD"})
+
+    def test_broad_plan_modes_require_explicit_execution_plan(self) -> None:
+        module = load_module()
+        for mode in ("completion", "full"):
+            with self.subTest(mode=mode), mock.patch.object(module.subprocess, "run") as run:
+                with self.assertRaisesRegex(SystemExit, "explicit --execution-plan"):
+                    module.load_plan(None, mock.Mock(), execution_mode=mode)
+                run.assert_not_called()
 
     def test_source_identity_drift_preserves_aggregate_baseline(self) -> None:
         module = load_module()
@@ -1789,6 +1819,77 @@ class AcceptanceRunTest(unittest.TestCase):
             self.assertFalse((root / "source").exists())
             self.assertFalse((root / "profile").exists())
 
+    def test_cleanup_failure_retains_original_cell_refusal_diagnostic(self) -> None:
+        from tooling.acceptance.core import BlockedError, ProvisioningError
+        from tooling.acceptance.core.resource_diagnostic import ResourceDiagnostic
+
+        module = load_module()
+        output = io.StringIO()
+        diagnostic = ResourceDiagnostic.observed(
+            owner="macos-native-driver", resource="runtime-cell-operator-focus",
+            expected={"operation": "operator"},
+            observed={"axAttribute": "AXFocusedUIElement", "axStatus": -25204},
+            recovery_action="Repair the original observer under the same deadline.",
+        )
+        refusal = BlockedError(
+            "macOS scoped native observation failed",
+            resource="runtime-cell-operator-focus", diagnostic=diagnostic,
+        )
+        provisioner = HomeStationProvisioner(EnvironmentContract.from_yaml(
+            REPO_ROOT / "tooling/acceptance/environments/home-station.yaml",
+        ))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifacts = root / "artifacts"
+            catalog = root / "gates.json"
+            catalog.write_text(json.dumps({"gates": {"cell-refusal": {
+                "argv": [sys.executable, "-c", "pass"],
+                "environment": "home-station", "provisioner": "home-station",
+                "requiredRuntimeCells": ["desktop-linux-native"],
+                "tier": "env-evidence",
+            }}}))
+            with (
+                mock.patch.dict(os.environ, {"PT_ACCEPTANCE_ARTIFACT_ROOT": str(artifacts)}),
+                mock.patch.object(sys, "argv", [
+                    "acceptance-run.py", "--gates", str(catalog),
+                    "--gate", "cell-refusal", "--runtime-cell", "desktop-linux-native",
+                ]),
+                mock.patch("tooling.acceptance.core.source_identity", return_value={
+                    "commit": "a" * 40, "workspaceDigest": "clean",
+                    "canonicalWorktreeHash": workspace_id(REPO_ROOT),
+                }),
+                mock.patch.object(module, "environment_provisioner", return_value=provisioner),
+                mock.patch.object(provisioner, "prepare_fixture_authority", return_value={}),
+                mock.patch.object(provisioner, "prepare_credentials", return_value=((), {})),
+                mock.patch.object(module, "provision_environment", return_value=(
+                    provisioner, {"state": "FIXTURE_READY", "runId": "prepared"}, None,
+                )),
+                mock.patch.object(module, "provision_runtime_cell", side_effect=refusal),
+                mock.patch.object(provisioner, "cleanup", side_effect=ProvisioningError(
+                    "ordinary Station restoration failed",
+                )),
+                mock.patch("tooling.acceptance.core.GateProcessLauncher.run") as launch,
+                contextlib.redirect_stdout(output),
+            ):
+                exit_code = module.main()
+            store = EvidenceStore(artifacts, worktree=REPO_ROOT)
+            reference = next(line.removeprefix("run: ")
+                             for line in output.getvalue().splitlines()
+                             if line.startswith("run: "))
+            report = store.read_json(ArtifactRef.from_dict(json.loads(reference)))
+            result = next(item for item in report["results"] if item["id"] == "cell-refusal")
+            self.assertEqual(exit_code, 1)
+            launch.assert_not_called()
+            self.assertEqual(result["status"], "failed")
+            self.assertEqual(result["cleanupStatus"], "failed")
+            self.assertEqual(result["proofStatus"], "UNPROVEN")
+            self.assertEqual(result["reason"], "ordinary Station restoration failed")
+            primary = result["primaryFailure"]
+            self.assertEqual(primary["status"], "blocked")
+            self.assertEqual(primary["completionStatus"], "BLOCKED")
+            self.assertEqual(primary["blockedResource"], "runtime-cell-operator-focus")
+            self.assertEqual(primary["diagnostic"], diagnostic.to_dict())
+
     def test_failed_quarantine_defers_resource_release(self) -> None:
         cleanup = EphemeralCleanupResult(
             descriptors_closed=True,
@@ -2631,6 +2732,63 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertEqual(result["completionStatus"], "DONE")
         self.assertEqual(result["proofStatus"], "NOT_APPLICABLE")
         self.assertEqual(result["traceability"]["status"], "not-required")
+        self.assertEqual(result["verificationClass"], "SOURCE_CHECK")
+        self.assertEqual(result["artifactKind"], "development-source-result")
+
+    def test_development_result_preserves_check_strength(self) -> None:
+        module = load_module()
+        for metadata, expected_class, expected_kind, expected_proof in (
+            ({"tier": "ci-structure"}, "STRUCTURAL_CHECK", "development-structural-result",
+             "NOT_APPLICABLE"),
+            ({"environment": "native-runtime", "tier": "env-evidence"},
+             "FUNCTIONAL_CHECK", "development-functional-result", "UNPROVEN"),
+            ({"verificationClass": "UX_REVIEW"}, "UX_REVIEW", "development-ux-result",
+             "NOT_APPLICABLE"),
+        ):
+            with self.subTest(metadata=metadata):
+                result = module.standardize_result(
+                    {"id": "check", "status": "passed", **metadata},
+                    {"kind": "manual"}, execution_policy="development",
+                )
+                self.assertEqual(result["verificationClass"], expected_class)
+                self.assertEqual(result["artifactKind"], expected_kind)
+                self.assertEqual(result["proofStatus"], expected_proof)
+                self.assertEqual(
+                    module.standardize_result(
+                        result, {"kind": "manual"}, execution_policy="development",
+                    ),
+                    result,
+                )
+
+    def test_development_source_prerequisite_keeps_original_class(self) -> None:
+        module = load_module()
+        source = {"commit": "a" * 40, "workspaceDigest": "clean"}
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = EvidenceStore(root / "artifacts", worktree=root / "repo")
+            run = store.begin_run("source-producer", source=source)
+            try:
+                result = module.record_development_result(
+                    {"id": "source-producer", "status": "passed", "environment": "local",
+                     "cleanupStatus": "not-required"},
+                    run, {"kind": "manual"}, "WORK-01",
+                )
+                refs, unproven = module.prerequisite_results(
+                    {"id": "consumer", "dependsOn": ["source-producer"]}, [result],
+                    source, store, execution_policy="development",
+                )
+                self.assertEqual(unproven, [])
+                self.assertEqual(refs[0]["developmentManifest"], result["developmentManifest"])
+                self.assertEqual(result["verificationClass"], "SOURCE_CHECK")
+                with self.assertRaisesRegex(ValueError, "prerequisite source or proof mismatch"):
+                    module.prerequisite_results(
+                        {"id": "consumer", "dependsOn": ["source-producer"]},
+                        [{**result, "verificationClass": "FUNCTIONAL_CHECK",
+                          "artifactKind": "development-functional-result"}],
+                        source, store, execution_policy="development",
+                    )
+            finally:
+                run.close()
 
     def test_development_result_emits_a_durable_runner_manifest(self) -> None:
         module = load_module()

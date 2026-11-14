@@ -33,6 +33,9 @@ conformance do not substitute for required UI or receiver-visible evidence.
 - `environments/`: typed environment and service requirements.
 - `runtime-cells/`: platform-cell contracts.
 - `provisioners/`: resource lifecycle adapters.
+- `provisioners/relay_attachment.py`: shared Relay CA, invitation and Station
+  attachment preparation; callers retain service/source leases and supply their
+  own reverse-cleanup registration.
 - `fixtures/`: business-owned setup and reset operations.
 - `input_owners/`: read-only execution-input observers.
 - `core/`: domain-neutral scope, lifecycle, evidence, proof, and reporting logic.

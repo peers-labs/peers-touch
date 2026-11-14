@@ -45,6 +45,7 @@ def require(value: Any, message: str) -> None:
 
 
 class MobileDeviceSearchGate(SimulatorSocialGate):
+    max_client_launches = 2
     expected_clients = {"sim-ios": "ios", "sim-android": "android"}
     client_assignments = {
         "sim-ios": ("station", "alice"), "sim-android": ("station", "bob"),
@@ -876,6 +877,10 @@ return input && !input.disabled && document.documentElement.lang === arguments[0
             "supportingObservation": f"{session.client_id}:native-scope-replaced",
         }
 
+    def prepare_suite(self, artifacts: ArtifactSession, manifest: Mapping[str, Any],
+                      sessions: Mapping[str, Any]) -> None:
+        """Prepare subclass-owned resources before the first attach-only scenario."""
+
     def _run_social_journey(self, artifacts: ArtifactSession, manifest: Mapping[str, Any]) -> dict:
         source = _validate_source_identity(manifest)
         resources = self._required_object(manifest, "mobileSimulator", "Search runtime")
@@ -932,7 +937,8 @@ return true;
                 role=f"mobile-search-native-admission/{client_id}",
             )
         ledger = SuiteRuntimeLedger(
-            REUSE, suite_runtime_id=f"mobile-search-{artifacts.run_id}",
+            replace(REUSE, max_client_launches=self.max_client_launches),
+            suite_runtime_id=f"mobile-search-{artifacts.run_id}",
             source_digest=source["commit"], fixture_epoch=manifest["runId"],
         )
         self.suite_runtime_ledger = ledger
@@ -941,6 +947,7 @@ return true;
         for client_id in sessions:
             ledger.record(SuiteRuntimeAction.CLIENT_LAUNCH, resource_id=client_id)
             ledger.record(SuiteRuntimeAction.LOGIN, resource_id=client_id)
+        self.prepare_suite(artifacts, manifest, sessions)
         conversation = journey._create_direct(
             sessions["sim-android"], sessions["sim-ios"],
             actors["sim-android"], actors["sim-ios"],

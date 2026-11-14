@@ -1,12 +1,13 @@
 ---
 kind: pitfall
 title: Semantic Native qualification must include startup and preserve its operator baseline
-status: active
+status: superseded-by:docs/knowledge/pitfalls/native-semantic-startup-with-object-identity.md
 owns:
   - apps/desktop/src-tauri/Cargo.lock
   - apps/desktop/src-tauri/src/main.rs
   - tooling/acceptance/provisioners/native_desktop_macos.py
   - tooling/acceptance/tests/test_native_desktop_macos.py
+  - tooling/acceptance/tests/test_native_observation_diagnostics.py
   - tooling/acceptance/core/runtime_cell.py
   - tooling/acceptance/drivers/native/
   - tooling/acceptance/gates/chat/native_file_picker.py
@@ -103,16 +104,31 @@ Binding consumes qualification and the shared picker uses the same observation
 contract for its visible trigger and exact-PID native selection. Permission,
 physical focus and HID remain separately guarded.
 
+The exact-PID selector uses the file container's actual mutable selection
+attribute. ListView exposes `AXSelectedRows` and no mutable
+`AXSelectedChildren`; requiring only the latter discards an available row and
+sends a fresh file to a Search path that can return no match. The original
+selector now uses the real row and requires native panel completion for the
+exact staged path. Run the real fresh-file regression in
+`macos_test.MacOSAccessibilityResponsivenessTests`; a native OpenPanel callback
+must independently return the same path, and the fixture bytes must remain
+unchanged. This is Driver evidence; parent Cell qualification and the actual
+Social Journey remain separate requirements.
+
 The XPC-hosted column browser advertises a mutable `AXSelectedChildren`
 but the cross-service write is rejected with -25205, and row
 `AXOpen`/`AXConfirm` do not commit a file. The exact-PID semantic fallback
 commits the panel Search field (`AXIdentifier="Search"`) with
 `AXValue` + `AXConfirm`, requires exactly one `AXFilename` match, selects
 the `AXOutline ListView` row through `AXSelectedRows`, then presses OK.
-No match, ambiguous matches, or a panel left open stay as an unavailable
-semantic sentinel rather than a fabricated selection; a unique qualification
-filename makes the single match exact and the parent still verifies path and
-file bytes. The loopback HTTP fault proxy is switched in only after the bound
+No match, ambiguous matches, or a panel left open retain their closed
+unavailable reason. The result still binds the requested staged path.
+Non-intrusive mode raises a typed Driver blocker carrying that reason and
+owner PID, without exporting the path or waiting for an unselected commit.
+Only an independently admitted exclusive caller can consume the unavailable
+sentinel through its native fallback. A unique qualification filename makes
+the single match exact and the parent still verifies path and file bytes.
+The loopback HTTP fault proxy is switched in only after the bound
 session discovers the reviewed manifest origin; Station canonical origin is
 restarted to loopback then, and restored to the public origin before any native
 restart/rebind. Launching a session against the loopback origin before the
@@ -273,3 +289,46 @@ cases in `test_native_observation_diagnostics`. Require the actual button path,
 the same propagated exception and balanced CF ownership. The complete real
 Native Journey must separately prove chooser open/select/close, exact file
 readback, unchanged operator and owned cleanup.
+
+## One-shot actions have their original operation budget
+
+The AX reader installs a 0.5-second messaging timeout for bounded observations.
+That timeout is inherited by mutations. A real Runtime Cell stopped at Search
+`AXConfirm` with `-25204` after the column browser exposed no mutable selection.
+This establishes the failing action, not whether that unknown action committed.
+
+The shared AX owner sets a mutation's messaging timeout to its original
+operation's remaining time, invokes it once, and rejects an expired reply or
+nonzero status. No action is replayed and no operation or subprocess deadline
+is extended. Read retries still use their separate short cap and shared budget.
+
+The real busy-panel regression also found the button owner exhausting its
+bounded depth-first walk inside the file list before reaching Cancel. It now
+checks controls by depth, retains the existing node/depth limits, and releases
+all retained nodes. Failed reads still propagate.
+
+Run `macos_test.AXOneShotActionTest`, the real
+`macos_test.MacOSAccessibilityResponsivenessTests`, and
+`test_file_chooser_qualification` / `test_native_desktop_macos`. Then run the
+same selected current-source Native Journey. Synthetic checks and a passing
+cancel operation cannot prove Search selection, operator preservation or
+Social product behavior.
+
+## Focus flags belong to the focused window
+
+A live read of the operator returned two AXWindows: the first had no title
+and both AXMain/AXFocused false; the second had both flags true and matched
+the application's AXFocusedWindow and AXMainWindow. The shared control reader
+used the first enumerated window for those flags, even though its focused UI
+element belonged to the second. This proves an incorrect window observation,
+not the cause of a historical digest change whose field values were not saved.
+
+The original reader obtains AXFocusedWindow, falling back to AXMainWindow only
+on explicit optional absence. It retains the same deadline, status propagation
+and CF ownership. It never substitutes AXWindows[0]. Enumeration still supplies
+window/sheet counts, which do not define keyboard focus.
+
+Run the original `test_native_observation_diagnostics` cases for both enumeration
+orders, absent focused/main windows and failed focus-window reads. Recheck the
+actual bounded observer, then the same current-source Native Journey. Preserve
+the frozen baseline, sticky mismatch, exact deadlines and owned cleanup.

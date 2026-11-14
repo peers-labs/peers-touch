@@ -7,7 +7,11 @@ from collections.abc import Mapping
 from typing import Any
 
 from tooling.acceptance import search_capture
-from tooling.acceptance.core import AcceptanceGate, ArtifactSession, EphemeralGateClient
+from tooling.acceptance.core import (
+    AcceptanceGate, ArtifactRef, ArtifactSession, EphemeralGateClient,
+    SuiteRuntimeAction, call_async_harness,
+)
+from tooling.acceptance.gates.chat.mixed_native_runtime import MixedNativeRuntime
 from tooling.acceptance.gates.chat.mobile_device_search import (
     MobileDeviceSearchGate, PAGE, ROW, require,
 )
@@ -17,6 +21,7 @@ GATE_ID = "social-content-search-mobile-native-e2e"
 
 
 class SocialContentSearchMobileGate(MobileDeviceSearchGate):
+    max_client_launches = 3
     scenario_gates = {"device-search": GATE_ID}
     scenario_metadata = {"device-search": {
         "phase": "Social content Search Mobile",
@@ -76,6 +81,51 @@ return {
         require(self.capability_client is not None,
                 "Social Search requires its source-bound outage capability")
         return super()._run_social_journey(artifacts, manifest)
+
+    def prepare_suite(self, artifacts: ArtifactSession, manifest: Mapping[str, Any],
+                      sessions: Mapping[str, Any]) -> None:
+        actor_manifest = artifacts.store.read_json(ArtifactRef.from_dict(manifest["actorManifest"]))
+        self.desktop_runtime = MixedNativeRuntime(
+            gate_id=GATE_ID, manifest=dict(manifest), actor_manifest=actor_manifest,
+        )
+        author = self.desktop_runtime.start_client(
+            "desktop-author", window_slot=0, window_count=1,
+        )
+        require(all(author.ptid != session.call_action("getRealtimeDevice")["actorPtid"]
+                    for session in sessions.values()),
+                "Desktop public author must be independent of both Mobile receivers")
+        ledger = self.suite_runtime_ledger
+        ledger.record(SuiteRuntimeAction.ACCOUNT_PROVISION, resource_id="actor:desktop-author")
+        ledger.record(SuiteRuntimeAction.CLIENT_LAUNCH, resource_id="desktop-author")
+        ledger.record(SuiteRuntimeAction.LOGIN, resource_id="desktop-author")
+        artifacts.write_json(
+            "social-content-search/desktop-author/source.json",
+            self.desktop_runtime.source_identity(),
+            role="social-search-signed-desktop-author-source",
+        )
+
+    def _cleanup_sessions(self, artifacts: ArtifactSession) -> None:
+        runtime = getattr(self, "desktop_runtime", None)
+        if runtime is not None:
+            try:
+                result = runtime.cleanup()
+                desktop = result.get("desktop") or {}
+                passed = not result.get("cleanupErrors") and all(desktop.get(field) is True
+                    for field in ("portsReleased", "processesReleased", "storageReleased", "logsReleased"))
+                self.cleanup.append({"resource": "desktop-author", "status": "passed" if passed else "failed"})
+                artifacts.write_json(
+                    "social-content-search/desktop-author/cleanup.json", result,
+                    role="social-search-signed-desktop-author-cleanup",
+                )
+            except Exception as error:
+                self.cleanup.append({"resource": "desktop-author", "status": "failed",
+                                     "errorType": type(error).__name__})
+        super()._cleanup_sessions(artifacts)
+
+    def desktop_moments(self, action: str, payload: dict) -> dict:
+        session = self.desktop_runtime.desktop_session("desktop-author")
+        require(session is not None, "prepared Desktop signed author is unavailable")
+        return call_async_harness(session, action, payload, namespace="moments", script_timeout=60)
 
     def _capture_runtime_failure(self, artifacts: ArtifactSession) -> list[dict[str, Any]]:
         diagnostics = []
@@ -146,33 +196,51 @@ Promise.resolve(window.__PEERS_MOBILE_ACCEPTANCE__['moments.private.read']({
         reply_query = f"线程 {token}"
         reply = send(reply_query, replyToMessageId=root, threadRootMessageId=root)
         filler = [send(f"历史 {token} {index:03}") for index in range(21)]
+        denial = self.mutate_when_admitted(receiver_session, "moments.publish", {
+            "text": f"{query} unsigned-public-denial", "audienceKind": 1,
+        })
+        require(denial.get("rejected") is True and denial.get("code") == "FEED_SIGNED_WRITE_REQUIRED",
+                "Mobile must continue denying unsigned public publication")
         return {"conversation": conversation, "query": query, "root": root,
-                "reply": reply, "replyQuery": reply_query, "filler": filler, "token": token}
+                "reply": reply, "replyQuery": reply_query, "filler": filler, "token": token,
+                "publicWriteDenial": {"rejected": denial["rejected"], "code": denial["code"]},
+                "socialPublic": self.public_seed(query),
+                "blockPublic": self.public_seed(f"{query} block", newer_comments=0)}
 
-    def social_seed(self, session: Any, sender: Any, query: str) -> dict:
-        text = {
+    def public_seed(self, query: str, *, newer_comments: int = 22) -> dict:
+        public_text = f"{query} 公开帖子"
+        comment_text = f"{query} 历史公开评论"
+        public = self.desktop_moments("publishPublicMoment", {"text": public_text})
+        public_id = public.get("transientPostId")
+        require(public_id, "original signed Social publication must supply its canonical ID")
+        comment = self.desktop_moments("submitPublicComment", {
+            "postId": public_id, "text": comment_text,
+        })
+        require(comment.get("commentId"), "original signed historical comment must be acquired")
+        for index in range(newer_comments):
+            self.desktop_moments("submitPublicComment", {
+                "postId": public_id, "text": f"new-public-{query}-{index}",
+            })
+        return {"public": public_text, "publicComment": comment_text,
+                "publicId": public_id, "publicCommentId": comment["commentId"],
+                "newerCommentsPerPost": newer_comments, "publicAuthorClientId": "desktop-author"}
+
+    def social_seed(self, session: Any, sender: Any, query: str, public: dict) -> dict:
+        text = {**public,
             "public": f"{query} 公开帖子", "private": f"{query} 私密帖子",
             "publicComment": f"{query} 历史公开评论",
             "privateComment": f"{query} 历史私密评论",
         }
-        public = self.mutate_when_admitted(sender, "moments.publish", {
-            "text": text["public"], "audienceKind": 1,
-        })
         private = self.mutate_when_admitted(sender, "moments.private.publishText", {
             "draftId": uuid.uuid4().hex, "draftRevision": 1,
             "text": text["private"], "audience": {"kind": "FRIENDS"},
         })
-        require(public.get("postId") and private.get("postId"),
-                "original Social publication must supply canonical IDs")
-        public_comment = self.mutate_when_admitted(sender, "moments.comment", {
-            "postId": public["postId"], "content": text["publicComment"],
-        })
+        require(private.get("postId"), "original private publication must supply its canonical ID")
         private_comment = self.mutate_when_admitted(sender, "moments.private.comment.submit", {
             "draftId": uuid.uuid4().hex, "draftRevision": 1,
             "postId": private["postId"], "text": text["privateComment"],
         })
-        require(public_comment.get("commentId") and private_comment.get("commentId"),
-                "original public/private comments must be acquired")
+        require(private_comment.get("commentId"), "original private comment must be acquired")
         acquired = session.call_action("moments.private.read", {"postId": private["postId"]})
         require(acquired.get("state") == "CONTENT_READY",
                 "original recipient must receive and decrypt the private post")
@@ -182,17 +250,13 @@ Promise.resolve(window.__PEERS_MOBILE_ACCEPTANCE__['moments.private.read']({
         require(any(row["commentId"] == private_comment["commentId"]
                     for row in acquired_comments["comments"]),
                 "original recipient must acquire the old private comment")
-        for index in range(22):
-            self.mutate_when_admitted(sender, "moments.comment", {
-                "postId": public["postId"], "content": f"new-public-{query}-{index}",
-            })
+        for index in range(public["newerCommentsPerPost"]):
             self.mutate_when_admitted(sender, "moments.private.comment.submit", {
                 "draftId": uuid.uuid4().hex, "draftRevision": 1,
                 "postId": private["postId"], "text": f"new-private-{query}-{index}",
             })
-        return {**text, "publicId": public["postId"], "privateId": private["postId"],
-                "publicCommentId": public_comment["commentId"],
-                "privateCommentId": private_comment["commentId"], "newerCommentsPerPost": 22,
+        return {**text, "privateId": private["postId"],
+                "privateCommentId": private_comment["commentId"],
                 "privateAudience": "FRIENDS", "recipientAcquisition": acquired}
 
     def select(self, session: Any, filter_name: str, query: str) -> None:
@@ -262,41 +326,20 @@ return document.querySelector('#mobile-search-input')?.value === arguments[0]
         self.reconcile_continuity(artifacts, session, f"social-{name}-return")
 
     def block_policy(self, artifacts: ArtifactSession, session: Any,
-                     sender: Any, query: str) -> None:
+                     sender: Any, query: str, social: dict) -> None:
         # Existing private grants are revoked by block, not restored by unblock.
         # These targets do not share the outage/deletion fixture's authority.
-        texts = [f"{query} {label}" for label in (
-            "屏蔽公开帖子", "屏蔽私密帖子", "屏蔽公开评论", "屏蔽私密评论",
-        )]
-        public = self.mutate_when_admitted(sender, "moments.publish", {
-            "text": texts[0], "audienceKind": 1,
-        })
-        private = self.mutate_when_admitted(sender, "moments.private.publishText", {
-            "draftId": uuid.uuid4().hex, "draftRevision": 1,
-            "text": texts[1], "audience": {"kind": "FRIENDS"},
-        })
-        require(public.get("postId") and private.get("postId"),
-                "original block fixture must supply canonical post IDs")
-        public_comment = self.mutate_when_admitted(sender, "moments.comment", {
-            "postId": public["postId"], "content": texts[2],
-        })
-        private_comment = self.mutate_when_admitted(sender, "moments.private.comment.submit", {
-            "draftId": uuid.uuid4().hex, "draftRevision": 1,
-            "postId": private["postId"], "text": texts[3],
-        })
-        require(public_comment.get("commentId") and private_comment.get("commentId"),
-                "original block fixture must supply canonical comment IDs")
-        acquired = session.call_action("moments.private.read", {"postId": private["postId"]})
+        texts = [social[key] for key in ("public", "private", "publicComment", "privateComment")]
+        acquired = session.call_action("moments.private.read", {"postId": social["privateId"]})
         require(acquired.get("state") == "CONTENT_READY",
                 "block fixture private content must be acquired before block")
         acquired_comments = session.call_action("moments.private.comments.read", {
-            "postId": private["postId"],
+            "postId": social["privateId"],
         })
-        require(any(row["commentId"] == private_comment["commentId"]
+        require(any(row["commentId"] == social["privateCommentId"]
                     for row in acquired_comments["comments"]),
                 "block fixture private comment must be acquired before block")
-        ids = [public["postId"], private["postId"],
-               public_comment["commentId"], private_comment["commentId"]]
+        ids = [social[key] for key in ("publicId", "privateId", "publicCommentId", "privateCommentId")]
         self.select(session, "social", query)
         for resource_id, text in zip(ids, texts):
             self.has(session, resource_id, text)
@@ -320,10 +363,11 @@ return document.querySelector('#mobile-search-input')?.value === arguments[0]
             route["senderPtid"] == peer_identity["actorPtid"]
         ) else route["receiverHomeStationPeerId"]
         previous_request_ids = {row["requestId"] for row in relationships}
-        self.mutate_when_admitted(session, "social.block", {
-            "actorPtid": peer_identity["actorPtid"],
-        })
+        blocked_actors = []
         try:
+            for actor_ptid in (peer_identity["actorPtid"], self.desktop_runtime.identities["desktop-author"].ptid):
+                self.mutate_when_admitted(session, "social.block", {"actorPtid": actor_ptid})
+                blocked_actors.append(actor_ptid)
             self.select(session, "social", query)
             require(not set(ids).intersection(self.rows(session)),
                     "blocked author's posts and comments must disappear")
@@ -333,9 +377,8 @@ return document.querySelector('#mobile-search-input')?.value === arguments[0]
                     "resource": reference["resource"], "sourceId": reference["sourceId"],
                 }, "SEARCH_RESOURCE_UNAVAILABLE")
         finally:
-            self.mutate_when_admitted(session, "social.unblock", {
-                "actorPtid": peer_identity["actorPtid"],
-            })
+            for actor_ptid in reversed(blocked_actors):
+                self.mutate_when_admitted(session, "social.unblock", {"actorPtid": actor_ptid})
         # Unblock leaves the relationship deleted. A new real request belongs to
         # Suite fixture continuity, not restoration of any revoked private grant.
         self.mutate_when_admitted(session, "social.request.send", {
@@ -373,7 +416,7 @@ return document.querySelector('#mobile-search-input')?.value === arguments[0]
     def search_scenario(self, artifacts: ArtifactSession, session: Any,
                         sender_session: Any, fixture: dict) -> dict:
         query = fixture["query"]
-        social = self.social_seed(session, sender_session, query)
+        social = self.social_seed(session, sender_session, query, fixture["socialPublic"])
         artifacts.write_json(
             f"social-content-search/{session.client_id}/fixture.json", social,
             role=f"social-content-search-fixture/{session.client_id}",
@@ -462,10 +505,10 @@ return document.querySelector('[data-search-state]')?.dataset.searchState === 'r
             self.denial(session, f"deleted-{resource_id}", "search.resolve", {
                 "resource": item["resource"], "sourceId": item["sourceId"],
             }, "SEARCH_RESOURCE_UNAVAILABLE")
-        deleted_public = self.mutate_when_admitted(sender_session, "moments.delete", {
+        deleted_public = self.desktop_moments("deletePublicMoment", {
             "postId": social["publicId"],
         })
-        require(deleted_public.get("deleted") is True, "original owner must delete public parent")
+        require(deleted_public.get("postId") == social["publicId"], "original owner must delete public parent")
         self.select(session, "all", query)
         require(not {social["publicId"], social["publicCommentId"]}.intersection(self.rows(session)),
                 "deleted public parent suppresses every comment")
@@ -476,7 +519,8 @@ return document.querySelector('[data-search-state]')?.dataset.searchState === 'r
             self.denial(session, f"deleted-{resource_id}", "search.resolve", {
                 "resource": item["resource"], "sourceId": item["sourceId"],
             }, "SEARCH_RESOURCE_UNAVAILABLE")
-        self.block_policy(artifacts, session, sender_session, query)
+        block_social = self.social_seed(session, sender_session, f"{query} block", fixture["blockPublic"])
+        self.block_policy(artifacts, session, sender_session, query, block_social)
         # Real Chat received content and the existing continuity/return owner.
         self.select(session, "messages", fixture["replyQuery"])
         self.target(artifacts, session, fixture["replyQuery"], fixture["reply"], "social-chat-regression")

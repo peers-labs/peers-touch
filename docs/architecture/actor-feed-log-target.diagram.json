@@ -1,0 +1,294 @@
+{
+  "kind": "peers-touch-architecture-diagram",
+  "schemaVersion": 3,
+  "id": "project.actor-feed-log-target",
+  "module": "project",
+  "viewpoint": "runtime-topology",
+  "layout": "topology",
+  "output": "actor-feed-log-target.svg",
+  "title": "朋友圈主权架构 Actor-Owned Moments（proposed）",
+  "canvas": {
+    "width": 1750,
+    "height": 900
+  },
+  "edgeMeaning": "箭头仅表示真实网络流；框内为包含关系",
+  "scene": {
+    "zones": [
+      {
+        "id": "clients",
+        "title": "CLIENT DEVICES",
+        "x": 40,
+        "y": 110,
+        "width": 360,
+        "height": 620,
+        "tone": "secondary"
+      },
+      {
+        "id": "relay",
+        "title": "FALLBACK",
+        "x": 1243,
+        "y": 272,
+        "width": 124,
+        "height": 128,
+        "tone": "external"
+      },
+      {
+        "id": "home",
+        "title": "HOME STATION · 日志权威宿主",
+        "x": 800,
+        "y": 110,
+        "width": 440,
+        "height": 700,
+        "tone": "primary"
+      },
+      {
+        "id": "remote",
+        "title": "PEER STATION · 授权复制副本",
+        "x": 1390,
+        "y": 110,
+        "width": 320,
+        "height": 700,
+        "tone": "neutral"
+      }
+    ],
+    "instances": [
+      {
+        "id": "desktop",
+        "role": "clients",
+        "x": 70,
+        "y": 160,
+        "width": 300,
+        "height": 100,
+        "title": "Desktop 客户端",
+        "caption": "设备密钥签名 · 离线排队",
+        "tone": "secondary"
+      },
+      {
+        "id": "mobile",
+        "role": "clients",
+        "x": 70,
+        "y": 310,
+        "width": 300,
+        "height": 100,
+        "title": "Mobile 客户端",
+        "caption": "只连 Home Station，不对等复制",
+        "tone": "secondary"
+      },
+      {
+        "id": "relay-process",
+        "role": "relay",
+        "x": 1252,
+        "y": 316,
+        "width": 106,
+        "height": 60,
+        "title": "Relay",
+        "caption": "不见明文",
+        "tone": "external"
+      },
+      {
+        "id": "verifier",
+        "role": "home",
+        "x": 840,
+        "y": 160,
+        "width": 360,
+        "height": 100,
+        "title": "Feed Verifier / Ingest",
+        "caption": "设备签名 · checkpoint · seq/prev_hash",
+        "tone": "primary"
+      },
+      {
+        "id": "kernel",
+        "role": "home",
+        "x": 840,
+        "y": 285,
+        "width": 360,
+        "height": 80,
+        "title": "Signed-Log Kernel（共享原语）",
+        "caption": "SHA-256 · Ed25519 · canonical · fork 停机",
+        "tone": "muted"
+      },
+      {
+        "id": "feed-log",
+        "role": "home",
+        "x": 840,
+        "y": 395,
+        "width": 172,
+        "height": 115,
+        "title": "Actor Feed Log",
+        "caption": "作者定序 · 明文/密文",
+        "tone": "state"
+      },
+      {
+        "id": "gov-ledger",
+        "role": "home",
+        "x": 1028,
+        "y": 395,
+        "width": 172,
+        "height": 115,
+        "title": "Fed Ledger",
+        "caption": "治理 · sequencer",
+        "tone": "state"
+      },
+      {
+        "id": "projector",
+        "role": "home",
+        "x": 840,
+        "y": 540,
+        "width": 360,
+        "height": 90,
+        "title": "Feed Projector（物化视图）",
+        "caption": "posts · MomentDelivery · 计数 · FTS",
+        "tone": "neutral"
+      },
+      {
+        "id": "sql-store",
+        "role": "home",
+        "x": 840,
+        "y": 660,
+        "width": 360,
+        "height": 90,
+        "title": "SQL Projection Store",
+        "caption": "Postgres/SQLite · 可由日志重建",
+        "tone": "state"
+      },
+      {
+        "id": "peer-verifier",
+        "role": "remote",
+        "x": 1410,
+        "y": 160,
+        "width": 280,
+        "height": 100,
+        "title": "Feed Replicator",
+        "caption": "独立验签 · follow∩Audience",
+        "tone": "neutral"
+      },
+      {
+        "id": "peer-log",
+        "role": "remote",
+        "x": 1410,
+        "y": 285,
+        "width": 280,
+        "height": 115,
+        "title": "Replicated Feed Logs",
+        "caption": "公开明文 · 非公开仅密文信封",
+        "tone": "state"
+      },
+      {
+        "id": "peer-projector",
+        "role": "remote",
+        "x": 1410,
+        "y": 430,
+        "width": 280,
+        "height": 90,
+        "title": "Local Projector",
+        "caption": "本站时间线 / 计数 / 搜索投影",
+        "tone": "neutral"
+      },
+      {
+        "id": "peer-store",
+        "role": "remote",
+        "x": 1410,
+        "y": 550,
+        "width": 280,
+        "height": 90,
+        "title": "Projection Store",
+        "caption": "moderation/block 在投影层生效",
+        "tone": "state"
+      },
+      {
+        "id": "peer-clients",
+        "role": "remote",
+        "x": 1410,
+        "y": 675,
+        "width": 280,
+        "height": 75,
+        "title": "本站客户端",
+        "caption": "分页读取本站投影，不直接读链",
+        "tone": "secondary"
+      }
+    ],
+    "relations": [
+      {
+        "from": "desktop",
+        "to": "verifier",
+        "fromAnchor": "right",
+        "toAnchor": "left",
+        "label": "① 提交签名 FeedEvent",
+        "style": "primary",
+        "via": []
+      },
+      {
+        "from": "mobile",
+        "to": "projector",
+        "fromAnchor": "right",
+        "toAnchor": "left",
+        "label": "② 分页读时间线投影",
+        "style": "return",
+        "via": [
+          {
+            "x": 610,
+            "y": 360
+          },
+          {
+            "x": 610,
+            "y": 585
+          }
+        ]
+      },
+      {
+        "from": "verifier",
+        "to": "peer-verifier",
+        "fromAnchor": "top",
+        "toAnchor": "top",
+        "label": "③ 日志复制（默认直连）",
+        "style": "event",
+        "via": [
+          {
+            "x": 1020,
+            "y": 140
+          },
+          {
+            "x": 1550,
+            "y": 140
+          }
+        ]
+      },
+      {
+        "from": "verifier",
+        "to": "relay-process",
+        "fromAnchor": "right",
+        "toAnchor": "left",
+        "label": null,
+        "style": "secondary",
+        "via": [
+          {
+            "x": 1210,
+            "y": 210
+          },
+          {
+            "x": 1210,
+            "y": 346
+          }
+        ]
+      },
+      {
+        "from": "relay-process",
+        "to": "peer-verifier",
+        "fromAnchor": "right",
+        "toAnchor": "left",
+        "label": null,
+        "style": "secondary",
+        "via": [
+          {
+            "x": 1384,
+            "y": 346
+          },
+          {
+            "x": 1384,
+            "y": 210
+          }
+        ]
+      }
+    ]
+  }
+}

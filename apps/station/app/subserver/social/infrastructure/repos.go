@@ -29,7 +29,7 @@ type Repos struct {
 
 // NewRepos constructs every repository and persistence adapter against the
 // supplied database. Actor identity translation stays inside this layer.
-func NewRepos(gdb *gorm.DB) *Repos {
+func NewRepos(gdb *gorm.DB, subscriptions ...FeedSubscriptionMutation) *Repos {
 	identity := NewActorIdentity(gdb)
 	return &Repos{
 		PublicPosts: NewPublicPostRepository(gdb),
@@ -38,7 +38,7 @@ func NewRepos(gdb *gorm.DB) *Repos {
 		Reactions:   NewReactionRepository(gdb),
 		Circles:     NewCircleRepository(gdb),
 		Stats:       NewMomentsStatsRepository(gdb, identity),
-		Follows:     NewFollowRepository(gdb),
+		Follows:     NewFollowRepository(gdb, subscriptions...),
 		Blocks:      NewBlockGraphRepository(gdb),
 		Moderation:  NewStationModerationRepository(gdb),
 		Identity:    identity,

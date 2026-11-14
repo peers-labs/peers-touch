@@ -7,12 +7,13 @@ import { Dialog } from './overlays';
 
 export interface ImageProps extends Omit<ImgHTMLAttributes<HTMLImageElement>, 'src'|'resource'> {
   resource: ResourceView; fallback?: ReactNode; preview?: boolean; previewLabel?: string;
+  loadingLabel?: string;
 }
-export function Image({ resource, fallback, preview, previewLabel = 'View image', alt, ...props }: ImageProps) {
+export function Image({ resource, fallback, preview, previewLabel = 'View image', loadingLabel, alt, ...props }: ImageProps) {
   const [failed,setFailed] = useState<string|null>(null), [open,setOpen] = useState(false);
   const identity=`${resource.resourceId}:${resource.source}`;
   useEffect(() => {setOpen(false);},[identity]);
-  if (resource.state === 'loading') return <Spin label={`Loading ${resource.name}`} />;
+  if (resource.state === 'loading') return <Spin label={loadingLabel ?? `Loading ${resource.name}`} />;
   if (resource.state !== 'available' || !resource.source || failed === identity)
     return <>{fallback ?? <Empty description={resource.failureReason ?? `${resource.name} unavailable`} />}</>;
   const image=<img {...props} src={resource.source} alt={alt ?? resource.name} onError={event => {setFailed(identity); props.onError?.(event);}}
@@ -50,12 +51,13 @@ export function QrCode({value,label,size=208,correction='medium',encodeErrorTitl
 }
 export interface MediaPlayerProps extends Omit<HTMLAttributes<HTMLDivElement>, 'resource'> {
   resource: ResourceView; label?: string; autoPlay?: boolean; poster?: string;
+  loadingLabel?: string;
   onPlaybackChange?: (state: 'playing'|'paused'|'ended'|'failed') => void;
 }
-function MediaPlayer({kind,resource,label,autoPlay,poster,onPlaybackChange,...props}:MediaPlayerProps & {kind:'audio'|'video'}) {
+function MediaPlayer({kind,resource,label,autoPlay,poster,loadingLabel,onPlaybackChange,...props}:MediaPlayerProps & {kind:'audio'|'video'}) {
   const ref=useRef<HTMLMediaElement>(null), [failed,setFailed]=useState<string|null>(null), identity=`${resource.resourceId}:${resource.source}`;
   useEffect(() => {const media=ref.current; return()=>{if(media){media.pause();media.removeAttribute('src');media.load();}};},[identity]);
-  if(resource.state==='loading') return <Spin label={`Loading ${resource.name}`} />;
+  if(resource.state==='loading') return <Spin label={loadingLabel ?? `Loading ${resource.name}`} />;
   if(resource.state!=='available'||!resource.source||failed===identity) return <Empty description={resource.failureReason??`${resource.name} unavailable`} />;
   const events={onPlay:()=>onPlaybackChange?.('playing'),onPause:()=>onPlaybackChange?.('paused'),
     onEnded:()=>onPlaybackChange?.('ended'),onError:()=>{setFailed(identity);onPlaybackChange?.('failed');}};

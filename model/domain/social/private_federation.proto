@@ -15,6 +15,8 @@ enum FederatedPrivateResourceKind {
   FEDERATED_PRIVATE_RESOURCE_KIND_UNSPECIFIED = 0;
   FEDERATED_PRIVATE_RESOURCE_KIND_POST = 1;
   FEDERATED_PRIVATE_RESOURCE_KIND_COMMENT = 2;
+  FEDERATED_PRIVATE_RESOURCE_KIND_REACTION_PROJECTION = 3;
+  FEDERATED_PRIVATE_RESOURCE_KIND_POLL_PROJECTION = 4;
 }
 
 message FederatedPrivateResourceDelivery {
@@ -30,6 +32,8 @@ message FederatedPrivateResourceDelivery {
   oneof metadata {
     PostMetadata post = 10;
     CommentMetadata comment = 11;
+    PrivateReactionProjection reaction = 18;
+    PrivatePollProjection poll = 19;
   }
   .peers_touch.model.secure_content.v1.EncryptedPayload payload = 12;
   repeated .peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope target_actor_envelopes = 13;
@@ -86,6 +90,7 @@ enum FederatedPrivateInteractionOperation {
   FEDERATED_PRIVATE_INTERACTION_OPERATION_SUBMIT_COMMENT = 2;
   FEDERATED_PRIVATE_INTERACTION_OPERATION_REACT = 3;
   FEDERATED_PRIVATE_INTERACTION_OPERATION_UNREACT = 4;
+  FEDERATED_PRIVATE_INTERACTION_OPERATION_VOTE_POLL = 5;
 }
 
 enum FederatedPrivateInteractionResultKind {
@@ -117,6 +122,18 @@ message FederatedPrivateInteractionResult {
   FederatedPrivateInteractionResultKind kind = 4;
   bytes canonical_result = 5;
   bytes canonical_result_sha256 = 6;
+}
+
+// Viewer-bound derived interaction state; never a plaintext content authority.
+message PrivateReactionProjection {
+  string post_id = 1;
+  string comment_id = 2;
+  repeated ReactionSummary reactions = 3;
+  uint64 projection_revision = 4;
+  string command_id = 5;
+  string reaction_actor_ptid = 6;
+  ReactionKind reaction_kind = 7;
+  bool removed = 8;
 }
 
 message ReadFederatedPrivateObjectRequest {

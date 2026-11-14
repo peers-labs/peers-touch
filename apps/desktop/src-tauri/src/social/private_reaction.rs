@@ -11,9 +11,13 @@ use crate::secure_content::store::{
 };
 use crate::secure_content::{SecureContentLease, SecureContentSupervisor};
 
+use super::federation_retry::with_federation_dependency_retry;
+
+use super::private_comment::PrivateCommentProjection;
 use super::projection::{
-    canonical_reaction_summaries, PrivateMomentProjection, PrivateReactionCommandProjection,
-    PrivateReactionOperation, PrivateReactionSummaryProjection,
+    canonical_reaction_summaries, PrivateMomentContentProjection, PrivateMomentProjection,
+    PrivatePollResultProjection, PrivateReactionCommandProjection, PrivateReactionOperation,
+    PrivateReactionSummaryProjection,
 };
 
 const FEDERATED_PRIVATE_INTERACTION_SIGNING_DOMAIN: &[u8] =
@@ -24,6 +28,7 @@ impl PrivateReactionOperation {
         match self {
             Self::React => social::FederatedPrivateInteractionOperation::React,
             Self::Unreact => social::FederatedPrivateInteractionOperation::Unreact,
+            Self::VotePoll => social::FederatedPrivateInteractionOperation::VotePoll,
         }
     }
 }
@@ -33,6 +38,8 @@ pub struct PrivateReactionMutationInput {
     pub actor_ptid: String,
     pub renderer_generation: u64,
     pub post_id: String,
+    #[serde(default)]
+    pub comment_id: String,
     pub kind: i32,
 }
 
@@ -43,24 +50,61 @@ pub struct PrivateReactionRetryInput {
     pub command_id: String,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+pub struct PrivatePollMutationInput {
+    pub actor_ptid: String,
+    pub renderer_generation: u64,
+    pub post_id: String,
+    pub selected_options: Vec<u32>,
+}
+
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct PrivateReactionMutationResult {
     pub command: PrivateReactionCommandProjection,
     pub reactions: Vec<PrivateReactionSummaryProjection>,
     pub projection_revision: String,
     pub exact_replay: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub poll: Option<PrivatePollResultProjection>,
 }
 
 enum ReactionResponse {
     React(social::ReactToPostResponse),
     Unreact(social::UnreactToPostResponse),
+    VotePoll(social::VotePrivatePollResponse),
 }
 
 impl ReactionResponse {
+    fn comment_id(&self) -> &str {
+        match self {
+            Self::React(response) => &response.comment_id,
+            Self::Unreact(response) => &response.comment_id,
+            Self::VotePoll(_) => "",
+        }
+    }
+
+    fn validate_identity(&self, command: &StoredReactionCommand) -> Result<(), String> {
+        let operation = match self {
+            Self::React(_) => PrivateReactionOperation::React,
+            Self::Unreact(_) => PrivateReactionOperation::Unreact,
+            Self::VotePoll(_) => PrivateReactionOperation::VotePoll,
+        };
+        if command.operation != operation
+            || !self.success()
+            || self.command_id() != command.command_id
+            || self.comment_id() != command.comment_id
+            || self.projection_revision() == 0
+        {
+            return Err("private Reaction response identity is invalid".to_string());
+        }
+        Ok(())
+    }
+
     fn command_id(&self) -> &str {
         match self {
             Self::React(response) => &response.command_id,
             Self::Unreact(response) => &response.command_id,
+            Self::VotePoll(response) => &response.command_id,
         }
     }
 
@@ -68,6 +112,7 @@ impl ReactionResponse {
         match self {
             Self::React(response) => response.success,
             Self::Unreact(response) => response.success,
+            Self::VotePoll(_) => true,
         }
     }
 
@@ -75,6 +120,7 @@ impl ReactionResponse {
         match self {
             Self::React(response) => &response.reactions,
             Self::Unreact(response) => &response.reactions,
+            Self::VotePoll(_) => &[],
         }
     }
 
@@ -82,6 +128,7 @@ impl ReactionResponse {
         match self {
             Self::React(response) => response.projection_revision,
             Self::Unreact(response) => response.projection_revision,
+            Self::VotePoll(response) => response.projection_revision,
         }
     }
 
@@ -89,6 +136,7 @@ impl ReactionResponse {
         match self {
             Self::React(response) => response.exact_replay,
             Self::Unreact(response) => response.exact_replay,
+            Self::VotePoll(response) => response.exact_replay,
         }
     }
 
@@ -96,6 +144,7 @@ impl ReactionResponse {
         match self {
             Self::React(response) => response.encode_to_vec(),
             Self::Unreact(response) => response.encode_to_vec(),
+            Self::VotePoll(response) => response.encode_to_vec(),
         }
     }
 }
@@ -125,17 +174,78 @@ impl<'a> PrivateReactionOrchestrator<'a> {
         operation: PrivateReactionOperation,
     ) -> Result<PrivateReactionMutationResult, String> {
         validate_mutation(input, operation)?;
-        self.ensure_private_projection(&input.post_id)?;
+        self.ensure_private_projection(&input.post_id, &input.comment_id)?;
         let command_id = format!("reaction-v1-{}", ulid::Ulid::new());
-        let request_bytes =
-            self.signed_request(&input.post_id, input.kind, &command_id, operation)?;
+        let request_bytes = self.signed_request(
+            &input.post_id,
+            &input.comment_id,
+            input.kind,
+            &command_id,
+            operation,
+        )?;
+        self.persist_command(input, operation, &command_id, request_bytes)?;
+        self.dispatch(&command_id)
+    }
+
+    pub fn vote(
+        &self,
+        input: &PrivatePollMutationInput,
+    ) -> Result<PrivateReactionMutationResult, String> {
+        if input.actor_ptid.trim().is_empty()
+            || input.renderer_generation == 0
+            || input.post_id.trim().is_empty()
+            || input.post_id.trim() != input.post_id
+        {
+            return Err("private poll command identity is invalid".into());
+        }
+        self.ensure_private_projection(&input.post_id, "")?;
+        let parent = self.load_projection(&input.post_id)?;
+        let content = parent
+            .content
+            .as_ref()
+            .ok_or("private poll parent is unavailable")?;
+        let command_id = format!("poll-v1-{}", ulid::Ulid::new());
+        let mut request = super::private_poll::ballot_request(
+            content,
+            &input.post_id,
+            &input.selected_options,
+            &command_id,
+            &self.lease.session.signing_key_id,
+        )?;
+        request.actor_device_signature = self.lease.session.sign(&reaction_signing_bytes(
+            social::FederatedPrivateInteractionOperation::VotePoll,
+            &request.encode_to_vec(),
+        ))?;
+        self.persist_command(
+            &PrivateReactionMutationInput {
+                actor_ptid: input.actor_ptid.clone(),
+                renderer_generation: input.renderer_generation,
+                post_id: input.post_id.clone(),
+                comment_id: String::new(),
+                kind: 0,
+            },
+            PrivateReactionOperation::VotePoll,
+            &command_id,
+            request.encode_to_vec(),
+        )?;
+        self.dispatch(&command_id)
+    }
+
+    fn persist_command(
+        &self,
+        input: &PrivateReactionMutationInput,
+        operation: PrivateReactionOperation,
+        command_id: &str,
+        request_bytes: Vec<u8>,
+    ) -> Result<(), String> {
         let request_sha256: [u8; 32] = Sha256::digest(&request_bytes).into();
         self.with_current_store(|store| {
             store.persist_reaction_command(&StoredReactionCommand {
-                command_id: command_id.clone(),
+                command_id: command_id.into(),
                 post_id: input.post_id.clone(),
+                comment_id: input.comment_id.clone(),
                 kind: input.kind,
-                remove: operation == PrivateReactionOperation::Unreact,
+                operation,
                 request_sha256,
                 request_bytes,
                 result_sha256: None,
@@ -150,7 +260,7 @@ impl<'a> PrivateReactionOrchestrator<'a> {
                 retry_not_before_unix_ms: None,
             })
         })?;
-        self.dispatch(&command_id)
+        Ok(())
     }
 
     pub fn retry(
@@ -163,13 +273,13 @@ impl<'a> PrivateReactionOrchestrator<'a> {
         let command = self
             .with_current_store(|store| store.reaction_command(&input.command_id))?
             .ok_or_else(|| "private Reaction command is unavailable".to_string())?;
+        self.ensure_private_projection(&command.post_id, &command.comment_id)?;
         if command.state == ReactionCommandState::Committed {
             return self.result_from_command(&command);
         }
         if command.state == ReactionCommandState::Rejected {
             return Err("private Reaction command was terminally rejected".to_string());
         }
-        self.ensure_private_projection(&command.post_id)?;
         self.dispatch(&command.command_id)
     }
 
@@ -177,14 +287,31 @@ impl<'a> PrivateReactionOrchestrator<'a> {
         let command = self.with_current_store(|store| {
             store.acquire_reaction_command(command_id, self.lease.session.key.session_generation)
         })?;
-        let response = if command.remove {
-            self.transport
-                .submit_private_unreaction(&command.post_id, &command.request_bytes)
-                .map(ReactionResponse::Unreact)
-        } else {
-            self.transport
-                .submit_private_reaction(&command.post_id, &command.request_bytes)
-                .map(ReactionResponse::React)
+        let response = match command.operation {
+            PrivateReactionOperation::Unreact => with_federation_dependency_retry(
+                |_| {
+                    self.transport
+                        .submit_private_unreaction(&command.post_id, &command.request_bytes)
+                        .map(ReactionResponse::Unreact)
+                },
+                std::thread::sleep,
+            ),
+            PrivateReactionOperation::React => with_federation_dependency_retry(
+                |_| {
+                    self.transport
+                        .submit_private_reaction(&command.post_id, &command.request_bytes)
+                        .map(ReactionResponse::React)
+                },
+                std::thread::sleep,
+            ),
+            PrivateReactionOperation::VotePoll => with_federation_dependency_retry(
+                |_| {
+                    self.transport
+                        .submit_private_poll_vote(&command.post_id, &command.request_bytes)
+                        .map(ReactionResponse::VotePoll)
+                },
+                std::thread::sleep,
+            ),
         };
         match response {
             Ok(response) => match self.commit_response(&command, response) {
@@ -200,42 +327,30 @@ impl<'a> PrivateReactionOrchestrator<'a> {
         command: &StoredReactionCommand,
         response: ReactionResponse,
     ) -> Result<PrivateReactionMutationResult, String> {
-        if !response.success()
-            || response.command_id() != command.command_id
-            || response.projection_revision() == 0
-        {
-            return Err("private Reaction response identity is invalid".to_string());
-        }
+        response.validate_identity(command)?;
         let summaries = canonical_reaction_summaries(response.reactions())?;
-        let mut projection = self.load_projection(&command.post_id)?;
-        let current_revision = projection
-            .reaction_revision
-            .parse::<u64>()
-            .map_err(|_| "private Reaction projection revision is invalid".to_string())?;
+        let poll = match &response {
+            ReactionResponse::VotePoll(response) => {
+                Some(super::private_poll::qualify_poll_response(
+                    command,
+                    response,
+                    &self.load_projection(&command.post_id)?,
+                    &self.lease.session.key.actor_ptid,
+                )?)
+            }
+            _ => None,
+        };
         let response_revision = response.projection_revision();
-        if response_revision > current_revision {
-            projection.reactions = summaries.clone();
-            projection.reaction_revision = response_revision.to_string();
-            projection.reactions_hydrated = true;
-        } else if response_revision == current_revision
-            && projection.reactions_hydrated
-            && projection.reactions != summaries
-        {
-            return Err("private Reaction response conflicts at the same revision".to_string());
-        }
         let result_bytes = response.encode();
         let result_sha256: [u8; 32] = Sha256::digest(&result_bytes).into();
-        let projection_bytes = projection.encode_local()?;
         let changed = self.with_current_store(|store| {
             store.mark_reaction_committed(
-                &command.command_id,
-                command.lease_generation,
-                command.session_generation,
+                command,
                 &result_bytes,
                 &result_sha256,
                 response_revision,
-                &command.post_id,
-                &projection_bytes,
+                &summaries,
+                poll.as_ref(),
             )
         })?;
         if !changed {
@@ -309,29 +424,55 @@ impl<'a> PrivateReactionOrchestrator<'a> {
         &self,
         command: &StoredReactionCommand,
     ) -> Result<PrivateReactionMutationResult, String> {
-        let projection = self.load_projection(&command.post_id)?;
+        let (reactions, mut projection_revision) =
+            self.load_target_reactions(&command.post_id, &command.comment_id)?;
+        let poll = if command.operation == PrivateReactionOperation::VotePoll {
+            match self.load_projection(&command.post_id)?.content {
+                Some(PrivateMomentContentProjection::Poll { result, .. }) => result,
+                _ => return Err("private poll parent is unavailable".into()),
+            }
+        } else {
+            None
+        };
+        if command.operation == PrivateReactionOperation::VotePoll {
+            projection_revision = poll
+                .as_ref()
+                .map(|result| result.projection_revision.clone())
+                .unwrap_or_else(|| "0".into());
+        }
         let exact_replay = if let (Some(result_bytes), Some(result_sha256)) =
             (&command.result_bytes, command.result_sha256)
         {
             if Sha256::digest(result_bytes).as_slice() != result_sha256 {
                 return Err("private Reaction durable result hash is invalid".to_string());
             }
-            let response = if command.remove {
-                ReactionResponse::Unreact(
+            let response = match command.operation {
+                PrivateReactionOperation::Unreact => ReactionResponse::Unreact(
                     social::UnreactToPostResponse::decode(result_bytes.as_slice())
                         .map_err(|_| "private Reaction durable result is malformed".to_string())?,
-                )
-            } else {
-                ReactionResponse::React(
+                ),
+                PrivateReactionOperation::React => ReactionResponse::React(
                     social::ReactToPostResponse::decode(result_bytes.as_slice())
                         .map_err(|_| "private Reaction durable result is malformed".to_string())?,
-                )
+                ),
+                PrivateReactionOperation::VotePoll => ReactionResponse::VotePoll(
+                    social::VotePrivatePollResponse::decode(result_bytes.as_slice())
+                        .map_err(|_| "private poll durable result is malformed".to_string())?,
+                ),
             };
             if response.encode() != *result_bytes
-                || response.command_id() != command.command_id
                 || response.projection_revision() != command.projection_revision
             {
                 return Err("private Reaction durable result identity is invalid".to_string());
+            }
+            response.validate_identity(command)?;
+            if let ReactionResponse::VotePoll(response) = &response {
+                super::private_poll::qualify_poll_response(
+                    command,
+                    response,
+                    &self.load_projection(&command.post_id)?,
+                    &self.lease.session.key.actor_ptid,
+                )?;
             }
             response.exact_replay()
         } else {
@@ -339,15 +480,17 @@ impl<'a> PrivateReactionOrchestrator<'a> {
         };
         Ok(PrivateReactionMutationResult {
             command: command_projection(command)?,
-            reactions: projection.reactions,
-            projection_revision: projection.reaction_revision,
+            reactions,
+            projection_revision,
             exact_replay,
+            poll,
         })
     }
 
     fn signed_request(
         &self,
         post_id: &str,
+        comment_id: &str,
         kind: i32,
         command_id: &str,
         operation: PrivateReactionOperation,
@@ -356,6 +499,7 @@ impl<'a> PrivateReactionOrchestrator<'a> {
             PrivateReactionOperation::React => {
                 let mut request = social::ReactToPostRequest {
                     post_id: post_id.to_string(),
+                    comment_id: comment_id.to_string(),
                     kind,
                     command_id: command_id.to_string(),
                     actor_signing_key_id: self.lease.session.signing_key_id.clone(),
@@ -369,6 +513,7 @@ impl<'a> PrivateReactionOrchestrator<'a> {
             PrivateReactionOperation::Unreact => {
                 let mut request = social::UnreactToPostRequest {
                     post_id: post_id.to_string(),
+                    comment_id: comment_id.to_string(),
                     kind,
                     command_id: command_id.to_string(),
                     actor_signing_key_id: self.lease.session.signing_key_id.clone(),
@@ -379,17 +524,50 @@ impl<'a> PrivateReactionOrchestrator<'a> {
                 )?;
                 Ok(request.encode_to_vec())
             }
+            PrivateReactionOperation::VotePoll => {
+                Err("private poll requires an explicit ballot".into())
+            }
         }
     }
 
-    fn ensure_private_projection(&self, post_id: &str) -> Result<(), String> {
+    fn ensure_private_projection(&self, post_id: &str, comment_id: &str) -> Result<(), String> {
         let projection = self.load_projection(post_id)?;
         if projection.post_id != post_id
             || projection.state != super::projection::PrivateReadState::ContentReady
         {
             return Err("private Reaction requires an authorized private Moment".to_string());
         }
+        if !comment_id.is_empty() {
+            let comment = self.load_comment_projection(post_id, comment_id)?;
+            validate_comment_target(post_id, comment_id, &comment)?;
+        }
         Ok(())
+    }
+
+    fn load_comment_projection(
+        &self,
+        post_id: &str,
+        comment_id: &str,
+    ) -> Result<PrivateCommentProjection, String> {
+        let bytes = self
+            .with_current_store(|store| store.comment_projection(post_id, comment_id))?
+            .ok_or_else(|| "private Reaction comment projection is unavailable".to_string())?;
+        PrivateCommentProjection::decode_local(&bytes)
+    }
+
+    fn load_target_reactions(
+        &self,
+        post_id: &str,
+        comment_id: &str,
+    ) -> Result<(Vec<PrivateReactionSummaryProjection>, String), String> {
+        self.ensure_private_projection(post_id, comment_id)?;
+        if comment_id.is_empty() {
+            let projection = self.load_projection(post_id)?;
+            Ok((projection.reactions, projection.reaction_revision))
+        } else {
+            let projection = self.load_comment_projection(post_id, comment_id)?;
+            Ok((projection.reactions, projection.reaction_revision))
+        }
     }
 
     fn load_projection(&self, post_id: &str) -> Result<PrivateMomentProjection, String> {
@@ -413,14 +591,27 @@ impl<'a> PrivateReactionOrchestrator<'a> {
 pub(super) fn command_projection(
     command: &StoredReactionCommand,
 ) -> Result<PrivateReactionCommandProjection, String> {
+    if Sha256::digest(&command.request_bytes).as_slice() != command.request_sha256 {
+        return Err("private interaction durable command hash is invalid".into());
+    }
     Ok(PrivateReactionCommandProjection {
         command_id: command.command_id.clone(),
         post_id: command.post_id.clone(),
+        comment_id: command.comment_id.clone(),
         kind: command.kind,
-        operation: if command.remove {
-            PrivateReactionOperation::Unreact
+        operation: command.operation,
+        selected_opaque_option_ids: if command.operation == PrivateReactionOperation::VotePoll {
+            let request = social::VotePrivatePollRequest::decode(command.request_bytes.as_slice())
+                .map_err(|_| "private poll durable command is malformed")?;
+            if request.encode_to_vec() != command.request_bytes
+                || request.command_id != command.command_id
+                || request.post_id != command.post_id
+            {
+                return Err("private poll durable command identity is invalid".into());
+            }
+            request.opaque_option_ids.iter().map(hex::encode).collect()
         } else {
-            PrivateReactionOperation::React
+            vec![]
         },
         state: command.state.as_str().to_string(),
         attempt_count: command.attempt_count,
@@ -433,18 +624,107 @@ pub(super) fn command_projection(
 
 fn validate_mutation(
     input: &PrivateReactionMutationInput,
-    _operation: PrivateReactionOperation,
+    operation: PrivateReactionOperation,
 ) -> Result<(), String> {
     let kind = social::ReactionKind::try_from(input.kind)
         .map_err(|_| "private Reaction kind is invalid".to_string())?;
-    if input.actor_ptid.trim().is_empty()
+    if operation == PrivateReactionOperation::VotePoll
+        || input.actor_ptid.trim().is_empty()
         || input.renderer_generation == 0
         || input.post_id.trim().is_empty()
+        || input.post_id != input.post_id.trim()
+        || input.comment_id != input.comment_id.trim()
+        || (!input.comment_id.is_empty() && kind != social::ReactionKind::ReactionLike)
         || kind == social::ReactionKind::ReactionUnspecified
     {
         return Err("private Reaction command is invalid".to_string());
     }
     Ok(())
+}
+
+fn validate_comment_target(
+    post_id: &str,
+    comment_id: &str,
+    projection: &PrivateCommentProjection,
+) -> Result<(), String> {
+    if projection.post_id != post_id
+        || projection.comment_id != comment_id
+        || projection.state != "COMMENT_POSTED"
+        || projection.text.is_none()
+    {
+        return Err("private Reaction requires an authorized private Comment".to_string());
+    }
+    Ok(())
+}
+
+/// Apply only reaction fields to the current target inside the journal transaction.
+/// A delayed receipt must not replace newer content or reaction readback.
+pub(crate) fn project_reaction_target(
+    post_id: &str,
+    comment_id: &str,
+    current_bytes: &[u8],
+    reactions: &[PrivateReactionSummaryProjection],
+    revision: u64,
+) -> Result<Vec<u8>, String> {
+    fn merge(
+        current_revision: &mut String,
+        current_reactions: &mut Vec<PrivateReactionSummaryProjection>,
+        hydrated: &mut bool,
+        reactions: &[PrivateReactionSummaryProjection],
+        revision: u64,
+    ) -> Result<(), String> {
+        let current = current_revision
+            .parse::<u64>()
+            .map_err(|_| "private Reaction projection revision is invalid".to_string())?;
+        if revision > current || (revision == current && !*hydrated) {
+            *current_revision = revision.to_string();
+            *current_reactions = reactions.to_vec();
+            *hydrated = true;
+        } else if revision == current && current_reactions != reactions {
+            return Err("private Reaction response conflicts at the same revision".to_string());
+        }
+        Ok(())
+    }
+    if comment_id.is_empty() {
+        let mut projection = PrivateMomentProjection::decode_local(current_bytes)?;
+        if projection.post_id != post_id
+            || projection.state != super::projection::PrivateReadState::ContentReady
+        {
+            return Err("private Reaction parent projection is unavailable".to_string());
+        }
+        merge(
+            &mut projection.reaction_revision,
+            &mut projection.reactions,
+            &mut projection.reactions_hydrated,
+            reactions,
+            revision,
+        )?;
+        projection.encode_local()
+    } else {
+        let mut projection = PrivateCommentProjection::decode_local(current_bytes)?;
+        validate_comment_target(post_id, comment_id, &projection)?;
+        merge(
+            &mut projection.reaction_revision,
+            &mut projection.reactions,
+            &mut projection.reactions_hydrated,
+            reactions,
+            revision,
+        )?;
+        projection.reactions_count =
+            projection
+                .reactions
+                .iter()
+                .try_fold(0i64, |total, summary| {
+                    let count = summary
+                        .count
+                        .parse::<i64>()
+                        .map_err(|_| "private Comment reaction count is invalid".to_string())?;
+                    total
+                        .checked_add(count)
+                        .ok_or_else(|| "private Comment reaction count overflows".to_string())
+                })?;
+        projection.encode_local()
+    }
 }
 
 fn reaction_signing_bytes(
@@ -492,6 +772,7 @@ mod tests {
         let key = SigningKey::from_bytes(&[7; 32]);
         let request = social::ReactToPostRequest {
             post_id: "post-1".to_string(),
+            comment_id: String::new(),
             kind: social::ReactionKind::ReactionLike as i32,
             command_id: "reaction-v1-command".to_string(),
             actor_signing_key_id: "device-key-1".to_string(),
@@ -510,6 +791,18 @@ mod tests {
                 &reaction_signing_bytes(
                     social::FederatedPrivateInteractionOperation::Unreact,
                     &request.encode_to_vec(),
+                ),
+                &signature,
+            )
+            .is_err());
+        let mut altered = request.clone();
+        altered.comment_id = "comment-1".to_string();
+        assert!(key
+            .verifying_key()
+            .verify(
+                &reaction_signing_bytes(
+                    social::FederatedPrivateInteractionOperation::React,
+                    &altered.encode_to_vec()
                 ),
                 &signature,
             )
@@ -534,9 +827,123 @@ mod tests {
             actor_ptid: "ptid:bob".to_string(),
             renderer_generation: 1,
             post_id: "post-1".to_string(),
+            comment_id: String::new(),
             kind: social::ReactionKind::ReactionUnspecified as i32,
         };
         assert!(validate_mutation(&input, PrivateReactionOperation::React).is_err());
         assert!(validate_mutation(&input, PrivateReactionOperation::Unreact).is_err());
+    }
+
+    fn comment_projection() -> PrivateCommentProjection {
+        PrivateCommentProjection {
+            comment_id: "comment-1".into(),
+            content_id: "comment-1".into(),
+            generation: "1".into(),
+            post_id: "post-1".into(),
+            reply_to_comment_id: "root-1".into(),
+            author_ptid: "ptid:alice".into(),
+            author_acct: None,
+            state: "COMMENT_POSTED".into(),
+            text: Some("private reply".into()),
+            mentions: vec![],
+            reactions_count: 0,
+            reaction_revision: "0".into(),
+            reactions: vec![],
+            reactions_hydrated: true,
+            replies_count: 0,
+            created_at_millis: None,
+            updated_at_millis: None,
+        }
+    }
+
+    #[test]
+    fn comment_reaction_projection_preserves_newer_readback_and_rejects_target_substitution() {
+        let projection = comment_projection();
+        let reaction = PrivateReactionSummaryProjection {
+            kind: social::ReactionKind::ReactionLike as i32,
+            count: "2".into(),
+            reacted_by_viewer: true,
+        };
+        let bytes = project_reaction_target(
+            "post-1",
+            "comment-1",
+            &projection.encode_local().unwrap(),
+            &[reaction.clone()],
+            4,
+        )
+        .unwrap();
+        let merged = PrivateCommentProjection::decode_local(&bytes).unwrap();
+        assert_eq!(merged.reactions_count, 2);
+        assert_eq!(merged.reply_to_comment_id, "root-1");
+        assert_eq!(merged.text, projection.text);
+        assert!(project_reaction_target("other-post", "comment-1", &bytes, &[], 5).is_err());
+        assert!(project_reaction_target("post-1", "other-comment", &bytes, &[], 5).is_err());
+        assert_eq!(
+            project_reaction_target("post-1", "comment-1", &bytes, &[], 3).unwrap(),
+            bytes
+        );
+        assert!(project_reaction_target("post-1", "comment-1", &bytes, &[], 4).is_err());
+        let removed = project_reaction_target("post-1", "comment-1", &bytes, &[], 5).unwrap();
+        assert_eq!(
+            PrivateCommentProjection::decode_local(&removed)
+                .unwrap()
+                .reactions_count,
+            0
+        );
+    }
+
+    #[test]
+    fn private_reaction_response_must_bind_the_durable_comment_target() {
+        let request = social::ReactToPostRequest {
+            post_id: "post-1".into(),
+            comment_id: "comment-1".into(),
+            kind: social::ReactionKind::ReactionLike as i32,
+            command_id: "command-1".into(),
+            actor_signing_key_id: "device-1".into(),
+            actor_device_signature: vec![1; 64],
+        }
+        .encode_to_vec();
+        let command = StoredReactionCommand {
+            command_id: "command-1".into(),
+            post_id: "post-1".into(),
+            comment_id: "comment-1".into(),
+            kind: social::ReactionKind::ReactionLike as i32,
+            operation: PrivateReactionOperation::React,
+            request_sha256: Sha256::digest(&request).into(),
+            request_bytes: request,
+            result_sha256: None,
+            result_bytes: None,
+            state: ReactionCommandState::InFlight,
+            session_generation: 1,
+            lease_generation: 1,
+            attempt_count: 1,
+            projection_revision: 0,
+            error_code: None,
+            retry_after_seconds: None,
+            retry_not_before_unix_ms: None,
+        };
+        let response = social::ReactToPostResponse {
+            success: true,
+            command_id: "command-1".into(),
+            comment_id: "comment-1".into(),
+            projection_revision: 1,
+            reactions: vec![],
+            exact_replay: false,
+        };
+        assert!(ReactionResponse::React(response.clone())
+            .validate_identity(&command)
+            .is_ok());
+        assert!(ReactionResponse::React(social::ReactToPostResponse {
+            comment_id: String::new(),
+            ..response.clone()
+        })
+        .validate_identity(&command)
+        .is_err());
+        assert!(ReactionResponse::React(social::ReactToPostResponse {
+            comment_id: "other-comment".into(),
+            ..response
+        })
+        .validate_identity(&command)
+        .is_err());
     }
 }

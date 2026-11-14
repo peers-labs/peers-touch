@@ -275,13 +275,14 @@ func (c *PostConverter) DomainToProto(p *Post) (*model.Post, error) {
 		return nil, nil
 	}
 	out := &model.Post{
-		Id:         formatID(p.ID),
-		AuthorPtid: p.AuthorPTID,
-		Type:       p.Type,
-		Audience:   p.Audience,
-		IsDeleted:  p.IsDeleted(),
-		CreatedAt:  timestamppb.New(p.CreatedAt),
-		UpdatedAt:  timestamppb.New(p.UpdatedAt),
+		Id:            formatID(p.ID),
+		AuthorPtid:    p.AuthorPTID,
+		PublicFeedRef: p.PublicFeedRef,
+		Type:          p.Type,
+		Audience:      p.Audience,
+		IsDeleted:     p.IsDeleted(),
+		CreatedAt:     timestamppb.New(p.CreatedAt),
+		UpdatedAt:     timestamppb.New(p.UpdatedAt),
 		Stats: &model.PostStats{
 			CommentsCount: p.CommentsCount,
 			ViewsCount:    p.ViewsCount,
@@ -347,10 +348,17 @@ func (c *PostConverter) decodeContent(out *model.Post, p *Post) error {
 	case model.PostType_POLL:
 		body := &model.PollPost{Text: p.TextBody}
 		if p.AttachmentsJSON != "" {
-			// PollPost stores the original CreatePollPostRequest as its
-			// attachments JSON snapshot for now; full Poll hydration
-			// requires the poll-vote subsystem (deferred to later phase).
-			body.Hashtags = nil // explicit no-op for clarity
+			var request model.CreatePollPostRequest
+			if err := json.Unmarshal([]byte(p.AttachmentsJSON), &request); err != nil {
+				return fmt.Errorf("decode poll creation: %w", err)
+			}
+			definition, err := FeedPollDefinitionFor(&request, p.CreatedAt.UnixMilli())
+			if err != nil {
+				return err
+			}
+			body.Poll = definition
+		} else {
+			return fmt.Errorf("poll creation definition is missing")
 		}
 		out.Content = &model.Post_PollPost{PollPost: body}
 
@@ -515,13 +523,15 @@ func (c *PostConverter) CommentToProto(d *Comment) *model.Comment {
 		return nil
 	}
 	out := &model.Comment{
-		Id:         formatID(d.ID),
-		PostId:     formatID(d.PostID),
-		AuthorPtid: d.AuthorPTID,
-		Content:    d.TextBody,
-		IsDeleted:  d.DeletedAt != nil,
-		CreatedAt:  timestamppb.New(d.CreatedAt),
-		UpdatedAt:  timestamppb.New(d.UpdatedAt),
+		Id:                   formatID(d.ID),
+		PostId:               formatID(d.PostID),
+		AuthorPtid:           d.AuthorPTID,
+		PublicFeedRef:        d.PublicFeedRef,
+		ReplyToPublicFeedRef: d.ReplyToPublicFeedRef,
+		Content:              d.TextBody,
+		IsDeleted:            d.DeletedAt != nil,
+		CreatedAt:            timestamppb.New(d.CreatedAt),
+		UpdatedAt:            timestamppb.New(d.UpdatedAt),
 	}
 	if d.ParentCommentID != 0 {
 		out.ReplyToCommentId = formatID(d.ParentCommentID)

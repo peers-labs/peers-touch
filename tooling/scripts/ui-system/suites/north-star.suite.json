@@ -7032,7 +7032,7 @@
         {
           "id": "image-tiles",
           "type": "count",
-          "target": ".sk-img-tile",
+          "target": ".pt-image-grid-tile",
           "equals": 4
         },
         {

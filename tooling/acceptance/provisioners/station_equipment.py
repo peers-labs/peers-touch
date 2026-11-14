@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import subprocess
 from collections.abc import Mapping
+from uuid import uuid4
 
 from tooling.acceptance.core.errors import (
     BlockedError, EphemeralLaunchCleanupFailed, EphemeralLaunchError,
@@ -31,6 +32,8 @@ def equip_station_profile(
     *,
     repo_root: Path,
     timeout_seconds: float = 150,
+    social_notification_run_id: str | None = None,
+    recreate_runtime: bool = False,
 ) -> None:
     """Equip before retaining source leases; callers re-attest after locking."""
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", profile_name):
@@ -54,20 +57,37 @@ def equip_station_profile(
         "PT_AGENT_CAPABILITY_SCENARIO_CONTROL", "PT_AGENT_EXTERNAL_RUNTIME_ROOT",
         "PT_AGENT_EXTERNAL_START_ARGV_JSON", "PT_AGENT_EXTERNAL_RESUME_ARGV_JSON",
         "PT_AGENT_EXTERNAL_RESET_ARGV_JSON",
+        "PT_SOCIAL_ACCEPTANCE_BUILD", "PT_SOCIAL_ACCEPTANCE_RUN_ID",
+        "PT_SOCIAL_ACCEPTANCE_PROFILE", "PT_STATION_RECREATE_RUNTIME",
     ):
         deployment_environment.pop(field, None)
+    if social_notification_run_id is not None:
+        if (not re.fullmatch(r"[0-9a-f]{16}",
+                             social_notification_run_id)
+                or profile_name.lower().endswith("stable")):
+            raise ValueError("Social notification equipment requires a reviewed non-stable run")
+        deployment_environment.update(
+            PT_SOCIAL_ACCEPTANCE_BUILD="1",
+            PT_SOCIAL_ACCEPTANCE_RUN_ID=social_notification_run_id,
+            PT_SOCIAL_ACCEPTANCE_PROFILE=profile_name,
+        )
+        recreate_runtime = True
+    if recreate_runtime:
+        deployment_environment["PT_STATION_RECREATE_RUNTIME"] = "true"
     observation: dict[str, object] = {"profile": profile_name, "commit": source_commit}
+    # Preparation and ordinary-runtime restoration are distinct process
+    # lifetimes, even when Profile, source and parent evidence run match.
+    log_relative = f"runtime/station-equipment/{profile_name}/{uuid4().hex}.log"
 
     def capture(stdout: str, stderr: str) -> None:
         if not environment.get("PT_ACCEPTANCE_RUN_ID"):
             return
-        relative = f"runtime/station-equipment/{profile_name}.log"
         write_current_artifact(
-            relative, (stdout + stderr).encode(), repo_root=repo_root,
+            log_relative, (stdout + stderr).encode(), repo_root=repo_root,
             environment=environment,
         )
         observation["log"] = current_artifact_ref(
-            relative, repo_root=repo_root, environment=environment,
+            log_relative, repo_root=repo_root, environment=environment,
         ).to_dict()
 
     try:

@@ -1,9 +1,9 @@
 ---
 status: active
 owner: Client Platform Team
-updated: 2026-06-18
+updated: 2026-11-14
 review-cadence: semiannual
-next-review: 2027-04-27
+next-review: 2027-05-14
 ---
 
 # Desktop Social UI Identity
@@ -59,6 +59,19 @@ Rules:
 - Action row must be compact, aligned, and low-noise.
 - Reaction count and comment count must not look like unrelated buttons.
 - The `more` menu must be visually secondary and bounded to the feed item.
+- Scope-local search filters the acquired timeline by body, author and Station.
+  Author names and handles come from the current actor profile projection;
+  Station names come from the matching Federation catalog entry, and domains
+  from the actor's current home Station profile. Embedded transport snapshots
+  cannot supply stale author or Station matches.
+  A private body comes only from the matching readable Native projection in
+  the current actor scope, using the same readability rule as the card.
+  Denied or revoked content cannot match a body query; private plaintext is
+  never copied into the public Post shell or a separate search index.
+- Repeating an unchanged private projection retains its card, reaction,
+  feed-order and Store references. A changed authorized count, reaction or
+  shell field updates its original projection even when the authored timestamp
+  is unchanged. Private plaintext stays in the private Store.
 
 ## 5. Detail And Comment Thread
 
@@ -71,6 +84,8 @@ Rules:
 - Comments should use indentation, subtle dividers, or background continuity, not separate heavy cards.
 - Reply composer belongs to the thread surface.
 - Empty comments should read as "no replies yet", not as a missing panel.
+- The shared `packages/ui` MomentCard owns the complete thread boundary.
+  App adapters must not introduce another thread/card renderer.
 - Comment rows, feed previews, and reply-target labels resolve identity by
   `authorPtid` through the shared actor profile projection; transport author
   handles are not display-name or avatar authority.
@@ -83,6 +98,10 @@ Rules:
 - Text input, media attachments, audience selector, and publish button share one state owner.
 - Publish disabled state must explain empty text, uploading media, invalid audience, or offline/runtime failure when applicable.
 - Audience selector must be visible enough to prevent privacy mistakes.
+- Poll creation uses shared `MomentPollComposer` fields in that same draft.
+  Question, distinct options, minimum/maximum choices and absolute deadline
+  survive dismissal and failures. Images and poll are mutually exclusive.
+  Any edit invalidates private recipient readiness before a new prepare.
 
 ## 7. Reaction And Comments
 
@@ -93,6 +112,47 @@ Rules:
 - A failed reaction restores the previous selected state/count.
 - Comment submit pending state belongs to the reply composer.
 - Comment failures preserve typed text and show inline recovery.
+- A successful comment read ends Loading, including an empty or unchanged
+  result. Zero comments render the empty-thread state. Background refresh of
+  an acquired healthy thread preserves its content and does not restart its
+  initial loading presentation.
+- Apply [Silent Data Updates](../../interaction.md#9-silent-data-updates--禁止显式刷新).
+  The Moments navigation UI Store retains comment expansion by canonical
+  logical post identity in the current Runtime scope. Only an explicit
+  addressed navigation may reopen a collapsed thread; defaults and background
+  reads cannot. Scope reset clears these choices.
+- Collapse hides the acquired thread and releases its viewport read interest;
+  it preserves its editor instance. Public comment drafts use the same logical
+  post identity across feed aliases. Initial acquisition is separate from
+  revalidation, including acquired-empty snapshots.
+- Repeated public reads reuse unchanged rows and arrays. A head page replaces
+  its acquired range while retaining paginated rows and their cursor outside
+  that range; a complete authoritative page removes absent rows. Confirmed
+  create/delete/reaction commands fence reads already in flight.
+- New comments enter through shared comment-row arrival motion only.
+  The shared row retires its marker, including while hidden; reduced motion
+  shows the same result without animation. Deep-link focus runs once per
+  explicit navigation intent within the active thread.
+- Root comments and nested replies display their reaction as an emoji with
+  the confirmed nonzero count. Do not display a separate `Like` / `赞` text
+  button. The shared comment row retains an accessible action name, selected
+  state and command recovery. Comment metadata actions stay compact and
+  transparent, including hover and selected states.
+- Post, comment and reply metadata use the same relative-time presentation;
+  comments and replies retain their exact timestamp through the semantic time
+  element and its title. Private post comment counts come from authorized
+  `PostMetadata.stats.comments_count`, refreshed by the existing Moments
+  Runtime parent-read path; a loaded comment page is not an aggregate count.
+  Recipient Station derives that count from all current authorized durable
+  root comments and replies during the parent read, preserving the immutable
+  delivery and authored timestamps.
+- Polls use the shared `MomentPoll` inside the original card. The question,
+  option rows, confirmed counts, selection rule and submit action form one
+  continuous surface. Only unsubmitted choices are local. Submit replaces the
+  complete choice set; Cancel resets that local selection. Unknown submission,
+  admission wait and verified-readback wait preserve confirmed counts and offer
+  exact-command recovery. Closed polls are read-only; a pending command can still
+  be checked after cutoff. Native-qualified ballots determine public counts.
 
 ## 8. Station, Audience, And Moderation
 
@@ -114,6 +174,16 @@ Rules:
 - Popovers cannot cover the content being reacted to or commented on.
 - Keyboard focus must reach tabs, composer, reaction picker, comment action, and more menu.
 - Focus returns to the source after popover close.
+- App owns one window-local peers-ui FeedbackChannel. Social callbacks capture
+  Actor, completed Station binding and session epoch before asynchronous work;
+  old or unmounted callbacks cannot notify a new session. Identity changes
+  dismiss existing notices and settle queued confirmations.
+- Circle lists are the publisher's private audience management. They do not
+  define a separately readable Circle feed or a group membership product.
+- Block dispatches the original relationship command and private revoke policy;
+  it does not delete the publisher's Circle membership metadata. An identity
+  change clears Circle views and unsaved editor state; returning to the original
+  account reads its canonical membership rather than restoring the old draft.
 
 ## 10. Acceptance States
 

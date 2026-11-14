@@ -7,6 +7,7 @@
 package pb
 
 import (
+	pb "github.com/peers-labs/peers-touch/station/frame/touch/federation/profile/pb"
 	model "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -110,7 +111,11 @@ type FederationResolveView struct {
 	SigningKeyKid string `protobuf:"bytes,10,opt,name=signing_key_kid,proto3" json:"signing_key_kid,omitempty"`
 	// Explicit context in which both the local and Home Stations were
 	// verified as active members before this result was returned.
-	FederationId  string `protobuf:"bytes,11,opt,name=federation_id,proto3" json:"federation_id,omitempty"`
+	FederationId string `protobuf:"bytes,11,opt,name=federation_id,proto3" json:"federation_id,omitempty"`
+	// Original verified Home Station proof, including its device-key bindings.
+	// This is independent of Social projections. Clients bind its Actor PTID,
+	// handle, Home Station and key fingerprint before retaining a trust pin.
+	SignedProfile *pb.ActorProfileEnvelope `protobuf:"bytes,12,opt,name=signed_profile,json=signedProfile,proto3" json:"signed_profile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -222,14 +227,21 @@ func (x *FederationResolveView) GetFederationId() string {
 	return ""
 }
 
+func (x *FederationResolveView) GetSignedProfile() *pb.ActorProfileEnvelope {
+	if x != nil {
+		return x.SignedProfile
+	}
+	return nil
+}
+
 var File_domain_federation_federation_resolve_proto protoreflect.FileDescriptor
 
 const file_domain_federation_federation_resolve_proto_rawDesc = "" +
 	"\n" +
-	"*domain/federation/federation_resolve.proto\x12\x1fpeers_touch.model.federation.v1\x1a\x18domain/actor/actor.proto\"X\n" +
+	"*domain/federation/federation_resolve.proto\x12\x1fpeers_touch.model.federation.v1\x1a\x18domain/actor/actor.proto\x1a\x1fdomain/federation/profile.proto\"X\n" +
 	"\x18FederationResolveRequest\x12$\n" +
 	"\rfederation_id\x18\x01 \x01(\tR\rfederation_id\x12\x16\n" +
-	"\x06handle\x18\x02 \x01(\tR\x06handle\"\xf9\x03\n" +
+	"\x06handle\x18\x02 \x01(\tR\x06handle\"\xd7\x04\n" +
 	"\x15FederationResolveView\x12*\n" +
 	"\x10federated_handle\x18\x01 \x01(\tR\x10federated_handle\x122\n" +
 	"\x14home_station_peer_id\x18\x02 \x01(\tR\x14home_station_peer_id\x120\n" +
@@ -244,7 +256,8 @@ const file_domain_federation_federation_resolve_proto_rawDesc = "" +
 	"\x12expires_at_unix_ms\x18\t \x01(\x03R\x12expires_at_unix_ms\x12(\n" +
 	"\x0fsigning_key_kid\x18\n" +
 	" \x01(\tR\x0fsigning_key_kid\x12$\n" +
-	"\rfederation_id\x18\v \x01(\tR\rfederation_idBLZJgithub.com/peers-labs/peers-touch/station/frame/touch/federation/api/pb;pbb\x06proto3"
+	"\rfederation_id\x18\v \x01(\tR\rfederation_id\x12\\\n" +
+	"\x0esigned_profile\x18\f \x01(\v25.peers_touch.model.federation.v1.ActorProfileEnvelopeR\rsignedProfileBLZJgithub.com/peers-labs/peers-touch/station/frame/touch/federation/api/pb;pbb\x06proto3"
 
 var (
 	file_domain_federation_federation_resolve_proto_rawDescOnce sync.Once
@@ -263,14 +276,16 @@ var file_domain_federation_federation_resolve_proto_goTypes = []any{
 	(*FederationResolveRequest)(nil), // 0: peers_touch.model.federation.v1.FederationResolveRequest
 	(*FederationResolveView)(nil),    // 1: peers_touch.model.federation.v1.FederationResolveView
 	(*model.ActorProfile)(nil),       // 2: peers_touch.model.actor.v1.ActorProfile
+	(*pb.ActorProfileEnvelope)(nil),  // 3: peers_touch.model.federation.v1.ActorProfileEnvelope
 }
 var file_domain_federation_federation_resolve_proto_depIdxs = []int32{
 	2, // 0: peers_touch.model.federation.v1.FederationResolveView.profile:type_name -> peers_touch.model.actor.v1.ActorProfile
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	3, // 1: peers_touch.model.federation.v1.FederationResolveView.signed_profile:type_name -> peers_touch.model.federation.v1.ActorProfileEnvelope
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_domain_federation_federation_resolve_proto_init() }

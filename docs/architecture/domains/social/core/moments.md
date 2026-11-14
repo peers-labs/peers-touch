@@ -1,5 +1,12 @@
 # Moments —— 朋友圈 / 动态 / 时刻
 
+评论点赞、投票、接纳时间与恢复状态按已接受的
+[交互合同](../federation/interaction-completion.md) 和
+[D-08](../federation/decisions.md#d-08-评论点赞与投票延伸原交互权威) 实施。
+评论继承父帖权限；计数来自已验证回读，UI 只保留未提交的选择。
+
+公开对象的当前写入权威见 [朋友圈主权架构 §6.0](../federation/actor-feed-log.md#60-v1-冻结合同)：根签创世与固定设备授权、设备签名事件、事务内验签追加与投影。`MomentService` 与 `PublicPostRepository` 不再提供公开对象创建或删除方法；公开旧 RPC 返回 `FEED_SIGNED_WRITE_REQUIRED`。下文的旧 CRUD 流程和仓库写入示例不再定义当前公开写入路径。搜索索引绑定签名投影的公开正文列，非公开受众继续由 Secure Content 管线独立拥有。
+
 > Status: Draft, 2026-04-27
 >
 > Scope: 在现有 `social` subserver 的基础上，扩展出"朋友圈/动态"能力，
@@ -438,9 +445,8 @@ viewer-scoped 密文投影进入接收 Station。接收端不得把远端资源�
 ```
 apps/desktop/src/
 ├── pages/moments/
-│   ├── MomentsFeedPage.tsx         (Home: 多源合并)
-│   ├── MomentsExplorePage.tsx      (Public)
-│   ├── MomentsCirclePage.tsx
+│   ├── MomentsApp.tsx              (动态 / 圈友，范围内搜索与 selected-only Dialog)
+│   ├── MomentsFeedPage.tsx         (HOME + Public: 已取得窗口按时间合并、对象去重)
 │   ├── MomentsUserPage.tsx
 │   ├── MomentDetailPage.tsx
 │   └── CircleManagePage.tsx
@@ -479,9 +485,11 @@ apps/desktop/src/
 群组列表**直接读** `useSocialChatStore` 暴露的 groups——不另起
 独立 group endpoint。
 
-UI 层一律使用 LobeUI（`Markdown / TextArea / EmojiPicker / Button /
-ActionIcon`）+ antd `theme.useToken()` + `react-layout-kit
-Flexbox`，与 chat 视觉完全一致。
+原型和生产共用 `packages/ui/web` 的 MomentCard、IdentityCard、ImageGrid、
+MomentCommentRow/Composer、MomentScopeBar、UserProfileHeader/StatGrid 与 FeedSortFloat。
+Page 只组合布局并发出意图；原 Runtime/Store 负责两路游标、签名写入、私密状态、身份和统计。
+`momentsTimeline.ts` 只合并已取得的 HOME/Public 窗口，默认时间序；热门为显式读者视角，
+不改变源游标或评论时间序。Explore/UserSearch 独立页面及旧范围栏/发布外框已删除。
 
 ## 12. 不变约束（Invariants）
 

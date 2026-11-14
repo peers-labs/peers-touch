@@ -135,7 +135,7 @@ pub fn account_switch(
             if let Some(previous) = previous {
                 state
                     .secure_content
-                    .teardown_actor(&previous.actor.ptid)
+                    .teardown_actor_with_source(&previous.actor.ptid, "account-switch:detach-previous")
                     .map_err(|error| {
                         account_transition_failure("detach_old_secure_content", error)
                     })?;
@@ -207,7 +207,7 @@ pub fn account_switch(
             for kicked_session in binding.into_kicked() {
                 if let Err(error) = state
                     .secure_content
-                    .teardown_actor(&kicked_session.actor.ptid)
+                    .teardown_actor_with_source(&kicked_session.actor.ptid, "account-switch:takeover")
                 {
                     tracing::warn!(
                         error = %error,
@@ -468,7 +468,10 @@ pub fn account_unlock(
         &token,
     ) {
         if let Some(previous) = previous_window_session.as_ref() {
-            if let Err(error) = state.secure_content.teardown_actor(&previous.actor.ptid) {
+            if let Err(error) = state.secure_content.teardown_actor_with_source(
+                &previous.actor.ptid,
+                "account-unlock:replace",
+            ) {
                 tracing::warn!(
                     error = %error,
                     "secure content teardown failed while replacing unlocked session authority"
@@ -486,7 +489,7 @@ pub fn account_unlock(
     for kicked_session in kicked {
         if let Err(error) = state
             .secure_content
-            .teardown_actor(&kicked_session.actor.ptid)
+            .teardown_actor_with_source(&kicked_session.actor.ptid, "account-unlock:takeover")
         {
             tracing::warn!(
                 error = %error,
@@ -521,6 +524,7 @@ pub fn account_unlock(
         command: "account_unlock".to_string(),
         status: "authenticated".to_string(),
         actor_ptid: Some(session.actor_ptid.clone()),
+        session_activation_id: state.sessions.get(window.label()).map(|session| session.activation_id),
         session_token: Some(session.token.clone()),
         name: p_name,
         email: p_email,

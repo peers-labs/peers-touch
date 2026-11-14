@@ -33,7 +33,8 @@ export function preparedMomentsData(): Moment[] {
       id: 'mo-poll', name: 'Grace Kim', avatar: 'GK', avatarUrl: demoAvatarUrls.grace, time: '3 days ago',
       text: 'Help us choose the next community meetup format.',
       source: 'grace.remote', audience: 'Followers', reason: 'You follow Grace', remote: true,
-      contentKind: 'poll', poll: { question: 'Which format works best?', options: ['Workshop', 'Open space', 'Lightning talks'] },
+      contentKind: 'poll', poll: { question: 'Which format works best?', options: ['Workshop', 'Open space', 'Lightning talks'],
+        minChoices: 1, maxChoices: 2, confirmedChoices: [], voteCounts: [0, 0, 0], voterCount: 0, closed: false },
       likes: 12, reactionCounts: { love: 12 }, comments: [],
     },
     {

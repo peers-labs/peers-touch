@@ -693,6 +693,10 @@ func deleteRemotePrivateProjection(
 	).Delete(&federatedPrivateReactionProjectionModel{}).Error; err != nil {
 		return fmt.Errorf("delete revoked remote private reactions: %w", err)
 	}
+	if err := database.Where("source_station_peer_id = ? AND post_id = ? AND viewer_ptid = ?",
+		sourceStationPeerID, postContentID, targetActorPTID).Delete(&privatePollProjectionModel{}).Error; err != nil {
+		return fmt.Errorf("delete revoked remote private poll projection: %w", err)
+	}
 	return nil
 }
 

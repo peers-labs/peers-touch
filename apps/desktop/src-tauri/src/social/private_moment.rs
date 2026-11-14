@@ -321,7 +321,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             .projections()?
             .into_iter()
             .map(|bytes| PrivateMomentProjection::decode_local(&bytes))
-            .map(|projection| projection.map(scrub_persisted_media_projection))
+            .map(|projection| projection.map(scrub_persisted_projection))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(PrivateMomentsSnapshot {
             actor_ptid: self.lease.session.key.actor_ptid.clone(),
@@ -372,6 +372,12 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             .filter(|post_id| canonical_identifier(post_id))
             .map(ToOwned::to_owned)
             .collect::<BTreeSet<_>>();
+        for bytes in self.lease.store.projections()? {
+            let projection = PrivateMomentProjection::decode_local(&bytes)?;
+            if super::private_poll::requires_definition_read(&projection) {
+                reconciled_post_ids.insert(projection.post_id);
+            }
+        }
         match self.remote_private_moment_ids() {
             Ok(discovered) => reconciled_post_ids.extend(discovered),
             Err(error) if error == "secure content session generation is stale" => {
@@ -438,12 +444,31 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             intent.draft_revision,
         )?;
         if let Some(existing) = self.existing_publish_result(intent)? {
+            tracing::info!(
+                state = existing.state,
+                has_post_id = existing.post_id.is_some(),
+                "private Moment publication resumed its durable command"
+            );
             return Ok(existing.into());
         }
         let mut upload_transfer_ids = Vec::new();
         let mut content_id = None;
         match self.publish_new(intent, &mut upload_transfer_ids, &mut content_id) {
-            Ok(result) => Ok(result),
+            Ok(result) => {
+                let (state, has_post_id) = match &result {
+                    PrivateMomentPublishOutcome::Ready(result) => (result.state, false),
+                    PrivateMomentPublishOutcome::Published(result) => {
+                        (result.state.as_str(), result.post_id.is_some())
+                    }
+                    PrivateMomentPublishOutcome::Rejected(result) => (result.state, false),
+                };
+                tracing::info!(
+                    state,
+                    has_post_id,
+                    "private Moment publication returned its Native outcome"
+                );
+                Ok(result)
+            }
             Err(failure) => {
                 self.finish_publish_failure(intent, failure, content_id, upload_transfer_ids)
             }
@@ -519,6 +544,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                 .map(|repost| repost.authority.clone()),
             poll_authority: poll_material.as_ref().map(|poll| poll.authority.clone()),
         };
+        tracing::info!("private Moment preparation started");
         let plan = self
             .transport
             .prepare_private_moment(&prepare)
@@ -529,6 +555,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             })?;
         self.ensure_current()
             .map_err(PrivatePublishFailure::preserve)?;
+        tracing::info!("private Moment preparation received its plan");
         validate_plan(
             &plan,
             &self.lease,
@@ -1023,8 +1050,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                                 None,
                             )
                         } else {
-                            self.persist_decrypted_projection(&decrypted)?;
-                            return Ok(decrypted.projection);
+                            return self.persist_decrypted_projection(&decrypted);
                         }
                     }
                     Err(error) => {
@@ -1153,8 +1179,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                 )
                 .map_err(|error| error.message)?;
                 self.verify_repost_source_current(&point, &decrypted)?;
-                self.persist_decrypted_projection(&decrypted)?;
-                return Ok(decrypted.projection);
+                return Ok(self.persist_decrypted_projection(&decrypted)?);
             }
             if !response.has_more {
                 let point = self.transport.get_private_moment(post_id);
@@ -1254,7 +1279,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             }
         };
         self.verify_repost_source_current(&response, &decrypted)?;
-        self.persist_decrypted_projection(&decrypted)?;
+        decrypted.projection = self.persist_decrypted_projection(&decrypted)?;
         let attachment = match decrypted.plaintext.body.as_ref() {
             Some(social::private_moment_content::Body::Image(image)) => image
                 .images
@@ -1410,7 +1435,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                 apply_media_failure(item, &error);
             }
         }
-        let persisted = scrub_persisted_media_projection(decrypted.projection.clone());
+        let persisted = scrub_persisted_projection(decrypted.projection.clone());
         let encoded = persisted.encode_local()?;
         self.save_projection_if_current(post_id, &encoded)
             .map_err(|error| PrivateMediaOpenError::dependency(error, None))?;
@@ -1437,6 +1462,12 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             .lease
             .store
             .moment_command(&intent.draft_id, intent.draft_revision)?;
+        if let Some(command) = &existing {
+            tracing::info!(
+                operation_state = ?command.state,
+                "private Moment publication observed its durable command"
+            );
+        }
         match existing {
             Some(command)
                 if matches!(
@@ -1544,6 +1575,10 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         acquired: AcquiredMomentCommand,
     ) -> Result<PrivateMomentPublishResult, String> {
         let command = &acquired.command;
+        tracing::info!(
+            operation_state = ?command.state,
+            "private Moment submit dispatch started"
+        );
         let request =
             match social::SubmitPrivateMomentRequest::decode(command.request_bytes.as_slice()) {
                 Ok(request) => request,
@@ -1653,8 +1688,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                     )
                     .map_err(|error| error.message)?;
                     self.verify_repost_source_current(&response, &decrypted)?;
-                    self.persist_decrypted_projection(&decrypted)?;
-                    Ok(decrypted.projection)
+                    self.persist_decrypted_projection(&decrypted)
                 })();
                 match verified {
                     Ok(projection) => {
@@ -1685,6 +1719,17 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             }
         };
         let operation = command.operation_record()?;
+        let readback_state = match &observation {
+            ReadbackObservation::Committed { .. } => "committed",
+            ReadbackObservation::AuthoritativeAbsent => "absent",
+            ReadbackObservation::Invalid { .. } => "invalid",
+            ReadbackObservation::Unavailable { .. } => "unavailable",
+        };
+        tracing::info!(
+            operation_state = ?command.state,
+            readback_state,
+            "private Moment journal observed its authoritative readback"
+        );
         let decision = match command.state {
             OperationState::UnknownOutcome => decide_unknown_outcome(&operation, observation),
             OperationState::CommittedPendingReadback => {
@@ -1823,7 +1868,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
     fn persist_decrypted_projection(
         &self,
         decrypted: &DecryptedPrivateMoment,
-    ) -> Result<(), String> {
+    ) -> Result<PrivateMomentProjection, String> {
         let mut projection = decrypted.projection.clone();
         if let Some(existing) = self.lease.store.projection(&projection.post_id)? {
             let existing = PrivateMomentProjection::decode_local(&existing)?;
@@ -1853,7 +1898,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             .parse::<u64>()
             .map_err(|_| "private Moment projection generation is invalid".to_string())?;
         let projection_bytes = projection.encode_local()?;
-        self.supervisor.with_current(&self.lease.session.key, |_| {
+        let committed = self.supervisor.with_current(&self.lease.session.key, |_| {
             self.lease.store.commit_content_root(
                 &decrypted.projection.content_id,
                 generation,
@@ -1862,7 +1907,8 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                 decrypted.consumed_prekey.as_deref(),
                 &projection_bytes,
             )
-        })
+        })?;
+        PrivateMomentProjection::decode_local(&committed)
     }
 
     fn save_projection_if_current(
@@ -2214,9 +2260,22 @@ fn apply_terminal_media_failure(
     };
 }
 
-pub(super) fn scrub_persisted_media_projection(
+pub(super) fn scrub_persisted_projection(
     mut projection: PrivateMomentProjection,
 ) -> PrivateMomentProjection {
+    if super::private_poll::requires_definition_read(&projection) {
+        if matches!(
+            projection.state,
+            super::projection::PrivateReadState::ContentReady
+                | super::projection::PrivateReadState::RemoteSourceUnavailable
+        ) {
+            projection.state = super::projection::PrivateReadState::LoadingAuthorizedResource;
+        }
+        projection.content = None;
+        projection.mentions.clear();
+        projection.reactions.clear();
+        projection.error_code = Some("PRIVATE_POLL_DEFINITION_REQUIRED".into());
+    }
     match projection.content.as_mut() {
         Some(PrivateMomentContentProjection::Image { media, .. })
         | Some(PrivateMomentContentProjection::Video { media, .. }) => {
@@ -2299,6 +2358,7 @@ fn private_transport_failure_projection(
         reactions: Vec::new(),
         reaction_revision: "0".to_string(),
         reactions_hydrated: false,
+        comments_count: None,
         content: None,
         error_code: Some(error.message.clone()),
         retry_after_seconds: error.retry_after_seconds,
@@ -2435,6 +2495,7 @@ fn private_read_projection(
         reactions: Vec::new(),
         reaction_revision: "0".to_string(),
         reactions_hydrated: false,
+        comments_count: None,
         content: None,
         error_code: Some(error_code.to_string()),
         retry_after_seconds,

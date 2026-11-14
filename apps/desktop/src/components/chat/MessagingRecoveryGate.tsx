@@ -117,7 +117,10 @@ export function MessagingRecoveryGate() {
               data-chat-recovery-restore="true"
               emphasis="primary"
               fullWidth
-              availability={restoring || !phrase.trim() ? { kind: 'disabled', reason: '' } : undefined}
+              availability={restoring || !phrase.trim() ? {
+                kind: 'disabled',
+                reason: t(restoring ? 'chat.social.recovery.restoring' : 'chat.social.recovery.phraseRequired'),
+              } : undefined}
               execution={restoring ? 'pending' : 'idle'}
               leading={restoring ? undefined : <Icon iconId="key-round" size={16} />}
               onActivate={handleRestore}
@@ -133,7 +136,7 @@ export function MessagingRecoveryGate() {
             data-chat-recovery-retry="true"
             emphasis="quiet"
             density="compact"
-            availability={restoring ? { kind: 'disabled', reason: '' } : undefined}
+            availability={restoring ? { kind: 'disabled', reason: t('chat.social.recovery.restoring') } : undefined}
             leading={<Icon iconId="refresh-cw" size={14} className={loading ? 'sc-recovery__spinning' : undefined} />}
             onActivate={handleRetry}
           >
@@ -145,7 +148,7 @@ export function MessagingRecoveryGate() {
             emphasis="quiet"
             tone="danger"
             density="compact"
-            availability={restoring ? { kind: 'disabled', reason: '' } : undefined}
+            availability={restoring ? { kind: 'disabled', reason: t('chat.social.recovery.restoring') } : undefined}
             leading={<Icon iconId="log-out" size={14} />}
             onActivate={handleSignOut}
           >

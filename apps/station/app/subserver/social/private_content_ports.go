@@ -319,7 +319,11 @@ func (d *privateContentRecipientDirectory) ValidateActiveEndpoint(
 		return err
 	}
 	for _, entry := range manifest.GetActiveEndpoints() {
-		if proto.Equal(entry.GetEndpoint(), endpoint) {
+		active := entry.GetEndpoint()
+		// Account hints do not identify an Actor or its device.
+		if active.GetActor().GetPtid() == endpoint.GetActor().GetPtid() &&
+			active.GetActor().GetKind() == endpoint.GetActor().GetKind() &&
+			active.GetDeviceId() == endpoint.GetDeviceId() {
 			return nil
 		}
 	}

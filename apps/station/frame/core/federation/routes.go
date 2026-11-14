@@ -62,6 +62,7 @@ const (
 	GroupCallAuthorityJoinRoute = "/federation/realtime/group-call/join"
 	// SocialPrivateObjectReadRoute streams one bounded Social ciphertext range.
 	SocialPrivateObjectReadRoute = "/federation/social/private/objects/:object_id/read"
+	SocialPublicFeedReadRoute    = "/federation/social/feed/read"
 )
 
 // PeerRoute identifies one Federation-owned peer HTTP capability.
@@ -89,7 +90,8 @@ const (
 	PeerRouteRealtimeCallResolution           PeerRoute = "realtime-call-resolution"
 	PeerRouteRealtimeSignal                   PeerRoute = "realtime-signal"
 	PeerRouteGroupCallAuthorityJoin           PeerRoute = "group-call-authority-join"
-	PeerRouteSocialPrivateObjectRead           PeerRoute = "social-private-object-read"
+	PeerRouteSocialPrivateObjectRead          PeerRoute = "social-private-object-read"
+	PeerRouteSocialPublicFeedRead             PeerRoute = "social-public-feed-read"
 )
 
 // PeerEndpointResolver resolves a resource-owner endpoint lazily at request
@@ -144,6 +146,7 @@ var peerRouteSpecs = []peerRouteSpec{
 	{PeerRouteRealtimeCallResolution, "federation-realtime-call-resolution", RealtimeCallResolutionRoute, server.POST, RealtimeCallResolutionScope},
 	{PeerRouteGroupCallAuthorityJoin, "federation-group-call-authority-join", GroupCallAuthorityJoinRoute, server.POST, GroupCallAuthorityJoinScope},
 	{PeerRouteSocialPrivateObjectRead, "federation-social-private-object-read", SocialPrivateObjectReadRoute, server.POST, SocialPrivateObjectReadScope},
+	{PeerRouteSocialPublicFeedRead, "federation-social-public-feed-read", SocialPublicFeedReadRoute, server.POST, SocialPublicFeedReadScope},
 }
 
 // PeerCapabilityManifestDigest binds Relay route attestations to the exact
@@ -374,6 +377,13 @@ func (f *PeerRouteFactory) Handlers() []server.Handler {
 			server.POST,
 			f.dispatchRoute(PeerRouteSocialPrivateObjectRead),
 			f.wrappers[PeerRouteSocialPrivateObjectRead],
+		),
+		server.NewSimpleHandler(
+			"federation-social-public-feed-read",
+			SocialPublicFeedReadRoute,
+			server.POST,
+			f.dispatchRoute(PeerRouteSocialPublicFeedRead),
+			f.wrappers[PeerRouteSocialPublicFeedRead],
 		),
 	}
 }

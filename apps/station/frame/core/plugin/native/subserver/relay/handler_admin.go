@@ -11,6 +11,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
@@ -228,11 +229,29 @@ func (h *relayHandler) handleDeleteEnrollment(w http.ResponseWriter, r *http.Req
 
 func (h *relayHandler) handleStats(w http.ResponseWriter, r *http.Request) {
 	nodes, routes, permits := h.sub.opts.Admission.Counts()
+	// Operator-only transport metadata. Payloads and business state never enter
+	// this projection; libp2p owns authenticated connection identities.
+	type connectionInfo struct {
+		ID         string `json:"id"`
+		NodePeerID string `json:"node_peer_id"`
+		Local      string `json:"local_multiaddr"`
+		Remote     string `json:"remote_multiaddr"`
+	}
+	connections := make([]connectionInfo, 0)
+	for _, connection := range h.sub.opts.Host.Network().Conns() {
+		connections = append(connections, connectionInfo{
+			ID: connection.ID(), NodePeerID: connection.RemotePeer().String(),
+			Local:  connection.LocalMultiaddr().String(),
+			Remote: connection.RemoteMultiaddr().String(),
+		})
+	}
+	sort.Slice(connections, func(i, j int) bool { return connections[i].ID < connections[j].ID })
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"admitted_nodes": nodes,
 		"active_routes":  routes,
 		"active_permits": permits,
 		"max_stations":   h.sub.opts.MaxStations,
+		"connections":    connections,
 	})
 }

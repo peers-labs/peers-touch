@@ -3,6 +3,8 @@ kind: invariant
 title: Default ordering is time or neutral relevance, never engagement
 status: active
 owns:
+  - packages/ui/web/src/moment-card.tsx
+  - packages/ui/web/src/feed-sort-float.tsx
   - packages/prototypes/shared/ui-system/moments/
   - packages/prototypes/shared/ui-system/chat/
   - packages/prototypes/shared/ui-system/search/

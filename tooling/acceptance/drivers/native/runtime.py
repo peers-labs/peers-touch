@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime, timezone
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -1659,7 +1660,18 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
                     ),
                 ),
             ) from error
-        return self.native_adapter.observe_operator()
+        try:
+            expires_at = datetime.fromisoformat(cell["lease"]["expiresAt"])
+            if expires_at.tzinfo is None:
+                raise ValueError("Cell lease expiration has no timezone")
+            remaining = (expires_at - datetime.now(timezone.utc)).total_seconds()
+            if remaining <= 0:
+                raise ValueError("Cell lease expired")
+        except (KeyError, TypeError, ValueError) as error:
+            raise DriverError("Qualified Native Cell has no current lease lifetime") from error
+        return self.native_adapter.observe_operator(
+            deadline_monotonic=time.monotonic() + remaining,
+        )
 
     def _create_session(
         self,

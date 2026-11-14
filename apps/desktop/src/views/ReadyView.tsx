@@ -109,7 +109,14 @@ export function ReadyView({ lifecycle: _lifecycle }: ReadyViewProps) {
         }}>
           <SearchReturnBar navigation={navigation} />
           <AgentModuleNav page={router.page} navigation={navigation} />
-          <div style={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative' }}>
+          <div style={{
+            flex: 1,
+            minWidth: 0,
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            position: 'relative',
+          }}>
             <ShellCommitProfiler owner="shell:page-host" surface="page-host">
               <PageHost
                 page={router.page}

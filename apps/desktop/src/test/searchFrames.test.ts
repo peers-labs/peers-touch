@@ -12,7 +12,7 @@ import { decodeSearchFrame } from '../services/search';
 import {
   STABLE_ADMISSION_MS, MAX_QUERY_CHARS, authorizedRowCopyText, clampQuery,
   coverageStatus, deliveredCoverage, isPrintableCharacterKey, mergeProgressiveFrame,
-  nextRovingIndex, pendingSources, searchPresentation,
+  nextRovingIndex, pendingSources, retainTransientlyUnavailableSources, searchPresentation,
 } from '../runtimes/searchFrames';
 
 function source(sourceId: string) {
@@ -218,6 +218,85 @@ describe('progressive presentation decision', () => {
     });
     expect(deliveredCoverage(finalPresentation, []).map(item => item.sourceId))
       .toEqual(['device.messaging', 'station.social.public']);
+  });
+});
+
+describe('scheduled reconcile continuity', () => {
+  const rowKey = (candidate: ResultItem) => candidate.resource?.id ?? '';
+  const socialSources = ['device.social', 'station.social.public'];
+  const socialSourceStates = socialSources.map(source) as SearchResponse['sources'];
+  const readyCoverage = socialSources.map(sourceId =>
+    ({ sourceId, state: SourceState.READY }) as SourceCoverage);
+
+  it('retains previously qualified rows when a source is transiently unavailable, keeping prior order', () => {
+    const previous = response({
+      sources: socialSourceStates,
+      coverage: readyCoverage,
+      items: [
+        item('device.social', 'private-comment'),
+        item('station.social.public', 'public-comment'),
+        item('device.social', 'private-post'),
+        item('station.social.public', 'public-post'),
+      ],
+    });
+    const next = response({
+      sources: socialSourceStates,
+      coverage: [
+        { sourceId: 'device.social', state: SourceState.UNAVAILABLE, detailKey: 'search.coverage.source_unavailable' } as SourceCoverage,
+        { sourceId: 'station.social.public', state: SourceState.READY } as SourceCoverage,
+      ],
+      items: [
+        item('station.social.public', 'public-comment'),
+        item('station.social.public', 'public-post'),
+      ],
+    });
+    const merged = retainTransientlyUnavailableSources(previous, next, rowKey);
+    expect(merged.items.map(rowKey)).toEqual([
+      'private-comment', 'public-comment', 'private-post', 'public-post',
+    ]);
+  });
+
+  it('does not retain rows when every source stays ready or when the source never had rows', () => {
+    const previous = response({
+      sources: socialSourceStates, coverage: readyCoverage,
+      items: [item('station.social.public', 'public-post')],
+    });
+    const unchanged = response({
+      sources: socialSourceStates, coverage: readyCoverage,
+      items: [item('station.social.public', 'public-post')],
+    });
+    expect(retainTransientlyUnavailableSources(previous, unchanged, rowKey)).toBe(unchanged);
+
+    const otherSourceGone = response({
+      sources: socialSourceStates,
+      coverage: [
+        { sourceId: 'device.social', state: SourceState.UNAVAILABLE } as SourceCoverage,
+        { sourceId: 'station.social.public', state: SourceState.READY } as SourceCoverage,
+      ],
+      items: [item('station.social.public', 'public-post')],
+    });
+    expect(retainTransientlyUnavailableSources(previous, otherSourceGone, rowKey))
+      .toBe(otherSourceGone);
+  });
+
+  it('appends genuinely new rows while preserving retained order', () => {
+    const previous = response({
+      sources: socialSourceStates, coverage: readyCoverage,
+      items: [item('device.social', 'p1'), item('station.social.public', 'u1')],
+    });
+    const next = response({
+      sources: socialSourceStates,
+      coverage: [
+        { sourceId: 'device.social', state: SourceState.UNAVAILABLE } as SourceCoverage,
+        { sourceId: 'station.social.public', state: SourceState.READY } as SourceCoverage,
+      ],
+      items: [
+        item('station.social.public', 'u1'),
+        item('station.social.public', 'u2'),
+      ],
+    });
+    const merged = retainTransientlyUnavailableSources(previous, next, rowKey);
+    expect(merged.items.map(rowKey)).toEqual(['p1', 'u1', 'u2']);
   });
 });
 

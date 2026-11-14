@@ -1,0 +1,61 @@
+/*
+ * Social 北极星 glass 皮肤（钉版原型 peers-touch-show@2e7bcc9 默认皮肤
+ * 「松绿 · 北极星」）。
+ *
+ * 作用域严格限定在动态页（.moments-app[data-social-glass]）以及该页存活期间
+ * 的弹层宿主（.pt-overlay-host[data-social-glass]），不改变其它模块的冷墨
+ * 基线。peers-ui 的 moments.css 通过 var(--sk-*, <冷墨回退>) 消费这些变量；
+ * 未定义时产品回退为扁平冷灰，这正是原型/产品视觉分裂的根因。
+ */
+
+.moments-app[data-social-glass],
+.pt-overlay-host[data-social-glass] {
+  /* Pine-on-neutral glass：容器去色相，松绿只做连接标点。 */
+  --sk-canvas: #f4f5f4;
+  --sk-surface: rgba(255, 255, 255, 0.64);
+  --sk-subtle: rgba(255, 255, 255, 0.52);
+  --sk-tile: rgba(255, 255, 255, 0.54);
+  --sk-text: #171a1c;
+  --sk-text-2: #5d6368;
+  --sk-text-3: #8a9096;
+  --sk-primary: #1a1d20;
+  --sk-primary-ink: #ffffff;
+  --sk-accent: #2f6a50;
+  --sk-on-accent: #ffffff;
+  --sk-danger: #c0392f;
+  --sk-warning: #9a5f00;
+  --sk-success: #1f7d52;
+  --sk-rail-bg: rgba(255, 255, 255, 0.5);
+  --sk-r-card: 20px;
+  --sk-radius-soft: 22px;
+  --sk-radius-control: 12px;
+  --sk-avatar-radius: 11px;
+  --sk-glass-blur: 22px;
+  --sk-glass-border: rgba(22, 26, 24, 0.1);
+  --sk-card-bg: rgba(255, 255, 255, 0.68);
+  --sk-overlay: #ffffff;
+  --sk-card-border: rgba(22, 26, 24, 0.09);
+  --sk-card-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    0 10px 30px -18px rgba(20, 24, 22, 0.22);
+  --sk-raised: var(--sk-card-bg);
+
+  /* peers-ui 原语桥接（与原型 PT_BRIDGE 同义）：让弹层/选择器/分段控件
+     在 Social 表面内跟随 glass 皮肤，而不是库默认冷灰。 */
+  --pt-primary: var(--sk-primary);
+  --pt-on-primary: var(--sk-primary-ink);
+  --pt-primary-subtle: color-mix(in srgb, var(--sk-primary) 10%, var(--sk-raised));
+  --pt-text: var(--sk-text);
+  --pt-secondary: var(--sk-text-2);
+  --pt-muted: var(--sk-text-3);
+  --pt-surface: var(--sk-raised);
+  --pt-subtle: var(--sk-tile);
+  --pt-radius-md: var(--sk-avatar-radius);
+}
+
+/* 页面地板：中性纸感，卡片在其上呈现磨砂白。 */
+.moments-app[data-social-glass] {
+  background: var(--sk-canvas);
+  color: var(--sk-text);
+  font-family: Manrope, -apple-system, "PingFang SC", "Segoe UI", sans-serif;
+}

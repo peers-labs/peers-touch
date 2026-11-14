@@ -23,8 +23,6 @@ import type { DescMessage, MessageInitShape } from '@bufbuild/protobuf';
 import {
   AudienceSchema,
   Audience_Kind,
-  CreatePostResponseSchema,
-  GetPostResponseSchema,
   GetTimelineResponseSchema,
   SyncMomentsProjectionResponseSchema,
   ListPostsResponseSchema,
@@ -40,7 +38,6 @@ import {
 } from '../gen/proto/domain/social/post_pb';
 import {
   CommentSchema,
-  CreateCommentResponseSchema,
 } from '../gen/proto/domain/social/comment_pb';
 import {
   GetMomentResourceResponseSchema,
@@ -52,12 +49,13 @@ import {
 import { ListMyCirclesResponseSchema } from '../gen/proto/domain/social/circle_pb';
 import { selectMomentComments, useMomentsStore } from '../store/moments';
 import { usePrivateMomentsStore } from '../store/privateMoments';
+import { privateReactionTargetKey } from '../services/privateMomentsNative';
 import {
   selectPrivateCommentDraft,
   selectPrivateCommentThread,
   usePrivateCommentsStore,
 } from '../store/privateComments';
-import { normalizePrivateMomentProjection } from '../services/privateMomentsNative';
+import { normalizePrivateMomentProjection, privateMomentsNative } from '../services/privateMomentsNative';
 import { useRelationshipsStore } from '../store/relationships';
 import { useSessionStore } from '../store/session';
 import { EVENT, eventBus } from '../kernel/events';
@@ -79,6 +77,7 @@ import { clearSearchQueries, invalidateSearchSources, reconcileSearchQuery, runS
 import { searchActions } from '../runtimes/searchRuntime';
 import { useMomentsNavigationStore } from '../store/momentsNavigation';
 import * as socialApi from '../services/social_api';
+import * as publicFeedNative from '../services/publicFeedNative';
 import { QueryClient } from '@tanstack/query-core';
 import { searchRowKey, searchService } from '../services/search';
 
@@ -267,6 +266,25 @@ describe('Desktop Search no-store page continuity', () => {
   async function settle() {
     await vi.waitFor(() => expect(useSearchStore.getState().status).toBe('ready'));
   }
+
+  it('installs a fresh payload and issued cursor when unchanged row keys are refreshed', async () => {
+    const { submit } = searchFixture();
+    await runSearchQuery('en');
+    await settle();
+    const previous = useSearchStore.getState().response!;
+    const key = selectResult(0);
+    await runSearchQuery('en');
+    await settle();
+    const current = useSearchStore.getState();
+    expect(current.response!.items[0].resource!.id).toBe(previous.items[0].resource!.id);
+    expect(current.response!.items[0].resource!.contentRevision).toBe('2');
+    expect(current.response!.nextCursor).toBe('2:1');
+    expect(current.response).not.toBe(previous);
+    expect(current.traversal!.ordinal).toBe(0);
+    expect(current.selectedKey).toBe(key);
+    expect(current.scrollTop).toBe(93);
+    expect(submit).toHaveBeenCalledTimes(2);
+  });
 
   it('does not replay a fresh no-store frame when lease and revisions are current', async () => {
     const { submit } = searchFixture();
@@ -812,11 +830,9 @@ describe('moments store: syncProjection', () => {
 
 describe('moments store: createPost / deletePost', () => {
   it('createPost prepends id to HOME and stores the post', async () => {
-    enqueue('social_create_moment',
-      bytesOk(CreatePostResponseSchema, {
-        post: { id: 'pNEW', authorPtid: 'a', type: PostType.TEXT },
-      }),
-    );
+    const publish = vi.spyOn(socialApi, 'socialCreateMoment').mockResolvedValue(create(PostSchema, {
+      id: 'pNEW', authorPtid: 'a', type: PostType.TEXT,
+    }));
 
     const id = await useMomentsStore
       .getState()
@@ -825,18 +841,13 @@ describe('moments store: createPost / deletePost', () => {
     expect(id).toBe('pNEW');
     expect(useMomentsStore.getState().feeds.home.postIds[0]).toBe('pNEW');
     expect(useMomentsStore.getState().postsById['pNEW']?.id).toBe('pNEW');
+    expect(publish).toHaveBeenCalledWith(expect.objectContaining({ kind: 'text', text: 'hi' }));
   });
 
-  it('createPost(image) carries image_ids through the wire layer', async () => {
-    // The store delegates to socialCreateMoment which delegates to
-    // buildCreatePostRequest. We don't need to introspect the bytes
-    // here — what matters is the call succeeds and the returned id
-    // ingests as IMAGE so the renderer picks the image branch.
-    enqueue('social_create_moment',
-      bytesOk(CreatePostResponseSchema, {
-        post: { id: 'pIMG', authorPtid: 'a', type: PostType.IMAGE },
-      }),
-    );
+  it('createPost(image) delegates the complete intent to the signed feed adapter', async () => {
+    const publish = vi.spyOn(socialApi, 'socialCreateMoment').mockResolvedValue(create(PostSchema, {
+      id: 'pIMG', authorPtid: 'a', type: PostType.IMAGE,
+    }));
 
     const id = await useMomentsStore.getState().createPost({
       kind: 'image',
@@ -852,6 +863,12 @@ describe('moments store: createPost / deletePost', () => {
     const stored = useMomentsStore.getState().postsById['pIMG'];
     expect(stored?.type).toBe(PostType.IMAGE);
     expect(useMomentsStore.getState().feeds.home.postIds[0]).toBe('pIMG');
+    expect(publish).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'image', imageIds: [
+        'oss://station.local/2026/04/29/aaa.png',
+        'oss://station.local/2026/04/29/bbb.jpg',
+      ],
+    }));
   });
 
   it('createPost(private image) delegates local file intent to Native only', async () => {
@@ -1169,6 +1186,8 @@ describe('moments store: createPost / deletePost', () => {
           text: 'private poll',
           question: 'Choose one',
           options: ['First', 'Second'],
+          opaque_option_ids: ['11'.repeat(32), '22'.repeat(32)],
+          option_set_sha256: '77'.repeat(32),
           min_choices: 1,
           max_choices: 1,
           expires_at_seconds: expiresAtSeconds,
@@ -1530,12 +1549,12 @@ describe('moments store: createPost / deletePost', () => {
         hasMore: false,
       }),
     );
-    // The Rust DELETE returns the response proto; an empty {} encodes to zero bytes.
-    enqueue('social_delete_moment', bytesOk(GetPostResponseSchema, {}));
+    const remove = vi.spyOn(socialApi, 'socialDeleteMoment').mockResolvedValue(true);
 
     await useMomentsStore.getState().loadFeed('home');
     await useMomentsStore.getState().loadUserFeed('a');
     await useMomentsStore.getState().deletePost('p2');
+    expect(remove).toHaveBeenCalledWith('p2');
 
     expect(useMomentsStore.getState().feeds.home.postIds).toEqual(['p1']);
     expect(useMomentsStore.getState().userFeeds['a'].postIds).toEqual(['p3']);
@@ -1589,14 +1608,6 @@ describe('moments store: createPost / deletePost', () => {
           loading: false,
         },
       },
-      circleFeeds: {
-        c1: {
-          postIds: ['gone'],
-          nextCursor: '',
-          hasMore: false,
-          loading: false,
-        },
-      },
     });
     const callsBefore = invokeMock.mock.calls.length;
 
@@ -1615,13 +1626,59 @@ describe('moments store: createPost / deletePost', () => {
     expect(state.feeds.home.postIds).toEqual(['keep', 'tail']);
     expect(state.feeds.explore.postIds).toEqual(['keep']);
     expect(state.userFeeds.a.postIds).toEqual([]);
-    expect(state.circleFeeds.c1.postIds).toEqual([]);
     // Pure local projection: no Station write command is issued.
     expect(invokeMock.mock.calls.length).toBe(callsBefore);
   });
 });
 
 describe('private Moments Native projection', () => {
+  it.each(['bootstrap', 'reconcile'] as const)('preserves a committed ballot across a delayed same-session %s', async action => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    const wire = {
+      post_id: 'poll', content_id: 'poll', generation: '8', author_ptid: 'ptid:author',
+      audience_kind: 'FRIENDS', state: 'CONTENT_READY',
+      content: {
+        kind: 'POLL', text: '', question: 'Choose', options: ['First', 'Second'],
+        opaque_option_ids: ['1'.repeat(64), '2'.repeat(64)], option_set_sha256: '3'.repeat(64),
+        min_choices: 1, max_choices: 1, expires_at_seconds: 4_000_000_000,
+        result: { vote_counts: ['0', '0'], selected_options: [], voter_count: '0',
+          projection_revision: '10', command_id: '', vote_actor_ptid: '' },
+      },
+    };
+    usePrivateMomentsStore.getState().activateActor('ptid:viewer', 5);
+    usePrivateMomentsStore.setState({
+      scope: { actorPtid: 'ptid:viewer', rendererGeneration: 5, nativeSessionGeneration: '9' },
+      postsById: { poll: normalizePrivateMomentProjection(wire) },
+    });
+    let complete!: (value: ReturnType<typeof statusOk>) => void;
+    enqueue(action === 'bootstrap' ? 'social_private_moments_bootstrap' : 'social_private_moments_reconcile',
+      new Promise(resolve => { complete = resolve; }));
+    const pending = action === 'bootstrap' ? usePrivateMomentsStore.getState().bootstrap(5)
+      : usePrivateMomentsStore.getState().reconcile(['poll'], 'late-read', 5);
+    const committed = {
+      voteCounts: ['0', '1'], selectedOptions: [1], voterCount: '1',
+      projectionRevision: '11', commandId: 'ballot', voteActorPtid: 'ptid:viewer',
+    };
+    vi.spyOn(privateMomentsNative, 'votePoll').mockResolvedValueOnce({
+      command: { commandId: 'ballot', postId: 'poll', commentId: '', kind: ReactionKind.REACTION_UNSPECIFIED,
+        operation: 'VOTE_POLL', selectedOpaqueOptionIds: ['2'.repeat(64)],
+        state: 'REACTION_COMMITTED', attemptCount: 1, projectionRevision: '11' },
+      reactions: [], projectionRevision: '11', exactReplay: false, poll: committed,
+    });
+    await usePrivateMomentsStore.getState().votePoll('poll', [1]);
+    complete(statusOk({ actor_ptid: 'ptid:viewer', device_id: 'device', session_generation: '9',
+      projections: [wire], reaction_commands: [] }));
+    await pending;
+    expect(usePrivateMomentsStore.getState().postsById.poll.content).toMatchObject({ result: committed });
+    expect(usePrivateMomentsStore.getState().reactionCommands).toEqual({});
+    enqueue('social_private_moment_read', statusOk({
+      ...wire, state: 'NOT_FOUND_OR_NOT_AUTHORIZED', content: undefined,
+    }));
+    await usePrivateMomentsStore.getState().readMoment('poll');
+    expect(usePrivateMomentsStore.getState().postsById.poll.content).toBeUndefined();
+  });
+
   it('accepts only an opaque window-authorized private media URL', () => {
     const projection = normalizePrivateMomentProjection({
       post_id: 'post-private-media',
@@ -1905,6 +1962,78 @@ describe('private Moments Native projection', () => {
       'private-media://localhost/01ARZ3NDEKTSV4RRFFQ69G5FAV',
     );
   });
+
+  it('retains the projection reference when a same-generation reconcile is unchanged', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    usePrivateMomentsStore.getState().activateActor('ptid:viewer', 5);
+    usePrivateMomentsStore.setState({
+      postsById: {
+        'post-private': {
+          postId: 'post-private',
+          contentId: 'content-private',
+          generation: '8',
+          authorPtid: 'ptid:author',
+          audienceKind: 'FRIENDS',
+          state: 'CONTENT_READY',
+          mentions: [],
+          reactions: [],
+          reactionRevision: '0',
+          reactionsHydrated: true,
+          content: { kind: 'TEXT', text: 'stable body' },
+        },
+      },
+    });
+    const before = usePrivateMomentsStore.getState().postsById['post-private'];
+
+    // A periodic reconcile re-emits a brand-new instance with identical content.
+    enqueue('social_private_moments_bootstrap', statusOk({
+      actor_ptid: 'ptid:viewer',
+      device_id: 'device-1',
+      session_generation: '9',
+      projections: [{
+        post_id: 'post-private',
+        content_id: 'content-private',
+        generation: '8',
+        author_ptid: 'ptid:author',
+        audience_kind: 'FRIENDS',
+        state: 'CONTENT_READY',
+        reactions_hydrated: true,
+        reaction_revision: '0',
+        content: { kind: 'TEXT', text: 'stable body' },
+      }],
+    }));
+
+    await usePrivateMomentsStore.getState().bootstrap(5);
+
+    // Unchanged shape must keep the same reference so memoized cards do not
+    // repaint on a no-op periodic refresh.
+    expect(usePrivateMomentsStore.getState().postsById['post-private']).toBe(before);
+
+    // A real content change still produces a new reference and value.
+    enqueue('social_private_moments_bootstrap', statusOk({
+      actor_ptid: 'ptid:viewer',
+      device_id: 'device-1',
+      session_generation: '9',
+      projections: [{
+        post_id: 'post-private',
+        content_id: 'content-private',
+        generation: '8',
+        author_ptid: 'ptid:author',
+        audience_kind: 'FRIENDS',
+        state: 'CONTENT_READY',
+        reactions_hydrated: true,
+        reaction_revision: '0',
+        content: { kind: 'TEXT', text: 'edited body' },
+      }],
+    }));
+
+    await usePrivateMomentsStore.getState().bootstrap(5);
+
+    const after = usePrivateMomentsStore.getState().postsById['post-private'];
+    expect(after).not.toBe(before);
+    expect(after?.content).toMatchObject({ kind: 'TEXT', text: 'edited body' });
+  });
 });
 
 describe('moments store: comments', () => {
@@ -1913,6 +2042,76 @@ describe('moments store: comments', () => {
       metadata: { commentId: id, contentId: id, postId: 'p1', author: { ptid: 'alice' } },
       body: { case: 'publicContent', value: { text: id } },
     }],
+  });
+
+  it('retains unchanged public rows and the acquired array during revalidation', async () => {
+    vi.spyOn(socialApi, 'socialGetComments').mockImplementation(async () => publicPage('stable'));
+    await useMomentsStore.getState().loadComments('p1', true);
+    const before = useMomentsStore.getState().comments.p1;
+    await useMomentsStore.getState().loadComments('p1', true);
+    expect(useMomentsStore.getState().comments.p1).toBe(before);
+    expect(useMomentsStore.getState().comments.p1[0]).toBe(before[0]);
+  });
+
+  it.each(['create', 'delete', 'like'] as const)(
+    'keeps a confirmed %s when an earlier background read completes',
+    async operation => {
+      const oldComment = create(CommentSchema, {
+        id: 'existing', postId: 'p1', content: 'existing', likesCount: 0n, isLiked: false,
+      });
+      useMomentsStore.setState({ comments: { p1: [oldComment] } });
+      let release!: (page: ReturnType<typeof publicPage>) => void;
+      vi.spyOn(socialApi, 'socialGetComments').mockImplementation(
+        () => new Promise(resolve => { release = resolve; }),
+      );
+      vi.spyOn(socialApi, 'socialCreateComment').mockResolvedValue(create(CommentSchema, {
+        id: 'new', postId: 'p1', content: 'new',
+      }));
+      vi.spyOn(socialApi, 'socialDeleteComment').mockResolvedValue(true);
+      vi.spyOn(socialApi, 'socialSetCommentLike').mockResolvedValue({ isLiked: true, likesCount: 1n });
+      const pendingRead = useMomentsStore.getState().loadComments('p1', true);
+      await Promise.resolve();
+      if (operation === 'create') await useMomentsStore.getState().createComment('p1', 'new');
+      if (operation === 'delete') await useMomentsStore.getState().deleteComment('p1', 'existing');
+      if (operation === 'like') await useMomentsStore.getState().setCommentLike('p1', 'existing', true);
+      const confirmed = useMomentsStore.getState().comments.p1;
+      release(publicPage('existing'));
+      await pendingRead;
+      expect(useMomentsStore.getState().comments.p1).toBe(confirmed);
+      expect(useMomentsStore.getState().commentsLoading.p1).toBe(false);
+    },
+  );
+
+  it('accepts authoritative removal from a read started after a confirmed mutation', async () => {
+    vi.spyOn(socialApi, 'socialCreateComment').mockResolvedValue(create(CommentSchema, {
+      id: 'new', postId: 'p1', content: 'new',
+    }));
+    await useMomentsStore.getState().createComment('p1', 'new');
+    vi.spyOn(socialApi, 'socialGetComments').mockResolvedValue(create(ListMomentCommentsResponseSchema));
+    await useMomentsStore.getState().loadComments('p1', true);
+    expect(useMomentsStore.getState().comments.p1).toEqual([]);
+  });
+
+  it('retains acquired pagination outside a refreshed head and accepts head removals', async () => {
+    const page = (ids: string[], nextCursor: string, hasMore: boolean) => create(
+      ListMomentCommentsResponseSchema, {
+        comments: ids.flatMap(id => publicPage(id).comments), nextCursor, hasMore,
+      },
+    );
+    const list = vi.spyOn(socialApi, 'socialGetComments')
+      .mockResolvedValueOnce(page(['head', 'removed'], 'tail-page', true))
+      .mockResolvedValueOnce(page(['tail'], 'next-tail', true))
+      .mockResolvedValueOnce(page(['new', 'head'], 'new-head-cursor', true));
+    await useMomentsStore.getState().loadComments('p1', true);
+    await useMomentsStore.getState().loadComments('p1');
+    const tail = useMomentsStore.getState().comments.p1[2];
+    await useMomentsStore.getState().loadComments('p1', true);
+    expect(useMomentsStore.getState().comments.p1.map(comment => comment.id)).toEqual(['new', 'head', 'tail']);
+    expect(useMomentsStore.getState().comments.p1[2]).toBe(tail);
+    expect(useMomentsStore.getState().commentsCursor.p1).toBe('next-tail');
+    list.mockResolvedValueOnce(page([], '', false));
+    await useMomentsStore.getState().loadComments('p1', true);
+    expect(useMomentsStore.getState().comments.p1).toEqual([]);
   });
 
   it('shares equivalent public read completion with reentrant subscribers', async () => {
@@ -1995,6 +2194,7 @@ describe('moments store: comments', () => {
   });
 
   it('executes a distinct historical anchor while pagination is pending and fences the old page', async () => {
+    vi.spyOn(publicFeedNative, 'verifyPublicComments').mockImplementation(async (_postId, comments) => comments);
     const reply = (commentId: string, nextCursor = '') => bytesOk(ListMomentCommentsResponseSchema, {
       comments: [{
         metadata: { commentId, contentId: commentId, postId: 'p1', author: { ptid: 'alice' } },
@@ -2216,6 +2416,7 @@ describe('moments store: comments', () => {
   });
 
   it('paginates via per-post cursor', async () => {
+    vi.spyOn(publicFeedNative, 'verifyPublicComments').mockImplementation(async (_postId, comments) => comments);
     enqueueMatch(
       (cmd, args) => cmd === 'social_get_comments'
         && (args as { input?: { limit?: number } })?.input?.limit === 20,
@@ -2311,6 +2512,61 @@ describe('moments store: comments', () => {
     ]);
     expect(thread.nextCursor).toBe('private-cursor');
     expect(thread.hasMore).toBe(true);
+  });
+
+  it('keeps the private comment thread reference stable across an unchanged refresh', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    usePrivateCommentsStore.getState().activateActor('ptid:viewer', 13);
+    const page = (text: string) => statusOk({
+      post_id: 'private-post',
+      comments: [{
+        comment_id: 'private-comment',
+        content_id: 'private-comment',
+        generation: '3',
+        post_id: 'private-post',
+        reply_to_comment_id: '',
+        author_ptid: 'ptid:author',
+        author_acct: 'author@example.com',
+        state: 'COMMENT_POSTED',
+        text,
+        reactions_count: 0,
+        reaction_revision: '0',
+        replies_count: 0,
+      }],
+      next_cursor: 'private-cursor',
+      has_more: false,
+    });
+
+    enqueue('social_private_comments_list', page('stable comment'));
+    await usePrivateCommentsStore.getState().loadComments('private-post', true);
+    const threadBefore = selectPrivateCommentThread(
+      usePrivateCommentsStore.getState(),
+      'private-post',
+    );
+    const commentBefore = threadBefore.comments[0];
+
+    // A periodic reconcile re-emits an identical page as fresh objects.
+    enqueue('social_private_comments_list', page('stable comment'));
+    await usePrivateCommentsStore.getState().loadComments('private-post', true);
+    const threadAfter = selectPrivateCommentThread(
+      usePrivateCommentsStore.getState(),
+      'private-post',
+    );
+
+    expect(threadAfter).toBe(threadBefore);
+    expect(threadAfter.comments[0]).toBe(commentBefore);
+
+    // A genuine text change still produces new references.
+    enqueue('social_private_comments_list', page('edited comment'));
+    await usePrivateCommentsStore.getState().loadComments('private-post', true);
+    const threadChanged = selectPrivateCommentThread(
+      usePrivateCommentsStore.getState(),
+      'private-post',
+    );
+    expect(threadChanged).not.toBe(threadBefore);
+    expect(threadChanged.comments[0]).not.toBe(commentBefore);
+    expect(threadChanged.comments[0]?.text).toBe('edited comment');
   });
 
   it('retains a rate-limited private draft and retries the same Native identity', async () => {
@@ -2781,7 +3037,7 @@ describe('moments store: comments', () => {
     expect(usePrivateCommentsStore.getState().draftsById).toEqual({});
   });
 
-  it('createComment optimistically bumps stats.commentsCount', async () => {
+  it('adds a confirmed signed comment to the thread and its count', async () => {
     enqueue('social_get_timeline',
       bytesOk(GetTimelineResponseSchema, {
         posts: [
@@ -2796,14 +3052,13 @@ describe('moments store: comments', () => {
         hasMore: false,
       }),
     );
-    enqueue('social_create_comment',
-      bytesOk(CreateCommentResponseSchema, {
-        comment: { id: 'cNEW', postId: 'p1', content: 'hello' },
-      }),
-    );
+    const submit = vi.spyOn(socialApi, 'socialCreateComment').mockResolvedValue(create(CommentSchema, {
+      id: 'cNEW', postId: 'p1', content: 'hello',
+    }));
 
     await useMomentsStore.getState().loadFeed('home');
     await useMomentsStore.getState().createComment('p1', 'hello');
+    expect(submit).toHaveBeenCalledWith('p1', 'hello', undefined, [], undefined);
 
     expect(useMomentsStore.getState().postsById['p1']?.stats?.commentsCount).toBe(1n);
     expect(useMomentsStore.getState().comments['p1']?.[0]?.id).toBe('cNEW');
@@ -2811,17 +3066,16 @@ describe('moments store: comments', () => {
 });
 
 describe('moments store: reactions', () => {
-  it('replaces (not merges) the reaction list from server', async () => {
-    enqueue('social_react',
-      bytesOk(ReactToPostResponseSchema, {
+  it('replaces the reaction list with the verified adapter projection', async () => {
+    const react = vi.spyOn(socialApi, 'socialReact').mockResolvedValue(create(ReactToPostResponseSchema, {
         success: true,
         reactions: [
           { kind: ReactionKind.REACTION_LIKE, count: 1n, reactedByViewer: true },
         ],
-      }),
-    );
+      }));
 
     await useMomentsStore.getState().reactToPost('p1', ReactionKind.REACTION_LIKE);
+    expect(react).toHaveBeenCalledWith('p1', ReactionKind.REACTION_LIKE, expect.any(String));
 
     expect(useMomentsStore.getState().reactions['p1']?.length).toBe(1);
     expect(useMomentsStore.getState().reactions['p1']?.[0]?.kind).toBe(
@@ -3003,7 +3257,7 @@ describe('moments store: reactions', () => {
       reactedByViewer: true,
     });
     expect(
-      usePrivateMomentsStore.getState().reactionsByPost['private-pending-post'],
+      usePrivateMomentsStore.getState().reactionCommands[privateReactionTargetKey('private-pending-post', '', ReactionKind.REACTION_LOVE)],
     ).toBeUndefined();
   });
 
@@ -3060,6 +3314,115 @@ describe('moments store: reactions', () => {
     });
   });
 
+  it('retains private cards and timeline references across unchanged reconciliation', () => {
+    usePrivateMomentsStore.getState().activateActor('ptid:viewer', 34);
+    const wire = {
+      post_id: 'private-stable',
+      content_id: 'private-stable',
+      generation: '1',
+      author_ptid: 'ptid:author',
+      audience_kind: 'FRIENDS',
+      state: 'CONTENT_READY',
+      created_at_millis: 1_700_000_000_000,
+      updated_at_millis: 1_700_000_000_000,
+      comments_count: '2',
+      mentions: [],
+      reactions: [{ kind: ReactionKind.REACTION_LOVE, count: '1', reacted_by_viewer: true }],
+      reaction_revision: '1',
+      reactions_hydrated: true,
+      content: { kind: 'TEXT', text: 'private plaintext remains at its owner' },
+    };
+    useMomentsStore.getState().hydratePrivateMoments([normalizePrivateMomentProjection(wire)]);
+    const before = useMomentsStore.getState();
+    const changed = vi.fn();
+    const unsubscribe = useMomentsStore.subscribe(changed);
+    try {
+      useMomentsStore.getState().hydratePrivateMoments([normalizePrivateMomentProjection(wire)]);
+      const after = useMomentsStore.getState();
+      expect(after.postsById['private-stable']).toBe(before.postsById['private-stable']);
+      expect(after.postsById).toBe(before.postsById);
+      expect(after.reactions).toBe(before.reactions);
+      expect(after.reactions['private-stable']).toBe(before.reactions['private-stable']);
+      expect(after.feeds).toBe(before.feeds);
+      expect(after.feeds.home).toBe(before.feeds.home);
+      expect(after.feeds.home.postIds).toBe(before.feeds.home.postIds);
+      expect(after).toBe(before);
+      expect(changed).not.toHaveBeenCalled();
+      expect(after.postsById['private-stable'].content.case).toBeUndefined();
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('updates private comment totals and reactions without replacing unchanged neighbors', () => {
+    usePrivateMomentsStore.getState().activateActor('ptid:viewer', 34);
+    const wire = {
+      post_id: 'private-changing',
+      content_id: 'private-changing',
+      generation: '1',
+      author_ptid: 'ptid:author',
+      audience_kind: 'FRIENDS',
+      state: 'CONTENT_READY',
+      created_at_millis: 1_700_000_000_000,
+      updated_at_millis: 1_700_000_000_000,
+      comments_count: '0',
+      mentions: [],
+      reactions: [{ kind: ReactionKind.REACTION_LOVE, count: '1', reacted_by_viewer: false }],
+      reaction_revision: '1',
+      reactions_hydrated: true,
+      content: { kind: 'TEXT', text: 'private text' },
+    };
+    const neighbor = { ...wire, post_id: 'private-neighbor', content_id: 'private-neighbor' };
+    useMomentsStore.getState().hydratePrivateMoments([
+      normalizePrivateMomentProjection(wire), normalizePrivateMomentProjection(neighbor),
+    ]);
+    const before = useMomentsStore.getState();
+
+    useMomentsStore.getState().hydratePrivateMoments([
+      normalizePrivateMomentProjection({ ...wire, comments_count: '2' }),
+      normalizePrivateMomentProjection(neighbor),
+    ]);
+    const counted = useMomentsStore.getState();
+    expect(counted.postsById['private-changing']).not.toBe(before.postsById['private-changing']);
+    expect(counted.postsById['private-changing'].stats?.commentsCount).toBe(2n);
+    expect(counted.postsById['private-changing'].updatedAt)
+      .toEqual(before.postsById['private-changing'].updatedAt);
+    expect(counted.postsById['private-neighbor']).toBe(before.postsById['private-neighbor']);
+    expect(counted.reactions).toBe(before.reactions);
+    expect(counted.feeds).toBe(before.feeds);
+
+    useMomentsStore.getState().hydratePrivateMoments([
+      normalizePrivateMomentProjection({
+        ...wire, comments_count: '2', reaction_revision: '2',
+        reactions: [{ kind: ReactionKind.REACTION_LOVE, count: '2', reacted_by_viewer: true }],
+      }),
+    ]);
+    const reacted = useMomentsStore.getState();
+    expect(reacted.postsById['private-changing']).not.toBe(counted.postsById['private-changing']);
+    expect(reacted.reactions['private-changing'][0]).toMatchObject({
+      count: 2n, reactedByViewer: true,
+    });
+    expect(reacted.postsById['private-changing'].reactions)
+      .toBe(reacted.reactions['private-changing']);
+    expect(reacted.postsById['private-neighbor']).toBe(before.postsById['private-neighbor']);
+    expect(reacted.reactions['private-neighbor']).toBe(before.reactions['private-neighbor']);
+    expect(reacted.feeds).toBe(before.feeds);
+
+    useMomentsStore.getState().hydratePrivateMoments([
+      normalizePrivateMomentProjection({
+        ...wire, post_id: 'private-newer', content_id: 'private-newer',
+        created_at_millis: 1_700_000_001_000,
+      }),
+    ]);
+    const inserted = useMomentsStore.getState();
+    expect(inserted.feeds.home.postIds).toEqual([
+      'private-newer', 'private-changing', 'private-neighbor',
+    ]);
+    expect(inserted.postsById['private-changing']).toBe(reacted.postsById['private-changing']);
+    expect(inserted.postsById['private-neighbor']).toBe(before.postsById['private-neighbor']);
+    expect(inserted.postsById['private-newer'].content.case).toBeUndefined();
+  });
+
   it('retries an unknown private Reaction with its durable command ID', async () => {
     installEventWindowStub();
     Object.assign(window, { __TAURI_INTERNALS__: {} });
@@ -3108,7 +3471,7 @@ describe('moments store: reactions', () => {
       .getState()
       .reactToPost('private-retry-post', ReactionKind.REACTION_LOVE);
     expect(
-      usePrivateMomentsStore.getState().reactionsByPost['private-retry-post'],
+      usePrivateMomentsStore.getState().reactionCommands[privateReactionTargetKey('private-retry-post', '', ReactionKind.REACTION_LOVE)],
     ).toMatchObject({
       commandId: 'reaction-v1-stable',
       state: 'REACTION_PENDING',
@@ -3134,7 +3497,7 @@ describe('moments store: reactions', () => {
     }));
     const retried = await usePrivateMomentsStore
       .getState()
-      .retryReaction('private-retry-post');
+      .retryReaction('private-retry-post', '', ReactionKind.REACTION_LOVE);
 
     expect(retried.exactReplay).toBe(true);
     expect(invokeMock).toHaveBeenCalledWith(
@@ -3146,7 +3509,7 @@ describe('moments store: reactions', () => {
       }),
     );
     expect(
-      usePrivateMomentsStore.getState().reactionsByPost['private-retry-post'],
+      usePrivateMomentsStore.getState().reactionCommands[privateReactionTargetKey('private-retry-post', '', ReactionKind.REACTION_LOVE)],
     ).toBeUndefined();
   });
 
@@ -3208,12 +3571,12 @@ describe('moments store: reactions', () => {
     }));
     await usePrivateMomentsStore
       .getState()
-      .reactToPost('private-bootstrap-reaction', ReactionKind.REACTION_LIKE);
+      .setReaction('private-bootstrap-reaction', ReactionKind.REACTION_LIKE, 'REACT');
 
     resolveBootstrap?.(statusOk({
       actor_ptid: 'ptid:viewer',
       device_id: 'device-1',
-      session_generation: '9',
+      session_generation: '8',
       projections: [{
         post_id: 'private-bootstrap-reaction',
         content_id: 'private-bootstrap-reaction',
@@ -3239,7 +3602,7 @@ describe('moments store: reactions', () => {
     await pendingBootstrap;
 
     expect(
-      usePrivateMomentsStore.getState().reactionsByPost['private-bootstrap-reaction'],
+      usePrivateMomentsStore.getState().reactionCommands[privateReactionTargetKey('private-bootstrap-reaction')],
     ).toBeUndefined();
     expect(
       usePrivateMomentsStore.getState().postsById['private-bootstrap-reaction']

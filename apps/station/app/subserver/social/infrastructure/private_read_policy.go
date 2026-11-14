@@ -84,7 +84,7 @@ func (s *GORMPrivateContentStore) CheckMomentReadPolicy(
 					}
 					allowed = err == nil
 					if allowed {
-						_, _, err = loadRemotePrivateDelivery(ctx, tx, row, viewerDeviceID, false)
+						_, _, err = loadRemotePrivateDelivery(ctx, tx, row, viewerDeviceID, true)
 						if err != nil && !errors.Is(err, ErrPrivateContentNotFound) {
 							return err
 						}

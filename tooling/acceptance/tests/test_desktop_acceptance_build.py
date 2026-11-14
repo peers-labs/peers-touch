@@ -110,6 +110,32 @@ print(json.dumps({
     def count(self) -> int:
         return int((self.root / ".local/count").read_text())
 
+    def test_default_budget_covers_cold_build_and_complete_input_rechecks(self) -> None:
+        build = DesktopAcceptanceBuild(self.root)
+        original_identity = build._identity
+        original_clock = time.monotonic
+        elapsed = 0.0
+
+        def observe():
+            nonlocal elapsed
+            # Model full installation inventories without a long wall-clock
+            # sleep. Every identity pass still executes the real owner.
+            elapsed += 60.0
+            return original_identity()
+
+        with patch(
+            "tooling.acceptance.provisioners.desktop_acceptance_build.time.monotonic",
+            side_effect=lambda: original_clock() + elapsed,
+        ), patch.object(build, "_identity", side_effect=observe) as identity:
+            binary = build.ensure()
+        self.assertEqual(identity.call_count, 3)
+        self.assertEqual(elapsed, 180.0)
+        self.assertEqual(self.count(), 1)
+        self.assertTrue(binary.is_file())
+        self.assertEqual(build.observation["status"], "READY")
+        self.assertGreaterEqual(build.observation["durationSeconds"], elapsed)
+        self.assertLess(build.observation["durationSeconds"], build.timeout)
+
     @unittest.skipUnless(sys.platform == "darwin", "actual macOS installed input owner")
     def test_native_installation_drift_invalidates_both_build_receipts(self) -> None:
         prefix = "tooling.acceptance.provisioners.desktop_acceptance_build"
@@ -279,6 +305,62 @@ print(json.dumps({
         rebuilt.ensure()
         self.assertEqual(rebuilt.observation["frontendReuse"], "BUILT_STAGE")
         self.assertEqual(self.count(), 2)
+
+    def test_completed_frontend_survives_input_recheck_deadline_and_is_requalified(self) -> None:
+        failed = DesktopAcceptanceBuild(self.root)
+        observe = failed._identity
+        observations = []
+
+        def expire_recheck():
+            observations.append(True)
+            if len(observations) == 2:
+                raise ExecutionDeadline("desktop-acceptance-build", "installed-inputs", "work")
+            return observe()
+
+        with patch.object(failed, "_identity", side_effect=expire_recheck):
+            with self.assertRaises(ExecutionDeadline):
+                failed.ensure()
+        stage_path = failed.state / "frontend-receipt.json"
+        stage = json.loads(stage_path.read_text())
+        self.assertEqual(stage["qualification"], "PENDING_INPUT_RECHECK")
+        self.assertFalse((failed.state / "receipt.json").exists())
+        self.assertFalse(failed.binary.exists())
+        resumed = DesktopAcceptanceBuild(self.root)
+        resumed.ensure()
+        self.assertEqual(self.count(), 1)
+        self.assertEqual(resumed.observation["frontendReuse"], "VERIFIED_STAGE")
+        self.assertEqual(resumed.observation["frontendProducer"]["attemptId"], failed._attempt.name)
+        self.assertEqual(json.loads(stage_path.read_text())["qualification"], "VERIFIED")
+
+    def test_pending_frontend_stage_rejects_input_or_output_drift(self) -> None:
+        for boundary in ("source", "tool", "output"):
+            with self.subTest(boundary=boundary):
+                failed = DesktopAcceptanceBuild(self.root)
+                observe = failed._identity
+                observations = []
+
+                def expire_recheck():
+                    observations.append(True)
+                    if len(observations) == 2:
+                        raise ExecutionDeadline("desktop-acceptance-build", "installed-inputs", "work")
+                    return observe()
+
+                if failed.state.exists():
+                    shutil.rmtree(failed.state)
+                with patch.object(failed, "_identity", side_effect=expire_recheck):
+                    with self.assertRaises(ExecutionDeadline):
+                        failed.ensure()
+                if boundary == "source":
+                    (self.root / "source.txt").write_text("changed candidate")
+                elif boundary == "tool":
+                    self.tool("node", "print('{\"inputs\": {}, \"externalSources\": []}')\n", version="changed")
+                else:
+                    (self.root / "apps/desktop/dist/index.html").write_text("changed output")
+                expected_count = self.count() + 1
+                rebuilt = DesktopAcceptanceBuild(self.root)
+                rebuilt.ensure()
+                self.assertEqual(self.count(), expected_count)
+                self.assertEqual(rebuilt.observation["frontendReuse"], "BUILT_STAGE")
 
     def test_staged_untracked_and_build_time_source_drift_are_bound(self) -> None:
         (self.root / "source.txt").write_text("staged source")

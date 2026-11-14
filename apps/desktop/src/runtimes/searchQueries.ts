@@ -8,8 +8,9 @@ import {
 } from '../services/search';
 import { useSearchStore, type SearchContentFilter, type SearchMode, type SearchTraversal } from '../store/search';
 import {
-  isSameProgressiveItem, mergeProgressiveFrame,
+  isSameProgressiveItem, mergeProgressiveFrame, retainTransientlyUnavailableSources,
 } from './searchFrames';
+import { structuralEqual } from '../utils/structuralEqual';
 
 const MAX_FRAMES = 32;
 const MAX_ITEMS = 640;
@@ -142,6 +143,18 @@ async function attachFrameListener(current: () => boolean): Promise<void> {
       if (!activeFlight || decoded.requestId !== activeFlight.id || !current()) return;
       const view = useSearchStore.getState();
       if (view.progressiveRequestId && view.progressiveRequestId !== activeFlight.id) return;
+      // Background refresh of the SAME intent must keep the qualified frame
+      // until the final fused frame arrives. A per-source progressive frame
+      // (public rows while private is still in flight or transiently failed)
+      // would otherwise temporarily erase qualified rows and move the anchor.
+      // Progressive delivery stays live for first-load intents with no
+      // committed frame.
+      const committed = view.response;
+      if (committed && committed.items.length > 0
+        && view.displayedQuery === activeFlight.query
+        && view.displayedMode === 'submit' && view.displayedFilter === activeFlight.filter) {
+        return;
+      }
       const previous = view.progressiveRequestId === activeFlight.id ? view.progressive : null;
       const merged = mergeProgressiveFrame(
         previous, decoded.response, decoded.sourceId, view.progressiveSources,
@@ -183,6 +196,7 @@ export function clearSearchQueries(): void {
   client.clear();
   ownerState = null;
   stateFlight = null;
+  reconcileInFlight = null;
   useSearchStore.setState({ traversal: null, selectedKey: null, scrollTop: 0 });
   hide();
 }
@@ -284,18 +298,47 @@ function publish(frame: Frame): void {
   const changed = !context || context.identity !== frame.traversal.identity
     || context.query !== frame.query || context.mode !== frame.mode
     || context.filter !== frame.filter || context.locale !== frame.traversal.locale;
+  const sameContext = !changed && previous.response;
+  const retained = sameContext && previous.response
+    ? retainTransientlyUnavailableSources(
+      previous.response, frame.response, item => searchRowKey(item.resource),
+    )
+    : frame.response;
+  const rowKeys = retained.items.map(item => searchRowKey(item.resource));
+  // Keys preserve selection; only complete render equality permits retaining
+  // row references. Every qualified response still installs its issued scope,
+  // cursor and lease so result activation uses the current owner metadata.
+  const previousItems = new Map(previous.response?.items.map(item => [
+    searchRowKey(item.resource), item,
+  ]));
+  const response = changed ? retained : {
+    ...retained,
+    items: retained.items.map(item => {
+      const existing = previousItems.get(searchRowKey(item.resource));
+      return existing && structuralEqual(existing, item) ? existing : item;
+    }),
+  };
   useSearchStore.setState({
-    response: frame.response, displayedQuery: frame.query, displayedMode: frame.mode,
-    displayedFilter: frame.filter, traversal: frame.traversal,
+    response, displayedQuery: frame.query, displayedMode: frame.mode,
+    displayedFilter: frame.filter,
+    traversal: { ...frame.traversal, rowKeys },
     progressive: null, progressiveRequestId: null, progressiveSources: [],
     ...(changed ? { selectedKey: null, scrollTop: 0 }
-      : presentationPosition(frame.traversal.rowKeys, context.rowKeys)),
+      : presentationPosition(rowKeys, context.rowKeys)),
   });
   if (expiryTimer !== null) clearTimeout(expiryTimer);
-  expiryTimer = setTimeout(() => {
-    hide();
-    if (useSearchStore.getState().open) void reconcileSearchQuery(activeLocale);
-  }, Math.max(0, deadline(frame.response) - Date.now()));
+  expiryTimer = null;
+  // Owner-checked no-store frames have no time-based replay: no expiry timer.
+  // Revisions and invalidations arrive through their own subscriptions; a new
+  // user intent starts a fresh FIND directly.
+  if (hasExpiringLease(response)) {
+    expiryTimer = setTimeout(() => {
+      // Lease expiry only requires a fresh owner confirmation; it is not a
+      // revocation. Keep the qualified frame on screen and re-read in the
+      // background.
+      if (useSearchStore.getState().open) void reconcileSearchQuery(activeLocale);
+    }, Math.max(0, deadline(frame.response) - Date.now()));
+  }
 }
 
 export async function runSearchQuery(locale: string, refresh = false, more = false): Promise<void> {
@@ -518,10 +561,20 @@ export async function runSearchQuery(locale: string, refresh = false, more = fal
   } catch (error) {
     if (!current()) return;
     clearTimeout(timeout);
-    hide();
     if (stalledTimer !== null) clearTimeout(stalledTimer);
     stalledTimer = null;
-    useSearchStore.setState({ status: 'error', stalled: false, errorKey: searchErrorKey(error) });
+    // A failed background refresh never erases an already qualified frame:
+    // lease-driven re-reads confirm content, they do not revoke it. Only a
+    // first-load failure with nothing qualified falls back to the empty/error
+    // surface.
+    const hasQualifiedFrame = (useSearchStore.getState().response?.items.length ?? 0) > 0;
+    if (!hasQualifiedFrame) hide();
+    // A superseding flight reports plain cancellation; with the qualified
+    // frame retained this is not a user-visible failure.
+    const cancelled = error instanceof Error && error.message === 'search_cancelled';
+    useSearchStore.setState(cancelled && hasQualifiedFrame
+      ? { status: 'ready', stalled: false, errorKey: null }
+      : { status: 'error', stalled: false, errorKey: searchErrorKey(error) });
   }
 }
 
@@ -532,7 +585,26 @@ export async function runSearchQuery(locale: string, refresh = false, more = fal
  * expired response lease/session window. Invalidations arrive through their
  * own event subscription and cancel/conceal immediately.
  */
+// Coalesce concurrent reconciliation requests. Open completion, focus and
+// visibility edges can all fire within milliseconds after returning to
+// Search; running each as a separate cancelling FIND produced overlapping
+// flights whose aborts surfaced as transient source-unavailable frames.
+// Callers in the same burst share the one read that was actually needed.
+let reconcileInFlight: Promise<void> | null = null;
+
 export async function reconcileSearchQuery(locale: string): Promise<void> {
+  if (reconcileInFlight) {
+    await reconcileInFlight.catch(() => {});
+    return;
+  }
+  const flight = reconcileSearchQueryOnce(locale).finally(() => {
+    if (reconcileInFlight === flight) reconcileInFlight = null;
+  });
+  reconcileInFlight = flight;
+  await flight.catch(() => {});
+}
+
+async function reconcileSearchQueryOnce(locale: string): Promise<void> {
   const view = useSearchStore.getState();
   if (!view.open || view.opening || view.mode === 'functions') return;
   if (view.status === 'loading') {
@@ -558,13 +630,29 @@ export async function reconcileSearchQuery(locale: string): Promise<void> {
   }
 }
 
+/**
+ * Whether time alone is a reason to re-read this frame.
+ *
+ * no-store sources with owner-check-required rows (device.social /
+ * station.social.public) are confirmed at Open time, never by a timer:
+ * replay arrives only from owner revision/scope changes, invalidations or a
+ * new user intent. Stored sources (device.messaging) and rows carrying a
+ * bounded lease still expire on schedule. Treating an owner-checked no-store
+ * frame as expiring produced a self-cancelling FIND storm every lease window.
+ */
+function hasExpiringLease(response: SearchResponse): boolean {
+  if (response.sources.some(source => !source.noStore)) return true;
+  return response.items.some(item =>
+    item.readValidity ? !item.readValidity.ownerCheckRequired : true);
+}
+
 function shouldReread(
   status: SearchStateStatus,
   response: SearchResponse | null,
 ): boolean {
   if (!response) return true;
   if (status === 'error') return true;
-  if (searchResponseDeadline(response) <= Date.now()) return true;
+  if (hasExpiringLease(response) && searchResponseDeadline(response) <= Date.now()) return true;
   if (ownerState && !searchResponseCurrent(response, ownerState)) return true;
   return false;
 }

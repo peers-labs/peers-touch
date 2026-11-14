@@ -46,7 +46,7 @@ pub(crate) fn resource_ref(kind: &str, id: &str, post_id: &str, revision: &str) 
 
 pub(crate) fn scrub_post_target(bytes: &[u8]) -> Result<Vec<u8>, String> {
     let projection = PrivateMomentProjection::decode_local(bytes)?;
-    super::private_moment::scrub_persisted_media_projection(projection).encode_local()
+    super::private_moment::scrub_persisted_projection(projection).encode_local()
 }
 
 pub(crate) fn decode(

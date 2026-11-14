@@ -1,7 +1,9 @@
 import type {
+  PrivateCommentMention,
   PrivateCommentPublicationState,
   PrivateCommentState,
 } from '../../services/privateCommentsNative';
+import { samePrivateCommentMentions } from '../../services/privateCommentsNative';
 
 export type PrivateCommentComposerAction = 'submit' | 'retry' | 'reconcile';
 
@@ -11,6 +13,10 @@ interface PrivateCommentComposerActionInput {
   retryDeadlinePending: boolean;
   text: string;
   draftText?: string;
+  replyToCommentId?: string;
+  draftReplyToCommentId?: string;
+  mentions?: readonly PrivateCommentMention[];
+  draftMentions?: readonly PrivateCommentMention[];
 }
 
 export function resolvePrivateCommentComposerAction({
@@ -19,6 +25,10 @@ export function resolvePrivateCommentComposerAction({
   retryDeadlinePending,
   text,
   draftText,
+  replyToCommentId,
+  draftReplyToCommentId,
+  mentions,
+  draftMentions,
 }: PrivateCommentComposerActionInput): PrivateCommentComposerAction {
   if (publicationState === 'COMMITTED_PENDING_READBACK') {
     return 'reconcile';
@@ -27,6 +37,8 @@ export function resolvePrivateCommentComposerAction({
     (state === 'COMMENT_FAILED' || state === 'COMMENT_RATE_LIMITED')
     && !retryDeadlinePending
     && text.trim() === draftText?.trim()
+    && (replyToCommentId ?? '') === (draftReplyToCommentId ?? '')
+    && samePrivateCommentMentions(mentions ?? [], draftMentions ?? [])
   ) {
     return 'retry';
   }

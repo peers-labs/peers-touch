@@ -16,8 +16,10 @@ const mocks = vi.hoisted(() => {
     circles: [],
     circleMembers: {},
     syncProjection: vi.fn<() => Promise<void>>(),
+    reconcilePublicPollCommands: vi.fn<() => Promise<void>>(),
     hydratePrivateMoments: vi.fn(),
     listMyCircles: vi.fn<() => Promise<void>>(),
+    loadMyStats: vi.fn<() => Promise<void>>(),
     loadCircleMembers: vi.fn<() => Promise<void>>(),
     loadPost: vi.fn<() => Promise<undefined>>(),
     loadComments: vi.fn<() => Promise<void>>(),
@@ -26,11 +28,13 @@ const mocks = vi.hoisted(() => {
     evictPost: vi.fn(),
     refreshPostReactions: vi.fn<() => Promise<void>>(),
     reset: vi.fn(),
+    setPublicFeedRecoveryError: vi.fn(),
   };
   const privateMoments = {
     postsById: {},
     activateActor: vi.fn(),
     deactivate: vi.fn(),
+    teardownNativeActor: vi.fn<() => Promise<void>>(),
     bootstrap: vi.fn<() => Promise<void>>(),
     reconcile: vi.fn<() => Promise<void>>(),
     admitMoment: vi.fn<(_intent: unknown) => Promise<{
@@ -57,6 +61,7 @@ const mocks = vi.hoisted(() => {
   };
   const relationships = {
     loadRelationship: vi.fn<() => Promise<void>>(),
+    loadRelationshipStatus: vi.fn<() => Promise<void>>(),
     loadFollowers: vi.fn<() => Promise<void>>(),
     loadFollowing: vi.fn<() => Promise<void>>(),
     reset: vi.fn(),
@@ -160,12 +165,15 @@ vi.mock('../utils/logger', () => ({
 }));
 
 import {
+  acquireMomentComments,
   captureMomentsRuntimeScope,
   MomentsRuntimeScopeChangedError,
   momentsRuntime,
   preparePrivateAudience,
   prepareRemotePrivateRecipient,
 } from './momentsRuntime';
+const feedMocks = vi.hoisted(() => ({ resume: vi.fn() }));
+vi.mock('../services/publicFeedNative', () => ({ resumePublicFeed: feedMocks.resume }));
 import { EVENT, eventBus } from '../kernel/events';
 import { useMomentsNavigationStore } from '../store/momentsNavigation';
 
@@ -230,6 +238,8 @@ beforeEach(() => {
   mocks.moments.circleMembers = {};
   mocks.privateMoments.postsById = {};
   mocks.moments.syncProjection.mockResolvedValue(undefined);
+  mocks.moments.reconcilePublicPollCommands.mockReset().mockResolvedValue(undefined);
+  feedMocks.resume.mockReset().mockResolvedValue(undefined);
   mocks.moments.hydratePrivateMoments.mockClear();
   mocks.moments.listMyCircles.mockResolvedValue(undefined);
   mocks.moments.loadCircleMembers.mockResolvedValue(undefined);
@@ -271,6 +281,62 @@ afterEach(() => {
 });
 
 describe('momentsRuntime identity fence', () => {
+  it('shares visible thread acquisition and reconciles only while a viewport lease survives', async () => {
+    momentsRuntime.install();
+    await flushRuntime();
+    mocks.moments.postsById = { inline: { id: 'inline', audience: { kind: 1 } } };
+    mocks.moments.loadComments.mockClear();
+    const first = acquireMomentComments('inline');
+    const second = acquireMomentComments('inline');
+    await vi.waitFor(() => expect(mocks.moments.loadComments).toHaveBeenCalledTimes(1));
+    first();
+    mocks.moments.loadComments.mockClear();
+    await momentsRuntime.reconcile!('missed-comment-event');
+    expect(mocks.moments.loadComments).toHaveBeenCalledWith('inline', true);
+    second();
+    mocks.moments.loadComments.mockClear();
+    await momentsRuntime.reconcile!('hidden-thread');
+    expect(mocks.moments.loadComments).not.toHaveBeenCalled();
+  });
+
+  it('does not read an inline thread whose interest is released before dispatch', async () => {
+    momentsRuntime.install();
+    await flushRuntime();
+    mocks.moments.postsById = { inline: { id: 'inline', audience: { kind: 1 } } };
+    mocks.moments.loadComments.mockClear();
+    acquireMomentComments('inline')();
+    await momentsRuntime.reconcile!('released-before-read');
+    expect(mocks.moments.loadComments).not.toHaveBeenCalled();
+  });
+
+  it('keeps visible private threads at the original Secure Content read owner', async () => {
+    momentsRuntime.install();
+    await flushRuntime();
+    mocks.moments.postsById = { private: { id: 'private', audience: { kind: 2 } } };
+    mocks.moments.loadComments.mockClear();
+    mocks.privateComments.loadComments.mockClear();
+    const release = acquireMomentComments('private');
+    await vi.waitFor(() => expect(mocks.privateComments.loadComments).toHaveBeenCalledWith('private'));
+    expect(mocks.moments.loadComments).not.toHaveBeenCalled();
+    release();
+  });
+
+  it('prevents an outgoing Actor thread lease from releasing a replacement Actor thread', async () => {
+    momentsRuntime.install();
+    await flushRuntime();
+    mocks.moments.postsById = { inline: { id: 'inline', audience: { kind: 1 } } };
+    const outgoing = acquireMomentComments('inline');
+    await vi.waitFor(() => expect(mocks.moments.loadComments).toHaveBeenCalled());
+    setSession({ authenticated: true, currentUser: { actorPtid: 'ptid:bob' }, sessionEpoch: 2 });
+    await flushRuntime();
+    const replacement = acquireMomentComments('inline');
+    outgoing();
+    mocks.moments.loadComments.mockClear();
+    await momentsRuntime.reconcile!('replacement-thread');
+    expect(mocks.moments.loadComments).toHaveBeenCalledWith('inline', true);
+    replacement();
+  });
+
   it('does not start an obsolete historical comment read after Back during the parent read', async () => {
     momentsRuntime.install();
     await flushRuntime();
@@ -294,7 +360,32 @@ describe('momentsRuntime identity fence', () => {
     expect(mocks.privateComments.loadComments).not.toHaveBeenCalled();
   });
 
-  it('keeps reaction events post-scoped while periodic refresh retains the active comment', async () => {
+  it.each([false, true])('refreshes the original thread for a typed comment reaction (private=%s)', async privatePost => {
+    momentsRuntime.install();
+    await flushRuntime();
+    vi.clearAllMocks();
+    const postId = 'typed-comment-post';
+    mocks.moments.loadPost.mockResolvedValue({ id: postId, audience: { kind: privatePost ? 2 : 1 } } as never);
+    if (privatePost) {
+      (mocks.privateMoments.postsById as Record<string, unknown>)[postId] = {
+        postId, state: 'CONTENT_READY',
+      };
+    }
+    useMomentsNavigationStore.getState().setView({
+      kind: 'detail', postId, commentId: 'historical-root', from: 'feed',
+    });
+    eventBus.publish(EVENT.MOMENT_REACTED, {
+      eventId: 'typed-comment-reaction', targetActorPtid: 'ptid:alice', sessionEpoch: 1,
+      stationPeerId: 'station-a', stationUrl: 'https://station-a.test',
+      postId, commentId: 'reply', authorActorPtid: 'ptid:alice',
+      reactionActorPtid: 'ptid:bob', kind: 'REACTION_LIKE', removed: false, occurredAtUnixMs: 1,
+    });
+    await flushRuntime();
+    const comments = privatePost ? mocks.privateComments.loadComments : mocks.moments.loadComments;
+    expect(comments).toHaveBeenCalledWith(postId, true, 'historical-root');
+  });
+
+  it('keeps post reaction events post-scoped while periodic refresh retains the active comment', async () => {
     momentsRuntime.install();
     await flushRuntime();
     const postId = 'historical-post';
@@ -777,6 +868,9 @@ describe('momentsRuntime identity fence', () => {
     await flushRuntime();
 
     expect(mocks.moments.syncProjection).toHaveBeenCalledWith('periodic reconcile');
+    expect(mocks.moments.reconcilePublicPollCommands).toHaveBeenCalledTimes(2);
+    expect(mocks.moments.syncProjection.mock.invocationCallOrder[1])
+      .toBeLessThan(mocks.moments.reconcilePublicPollCommands.mock.invocationCallOrder[1]);
   });
 
   it('waits for a Home Station identity without failing runtime bootstrap', async () => {
@@ -818,6 +912,20 @@ describe('momentsRuntime identity fence', () => {
     expect(mocks.privateMoments.bootstrap).toHaveBeenCalledOnce();
     expect(mocks.privateComments.bootstrap).toHaveBeenCalledOnce();
     expect(mocks.privateMoments.reconcile).toHaveBeenCalledOnce();
+  });
+
+  it('keeps private projection available when public verification or retained writes fail', async () => {
+    feedMocks.resume.mockRejectedValueOnce(new Error('FEED_IDENTITY_REQUIRED'));
+    mocks.moments.syncProjection.mockRejectedValueOnce(new Error('FEED_PROJECTION_TAMPERED'));
+    await momentsRuntime.install();
+    await flushRuntime();
+    expect(mocks.moments.setPublicFeedRecoveryError).toHaveBeenCalledWith('Error: FEED_IDENTITY_REQUIRED');
+    expect(mocks.privateMoments.bootstrap).toHaveBeenCalled();
+    expect(mocks.privateMoments.reconcile).toHaveBeenCalled();
+    expect(mocks.moments.reconcilePublicPollCommands).not.toHaveBeenCalled();
+    intervalCallbacks[0]?.();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(mocks.moments.setPublicFeedRecoveryError).toHaveBeenLastCalledWith(null);
   });
 
   it('does not hide an authoritative sync failure during periodic resync', async () => {
@@ -868,6 +976,7 @@ describe('momentsRuntime identity fence', () => {
       stationIdentity: 'peer:station-b',
     });
     expect(mocks.moments.syncProjection).toHaveBeenCalledTimes(2);
+    expect(mocks.moments.reconcilePublicPollCommands).toHaveBeenCalledTimes(1);
   });
 
   it('preserves the logical projection scope across a same-Station route switch', async () => {

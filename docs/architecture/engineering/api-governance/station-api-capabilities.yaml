@@ -16,6 +16,7 @@ governed_prefixes:
   - /api/v1/relay/grants
   - /api/v1/relay/routes
   - /actor/access/
+  - /actor/endpoint-manifest
   - /auth/device-link/
   - /conversation/
   - /messaging/
@@ -27,7 +28,9 @@ governed_prefixes:
   - /api/v1/social/friend-requests
   - /api/v1/social/moments/remote-private
   - /api/v1/social/moments/read-policy
+  - /api/v1/social/moments/:post_id/poll/vote
   - /api/v1/social/search/
+  - /api/v1/social/feed/
   - /api/v1/social/relationships/block
   - /api/v1/social/relationships/unblock
   - /api/v1/social/relationships/blocked
@@ -62,6 +65,7 @@ owner_roots:
     - apps/station/app/subserver/social/handler.go
     - apps/station/app/subserver/social/search_handler.go
     - apps/station/app/subserver/social/read_policy_handler.go
+    - apps/station/app/subserver/social/feed_log_handler.go
   station.notification:
     - apps/station/app/subserver/notification/
   station.federation:
@@ -757,6 +761,55 @@ capabilities:
       - peers_touch.model.chat.v1.GetLatestRecoveryRevisionRequest
       - peers_touch.model.chat.v1.GetLatestRecoveryRevisionResponse
 
+  - id: social.feed.submit
+    domain_owner: station.social
+    truth_owner: social.actor_feed_log
+    exposure: client
+    canonical_route: { method: POST, path: /api/v1/social/feed/events/submit }
+    request_proto: peers_touch.model.social.feed.v1.SubmitFeedEventRequest
+    response_proto: peers_touch.model.social.feed.v1.SubmitFeedEventResponse
+    truth_stores: [social_feed_chains, social_feed_events, social_feed_fanout]
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: social.private_poll.vote
+    domain_owner: station.social
+    truth_owner: social.private_content
+    exposure: client
+    canonical_route: { method: POST, path: "/api/v1/social/moments/:post_id/poll/vote" }
+    request_proto: peers_touch.model.social.v1.VotePrivatePollRequest
+    response_proto: peers_touch.model.social.v1.VotePrivatePollResponse
+    truth_stores: [social_remote_private_commands]
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: social.feed.read
+    domain_owner: station.social
+    truth_owner: social.actor_feed_log
+    exposure: client
+    canonical_route: { method: POST, path: /api/v1/social/feed/read }
+    request_proto: peers_touch.model.social.feed.v1.ReadFeedRequest
+    response_proto: peers_touch.model.social.feed.v1.ReadFeedResponse
+    truth_stores: [social_feed_chains, social_feed_events]
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: federation.social.feed.read
+    domain_owner: station.federation
+    truth_owner: social.actor_feed_log
+    exposure: peer
+    canonical_route: { method: POST, path: /federation/social/feed/read }
+    # The client Social capability owns ReadFeedRequest/ReadFeedResponse.
+    request_proto: ""
+    response_proto: ""
+    truth_stores: []
+    allowed_dependencies: [federation.auth.verify, social.feed.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
   - id: social.search.query
     domain_owner: station.social
     truth_owner: social.public_content
@@ -1228,6 +1281,19 @@ capabilities:
       - peers_touch.model.chat.v1.ListDevicesResponse
       - peers_touch.model.chat.v1.ListMessagingDevicesRequest
       - peers_touch.model.chat.v1.ListMessagingDevicesResponse
+
+  - id: actor.endpoint_manifest.read
+    domain_owner: station.actor_identity
+    truth_owner: actor.device_identity
+    exposure: client
+    canonical_route: { method: POST, path: /actor/endpoint-manifest }
+    # Consume the existing manifest contract; do not claim a second proto owner.
+    request_proto: ""
+    response_proto: ""
+    truth_stores: [actor_devices, actor_identity_keys, actor_endpoint_directory_versions]
+    allowed_dependencies: [actor.identity.verify, federation.actor.endpoint_manifest.get]
+    forbidden_aliases: []
+    superseded_symbols: []
 
   - id: actor.device.revoke
     domain_owner: station.actor_identity

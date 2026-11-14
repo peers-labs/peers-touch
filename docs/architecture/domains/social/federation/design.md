@@ -2,12 +2,20 @@
 
 > **Status**: draft
 > **Version**: v0.2
-> **Created**: 2026-06-17 | **Updated**: 2026-09-06
+> **Created**: 2026-06-17 | **Updated**: 2026-11-08
 > **Owner**: Architecture Team
 
 ---
 
 ## 1. 设计命题
+
+公开内容的有效写入合同由 [Actor Feed Log §6.0](./actor-feed-log.md#60-v1-冻结合同)
+定义；评论点赞与投票按 [D-08](./decisions.md#d-08-评论点赞与投票延伸原交互权威)
+扩展原 Owner。完整交互状态、恢复和可证伪标准见
+[交互合同](./interaction-completion.md)，该合同已接受，实施与产品证明分别核验。
+公开 Actor 设备签名 journal、作者 Home Station 投票接纳、私密 Secure Content
+command/result 是三个明确的权威边界；共用原 Social Store 与 Federation Delivery。
+组件只提交意图和渲染 Runtime 回读投影，局部选择不构成已提交结果。
 
 当前阶段只做 Human 联邦社交闭环。Agent、A2A、Applet 只作为未来扩展点预留，不进入当前产品闭环。
 
