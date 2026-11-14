@@ -108,7 +108,6 @@ impl StationEntry {
 pub struct StationRegistry {
     state: RwLock<PersistedData>,
     persist_path: PathBuf,
-    discovery_seed: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -121,15 +120,10 @@ pub struct FederationSigningKeyPin {
 impl StationRegistry {
     pub fn new(config_dir: &std::path::Path) -> Self {
         let persist_path = config_dir.join("stations.json");
-        let discovery_seed = std::env::var("PEERS_STATION_URL")
-            .ok()
-            .map(|value| normalize_origin(&value))
-            .filter(|value| !value.is_empty());
         let state = Self::load(&persist_path);
         Self {
             state: RwLock::new(state),
             persist_path,
-            discovery_seed,
         }
     }
 
@@ -161,10 +155,6 @@ impl StationRegistry {
             .read()
             .expect("StationRegistry read lock poisoned");
         self.persist(&state)
-    }
-
-    pub fn discovery_seed(&self) -> Option<String> {
-        self.discovery_seed.clone()
     }
 
     pub fn active_station_peer_id(&self) -> Option<String> {
@@ -1166,7 +1156,7 @@ fn now_rfc3339() -> String {
         .unwrap_or_else(|_| "unknown".to_string())
 }
 
-fn normalize_origin(origin: &str) -> String {
+pub(crate) fn normalize_origin(origin: &str) -> String {
     origin.trim().trim_end_matches('/').to_string()
 }
 
@@ -1174,9 +1164,6 @@ fn normalize_origin(origin: &str) -> String {
 mod tests {
     use super::*;
     use crate::infrastructure::station_discovery::VerifiedStationRoute;
-    use std::sync::Mutex;
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn actor_profile_key_pin_does_not_register_a_transport_destination() {
@@ -1206,20 +1193,6 @@ mod tests {
         path
     }
 
-    fn with_seed(seed: Option<&str>, run: impl FnOnce()) {
-        let _guard = ENV_LOCK.lock().unwrap();
-        let previous = std::env::var_os("PEERS_STATION_URL");
-        match seed {
-            Some(value) => std::env::set_var("PEERS_STATION_URL", value),
-            None => std::env::remove_var("PEERS_STATION_URL"),
-        }
-        run();
-        match previous {
-            Some(value) => std::env::set_var("PEERS_STATION_URL", value),
-            None => std::env::remove_var("PEERS_STATION_URL"),
-        }
-    }
-
     fn route(station: &str, id: &str, origin: &str, relay: bool) -> VerifiedStationRoute {
         let node_peer_id = "12D3KooWGo2HxmjfSQZKTheDEbgDBpSuhUxTNsr8DnTkXCDzdaZL".to_string();
         let relay_peer_id = "12D3KooWLpZy2EgZ6SC2pgJFHjM13j1ygz7DXCfm9HiPeNQZ1uaW".to_string();
@@ -1247,515 +1220,470 @@ mod tests {
     }
 
     #[test]
-    fn seed_is_discovery_input_not_an_identity_record() {
-        with_seed(Some("https://seed.example/"), || {
-            let registry = StationRegistry::new(&temp_dir("seed"));
-            assert_eq!(
-                registry.discovery_seed().as_deref(),
-                Some("https://seed.example")
-            );
-            assert!(registry.list().is_empty());
-            assert_eq!(registry.active_station_peer_id(), None);
-        });
-    }
-
-    #[test]
     fn one_station_merges_direct_and_relay_routes() {
-        with_seed(None, || {
-            let registry = StationRegistry::new(&temp_dir("merge-routes"));
-            registry
-                .upsert_verified_route(
-                    &route("station-one", "direct-1", "https://station.example", false),
-                    Some("Home".to_string()),
-                )
-                .unwrap();
-            registry
-                .upsert_verified_route(
-                    &route("station-one", "relay-1", "https://relay.example", true),
-                    None,
-                )
-                .unwrap();
+        let registry = StationRegistry::new(&temp_dir("merge-routes"));
+        registry
+            .upsert_verified_route(
+                &route("station-one", "direct-1", "https://station.example", false),
+                Some("Home".to_string()),
+            )
+            .unwrap();
+        registry
+            .upsert_verified_route(
+                &route("station-one", "relay-1", "https://relay.example", true),
+                None,
+            )
+            .unwrap();
 
-            let entries = registry.list();
-            assert_eq!(entries.len(), 1);
-            assert_eq!(entries[0].station_peer_id, "station-one");
-            assert_eq!(entries[0].routes.len(), 2);
-        });
+        let entries = registry.list();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].station_peer_id, "station-one");
+        assert_eq!(entries[0].routes.len(), 2);
     }
 
     #[test]
     fn same_station_route_switch_only_increments_route_revision() {
-        with_seed(None, || {
-            let registry = StationRegistry::new(&temp_dir("route-switch"));
-            registry
-                .upsert_verified_route(
-                    &route("station-one", "direct-1", "https://station.example", false),
-                    None,
-                )
-                .unwrap();
-            registry
-                .upsert_verified_route(
-                    &route("station-one", "relay-1", "https://relay.example", true),
-                    None,
-                )
-                .unwrap();
-            registry.set_active_station("station-one").unwrap();
-            let before = registry.active_entry().unwrap();
-            let after = registry.set_active_route("station-one", "relay-1").unwrap();
+        let registry = StationRegistry::new(&temp_dir("route-switch"));
+        registry
+            .upsert_verified_route(
+                &route("station-one", "direct-1", "https://station.example", false),
+                None,
+            )
+            .unwrap();
+        registry
+            .upsert_verified_route(
+                &route("station-one", "relay-1", "https://relay.example", true),
+                None,
+            )
+            .unwrap();
+        registry.set_active_station("station-one").unwrap();
+        let before = registry.active_entry().unwrap();
+        let after = registry.set_active_route("station-one", "relay-1").unwrap();
 
-            assert_eq!(after.route_revision, before.route_revision + 1);
-            assert_eq!(after.lifecycle_generation, before.lifecycle_generation);
-            assert_eq!(
-                registry.active_endpoint_origin().as_deref(),
-                Some("https://relay.example")
-            );
-        });
+        assert_eq!(after.route_revision, before.route_revision + 1);
+        assert_eq!(after.lifecycle_generation, before.lifecycle_generation);
+        assert_eq!(
+            registry.active_endpoint_origin().as_deref(),
+            Some("https://relay.example")
+        );
     }
 
     #[test]
     fn route_failover_preserves_station_scope_and_fences_failed_route() {
-        with_seed(None, || {
-            let registry = StationRegistry::new(&temp_dir("route-failover"));
-            registry
-                .upsert_verified_route(
-                    &route("station-one", "relay-a", "https://relay.example", true),
-                    None,
-                )
-                .unwrap();
-            let mut second = route("station-one", "relay-b", "https://relay.example", true);
-            second.node_peer_id = "station-one-node-b".to_string();
-            registry.upsert_verified_route(&second, None).unwrap();
-            let before = registry.set_active_station("station-one").unwrap();
+        let registry = StationRegistry::new(&temp_dir("route-failover"));
+        registry
+            .upsert_verified_route(
+                &route("station-one", "relay-a", "https://relay.example", true),
+                None,
+            )
+            .unwrap();
+        let mut second = route("station-one", "relay-b", "https://relay.example", true);
+        second.node_peer_id = "station-one-node-b".to_string();
+        registry.upsert_verified_route(&second, None).unwrap();
+        let before = registry.set_active_station("station-one").unwrap();
 
-            let after = registry
-                .failover_route("station-one", "relay-a", before.route_revision)
-                .unwrap();
+        let after = registry
+            .failover_route("station-one", "relay-a", before.route_revision)
+            .unwrap();
 
-            assert_eq!(after.station_peer_id, before.station_peer_id);
-            assert_eq!(after.lifecycle_generation, before.lifecycle_generation);
-            assert_eq!(after.active_route_id, "relay-b");
-            assert_eq!(after.route_revision, before.route_revision + 1);
-            assert_eq!(
-                after
-                    .routes
-                    .iter()
-                    .find(|route| route.route_id == "relay-a")
-                    .unwrap()
-                    .health,
-                StationRouteHealth::Unavailable
-            );
-        });
+        assert_eq!(after.station_peer_id, before.station_peer_id);
+        assert_eq!(after.lifecycle_generation, before.lifecycle_generation);
+        assert_eq!(after.active_route_id, "relay-b");
+        assert_eq!(after.route_revision, before.route_revision + 1);
+        assert_eq!(
+            after
+                .routes
+                .iter()
+                .find(|route| route.route_id == "relay-a")
+                .unwrap()
+                .health,
+            StationRouteHealth::Unavailable
+        );
     }
 
     #[test]
     fn route_failover_can_switch_between_transport_types() {
-        with_seed(None, || {
-            let registry = StationRegistry::new(&temp_dir("cross-transport-failover"));
-            registry
-                .upsert_verified_route(
-                    &route("station-one", "direct-a", "https://station.example", false),
-                    None,
-                )
-                .unwrap();
-            let mut relay = route("station-one", "relay-b", "https://relay.example", true);
-            relay.node_peer_id = "station-one-node-b".to_string();
-            registry.upsert_verified_route(&relay, None).unwrap();
-            let before = registry.set_active_station("station-one").unwrap();
+        let registry = StationRegistry::new(&temp_dir("cross-transport-failover"));
+        registry
+            .upsert_verified_route(
+                &route("station-one", "direct-a", "https://station.example", false),
+                None,
+            )
+            .unwrap();
+        let mut relay = route("station-one", "relay-b", "https://relay.example", true);
+        relay.node_peer_id = "station-one-node-b".to_string();
+        registry.upsert_verified_route(&relay, None).unwrap();
+        let before = registry.set_active_station("station-one").unwrap();
 
-            let after = registry
-                .failover_route("station-one", "direct-a", before.route_revision)
-                .unwrap();
+        let after = registry
+            .failover_route("station-one", "direct-a", before.route_revision)
+            .unwrap();
 
-            assert_eq!(after.active_route_id, "relay-b");
-            assert_eq!(
-                after.active_route().unwrap().route_type,
-                StationRouteType::Relay
-            );
-        });
+        assert_eq!(after.active_route_id, "relay-b");
+        assert_eq!(
+            after.active_route().unwrap().route_type,
+            StationRouteType::Relay
+        );
     }
 
     #[test]
     fn authoritative_route_refresh_removes_omitted_routes() {
-        with_seed(None, || {
-            let registry = StationRegistry::new(&temp_dir("replace-routes"));
-            let direct = route("station-one", "direct-a", "https://station.example", false);
-            let relay = route("station-one", "relay-b", "https://relay.example", true);
-            registry
-                .replace_verified_routes(&[direct.clone(), relay])
-                .unwrap();
+        let registry = StationRegistry::new(&temp_dir("replace-routes"));
+        let direct = route("station-one", "direct-a", "https://station.example", false);
+        let relay = route("station-one", "relay-b", "https://relay.example", true);
+        registry
+            .replace_verified_routes(&[direct.clone(), relay])
+            .unwrap();
 
-            let entries = registry
-                .replace_verified_routes(std::slice::from_ref(&direct))
-                .unwrap();
+        let entries = registry
+            .replace_verified_routes(std::slice::from_ref(&direct))
+            .unwrap();
 
-            assert_eq!(entries.len(), 1);
-            assert_eq!(entries[0].routes.len(), 1);
-            assert_eq!(entries[0].routes[0].route_id, "direct-a");
-        });
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].routes.len(), 1);
+        assert_eq!(entries[0].routes[0].route_id, "direct-a");
     }
 
     #[test]
     fn authoritative_route_refresh_preserves_sibling_node_routes() {
-        with_seed(None, || {
-            let registry = StationRegistry::new(&temp_dir("preserve-sibling-node"));
-            let node_a = route("station-one", "direct-a", "https://node-a.example", false);
-            let mut node_b = route("station-one", "direct-b", "https://node-b.example", false);
-            node_b.node_peer_id = "station-one-node-b".to_string();
-            registry
-                .replace_verified_routes(&[node_a.clone(), node_b.clone()])
-                .unwrap();
+        let registry = StationRegistry::new(&temp_dir("preserve-sibling-node"));
+        let node_a = route("station-one", "direct-a", "https://node-a.example", false);
+        let mut node_b = route("station-one", "direct-b", "https://node-b.example", false);
+        node_b.node_peer_id = "station-one-node-b".to_string();
+        registry
+            .replace_verified_routes(&[node_a.clone(), node_b.clone()])
+            .unwrap();
 
-            let entries = registry
-                .replace_verified_routes(std::slice::from_ref(&node_b))
-                .unwrap();
+        let entries = registry
+            .replace_verified_routes(std::slice::from_ref(&node_b))
+            .unwrap();
 
-            assert_eq!(entries.len(), 1);
-            assert_eq!(entries[0].routes.len(), 2);
-            assert!(entries[0]
-                .routes
-                .iter()
-                .any(|route| route.route_id == node_a.route_id));
-            assert!(entries[0]
-                .routes
-                .iter()
-                .any(|route| route.route_id == node_b.route_id));
-        });
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].routes.len(), 2);
+        assert!(entries[0]
+            .routes
+            .iter()
+            .any(|route| route.route_id == node_a.route_id));
+        assert!(entries[0]
+            .routes
+            .iter()
+            .any(|route| route.route_id == node_b.route_id));
     }
 
     #[test]
     fn candidate_refresh_preserves_committed_route_until_selection() {
-        with_seed(None, || {
-            let config_dir = temp_dir("candidate-preserves-commit");
-            let registry = StationRegistry::new(&config_dir);
-            let current = route(
-                "station-one",
-                "direct-current",
-                "https://current.example",
-                false,
-            );
-            registry
-                .replace_verified_routes(std::slice::from_ref(&current))
-                .unwrap();
-            let before = registry.set_active_station("station-one").unwrap();
+        let config_dir = temp_dir("candidate-preserves-commit");
+        let registry = StationRegistry::new(&config_dir);
+        let current = route(
+            "station-one",
+            "direct-current",
+            "https://current.example",
+            false,
+        );
+        registry
+            .replace_verified_routes(std::slice::from_ref(&current))
+            .unwrap();
+        let before = registry.set_active_station("station-one").unwrap();
 
-            let mut candidate = route(
-                "station-one",
-                "direct-candidate",
-                "https://candidate.example",
-                false,
-            );
-            candidate.authorization_epoch = 2;
-            let refreshed = registry
-                .replace_verified_routes(std::slice::from_ref(&candidate))
-                .unwrap()
-                .remove(0);
+        let mut candidate = route(
+            "station-one",
+            "direct-candidate",
+            "https://candidate.example",
+            false,
+        );
+        candidate.authorization_epoch = 2;
+        let refreshed = registry
+            .replace_verified_routes(std::slice::from_ref(&candidate))
+            .unwrap()
+            .remove(0);
 
-            assert_eq!(refreshed.active_route_id, before.active_route_id);
-            assert_eq!(refreshed.route_revision, before.route_revision);
-            assert_eq!(
-                refreshed.active_route().unwrap().endpoint_origin,
-                before.active_route().unwrap().endpoint_origin
-            );
-            assert_eq!(
-                registry.active_entry().unwrap().active_route_id,
-                before.active_route_id
-            );
+        assert_eq!(refreshed.active_route_id, before.active_route_id);
+        assert_eq!(refreshed.route_revision, before.route_revision);
+        assert_eq!(
+            refreshed.active_route().unwrap().endpoint_origin,
+            before.active_route().unwrap().endpoint_origin
+        );
+        assert_eq!(
+            registry.active_entry().unwrap().active_route_id,
+            before.active_route_id
+        );
 
-            drop(registry);
-            let restarted = StationRegistry::new(&config_dir);
-            let restored = restarted.active_entry().unwrap();
-            assert_eq!(restored.active_route_id, before.active_route_id);
-            assert_eq!(restored.route_revision, before.route_revision);
-            assert_eq!(
-                restored.active_route().unwrap().endpoint_origin,
-                before.active_route().unwrap().endpoint_origin
-            );
-        });
+        drop(registry);
+        let restarted = StationRegistry::new(&config_dir);
+        let restored = restarted.active_entry().unwrap();
+        assert_eq!(restored.active_route_id, before.active_route_id);
+        assert_eq!(restored.route_revision, before.route_revision);
+        assert_eq!(
+            restored.active_route().unwrap().endpoint_origin,
+            before.active_route().unwrap().endpoint_origin
+        );
     }
 
     #[test]
     fn same_route_id_refresh_preserves_new_contract_until_selection() {
-        with_seed(None, || {
-            let config_dir = temp_dir("same-id-candidate-preserves-contract");
-            let registry = StationRegistry::new(&config_dir);
-            let current = route(
-                "station-one",
-                "direct-current",
-                "https://current.example",
-                false,
-            );
-            registry
-                .replace_verified_routes(std::slice::from_ref(&current))
-                .unwrap();
-            let before = registry.set_active_station("station-one").unwrap();
+        let config_dir = temp_dir("same-id-candidate-preserves-contract");
+        let registry = StationRegistry::new(&config_dir);
+        let current = route(
+            "station-one",
+            "direct-current",
+            "https://current.example",
+            false,
+        );
+        registry
+            .replace_verified_routes(std::slice::from_ref(&current))
+            .unwrap();
+        let before = registry.set_active_station("station-one").unwrap();
 
-            let mut refreshed_contract = current;
-            refreshed_contract.authorization_epoch = 2;
-            refreshed_contract.node_authorization_digest = [9; 32];
-            refreshed_contract.expires_at_unix_ms = Some(i64::MAX);
-            let refreshed = registry
-                .replace_verified_routes(std::slice::from_ref(&refreshed_contract))
-                .unwrap()
-                .remove(0);
+        let mut refreshed_contract = current;
+        refreshed_contract.authorization_epoch = 2;
+        refreshed_contract.node_authorization_digest = [9; 32];
+        refreshed_contract.expires_at_unix_ms = Some(i64::MAX);
+        let refreshed = registry
+            .replace_verified_routes(std::slice::from_ref(&refreshed_contract))
+            .unwrap()
+            .remove(0);
 
-            assert_eq!(refreshed.route_revision, before.route_revision);
-            assert_eq!(
-                refreshed.active_route().unwrap().authorization_epoch,
-                before.active_route().unwrap().authorization_epoch
-            );
-            let candidate = refreshed
+        assert_eq!(refreshed.route_revision, before.route_revision);
+        assert_eq!(
+            refreshed.active_route().unwrap().authorization_epoch,
+            before.active_route().unwrap().authorization_epoch
+        );
+        let candidate = refreshed
+            .verified_candidate("direct-current")
+            .expect("refreshed same-ID route must remain selectable");
+        assert_eq!(candidate.authorization_epoch, 2);
+        assert_eq!(candidate.node_authorization_digest, vec![9; 32]);
+        assert_eq!(candidate.attestation_expires_at_unix_ms, Some(i64::MAX));
+
+        drop(registry);
+        let restarted = StationRegistry::new(&config_dir);
+        let restored = restarted.active_entry().unwrap();
+        assert_eq!(restored.route_revision, before.route_revision);
+        assert_eq!(
+            restored.active_route().unwrap().authorization_epoch,
+            before.active_route().unwrap().authorization_epoch
+        );
+        assert_eq!(
+            restored
                 .verified_candidate("direct-current")
-                .expect("refreshed same-ID route must remain selectable");
-            assert_eq!(candidate.authorization_epoch, 2);
-            assert_eq!(candidate.node_authorization_digest, vec![9; 32]);
-            assert_eq!(candidate.attestation_expires_at_unix_ms, Some(i64::MAX));
+                .unwrap()
+                .authorization_epoch,
+            2
+        );
 
-            drop(registry);
-            let restarted = StationRegistry::new(&config_dir);
-            let restored = restarted.active_entry().unwrap();
-            assert_eq!(restored.route_revision, before.route_revision);
-            assert_eq!(
-                restored.active_route().unwrap().authorization_epoch,
-                before.active_route().unwrap().authorization_epoch
-            );
-            assert_eq!(
-                restored
-                    .verified_candidate("direct-current")
-                    .unwrap()
-                    .authorization_epoch,
-                2
-            );
-
-            let committed = restarted.commit_selection(&restored, None).unwrap();
-            assert_eq!(committed.active_route().unwrap().authorization_epoch, 2);
-            assert_eq!(committed.route_revision, before.route_revision + 1);
-        });
+        let committed = restarted.commit_selection(&restored, None).unwrap();
+        assert_eq!(committed.active_route().unwrap().authorization_epoch, 2);
+        assert_eq!(committed.route_revision, before.route_revision + 1);
     }
 
     #[test]
     fn route_refresh_rejects_authorization_epoch_rollback() {
-        with_seed(None, || {
-            let registry = StationRegistry::new(&temp_dir("authorization-rollback"));
-            let mut current = route("station-one", "direct-a", "https://station.example", false);
-            current.authorization_epoch = 2;
-            registry
-                .replace_verified_routes(std::slice::from_ref(&current))
-                .unwrap();
+        let registry = StationRegistry::new(&temp_dir("authorization-rollback"));
+        let mut current = route("station-one", "direct-a", "https://station.example", false);
+        current.authorization_epoch = 2;
+        registry
+            .replace_verified_routes(std::slice::from_ref(&current))
+            .unwrap();
 
-            let mut stale = current;
-            stale.authorization_epoch = 1;
-            assert_eq!(
-                registry
-                    .replace_verified_routes(std::slice::from_ref(&stale))
-                    .unwrap_err()
-                    .kind(),
-                io::ErrorKind::PermissionDenied
-            );
-        });
+        let mut stale = current;
+        stale.authorization_epoch = 1;
+        assert_eq!(
+            registry
+                .replace_verified_routes(std::slice::from_ref(&stale))
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::PermissionDenied
+        );
     }
 
     #[test]
     fn route_failover_persists_unavailable_without_a_replacement() {
-        with_seed(None, || {
-            let registry = StationRegistry::new(&temp_dir("route-exhausted"));
-            registry
-                .upsert_verified_route(
-                    &route("station-one", "relay-a", "https://relay.example", true),
-                    None,
-                )
-                .unwrap();
-            let before = registry.set_active_station("station-one").unwrap();
+        let registry = StationRegistry::new(&temp_dir("route-exhausted"));
+        registry
+            .upsert_verified_route(
+                &route("station-one", "relay-a", "https://relay.example", true),
+                None,
+            )
+            .unwrap();
+        let before = registry.set_active_station("station-one").unwrap();
 
-            assert!(registry
-                .failover_route("station-one", "relay-a", before.route_revision)
-                .is_err());
-            let after = registry.active_entry().unwrap();
-            assert_eq!(after.routes[0].health, StationRouteHealth::Unavailable);
-            assert_eq!(after.route_revision, before.route_revision + 1);
-        });
+        assert!(registry
+            .failover_route("station-one", "relay-a", before.route_revision)
+            .is_err());
+        let after = registry.active_entry().unwrap();
+        assert_eq!(after.routes[0].health, StationRouteHealth::Unavailable);
+        assert_eq!(after.route_revision, before.route_revision + 1);
     }
 
     #[test]
     fn route_failover_rejects_expired_or_stale_candidates() {
-        with_seed(None, || {
-            let registry = StationRegistry::new(&temp_dir("route-failover-cas"));
-            registry
-                .upsert_verified_route(
-                    &route("station-one", "relay-a", "https://relay.example", true),
-                    None,
-                )
-                .unwrap();
-            let mut expired = route(
-                "station-one",
-                "relay-expired",
-                "https://relay.example",
-                true,
-            );
-            expired.node_peer_id = "station-one-node-expired".to_string();
-            expired.expires_at_unix_ms = Some(unix_ms() - 1);
-            registry.upsert_verified_route(&expired, None).unwrap();
-            let before = registry.set_active_station("station-one").unwrap();
+        let registry = StationRegistry::new(&temp_dir("route-failover-cas"));
+        registry
+            .upsert_verified_route(
+                &route("station-one", "relay-a", "https://relay.example", true),
+                None,
+            )
+            .unwrap();
+        let mut expired = route(
+            "station-one",
+            "relay-expired",
+            "https://relay.example",
+            true,
+        );
+        expired.node_peer_id = "station-one-node-expired".to_string();
+        expired.expires_at_unix_ms = Some(unix_ms() - 1);
+        registry.upsert_verified_route(&expired, None).unwrap();
+        let before = registry.set_active_station("station-one").unwrap();
 
-            assert!(registry
-                .failover_route("station-one", "relay-a", before.route_revision)
-                .is_err());
+        assert!(registry
+            .failover_route("station-one", "relay-a", before.route_revision)
+            .is_err());
 
-            let mut refreshed = route("station-one", "relay-a", "https://relay.example", true);
-            refreshed.authorization_epoch = 2;
-            let refreshed_entry = registry.upsert_verified_route(&refreshed, None).unwrap();
-            let stale_result = registry
-                .failover_route("station-one", "relay-a", before.route_revision)
-                .unwrap();
-            assert_eq!(stale_result.route_revision, refreshed_entry.route_revision);
-            assert_eq!(
-                stale_result
-                    .routes
-                    .iter()
-                    .find(|route| route.route_id == "relay-a")
-                    .unwrap()
-                    .health,
-                StationRouteHealth::Available
-            );
-        });
+        let mut refreshed = route("station-one", "relay-a", "https://relay.example", true);
+        refreshed.authorization_epoch = 2;
+        let refreshed_entry = registry.upsert_verified_route(&refreshed, None).unwrap();
+        let stale_result = registry
+            .failover_route("station-one", "relay-a", before.route_revision)
+            .unwrap();
+        assert_eq!(stale_result.route_revision, refreshed_entry.route_revision);
+        assert_eq!(
+            stale_result
+                .routes
+                .iter()
+                .find(|route| route.route_id == "relay-a")
+                .unwrap()
+                .health,
+            StationRouteHealth::Available
+        );
     }
 
     #[test]
     fn station_switch_increments_lifecycle_generation() {
-        with_seed(None, || {
-            let registry = StationRegistry::new(&temp_dir("station-switch"));
-            for station in ["station-one", "station-two"] {
-                registry
-                    .upsert_verified_route(
-                        &route(
-                            station,
-                            &format!("{station}-route"),
-                            &format!("https://{station}.example"),
-                            false,
-                        ),
-                        None,
-                    )
-                    .unwrap();
-            }
-            registry.set_active_station("station-one").unwrap();
-            let before = registry.entry("station-two").unwrap();
-            let after = registry.set_active_station("station-two").unwrap();
-            assert_eq!(after.lifecycle_generation, before.lifecycle_generation + 1);
-        });
+        let registry = StationRegistry::new(&temp_dir("station-switch"));
+        for station in ["station-one", "station-two"] {
+            registry
+                .upsert_verified_route(
+                    &route(
+                        station,
+                        &format!("{station}-route"),
+                        &format!("https://{station}.example"),
+                        false,
+                    ),
+                    None,
+                )
+                .unwrap();
+        }
+        registry.set_active_station("station-one").unwrap();
+        let before = registry.entry("station-two").unwrap();
+        let after = registry.set_active_station("station-two").unwrap();
+        assert_eq!(after.lifecycle_generation, before.lifecycle_generation + 1);
     }
 
     #[test]
     fn remove_and_readd_advances_lifecycle_generation_across_restart() {
-        with_seed(None, || {
-            let config_dir = temp_dir("station-readd-generation");
-            let station_route = route(
-                "station-one",
-                "station-one-route",
-                "https://station-one.example",
-                false,
-            );
-            let registry = StationRegistry::new(&config_dir);
-            let first = registry
-                .upsert_verified_route(&station_route, None)
-                .unwrap();
-            registry.set_active_station("station-one").unwrap();
-            registry.remove("station-one").unwrap();
-            drop(registry);
+        let config_dir = temp_dir("station-readd-generation");
+        let station_route = route(
+            "station-one",
+            "station-one-route",
+            "https://station-one.example",
+            false,
+        );
+        let registry = StationRegistry::new(&config_dir);
+        let first = registry
+            .upsert_verified_route(&station_route, None)
+            .unwrap();
+        registry.set_active_station("station-one").unwrap();
+        registry.remove("station-one").unwrap();
+        drop(registry);
 
-            let restarted = StationRegistry::new(&config_dir);
-            let readded = restarted
-                .upsert_verified_route(&station_route, None)
-                .unwrap();
+        let restarted = StationRegistry::new(&config_dir);
+        let readded = restarted
+            .upsert_verified_route(&station_route, None)
+            .unwrap();
 
-            assert!(readded.lifecycle_generation > first.lifecycle_generation);
-        });
+        assert!(readded.lifecycle_generation > first.lifecycle_generation);
     }
 
     #[test]
     fn rejects_pre_root_identity_registry_schema() {
-        with_seed(None, || {
-            let dir = temp_dir("stale-schema");
-            std::fs::write(
-                dir.join("stations.json"),
-                r#"{
-                  "version": 2,
-                  "entries":[{
-                    "station_peer_id":"station-one",
-                    "pinned_host_public_key":[1],
-                    "routes":[]
-                  }],
-                  "active_station_peer_id":"station-one"
-                }"#,
-            )
-            .unwrap();
-            let registry = StationRegistry::new(&dir);
-            assert!(registry.list().is_empty());
-            assert_eq!(registry.active_station_peer_id(), None);
-        });
+        let dir = temp_dir("stale-schema");
+        std::fs::write(
+            dir.join("stations.json"),
+            r#"{
+              "version": 2,
+              "entries":[{
+                "station_peer_id":"station-one",
+                "pinned_host_public_key":[1],
+                "routes":[]
+              }],
+              "active_station_peer_id":"station-one"
+            }"#,
+        )
+        .unwrap();
+        let registry = StationRegistry::new(&dir);
+        assert!(registry.list().is_empty());
+        assert_eq!(registry.active_station_peer_id(), None);
     }
 
     #[test]
     fn rejects_registry_schema_with_unsigned_direct_routes() {
-        with_seed(None, || {
-            let dir = temp_dir("unsigned-direct-schema");
-            let now = now_rfc3339();
-            let mut insecure = route_candidate(
-                &route("station-one", "direct-1", "https://station.example", false),
-                &now,
-            );
-            insecure.transport = "direct_https".to_string();
-            insecure.inner_tls_spki_sha256 = None;
-            insecure.addresses = vec!["https://station.example".to_string()];
-            insecure.attestation_bytes = None;
-            insecure.attestation_expires_at_unix_ms = None;
-            let state = PersistedData {
-                version: 3,
-                entries: vec![StationEntry {
-                    station_peer_id: "station-one".to_string(),
-                    display_name: None,
-                    pinned_station_root_public_key: vec![1, 2, 3],
-                    routes: vec![insecure],
-                    candidate_route_refreshes: Vec::new(),
-                    active_route_id: "direct-1".to_string(),
-                    route_revision: 1,
-                    lifecycle_generation: 1,
-                    created_at: now.clone(),
-                    updated_at: now,
-                }],
-                active_station_peer_id: Some("station-one".to_string()),
-                federation_signing_key_pins: HashMap::new(),
-                lifecycle_generations: HashMap::new(),
-            };
-            std::fs::write(
-                dir.join("stations.json"),
-                serde_json::to_vec(&state).unwrap(),
-            )
-            .unwrap();
+        let dir = temp_dir("unsigned-direct-schema");
+        let now = now_rfc3339();
+        let mut insecure = route_candidate(
+            &route("station-one", "direct-1", "https://station.example", false),
+            &now,
+        );
+        insecure.transport = "direct_https".to_string();
+        insecure.inner_tls_spki_sha256 = None;
+        insecure.addresses = vec!["https://station.example".to_string()];
+        insecure.attestation_bytes = None;
+        insecure.attestation_expires_at_unix_ms = None;
+        let state = PersistedData {
+            version: 3,
+            entries: vec![StationEntry {
+                station_peer_id: "station-one".to_string(),
+                display_name: None,
+                pinned_station_root_public_key: vec![1, 2, 3],
+                routes: vec![insecure],
+                candidate_route_refreshes: Vec::new(),
+                active_route_id: "direct-1".to_string(),
+                route_revision: 1,
+                lifecycle_generation: 1,
+                created_at: now.clone(),
+                updated_at: now,
+            }],
+            active_station_peer_id: Some("station-one".to_string()),
+            federation_signing_key_pins: HashMap::new(),
+            lifecycle_generations: HashMap::new(),
+        };
+        std::fs::write(
+            dir.join("stations.json"),
+            serde_json::to_vec(&state).unwrap(),
+        )
+        .unwrap();
 
-            let registry = StationRegistry::new(&dir);
-            assert!(registry.list().is_empty());
-            assert_eq!(registry.active_station_peer_id(), None);
-        });
+        let registry = StationRegistry::new(&dir);
+        assert!(registry.list().is_empty());
+        assert_eq!(registry.active_station_peer_id(), None);
     }
 
     #[test]
     fn rejects_station_root_key_replacement() {
-        with_seed(None, || {
-            let registry = StationRegistry::new(&temp_dir("host-key"));
+        let registry = StationRegistry::new(&temp_dir("host-key"));
+        registry
+            .upsert_verified_route(
+                &route("station-one", "direct-1", "https://station.example", false),
+                None,
+            )
+            .unwrap();
+        let mut attacker = route("station-one", "relay-1", "https://relay.example", true);
+        attacker.station_root_public_key = vec![9, 9, 9];
+        assert_eq!(
             registry
-                .upsert_verified_route(
-                    &route("station-one", "direct-1", "https://station.example", false),
-                    None,
-                )
-                .unwrap();
-            let mut attacker = route("station-one", "relay-1", "https://relay.example", true);
-            attacker.station_root_public_key = vec![9, 9, 9];
-            assert_eq!(
-                registry
-                    .upsert_verified_route(&attacker, None)
-                    .unwrap_err()
-                    .kind(),
-                io::ErrorKind::PermissionDenied
-            );
-        });
+                .upsert_verified_route(&attacker, None)
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::PermissionDenied
+        );
     }
 }

@@ -1397,6 +1397,7 @@ fn main() {
             native_surface::native_window_apply_auth_surface,
             native_surface::native_window_apply_ready_surface,
             station::station_list,
+            station::station_local_candidates,
             station::station_set_active,
             station::station_binding_complete,
             station::station_add,

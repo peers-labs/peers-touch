@@ -903,7 +903,10 @@
         "NCP-D18",
         "NCP-D19",
         "NCP-D20",
-        "NCP-D21"
+        "NCP-D21",
+        "NCP-D22",
+        "NCP-D23",
+        "NCP-D24"
       ],
       "governedPaths": [
         "apps/station/frame/core/federation",

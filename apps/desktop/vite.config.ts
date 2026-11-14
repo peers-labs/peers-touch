@@ -18,6 +18,14 @@ const isEvidenceRuntime =
   process.env.PT_DESKTOP_E2E === 'true'
   || Boolean(process.env.VITE_RUNTIME_EVIDENCE_HARNESS)
 
+// Dev proxy target: the Profile Station channel wins, then an external
+// injection, then the local fallback. This is build-time proxy plumbing only;
+// it never writes registry identity (NCP-D23).
+const stationProxyTarget =
+  process.env.PEERS_PROFILE_STATION_URL
+  || process.env.PEERS_STATION_URL
+  || 'http://127.0.0.1:18080'
+
 function getWorktreeInfo() {
   const sourceCommitOverride = projectedBuildSourceCommit(process.env)
 
@@ -85,11 +93,11 @@ export default defineConfig(({ command }) => ({
       : { ignored: ['**/src-tauri/target/**'] },
     proxy: {
       '/api': {
-        target: process.env.PEERS_STATION_URL || 'http://127.0.0.1:18080',
+        target: stationProxyTarget,
         changeOrigin: true,
       },
       '/sub-agent': {
-        target: process.env.PEERS_STATION_URL || 'http://127.0.0.1:18080',
+        target: stationProxyTarget,
         changeOrigin: true,
       },
     },

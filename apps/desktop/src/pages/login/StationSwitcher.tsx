@@ -7,6 +7,10 @@ import type {
   StationRouteCandidate,
   StationRouteHealth,
 } from '../../services/desktop_api';
+import {
+  type StationCandidate,
+  loadStationCandidateCatalog,
+} from '../../services/stationCandidates';
 import { markStationUserChoice } from '../../services/stationDefault';
 import { log } from '../../utils/logger';
 
@@ -20,17 +24,19 @@ interface AddFeedback {
 /**
  * Compact Station control embedded in the auth card footer. The trigger shows
  * only the active Station's friendly short id + reachability (never a raw
- * host); the popover lists registered Stations, switches the active one, and
- * accepts a manually entered Station URL. Cloud X-Config suggestions are out
- * of scope for the calm auth surface.
+ * host). The popover lists verified Stations and proximity-ordered
+ * suggestions (Profile / injected / cloud). Selecting a suggestion always
+ * runs signed discovery; only verified routes enter the Station registry.
  */
 export function StationSwitcher() {
   const { t } = useTranslation('common');
   const [open, setOpen] = useState(false);
   const [entries, setEntries] = useState<StationEntry[]>([]);
   const [activeStationPeerId, setActiveStationPeerId] = useState('');
+  const [suggestions, setSuggestions] = useState<StationCandidate[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [adding, setAdding] = useState(false);
+  const [activatingId, setActivatingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<AddFeedback | null>(null);
 
   const loadStations = useCallback(async () => {
@@ -43,13 +49,28 @@ export function StationSwitcher() {
     }
   }, []);
 
-  useEffect(() => {
-    void loadStations();
-  }, [loadStations]);
+  const loadCatalog = useCallback(async () => {
+    try {
+      const catalog = await loadStationCandidateCatalog();
+      setSuggestions(catalog.suggestions);
+    } catch (error) {
+      // Local-first: a catalog failure must never block the verified list or
+      // manual entry. Keep the previous suggestion view.
+      log.warn('StationSwitcher', 'Failed to load Station candidate catalog', { error });
+    }
+  }, []);
 
   useEffect(() => {
-    if (open) void loadStations();
-  }, [open, loadStations]);
+    void loadStations();
+    void loadCatalog();
+  }, [loadStations, loadCatalog]);
+
+  useEffect(() => {
+    if (open) {
+      void loadStations();
+      void loadCatalog();
+    }
+  }, [open, loadStations, loadCatalog]);
 
   const selectRoute = useCallback(
     async (entry: StationEntry, route: StationRouteCandidate) => {
@@ -105,6 +126,7 @@ export function StationSwitcher() {
         : false;
       setInputValue('');
       await loadStations();
+      await loadCatalog();
       if (
         discovered.entries.length === 1 &&
         discovered.entries[0]?.routes.length === 1
@@ -132,7 +154,48 @@ export function StationSwitcher() {
     } finally {
       setAdding(false);
     }
-  }, [adding, entries, inputValue, loadStations, selectRoute, t]);
+  }, [adding, entries, loadCatalog, loadStations, selectRoute, t]);
+
+  const activateSuggestion = useCallback(
+    async (candidate: StationCandidate) => {
+      if (!candidate.actionable || activatingId) return;
+      setActivatingId(candidate.id);
+      setFeedback(null);
+      try {
+        const discovered = candidate.seedId
+          ? await api.xConfigDiscoverSuggestion(candidate.seedId)
+          : await api.stationAdd(candidate.canonicalOrigin);
+        markStationUserChoice();
+        await loadStations();
+        await loadCatalog();
+        if (
+          discovered.entries.length === 1 &&
+          discovered.entries[0]?.routes.length === 1
+        ) {
+          const entry = discovered.entries[0];
+          const route = entry.routes[0];
+          if (entry && route) {
+            await selectRoute(entry, route);
+          }
+        }
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : '';
+        log.error('StationSwitcher', 'Failed to verify Station suggestion', {
+          candidateId: candidate.id,
+          error,
+        });
+        setFeedback({
+          tone: 'danger',
+          text: detail
+            ? t('common.stationPicker.addFailedWithReason', { reason: detail })
+            : t('common.stationPicker.suggestionInvalid'),
+        });
+      } finally {
+        setActivatingId(null);
+      }
+    },
+    [activatingId, loadCatalog, loadStations, selectRoute, t],
+  );
 
   const handleRemove = useCallback(
     async (entry: StationEntry) => {
@@ -140,6 +203,7 @@ export function StationSwitcher() {
       try {
         await api.stationRemove(entry.station_peer_id);
         await loadStations();
+        await loadCatalog();
       } catch (error) {
         log.error('StationSwitcher', 'Failed to remove Station', {
           stationPeerId: entry.station_peer_id,
@@ -147,7 +211,7 @@ export function StationSwitcher() {
         });
       }
     },
-    [loadStations],
+    [loadCatalog, loadStations],
   );
 
   const activeEntry =
@@ -202,12 +266,50 @@ export function StationSwitcher() {
             </div>
           );
         })}
-        {entries.length === 0 && (
+        {entries.length === 0 && suggestions.length === 0 && (
           <div style={{ padding: '10px 4px', fontSize: 12, color: 'var(--pt-secondary)', textAlign: 'center' }}>
             {t('common.stationPicker.empty')}
           </div>
         )}
       </div>
+      {suggestions.length > 0 && (
+        <div className="pt-station-suggestions">
+          <div className="pt-station-section-label">
+            {t('common.stationPicker.suggestions')}
+          </div>
+          {suggestions.map((candidate) => (
+            <div key={candidate.id} className="pt-station-row" style={{ display: 'flex', gap: 4 }}>
+              <Button
+                actionId={`auth.station.suggest.${candidate.id}`}
+                fullWidth
+                emphasis="quiet"
+                className="pt-station-row"
+                availability={!candidate.actionable || activatingId === candidate.id
+                  ? { kind: 'disabled', reason: t('common.stationPicker.suggestionStale') }
+                  : undefined}
+                onActivate={() => void activateSuggestion(candidate)}
+              >
+                <span className="pt-station-meta">
+                  <span>
+                    {candidate.displayName}
+                    <span className="pt-station-row-endpoint">
+                      {candidate.canonicalOrigin}
+                    </span>
+                    <span className="pt-station-source-tag">
+                      {t(`common.stationPicker.source.${candidate.source ?? 'environment'}`)}
+                    </span>
+                    {!candidate.actionable && (
+                      <span className="pt-station-source-tag">
+                        {t('common.stationPicker.suggestionStale')}
+                      </span>
+                    )}
+                  </span>
+                </span>
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="pt-station-add">
         <TextField
           aria-label={t('common.stationPicker.inputLabel')}

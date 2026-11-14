@@ -235,7 +235,6 @@ pub(crate) fn prepare_messaging_profile(
         })
         .unwrap_or_default();
     station_origins.extend(state.station.active_endpoint_origin());
-    station_origins.extend(state.station.registry().discovery_seed());
     let legacy_identity_key_refs =
         crate::infrastructure::local_scope::legacy_identity_key_refs_for_actor_at_station(
             actor_ptid,

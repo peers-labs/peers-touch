@@ -1,8 +1,8 @@
 # Node Connectivity
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-10-10 | **Updated**: 2026-10-14
+> **Version**: v1.4
+> **Created**: 2026-10-10 | **Updated**: 2026-11-13
 > **Owner**: Architecture Team
 > **Module**: `apps/station/frame/core/plugin/native/`
 
@@ -56,6 +56,9 @@ Relay 的标准传输替换与业务集群就绪分别验证，不能把连通�
     transport-independent reference 投影，不把 active route origin 当作资源身份。
 12. 请求级 route policy 仅约束 Access 已提交的 RouteLease；只有 AUTO 可在真实
     transport failure 后切换 verified candidate，closed policy 不得改写 binding。
+13. Desktop/Mobile 的 Station 候选来自唯一候选目录，按
+    environment > injected > xconfig 就近排序；任何候选都只是 suggestion，
+    只有签名发现才能落库，且不存在隐式默认 Station（NCP-D22..D24）。
 
 ## 4. Document Navigation
 

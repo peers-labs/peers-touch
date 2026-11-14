@@ -13,8 +13,8 @@ detected: 2026-07-06
 # Dev Test Accounts
 
 > **Status**: active
-> **Version**: v2.2
-> **Created**: 2026-07-06 | **Updated**: 2026-09-12
+> **Version**: v2.3
+> **Created**: 2026-07-06 | **Updated**: 2026-11-13
 > **Owner**: Peers-Touch Engineering
 
 ---
@@ -97,6 +97,11 @@ social graph 边，使 unified Conversation 的 relationship gate 认可该好�
 - `bob@station-one` ↔ `bob@station-two`（同名不同站，验证联邦 handle 唯一性）
 
 ### 2.6 快速登录指南
+
+登录前先在登录页 Station 选择器里选中目标 Station：`make desktop` 会把当前
+Profile 的 Station 作为 `environment` 候选置顶，首次点击才会走签名发现并落库，
+之后重启自动恢复，无需重选。三档来源（Profile / 注入 / 云端）与排障见
+`desktop-debug-runtime-with-qualified-chooser.md` 的 "Station Candidate Catalog"。
 
 ```
 Email:    alice@p.t  (或 bob@p.t / carol@p.t / dave@p.t)

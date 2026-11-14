@@ -7451,6 +7451,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 status: serde_json::to_string(&payload).unwrap_or_default(),
             }))
         }
+        "station_local_candidates" => to_json(
+            crate::interface::tauri_commands::station::station_local_candidates_result(),
+        ),
         "station_set_active" => {
             match parse_args::<crate::interface::tauri_commands::station::StationSelectionInput>(
                 args,

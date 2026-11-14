@@ -1,8 +1,8 @@
 # Node Connectivity - Module Layout
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-10-10 | **Updated**: 2026-10-14
+> **Version**: v1.4
+> **Created**: 2026-10-10 | **Updated**: 2026-11-13
 > **Owner**: Architecture Team
 
 ## 1. Existing Extension Points
@@ -66,12 +66,19 @@ apps/desktop/src-tauri/src/
 │       ├── client.rs                    # typed request port and policies
 │       ├── resource.rs                  # StationResourceRef projection
 │       └── route_lease.rs               # immutable route execution lease
+├── interface/tauri_commands/
+│   ├── station.rs                       # station_local_candidates read-only command
+│   └── x_config.rs                      # x_config_discover_suggestion
 └── infrastructure/
-    ├── station_registry.rs              # verified route persistence
+    ├── station_registry.rs              # verified route persistence only
+    ├── station_candidates.rs            # local env candidate reader (NCP-D22/D23)
     ├── station_discovery.rs             # verified route discovery
     └── station/
         ├── identity.rs                  # scoped transport key adapter
         └── transport/mod.rs             # owner/handle plus Direct/Circuit execution
+
+apps/desktop/src/services/
+└── stationCandidates.ts                 # single catalog merge/dedup/order owner
 ```
 
 ## 2. Target Responsibilities
@@ -98,6 +105,9 @@ apps/desktop/src-tauri/src/
 | Desktop transport owner | driver, bounded admission, route sessions, cancellation and join | Station binding mutation or Session state |
 | Desktop event-stream runtime | actor supervisor cancellation and bounded thread join | Station transport or route selection |
 | Desktop transport identity adapter | endpoint-scoped libp2p keys in platform secure storage | Actor, Session, logical Station identity or cross-Relay global identity |
+| Desktop local Station candidate reader | parse and normalize `PEERS_PROFILE_STATION_URL` / `PEERS_STATION_URL`, tag the source tier, expose one read-only command | disk/network/secure-store access, registry writes, auth origin extension or trust decisions |
+| Desktop Station candidate catalog service | single renderer merge of local and X Config candidates, proximity ordering, dedup and verified suppression | independent source fetching, duplicated ordering logic, activating or persisting a Station |
+| Local development controller | export the Profile Station through the source-tagged `PEERS_PROFILE_STATION_URL` channel and pass external injections through unchanged | manufacturing `PEERS_STATION_URL` from the Profile value or bypassing signed discovery |
 | Shared transport identity scope | canonical Station/Relay/origin scope hashing in station-trust | private key storage or global installation identity |
 | Mobile transport identity adapter | secure-store readback and scoped standard drivers | random global transport identity or credential persistence |
 | Linux runtime owner | listeners, control TLS, quotas, exact source and cleanup | additional Relay host platform |

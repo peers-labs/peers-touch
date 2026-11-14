@@ -1,8 +1,8 @@
 # Node Connectivity - Architecture Design
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-10-10 | **Updated**: 2026-10-14
+> **Version**: v1.4
+> **Created**: 2026-10-10 | **Updated**: 2026-11-13
 > **Owner**: Architecture Team
 > **Module**: `apps/station/frame/core/plugin/native/`
 
@@ -41,6 +41,11 @@ source; neither an accepted design nor a source check proves runtime delivery.
 | Direct discovery accepts the user's canonical HTTP(S) origin and requires a node-signed Direct route with exact Node PeerID, multiaddr and inner TLS SPKI; Direct and Circuit use the same pooled TLS/HTTP2 transport | verified_fact | `subserver/bootstrap/access_endpoint.go`; `station_discovery.rs`; `packages/station-libp2p-http` | current-source native route and pre-credential rejection proof |
 | Standard transport reduces custom protocol ownership | inference | constructor/framing inventory above | runtime suitability; no speed claim |
 | Shared state and fenced domain workers permit multiple nodes | accepted_decision | NCP-D12..NCP-D15 | all cluster Gates |
+| The Profile Station is exported as process `PEERS_STATION_URL` and read only as a Rust-private `discovery_seed`; the renderer has no command to read it | verified_fact | `tooling/devctl/desktop.mjs`; `infrastructure/station_registry.rs` (`discovery_seed`); `interface/tauri_commands/station.rs` | candidate catalog command and renderer consumption |
+| `discovery_seed` additionally extends auth identity-migration origins, an env-only path that bypasses signed discovery | verified_fact | `application/auth/service.rs` (`station_origins.extend(...discovery_seed())`) | removal proof and identity-migration regression coverage |
+| X Config direct-Station suggestions and verify-and-store discovery are implemented but never orchestrated into the login picker | verified_fact | `interface/tauri_commands/x_config.rs` (`x_config_discover_suggestion`); `services/xConfig.ts`; `pages/login/StationSwitcher.tsx` | unified catalog rendering and exact-source Journey |
+| Manual `station_add` and X Config discovery share one signed discovery plus `store_verified_routes` trust path | verified_fact | `interface/tauri_commands/station.rs` (`discover_and_store`); `station_discovery.rs` | local-candidate selection proof |
+| The `stationDefault.ts` auto-apply functions have no production caller; only the explicit-choice marker is wired to the switcher | verified_fact | `services/stationDefault.ts`; `stationDefault.test.ts`; `StationSwitcher.tsx` | dead-code removal and first-run picker proof |
 
 Pinned upstream API sources: [resources](https://github.com/libp2p/go-libp2p/blob/v0.45.0/p2p/protocol/circuitv2/relay/resources.go),
 [ACL](https://github.com/libp2p/go-libp2p/blob/v0.45.0/p2p/protocol/circuitv2/relay/acl.go),
@@ -218,6 +223,98 @@ retired clients after their active response bodies close. Realtime and bulk
 sessions have separate budgets. Safe reads may retry once after verified failover; mutations
 without an accepted idempotency key return an ambiguous outcome and are never
 blindly replayed.
+
+### 5.2 Station Candidate Catalog
+
+The login surface reads one Station candidate catalog instead of three
+unrelated inputs. The catalog is a read model; the verified Station registry
+remains the only identity owner (NCP-D22, NCP-D23, NCP-D24).
+
+```text
+Local development controller        Packaged / harness launch
+  profile PT_STATION_URL               shell / MDM / E2E
+        |                                   |
+        v                                   v
+PEERS_PROFILE_STATION_URL            PEERS_STATION_URL
+(source=environment)                 (source=injected)
+        |                                   |
+        +----------> Rust: station candidate reader <----------+
+                       (normalize origin, tag source, drop      |
+                        malformed values; no I/O, no storage)    |
+                                   |                             |
+                                   v                             |
+                     station_local_candidates (read-only cmd)    |
+                                   |                             |
+renderer service: stationCandidates.ts (single aggregation owner)|
+   - merge local candidates                                      |
+   - merge X Config projection suggestions (source=xconfig) <----+
+   - dedup by normalized canonical origin, proximity order
+   - suppress origins already verified in the registry
+                                   |
+                                   v
+            StationSwitcher (verified section + suggestion section)
+                                   |
+                 user selects a suggestion
+                                   v
+        station_add(origin) / x_config_discover_suggestion(seed_id)
+                                   |
+                  signed discovery + store_verified_routes
+                                   v
+                 stations.json gains a verified entry only
+```
+
+Trust boundary. Both local tiers and the X Config tier are unverified
+suggestions. No environment variable can create a registry entry, pin a key,
+extend auth origins or activate a Station. Selecting a local candidate calls
+the same `discover_and_store` path as manual entry; selecting an X Config
+candidate calls `x_config_discover_suggestion`. CCP-D02 still requires the
+switcher to render verified entries and suggestions as distinct states.
+
+Aggregation ownership. Rust owns environment parsing, origin normalization and
+the verified registry; it exposes local candidates through one read-only
+command and performs no network or storage work while reading them. The
+renderer `stationCandidates` service is the only place that merges the three
+tiers, dedups and orders them, and subscribes to X Config projection changes.
+No other page or runtime may re-derive the ordering.
+
+Core renderer contract:
+
+```ts
+type StationCandidateSource = 'environment' | 'injected' | 'xconfig';
+
+interface StationCandidate {
+  // Stable per-catalog id: source + normalized origin, or the X Config seed id.
+  id: string;
+  source: StationCandidateSource;
+  state: 'verified' | 'suggestion';
+  canonicalOrigin: string;
+  displayName: string;
+  // Present only for xconfig suggestions; local candidates use station_add.
+  seedId?: string;
+  // False suggestions are visible but not activatable (stale snapshot, etc.).
+  actionable: boolean;
+}
+
+interface StationCandidateCatalog {
+  verified: StationCandidate[];
+  suggestions: StationCandidate[]; // proximity-ordered, deduped
+  activeStationPeerId: string | null;
+}
+```
+
+Ordering and dedup. Tier precedence is `environment` > `injected` >
+`xconfig`. Normalized origins that collide keep the highest-priority source
+label. Order within a tier preserves arrival order (local declaration order;
+X Config `source_sequence`). Verified registry origins never appear again in
+the suggestion section.
+
+Local-first failure contract. The catalog is assembled without waiting on X
+Config (invariant `x-config-must-not-block-local-startup`): local tiers and
+verified entries render immediately; cloud rows join when the projection
+resolves and remain nonactionable while stale. Malformed local origins are
+discarded during normalization. A failed discovery leaves the suggestion in
+place, surfaces an inline error, and persists nothing. Removing the active
+Station clears the active id without promoting any candidate.
 
 ## 6. Relay Control And Admission
 
