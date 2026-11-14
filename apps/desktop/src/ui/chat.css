@@ -30,15 +30,21 @@
    parity). The old 48px vertical sub-rail is gone. */
 /* Slim 40px band that shares the overlay traffic-light row: only a small top
    clearance, so the segmented track / search rise to the top like WeChat
-   instead of leaving an empty strip (prototype sk-rail-header parity). */
+   instead of leaving an empty strip (prototype sk-rail-header parity).
+   The height is FIXED, not a min-height: the idle segmented island is 36px
+   tall while the expanded search field is 34px, so a content-sized band would
+   change height by 2px when search opens and visibly lift the Recent list.
+   Locking one height keeps the header — and everything below it — stationary
+   across the idle/active swap (surface motion must not move geometry). */
 .sc-rail-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 40px;
+  height: 48px;
   box-sizing: border-box;
   padding: 6px 16px;
   flex-shrink: 0;
+  overflow: hidden;
 }
 .sc-rail-subnav { flex: 1 1 auto; min-width: 0; }
 /* Frameless rail tiles (prototype .sk-rail-new): no border in ANY state,
@@ -2795,13 +2801,13 @@ body[data-chat-rail-resizing='true'] {
 
 /* ── Thread panel ───────────────────────────────────────────────────────── */
 .sc-thread {
-  /* iMessage-parity thread card material. These specialty blues are scoped
-     to the thread panel so they never leak into the neutral pine token set;
-     a future dark theme only has to override these four variables. */
-  --thread-card-bg: #d1e3fe;
-  --thread-card-inner: #b7cefc;
-  --thread-card-divider: rgba(47, 107, 148, 0.16);
-  --thread-card-divider-strong: rgba(47, 107, 148, 0.28);
+  /* Neutral pine materials scoped to the thread card. The earlier iMessage
+     blue read as an unexplained tint; these alias the shared surface tokens so
+     the thread panel matches the rest of the chat chrome in both themes. */
+  --thread-card-bg: var(--pt-subtle);
+  --thread-card-inner: var(--pt-surface);
+  --thread-card-divider: var(--pt-border);
+  --thread-card-divider-strong: color-mix(in srgb, var(--pt-text) 12%, transparent);
   width: 360px;
   height: 100%;
   background: var(--pt-surface);
@@ -2853,9 +2859,9 @@ body[data-chat-rail-resizing='true'] {
 .sc-thread__scroll::-webkit-scrollbar { width: 6px; height: 0; }
 .sc-thread__scroll::-webkit-scrollbar-thumb { background: var(--pt-subtle); border-radius: 999px; }
 
-/* Unified frosted-blue card hosting the root message and every reply. The
-   panel chrome stays neutral white; only this content surface takes the
-   iMessage-parity blue, with a soft hairline defining its edge. */
+/* Unified neutral card hosting the root message and every reply. The panel
+   chrome stays white; the content surface uses the shared subtle well with a
+   soft hairline defining its edge. */
 .sc-thread__card {
   background: var(--thread-card-bg);
   border: 1px solid var(--thread-card-divider);
@@ -2876,7 +2882,7 @@ body[data-chat-rail-resizing='true'] {
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--pt-info) 72%, transparent);
+  color: var(--pt-muted);
   padding: 0 2px 2px;
 }
 .sc-thread__loading { display: flex; align-items: center; gap: 8px; color: var(--pt-secondary); font-size: 12px; }
@@ -2909,9 +2915,9 @@ body[data-chat-rail-resizing='true'] {
 .thread-comment-row.is-root {
   padding: 4px 2px 10px;
 }
-.thread-comment-row:focus { outline: 2px solid var(--pt-info); outline-offset: 2px; }
+.thread-comment-row:focus { outline: 2px solid var(--pt-focus); outline-offset: 2px; }
 .thread-comment-row.is-highlighted {
-  background: color-mix(in srgb, var(--pt-info) 14%, transparent);
+  background: color-mix(in srgb, var(--pt-text) 10%, transparent);
 }
 .sc-thread__avatar { display: inline-flex; flex-shrink: 0; }
 .sc-thread__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
@@ -3252,12 +3258,27 @@ body[data-chat-rail-resizing='true'] {
 
 /* ── Find people dialog ─────────────────────────────────────────────────── */
 .sc-find { display: flex; flex-direction: column; gap: 12px; }
-.sc-find__scopes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+/* Scope chips stay on ONE row by default so a long Federation list can never
+   grow the dialog vertically. Expanding via the More chip allows wrapping to
+   reveal every context. */
+.sc-find__scopes {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+}
+.sc-find__scopes[data-chat-find-people-scopes-expanded='true'] {
+  flex-wrap: wrap;
+  overflow: visible;
+}
 .sc-scope-chip {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   min-height: 0;
+  flex-shrink: 0;
+  white-space: nowrap;
   padding: 2px 10px;
   border: 1px solid var(--pt-border);
   border-radius: 999px;
@@ -3267,6 +3288,7 @@ body[data-chat-rail-resizing='true'] {
   font-size: 12px;
   cursor: pointer;
 }
+.sc-scope-chip--more { font-weight: 600; }
 .sc-scope-chip:hover { background: var(--pt-subtle); }
 .sc-scope-chip.is-active,
 .sc-scope-chip[aria-pressed='true'] {
@@ -3275,7 +3297,16 @@ body[data-chat-rail-resizing='true'] {
   border-color: var(--pt-primary);
 }
 .sc-find__no-federation { font-size: 11px; color: var(--pt-muted); }
-.sc-find__list { display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow: auto; }
+/* Fixed-size result well: the dialog keeps a constant footprint whether it
+   shows a hint, spinner, empty state or many rows (the well scrolls itself). */
+.sc-find__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  height: 320px;
+  max-height: 320px;
+  overflow: auto;
+}
 .sc-find__status { display: flex; align-items: center; gap: 8px; padding: 24px; justify-content: center; color: var(--pt-secondary); font-size: 12px; }
 .sc-find__empty { padding: 24px; }
 .sc-find__result {
@@ -4134,24 +4165,6 @@ body[data-chat-rail-resizing='true'] {
   color: var(--pt-secondary);
 }
 .sc-attachment__image-fallback.is-own { background: rgba(255, 255, 255, 0.15); color: #fff; }
-.sc-attachment__image-caption {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 2px 6px 0;
-  padding: 2px 6px;
-  border-radius: var(--pt-radius-sm);
-  background: var(--pt-surface);
-}
-.sc-attachment__image-name {
-  font-size: 12px;
-  color: var(--pt-text);
-  max-width: 228px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.sc-attachment__image-size { font-size: 10px; color: var(--pt-secondary); align-self: flex-start; }
 
 .sc-attachment--video { max-width: 100%; }
 .sc-attachment__video {

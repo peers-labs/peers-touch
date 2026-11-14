@@ -370,6 +370,41 @@ describe('auth surface polish', () => {
     );
     expect(northstar).toMatch(/\.ds-rail\s*\{[^}]*width:\s*60px/);
   });
+
+  it('keeps the rail column hairline below the traffic-light title band', () => {
+    const northstar = readFileSync(
+      new URL('../../ui/northstar.css', import.meta.url),
+      'utf8',
+    );
+    // A full-height hard seam made the native green light straddle the
+    // rail/stage boundary. The base rail rule must no longer paint the 1px
+    // inset line (only the soft glow spans the whole column).
+    const railRule = northstar.match(/\.ds-rail\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(railRule).not.toContain('inset -1px 0 0');
+    // The hairline moves to a pseudo that starts under the title band, so the
+    // lights float on one continuous strip (--pt-rail-top is 40px on macOS,
+    // 0 elsewhere, where the line correctly runs the full edge again).
+    const seam = northstar.match(/\.ds-rail::after\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(seam).toContain('top: var(--pt-rail-top)');
+    expect(seam).toContain('width: 1px');
+    expect(seam).toContain(
+      'background: color-mix(in srgb, var(--pt-text) 5%, transparent)',
+    );
+  });
+
+  it('lets the frosted rail own the left edge instead of painting a frame on it', () => {
+    const northstar = readFileSync(
+      new URL('../../ui/northstar.css', import.meta.url),
+      'utf8',
+    );
+    // The rail is a translucent blurred material no solid color can match, so
+    // the shell frame is three-sided: zero left border (rail fills to the
+    // rounded corner), 3px subtle frame only on the stage edges.
+    const shell = northstar.match(/\.ds-shell\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(shell).toContain('border-width: 3px 3px 3px 0');
+    expect(shell).toContain('border-color: var(--pt-subtle)');
+    expect(shell).not.toContain('border: 3px solid');
+  });
 });
 
 describe('auth symmetric header back control', () => {
@@ -486,7 +521,13 @@ describe('native auth/ready window surface', () => {
       new URL('../../ui/chat.css', import.meta.url),
       'utf8',
     );
-    expect(chatStyles).toMatch(/\.sc-rail-header\s*\{[^}]*min-height: 40px/);
+    // The rail header keeps one FIXED height across the idle segmented island
+    // (36px content) and the expanded search field (34px content). A min-height
+    // let the band shrink 2px on search open and lift the Recent list, so it is
+    // a locked height with overflow hidden instead.
+    expect(chatStyles).toMatch(/\.sc-rail-header\s*\{[^}]*height: 48px/);
+    expect(chatStyles).toMatch(/\.sc-rail-header\s*\{[^}]*overflow: hidden/);
+    expect(chatStyles).not.toMatch(/\.sc-rail-header\s*\{[^}]*min-height: 40px/);
   });
 
   it('defines the auth and ready geometry constants and ready fallback', () => {

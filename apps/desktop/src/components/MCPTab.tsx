@@ -137,7 +137,7 @@ export function MCPTab() {
   };
 
   return (
-    <SettingsContainer fullHeight tier="standard">
+    <SettingsContainer tier="standard">
       <Flex direction="row" justify="space-between" align="center">
         <Flex>
           <Text strong style={{ fontSize: 15 }}>{t('provider.mcp.title')}</Text>

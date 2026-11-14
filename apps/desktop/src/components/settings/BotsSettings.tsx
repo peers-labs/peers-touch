@@ -498,7 +498,7 @@ export function BotsSettings() {
   ];
 
   return (
-    <SettingsContainer fullHeight tier="wide">
+    <SettingsContainer tier="wide">
       <SettingsPanelHeader
         icon={<Icon iconId="bot" size={20} />}
         title={tt('settings.bots.title', 'Bots')}

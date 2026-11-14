@@ -276,10 +276,6 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
             </span>
           )}
         </button>
-        <div className="sc-attachment__image-caption">
-          <span className="sc-attachment__image-name">{filename}</span>
-          {sizeLabel && <span className="sc-attachment__image-size">{sizeLabel}</span>}
-        </div>
         {transferStateLabel && <span className="sc-attachment__state">{transferStateLabel}</span>}
         {showHint && chip && <VisibilityBadge chip={chip} isOwn={isOwn} />}
       </div>

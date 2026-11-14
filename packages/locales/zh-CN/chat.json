@@ -960,6 +960,8 @@
   "chat.social.findPeople.scopeAll": "全部",
   "chat.social.findPeople.scopeFederationNamed": "联邦：{{name}}",
   "chat.social.findPeople.scopeFederationTooltip": "搜索 {{name}} 联邦内所有可发现的用户。",
+  "chat.social.findPeople.scopeMore": "更多 +{{count}}",
+  "chat.social.findPeople.scopeLess": "收起",
   "chat.social.findPeople.catalogSearching": "正在搜索联邦目录…",
   "chat.social.findPeople.catalogNoFederation": "当前没有可用的 Federation context",
   "chat.social.findPeople.requestIdentityUnavailable": "该用户的联邦或 Home Station 身份不完整，请刷新搜索结果后重试。",

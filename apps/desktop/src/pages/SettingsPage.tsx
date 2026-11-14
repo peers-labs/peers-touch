@@ -387,7 +387,6 @@ export function SettingsPage({ activeTab, highlightId, onNavConsumed }: Settings
         <div
           className="sc-settings__scroll"
           data-settings-content
-          data-scroll-lock={activeSection === 'providers' ? 'true' : 'false'}
         >
           <SectionHost
             activeSectionId={activeSection}
@@ -764,7 +763,7 @@ export function StatisticsTab() {
   ];
 
   return (
-    <SettingsContainer fullHeight tier="standard">
+    <SettingsContainer tier="standard">
       <Flex gap={4}>
         <Flex direction="row" align="center" gap={8}>
           <span style={{ fontSize: 16, fontWeight: 600 }}

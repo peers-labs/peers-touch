@@ -67,7 +67,7 @@ export function MemorySettingsTab() {
 
   if (loading) {
     return (
-      <SettingsContainer fullHeight tier="standard">
+      <SettingsContainer tier="standard">
         <div className="sc-memory-loading"><Spin /></div>
       </SettingsContainer>
     );
@@ -76,7 +76,7 @@ export function MemorySettingsTab() {
   const embeddingReady = !!embedding?.provider && !!embedding?.model;
 
   return (
-    <SettingsContainer fullHeight tier="standard">
+    <SettingsContainer tier="standard">
       <SettingsSection
         icon={<Icon iconId="database" size={16} />}
         title={t('provider.memory.memory')}

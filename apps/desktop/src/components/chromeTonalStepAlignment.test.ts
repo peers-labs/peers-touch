@@ -21,11 +21,13 @@ describe('settings scroll lanes share one fixed right boundary', () => {
     expect(globalCss).toMatch(/::-webkit-scrollbar-corner\s*\{[^}]*background:\s*transparent/);
   });
 
-  it('reserves a stable gutter on every settings scroll container', () => {
+  it('reserves a stable gutter on the settings scroll containers', () => {
+    // The single outer settings pane owns the page scrollbar lane; the capped
+    // provider picker keeps its own in-well lane. Nested split-pane locking was
+    // removed when every tab became one Federation single-scroll column.
     const scrollers = [
       '.sc-settings__sidebar',
       '.sc-settings__scroll',
-      '.sc-provider-detail',
       '.sc-provider-menu__list',
     ];
     for (const selector of scrollers) {
@@ -33,12 +35,11 @@ describe('settings scroll lanes share one fixed right boundary', () => {
     }
   });
 
-  it('hands the lane to the nested provider detail instead of double-reserving', () => {
-    const locked = northstarCss.match(
-      /\.sc-settings__scroll\[data-scroll-lock='true'\]\s*\{([^}]*)\}/,
-    )?.[1] ?? '';
-    expect(locked).toContain('overflow: hidden');
-    expect(locked).toContain('scrollbar-gutter: auto');
+  it('no longer carries the retired split-pane scroll-lock rule', () => {
+    expect(northstarCss).not.toContain("data-scroll-lock='true'");
+    expect(rule(northstarCss, '.sc-provider-detail')).not.toContain(
+      'scrollbar-gutter: stable',
+    );
   });
 });
 
@@ -79,12 +80,15 @@ describe('level-3 content fields are the brightest surface', () => {
     );
   });
 
-  it('lifts the settings scroll field and provider detail to surface white', () => {
+  it('keeps the single settings scroll field on surface white', () => {
+    // The outer pane is the only level-3 surface; the stacked provider detail
+    // is transparent so it reads on that same field instead of painting a
+    // second nested white box.
     expect(rule(northstarCss, '.sc-settings__scroll')).toContain(
       'background: var(--pt-surface)',
     );
     expect(rule(northstarCss, '.sc-provider-layout__detail')).toContain(
-      'background: var(--pt-surface)',
+      'background: transparent',
     );
   });
 
