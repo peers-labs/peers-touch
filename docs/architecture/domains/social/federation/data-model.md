@@ -2,7 +2,7 @@
 
 > **Status**: draft
 > **Version**: v0.2
-> **Created**: 2026-06-17 | **Updated**: 2026-06-17
+> **Created**: 2026-06-17 | **Updated**: 2026-11-08
 > **Owner**: Architecture Team
 
 ---
@@ -19,6 +19,39 @@
 ---
 
 ## 2. 核心对象
+
+公开协议真源是 `model/domain/social/feed_log.proto`，私密协议真源是
+`private_content.proto` 与共享 Federation private interaction 协议。
+[D-08](./decisions.md#d-08-评论点赞与投票延伸原交互权威) 的数据约束为：
+
+- Reaction 的线程锚 `target_post_ref` 必需；可选 `target_comment_ref` 使用规范
+  `oss://<home>/comment/<id>`，原投影验证其已签名创建事件属于父帖。
+  业务键是 `(target_object_ref, actor_ptid, reaction_kind)`，较大链序号覆盖旧状态。
+- Ballot 绑定父帖、创建时投票定义 SHA-256 和严格递增的不同选项索引；
+  `(post_ref, actor_ptid)` 保存当前有效选票，人数和选项计数由选票重放派生。
+- 接纳回执绑定 event hash、definition hash、作者站、接受时间和接纳结果；
+  Native 使用独立可信 Station signing-key attestation 验签。
+  签名负载、journal 和原线程回执持久化；SQL 计数和前端计数为可重建投影。
+- 私密 target 同时绑定 parent post ID 与可选 comment ID，进入命令哈希、
+  设备签名、去重和原权限事务。Opaque option IDs 与定义哈希进入私密选票，
+  Station 不解密选项文案；授权投影返回当前 viewer 选择和计数。
+- 私密反应摘要继续经 `FederatedPrivateResourceDelivery` 传播，typed
+  `REACTION_PROJECTION` 只携带父帖引用、评论目标、命令身份、独立反应版本与
+  viewer-bound summaries，不重复传送密文或信封。源事务从原冻结 recipient
+  locality 取得 Home Station，并重验当前父帖、评论与 recipient grant。
+  接收事务重验原已导入资源及本地 block/tombstone；资源尚未到达时保留重试，
+  已撤销或被屏蔽时拒绝。摘要和 command/result 共用原反应投影表；
+  同目标旧版本不能覆盖新版本，同版本内容冲突必须拒绝。
+- 公开评论 point/window/page 的 `likes_count/is_liked` 从原已验证反应投影
+  派生。一页只查询已授权评论目标的反应，并统一应用 viewer 共同连接、
+  block 与 Station moderation 过滤；不会把帖子反应算入评论。
+- Desktop/Mobile 私密反应 journal 的分区键均为 `(post_id, comment_id, kind)`；
+  旧帖子命令迁移为空 `comment_id`，保留原签名字节和哈希。反应完成在原事务内
+  合并当前目标的摘要版本，正文、媒体与评论回读提交同样保留较新反应，并返回
+  实际持久化的合并投影。客户端私密评论行消费共享 `MomentCommentRow`，
+  同目标同方向共享完成，未知结果以原命令重试；身份或权限失效不能发布迟到结果。
+
+产品状态与验证边界见 [交互合同](./interaction-completion.md)，不在本文件复制。
 
 | 对象 | 定义 | 当前阶段 |
 |------|------|----------|

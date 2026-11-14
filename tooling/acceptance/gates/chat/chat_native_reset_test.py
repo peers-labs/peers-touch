@@ -4,6 +4,7 @@ from contextlib import closing
 from pathlib import Path
 import json
 import os
+import re
 import sqlite3
 import tempfile
 import unittest
@@ -14,6 +15,7 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     CHAT_TABLES,
     INDEXED_ACTOR_VISIBILITY,
     RETIRED_CHAT_TABLES,
+    SIGNED_SOCIAL_TABLES,
     FixtureActorRecord,
     _remote_transport,
     active_profile_environment,
@@ -1667,6 +1669,32 @@ ORDER BY owner_ptid
         self.assertNotIn("_actor_id::text", sql)
         for table in AGENT_RUNTIME_TABLES:
             self.assertIn(f"'{table}'", sql)
+        for table in SIGNED_SOCIAL_TABLES:
+            self.assertIn(f"'{table}'", sql)
+        self.assertIn("ARRAY['social_comments', 'social_reactions']", sql)
+        self.assertIn("'DELETE FROM %I.%I WHERE post_class = %L'", sql)
+        self.assertIn("current_schema(), projection_table, 'public'", sql)
+
+    def test_actor_root_reset_covers_original_signed_social_store_family(self) -> None:
+        root = Path(__file__).resolve().parents[4]
+        infrastructure = root / "apps/station/app/subserver/social/infrastructure"
+        declared = set()
+        for path in infrastructure.glob("feed*.go"):
+            if path.name.endswith("_test.go"):
+                continue
+            declared.update(re.findall(
+                r'func \([^)]*\) TableName\(\) string\s*\{\s*return "(social_feed_[^"]+)"',
+                path.read_text(),
+            ))
+        self.assertTrue(declared)
+        self.assertEqual(declared, {
+            table for table in SIGNED_SOCIAL_TABLES if table.startswith("social_feed_")
+        })
+        self.assertIn("social_public_posts", SIGNED_SOCIAL_TABLES)
+        self.assertNotIn("social_comments", SIGNED_SOCIAL_TABLES)
+        self.assertNotIn("social_reactions", SIGNED_SOCIAL_TABLES)
+        self.assertNotIn("social_private_posts", SIGNED_SOCIAL_TABLES)
+        self.assertFalse(set(SIGNED_SOCIAL_TABLES) & set(CHAT_TABLES))
 
     @patch.dict(os.environ, {"CHAT_ACCEPTANCE_RESET": "1"}, clear=True)
     def test_station_reset_requires_live_lease_even_with_boolean(self) -> None:

@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"testing"
@@ -58,6 +59,40 @@ func (r *typedHandlerTestResponse) Write(body []byte) (int, error) {
 func (r *typedHandlerTestResponse) Flush() error           { return nil }
 func (r *typedHandlerTestResponse) WriteHeader(status int) { r.status = status }
 func (r *typedHandlerTestResponse) Status() int            { return r.status }
+
+// TestNewSimpleHandlerGenericErrorDoesNotPanic guards the generic (non
+// HandlerError) error path. Previously it called http.Error with a nil
+// ResponseWriter, triggering a nil-pointer panic instead of returning a
+// bounded 500 and the original error.
+func TestNewSimpleHandlerGenericErrorDoesNotPanic(t *testing.T) {
+	handler := NewSimpleHandler(
+		"simple-generic-error",
+		"/test/generic-error",
+		POST,
+		func(context.Context, Request, Response) error {
+			return errors.New("domain failure without HandlerError wrapper")
+		},
+	)
+	resp := &typedHandlerTestResponse{headers: map[string]string{}}
+	req := &typedHandlerTestRequest{}
+
+	var err error
+	func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				t.Fatalf("generic error path must not panic: %v", recovered)
+			}
+		}()
+		err = handler.Handler()(context.Background(), req, resp)
+	}()
+
+	if err == nil {
+		t.Fatal("expected the original error to be returned to the caller")
+	}
+	if resp.Status() != http.StatusInternalServerError {
+		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, resp.Status())
+	}
+}
 
 func TestTypedHandlerQueryBindingUsesSnakeCaseJSONFields(t *testing.T) {
 	type request struct {

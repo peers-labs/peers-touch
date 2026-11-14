@@ -192,10 +192,14 @@ Pick one based on intent:
 
 ### Pitfalls
 
+- [`pitfalls/private-endpoint-account-hint-equality.md`](pitfalls/private-endpoint-account-hint-equality.md) — verified private endpoints compare actor/device identity without treating account routing hints as authorization.
+- [`pitfalls/feed-derived-counts-must-preserve-authored-time.md`](pitfalls/feed-derived-counts-must-preserve-authored-time.md) — derived counts and authored edits must preserve signed post timestamps.
+- [`pitfalls/social-publication-and-retry-ownership.md`](pitfalls/social-publication-and-retry-ownership.md) — relationship readback and exact reaction retry share their original revision and command owners.
 - [`pitfalls/agent-user-message-identity-placeholder.md`](pitfalls/agent-user-message-identity-placeholder.md) — Agent user messages project the authenticated session actor through the shared avatar path.
 - [`pitfalls/c1-tombstone-only-broadcast.md`](pitfalls/c1-tombstone-only-broadcast.md) — first cut of Tier C1 fired invalidation only on tombstone, leaving BY_HANDLE/INDEXED transitions and profile updates on the slow path.
 - [`pitfalls/republisher-broadcast-spam.md`](pitfalls/republisher-broadcast-spam.md) — naive "broadcast on every PublishVisibility success" turns periodic republisher into a relay traffic generator.
 - [`pitfalls/social-ui-identity-surface-fragmentation.md`](pitfalls/social-ui-identity-surface-fragmentation.md) — Social UI surfaces must not fragment content rail, action row, trust meta, thread, or incomplete-capability states.
+- [`pitfalls/renderer-generation-churn-must-not-teardown-native-actor.md`](pitfalls/renderer-generation-churn-must-not-teardown-native-actor.md) — renderer generation churn must reset only the projection; native Secure Content teardown and rollback logout are scoped to genuine deauthentication/one actor.
 - [`pitfalls/mobile-chat-conversation-actions-right-drawer.md`](pitfalls/mobile-chat-conversation-actions-right-drawer.md) — Mobile Chat conversation actions must use bottom sheets or settings pages, not phone-width right drawers.
 - [`pitfalls/mobile-private-runtime-policy-readiness-divergence.md`](pitfalls/mobile-private-runtime-policy-readiness-divergence.md) — Private Mobile runtimes must reuse shared Station-origin policy and publish asynchronous activation failures through lifecycle readiness.
 - [`pitfalls/mobile-messaging-failure-periodic-repair.md`](pitfalls/mobile-messaging-failure-periodic-repair.md) — Existing Social periodic repair recovers failed Messaging through its original readiness owner before repairing dependents.
@@ -210,6 +214,8 @@ Pick one based on intent:
 - [`pitfalls/ephemeral-gate-cleanup-reset-lease-projection.md`](pitfalls/ephemeral-gate-cleanup-reset-lease-projection.md) — ephemeral Gate child env strips reset lease descriptors; the parent must re-project its own live lease for provisioner cleanup.
 - [`pitfalls/acceptance-active-docs-must-not-promote-drafts.md`](pitfalls/acceptance-active-docs-must-not-promote-drafts.md) — active Acceptance docs must keep draft proposals non-normative, inventory implemented paths only, and treat Plans as optional.
 - [`pitfalls/native-chat-gates-require-federation-context.md`](pitfalls/native-chat-gates-require-federation-context.md) — Native Direct and Group creation must pass a Federation shared by every participating client.
+- [`pitfalls/native-semantic-startup-with-object-identity.md`](pitfalls/native-semantic-startup-with-object-identity.md) — startup and chooser proof keep one scoped AX object baseline, strict deadlines, original selector and complete cleanup.
+- [`pitfalls/native-social-controls-must-reveal-clipped-targets.md`](pitfalls/native-social-controls-must-reveal-clipped-targets.md) — reveal exact Social controls before viewport visibility waits; missing and hidden targets remain failures.
 - [`pitfalls/public-api-owner-must-follow-resource-domain.md`](pitfalls/public-api-owner-must-follow-resource-domain.md) — public capabilities must be registered by their resource owner, never by an internal implementation namespace.
 - [`pitfalls/conversation-production-schema-migration-single-source.md`](pitfalls/conversation-production-schema-migration-single-source.md) — Conversation production migration must delegate to the persistence-owned canonical schema instead of copying its model list.
 - [`pitfalls/ios-simulator-uninstall-retains-keychain.md`](pitfalls/ios-simulator-uninstall-retains-keychain.md) — independent Mobile Acceptance runs must use fresh Simulators because application uninstall preserves Keychain state.

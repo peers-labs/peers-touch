@@ -11,6 +11,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	privatecontentpb "github.com/peers-labs/peers-touch/station/frame/touch/model/privatecontent"
 	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
+	"google.golang.org/protobuf/proto"
 )
 
 // MomentEventPublisher bridges committed social writes into the unified
@@ -70,7 +71,8 @@ func (p *MomentEventPublisher) StageImportedCreated(
 					Kind:             realtime.MomentEvent_CREATED,
 					PostId:           postID,
 					AuthorActorPtid:  authorPTID,
-					ActorPtid:        targetActorPTID,
+					ActorPtid:        authorPTID,
+					TargetActorPtid:  targetActorPTID,
 					Audience:         audience.String(),
 					OccurredTsUnixMs: p.now().UTC().UnixMilli(),
 				},
@@ -113,7 +115,8 @@ func (p *MomentEventPublisher) StageImportedCommented(
 					Kind:             realtime.MomentEvent_COMMENTED,
 					PostId:           postID,
 					AuthorActorPtid:  commentAuthorPTID,
-					ActorPtid:        targetActorPTID,
+					ActorPtid:        commentAuthorPTID,
+					TargetActorPtid:  targetActorPTID,
 					CommentId:        commentID,
 					OccurredTsUnixMs: p.now().UTC().UnixMilli(),
 				},
@@ -127,6 +130,7 @@ func (p *MomentEventPublisher) StagePrivateReacted(
 	ctx context.Context,
 	transaction delivery.Transaction,
 	postID string,
+	commentID string,
 	reactionActorPTID string,
 	targetActorPTID string,
 	kind model.ReactionKind,
@@ -156,7 +160,9 @@ func (p *MomentEventPublisher) StagePrivateReacted(
 				Moment: &realtime.MomentEvent{
 					Kind:             realtime.MomentEvent_REACTED,
 					PostId:           postID,
+					CommentId:        commentID,
 					ActorPtid:        reactionActorPTID,
+					TargetActorPtid:  targetActorPTID,
 					ReactionKind:     kind.String(),
 					Removed:          removed,
 					OccurredTsUnixMs: p.now().UTC().UnixMilli(),
@@ -164,6 +170,29 @@ func (p *MomentEventPublisher) StagePrivateReacted(
 			},
 		},
 	)
+	return err
+}
+
+func (p *MomentEventPublisher) StagePrivateUpdated(
+	ctx context.Context, transaction delivery.Transaction, postID, actorPTID, targetActorPTID string,
+) error {
+	if p == nil || postID == "" || actorPTID == "" || targetActorPTID == "" {
+		return fmt.Errorf("private update event identity is incomplete")
+	}
+	bus := p.bus
+	if bus == nil {
+		bus = events.GetBus
+	}
+	liveBus := bus()
+	if liveBus == nil {
+		return fmt.Errorf("Moment event bus is unavailable")
+	}
+	_, err := liveBus.PublishInTransaction(ctx, transaction, targetActorPTID, &realtime.StreamEvent{
+		Kind: &realtime.StreamEvent_Moment{Moment: &realtime.MomentEvent{
+			Kind: realtime.MomentEvent_UPDATED, PostId: postID, ActorPtid: actorPTID,
+			TargetActorPtid: targetActorPTID, OccurredTsUnixMs: p.now().UTC().UnixMilli(),
+		}},
+	})
 	return err
 }
 
@@ -195,9 +224,9 @@ func (p *MomentEventPublisher) StageImportedRevoked(
 		&realtime.StreamEvent{
 			Kind: &realtime.StreamEvent_Moment{
 				Moment: &realtime.MomentEvent{
-					Kind:      realtime.MomentEvent_DELETED,
-					PostId:    postID,
-					ActorPtid: targetActorPTID,
+					Kind:            realtime.MomentEvent_DELETED,
+					PostId:          postID,
+					TargetActorPtid: targetActorPTID,
 					// The canonical realtime schema has no separate revocation
 					// arm yet. Audience is otherwise unused for DELETED and
 					// carries the closed invalidation-reason enum.
@@ -231,17 +260,6 @@ func (p *MomentEventPublisher) PublishCommented(ctx context.Context, postID uint
 	})
 }
 
-func (p *MomentEventPublisher) PublishReacted(ctx context.Context, postID string, reactionActorPTID string, kind model.ReactionKind, removed bool) {
-	p.publish(ctx, reactionActorPTID, &realtime.MomentEvent{
-		Kind:             realtime.MomentEvent_REACTED,
-		PostId:           postID,
-		ActorPtid:        reactionActorPTID,
-		ReactionKind:     kind.String(),
-		Removed:          removed,
-		OccurredTsUnixMs: p.now().UTC().UnixMilli(),
-	})
-}
-
 func (p *MomentEventPublisher) publish(ctx context.Context, targetActorPTID string, ev *realtime.MomentEvent) {
 	if p == nil || targetActorPTID == "" || ev == nil {
 		return
@@ -255,6 +273,8 @@ func (p *MomentEventPublisher) publish(ctx context.Context, targetActorPTID stri
 		return
 	}
 
+	ev = proto.Clone(ev).(*realtime.MomentEvent)
+	ev.TargetActorPtid = targetActorPTID
 	if _, err := liveBus.Publish(targetActorPTID, &realtime.StreamEvent{
 		Kind: &realtime.StreamEvent_Moment{Moment: ev},
 	}); err != nil {

@@ -199,7 +199,8 @@
           "apps/desktop/src-tauri/src/interface/tauri_commands/x_config.rs",
           "apps/desktop/src/runtimes/xConfigRuntime.ts",
           "apps/desktop/src/services/xConfig*",
-          "apps/desktop/src/components/common/StationPicker*",
+          "apps/desktop/src/pages/login/StationSetupPanel.tsx",
+          "apps/desktop/src/pages/login/useStationRegistry.ts",
           "apps/mobile/src-tauri/src/runtime/x_config.rs",
           "apps/mobile/src-tauri/src/runtime/station_route.rs",
           "apps/mobile/src/runtimes/runtimeRegistry.ts",
@@ -884,7 +885,8 @@
           "apps/desktop/src-tauri/src/interface/tauri_commands/station.rs",
           "apps/desktop/src/acceptance/stationAccess.ts",
           "apps/desktop/src/acceptance/station_access/**",
-          "apps/desktop/src/components/common/StationPicker.tsx",
+          "apps/desktop/src/pages/login/StationSetupPanel.tsx",
+          "apps/desktop/src/pages/login/useStationRegistry.ts",
           "packages/locales/en/common.json",
           "packages/locales/zh-CN/common.json",
           "tooling/acceptance/environments/station-access-relay-role.yaml",
@@ -2014,6 +2016,8 @@
           "tooling/acceptance/provisioners/native_tauri_current_profile.py",
           "apps/desktop/src/kernel/identityRuntime.ts",
           "apps/desktop/src/pages/login/LoginPage.tsx",
+          "apps/desktop/src/pages/login/StationSetupPanel.tsx",
+          "apps/desktop/src/pages/login/useStationRegistry.ts",
           "apps/desktop/src/pages/login/views/**",
           "apps/desktop/src/acceptance/chat/**",
           "apps/desktop/src-tauri/src/application/profile/mod.rs",
@@ -2148,6 +2152,7 @@
       "when": {
         "paths": [
           "apps/desktop/src/pages/login/StationSetupPanel.tsx",
+          "apps/desktop/src/pages/login/useStationRegistry.ts",
           "apps/desktop/src/components/chat/FindPeopleModal.tsx",
           "apps/desktop/src/store/stationRegistry.ts",
           "apps/desktop/src/runtimes/stationRuntime.ts",
@@ -3050,7 +3055,7 @@
           "apps/station/app/subserver/agent/**/turn_handler*",
           "apps/station/app/subserver/agent/**/live_resume*",
           "apps/desktop/src-tauri/src/application/agent_turn/mod.rs",
-          "apps/desktop/src/components/GlobalOperationTray.tsx",
+          "apps/desktop/src/components/AgentSidebar.tsx",
           "apps/desktop/src/components/messages/AssistantMessage.tsx",
           "apps/desktop/src/components/messages/ThinkingBlock.tsx",
           "apps/desktop/src/kernel/identityRuntime.ts",
@@ -3510,7 +3515,9 @@
       "when": {
         "paths": [
           "apps/station/app/subserver/agent/**/memory*",
-          "apps/desktop/src/components/settings/MemorySettingsSection.tsx"
+          "apps/desktop/src/modules/memory.ts",
+          "apps/desktop/src/components/settings/MemorySettingsSection.tsx",
+          "apps/desktop/src/components/settings/MemorySettingsTab.tsx"
         ]
       },
       "require": [
@@ -3821,7 +3828,7 @@
           "apps/station/app/subserver/agent/**/turn_handler*",
           "apps/station/app/subserver/agent/**/live_resume*",
           "apps/desktop/src-tauri/src/application/agent_turn/mod.rs",
-          "apps/desktop/src/components/GlobalOperationTray.tsx",
+          "apps/desktop/src/components/AgentSidebar.tsx",
           "apps/desktop/src/components/messages/AssistantMessage.tsx",
           "apps/desktop/src/components/messages/ThinkingBlock.tsx",
           "apps/desktop/src/kernel/identityRuntime.ts",
@@ -3949,6 +3956,25 @@
         "desktop-check",
         "agent-topic-comments-e2e"
       ]
+    },
+    {
+      "id": "social-public-signed-feed",
+      "features": ["social-public-signed-feed"],
+      "when": {
+        "paths": [
+          "apps/station/app/subserver/social/**/feed_*",
+          "apps/station/app/subserver/social/feed_*",
+          "apps/desktop/src-tauri/src/social/public_feed*",
+          "apps/desktop/src/services/publicFeed*",
+          "apps/desktop/src/services/social_api.ts",
+          "tooling/acceptance/gates/social/public_feed*",
+          "packages/station-trust/src/feed_log.rs",
+          "model/domain/social/feed_log.proto",
+          "apps/station/frame/core/signedlog/**",
+          "docs/architecture/domains/social/federation/actor-*"
+        ]
+      },
+      "require": ["social-public-feed-source", "station-api-ownership", "social-public-feed-native-e2e"]
     },
     {
       "id": "social-cross-station-private",

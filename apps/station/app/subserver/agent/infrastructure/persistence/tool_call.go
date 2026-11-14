@@ -60,8 +60,12 @@ const (
 // durable decision lineage, fencing tokens, and exactly-once execution
 // semantics (MCA-D15/D16).
 type ToolCall struct {
-	ID                          string     `gorm:"primaryKey;type:varchar(64)"`
-	ActorID                     string     `gorm:"not null;type:varchar(255);index:idx_actor_tool_call,priority:1"`
+	ID      string `gorm:"primaryKey;type:varchar(64)"`
+	ActorID string `gorm:"not null;type:varchar(255);index:idx_actor_tool_call,priority:1"`
+	// Denormalized owner of the turn so device executors can bind device
+	// resources (agent-driven browser sessions) to the same task scope the
+	// server sees, without a turn lookup inside the dispatch transaction.
+	ConversationID              string     `gorm:"not null;type:varchar(36);default:'';index:idx_tool_calls_conversation_id"`
 	TurnID                      string     `gorm:"not null;type:varchar(36);index:idx_turn_tool_call,priority:1"`
 	AttemptID                   string     `gorm:"not null;type:varchar(36);index"`
 	ToolBatchID                 string     `gorm:"not null;type:varchar(64);index"`

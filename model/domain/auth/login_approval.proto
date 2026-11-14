@@ -1,0 +1,138 @@
+syntax = "proto3";
+
+package peers_touch.model.auth.login_approval.v1;
+
+import "domain/actor/actor.proto";
+import "domain/access_gate/access_gate.proto";
+import "domain/auth/device_link.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/loginapproval;loginapproval";
+
+// LoginApproval is the claimant-first device authorization transaction.
+// Unlike Device Link (an authenticated device creates an offer and a new
+// device scans it), the claimant here has no session: it passes the normal
+// Access credential gate, then holds a possession capability while an
+// already-enrolled device of the same Actor approves. One transaction
+// authorizes exactly one installation.
+enum LoginApprovalState {
+  LOGIN_APPROVAL_STATE_UNSPECIFIED = 0;
+  LOGIN_APPROVAL_STATE_PENDING = 1;
+  LOGIN_APPROVAL_STATE_APPROVED = 2;
+  LOGIN_APPROVAL_STATE_IDENTITY_DELIVERY = 3;
+  LOGIN_APPROVAL_STATE_DEVICE_PROVED = 4;
+  LOGIN_APPROVAL_STATE_ACCESS_PENDING = 5;
+  LOGIN_APPROVAL_STATE_CREDENTIAL_DELIVERY = 6;
+  LOGIN_APPROVAL_STATE_COMMITTED = 7;
+  LOGIN_APPROVAL_STATE_DENIED = 8;
+  LOGIN_APPROVAL_STATE_CANCELLED = 9;
+  LOGIN_APPROVAL_STATE_EXPIRED = 10;
+}
+
+enum LoginApprovalErrorCode {
+  LOGIN_APPROVAL_ERROR_CODE_UNSPECIFIED = 0;
+  LOGIN_APPROVAL_ERROR_CODE_INVALID_ARGUMENT = 1;
+  LOGIN_APPROVAL_ERROR_CODE_UNAUTHORIZED_ATTEMPT = 2;
+  LOGIN_APPROVAL_ERROR_CODE_APPROVAL_NOT_FOUND = 3;
+  LOGIN_APPROVAL_ERROR_CODE_CAPABILITY_INVALID = 4;
+  LOGIN_APPROVAL_ERROR_CODE_REVISION_CONFLICT = 5;
+  LOGIN_APPROVAL_ERROR_CODE_APPROVAL_EXPIRED = 6;
+  LOGIN_APPROVAL_ERROR_CODE_NO_APPROVER_ELIGIBLE = 7;
+  LOGIN_APPROVAL_ERROR_CODE_APPROVER_REVOKED = 8;
+  LOGIN_APPROVAL_ERROR_CODE_DEVICE_LIMIT = 9;
+  LOGIN_APPROVAL_ERROR_CODE_CAPACITY_EXCEEDED = 10;
+  LOGIN_APPROVAL_ERROR_CODE_ACCESS_BLOCKED = 11;
+  LOGIN_APPROVAL_ERROR_CODE_SECURE_STORAGE_FAILED = 12;
+}
+
+// Create is callable without a session. The access attempt must already have
+// passed credential verification; the Station rejects anything else.
+message CreateLoginApprovalRequest {
+  string request_id = 1;
+  string access_attempt_id = 2;
+  uint64 access_decision_revision = 3;
+  string station_peer_id = 4;
+  string claimant_device_id = 5;
+  string platform = 6;
+  string device_label = 7;
+  bytes claimant_hpke_public_key = 8;
+  bytes claimant_device_signing_public_key = 9;
+  bytes device_signature = 10;
+}
+
+message CreateLoginApprovalResponse {
+  string approval_id = 1;
+  // Returned once and retained by the claimant secure runtime. Stored hashed.
+  bytes claimant_capability = 2;
+  string comparison_code = 3;
+  uint64 revision = 4;
+  int64 expires_at_unix_ms = 5;
+}
+
+message LoginApprovalStatusRequest {
+  string approval_id = 1;
+  bytes claimant_capability = 2;
+  uint64 observed_revision = 3;
+}
+
+message CancelLoginApprovalRequest {
+  string approval_id = 1;
+  bytes claimant_capability = 2;
+  uint64 observed_revision = 3;
+}
+
+// Projection never carries capabilities, identity seeds or tokens.
+message LoginApprovalProjection {
+  string approval_id = 1;
+  LoginApprovalState state = 2;
+  uint64 revision = 3;
+  int64 expires_at_unix_ms = 4;
+  string comparison_code = 5;
+  LoginApprovalErrorCode reason = 6;
+  peers_touch.model.access_gate.v1.AccessDecision access_decision = 7;
+}
+
+message ListPendingLoginApprovalsRequest {
+  uint64 observed_revision = 1;
+}
+
+message PendingLoginApproval {
+  string approval_id = 1;
+  peers_touch.model.actor.v1.ActorRef actor = 2;
+  string claimant_device_id = 3;
+  string platform = 4;
+  string device_label = 5;
+  string comparison_code = 6;
+  int64 expires_at_unix_ms = 7;
+  uint64 revision = 8;
+  // Approver needs the claimant HPKE public key to seal the identity material.
+  bytes claimant_hpke_public_key = 9;
+  bytes claimant_device_signing_public_key = 10;
+}
+
+message ListPendingLoginApprovalsResponse {
+  repeated PendingLoginApproval approvals = 1;
+}
+
+message ApproveLoginApprovalRequest {
+  string approval_id = 1;
+  uint64 observed_revision = 2;
+  peers_touch.model.auth.device_link.v1.DeviceLinkHpkeEnvelope identity_material = 3;
+  bytes approver_transcript_signature = 4;
+  bytes device_signature = 5;
+}
+
+message DenyLoginApprovalRequest {
+  string approval_id = 1;
+  uint64 observed_revision = 2;
+  bytes device_signature = 3;
+}
+
+message ApproveLoginApprovalResponse { LoginApprovalProjection status = 1; }
+message DenyLoginApprovalResponse { LoginApprovalProjection status = 1; }
+message CancelLoginApprovalResponse { LoginApprovalProjection status = 1; }
+message LoginApprovalStatusResponse { LoginApprovalProjection status = 1; }
+
+message LoginApprovalError {
+  LoginApprovalErrorCode code = 1;
+  LoginApprovalProjection status = 2;
+}

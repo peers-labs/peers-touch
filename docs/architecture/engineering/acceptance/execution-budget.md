@@ -61,6 +61,12 @@ Owner 先获取 worktree-local OS 文件锁，再核对干净 HEAD/tree、
 被重新标为当前 commit。依赖安装由原有包管理器管理，receipt 不替代
 依赖完整性审计。
 
+前端编译成功后，Owner 立即以 `PENDING_INPUT_RECHECK` 保存完整非空输出
+清单、hash 和原 producer。后续输入复核超时只保留该未资格化阶段，不发布
+binary receipt。下一次请求在同一 OS 锁内重新完整观察 source、configuration、
+toolchain 与输出字节，一致才提升为 `VERIFIED` 并继续 Rust；任一改变重新构建。
+最终 binary 仍须 Cargo 成功及完整 source/output 复核，原 130 秒期限不变。
+
 macOS 构建的 Rust 安装由 `input_owners/rust_toolchain.py` 唯一观察。
 从真实 Cargo 工作目录调用已有 rustup 选择器，禁止探测自动安装，
 绑定 cargo/rustc 的实际 delegate、同一 sysroot 的 bin/lib/libexec/etc

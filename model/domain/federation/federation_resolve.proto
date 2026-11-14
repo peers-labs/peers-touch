@@ -3,19 +3,19 @@ syntax = "proto3";
 package peers_touch.model.federation.v1;
 
 import "domain/actor/actor.proto";
+import "domain/federation/profile.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/federation/api/pb;pb";
 
 // federation_resolve.proto — wire shape for GET /actor/federation/resolve.
 //
 // The internal resolver returns a verified ActorProfileEnvelope plus
-// diagnostic flags (is_local / from_cache). We intentionally do NOT
-// re-export the full envelope on this surface — the signature, kid,
-// and signing-key PEM are server-trust artefacts that a Desktop client
-// has no business validating itself. Instead the surface flattens the
-// useful client-facing fields and embeds the existing
+// diagnostic flags (is_local / from_cache). Display consumers use the
+// flattened client-facing fields and the existing
 // peers_touch.model.actor.v1.ActorProfile so chat / contact UIs render
 // remote and local actors through the exact same projection code.
+// Cryptographic consumers independently verify the original Home-signed
+// envelope. The resolver never re-signs it or substitutes a local profile.
 //
 // All fields are additive; the contract MUST stay backwards-compatible
 // because a stale Desktop binary running against a newer Station will
@@ -68,4 +68,9 @@ message FederationResolveView {
   // Explicit context in which both the local and Home Stations were
   // verified as active members before this result was returned.
   string federation_id = 11 [json_name = "federation_id"];
+
+  // Original verified Home Station proof, including its device-key bindings.
+  // This is independent of Social projections. Clients bind its Actor PTID,
+  // handle, Home Station and key fingerprint before retaining a trust pin.
+  ActorProfileEnvelope signed_profile = 12;
 }

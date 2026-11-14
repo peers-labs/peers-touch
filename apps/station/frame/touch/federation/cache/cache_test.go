@@ -1,16 +1,20 @@
 package cache
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"testing"
 	"time"
 
+	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	locatorpb "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation/locator/pb"
+	fedprofile "github.com/peers-labs/peers-touch/station/frame/touch/federation/profile"
 	profilepb "github.com/peers-labs/peers-touch/station/frame/touch/federation/profile/pb"
 	modelpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
+	"google.golang.org/protobuf/proto"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -250,5 +254,53 @@ func TestUpsertRejectsLocalActorTakeover(t *testing.T) {
 	)
 	if !errors.Is(err, ErrIdentityConflict) {
 		t.Fatalf("error = %v, want ErrIdentityConflict", err)
+	}
+}
+
+func TestCachedProfilePersistsExactHomeBytesAndOldRowsMiss(t *testing.T) {
+	rds := openCacheTestDB(t)
+	now := time.Now()
+	key, err := authfed.MintLocalKey(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := remoteProfile("@bob@remote.example", "ptid:bob", "avatar", "Bob", "station-remote")
+	input.Envelope, _, err = fedprofile.Sign(fedprofile.SignInput{
+		Handle: "bob@remote.example", HomeStationPeerID: "station-remote",
+		HomeStationDomain: "remote.example", Profile: input.Envelope.Profile,
+		Now: now, LocalKey: key,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := upsert(context.Background(), rds, "bob@remote.example", input, now); err != nil {
+		t.Fatal(err)
+	}
+	var row db.Actor
+	if err := rds.Where("ptid = ?", "ptid:bob").Take(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	wire, _ := proto.MarshalOptions{Deterministic: true}.Marshal(input.Envelope)
+	if !bytes.Equal(row.FederationProfileEnvelope, wire) {
+		t.Fatal("stored proof changed")
+	}
+	cached, err := cachedFromRow(&row, "bob@remote.example", now)
+	if err != nil || !proto.Equal(cached.Envelope, input.Envelope) {
+		t.Fatal("cached proof changed", err)
+	}
+	for name, change := range map[string]func(*db.Actor){
+		"old-row":      func(r *db.Actor) { r.FederationProfileEnvelope = nil },
+		"bad-wire":     func(r *db.Actor) { r.FederationProfileEnvelope = []byte{0} },
+		"wrong-actor":  func(r *db.Actor) { r.PTID = "ptid:other" },
+		"wrong-home":   func(r *db.Actor) { r.HomeStationPeerID = "station-other" },
+		"wrong-expiry": func(r *db.Actor) { r.CachedUntilUnixMs++ },
+	} {
+		t.Run(name, func(t *testing.T) {
+			changed := row
+			change(&changed)
+			if _, err := cachedFromRow(&changed, "bob@remote.example", now); err == nil {
+				t.Fatal("invalid cached row accepted")
+			}
+		})
 	}
 }

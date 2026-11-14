@@ -394,6 +394,7 @@ export async function startStation(root, environment = process.env) {
       existing.health.ok
       && existing.build?.ok
       && commitsMatch(expectedCommit, existing.build.commit)
+      && environment.PT_STATION_RECREATE_RUNTIME !== 'true'
     ) {
       return {
         ...existing,

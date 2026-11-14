@@ -26,13 +26,14 @@ use crate::application::session_resolver;
 use crate::application::station_runtime::client::{self as station_client, StationClient};
 use crate::contracts::{
     SocialCircleAddMembersInput, SocialCircleCreateInput, SocialCircleDeleteInput,
-    SocialCircleListMembersInput, SocialCircleRemoveMembersInput, SocialCircleRenameInput,
+    SocialCircleListInput, SocialCircleListMembersInput, SocialCircleRemoveMembersInput, SocialCircleRenameInput,
     SocialCreateCommentInput, SocialCreateMomentInput, SocialDeleteCommentInput,
     SocialDeleteMomentInput, SocialFollowInput, SocialFriendRequestAcceptInput,
     SocialFriendRequestListInput, SocialFriendRequestRejectInput, SocialFriendRequestSendInput,
     SocialGetCommentsInput, SocialGetFollowersInput, SocialGetFollowingInput, SocialGetMomentInput,
     SocialGetRelationshipInput, SocialGetTimelineInput, SocialListByAuthorInput, SocialReactInput,
     SocialRelationshipMutationInput, SocialStationModerationDeleteInput,
+    SocialListBlockedActorsInput,
     SocialStationModerationListInput, SocialStationModerationUpsertInput,
     SocialSyncMomentsProjectionInput, SocialUnreactInput,
 };
@@ -775,6 +776,7 @@ pub fn social_react(
     }
     let req = model::social::ReactToPostRequest {
         post_id: input.post_id.clone(),
+        comment_id: String::new(),
         kind: input.kind,
         command_id: String::new(),
         actor_signing_key_id: String::new(),
@@ -804,6 +806,7 @@ pub fn social_unreact(
     }
     let req = model::social::UnreactToPostRequest {
         post_id: input.post_id.clone(),
+        comment_id: String::new(),
         kind: input.kind,
         command_id: String::new(),
         actor_signing_key_id: String::new(),
@@ -1178,6 +1181,32 @@ pub fn social_get_relationship_status(
 }
 
 #[tauri::command]
+pub fn social_list_blocked_actors(
+    input: SocialListBlockedActorsInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    let mut query = Vec::new();
+    if let Some(cursor) = input.cursor {
+        query.push(("cursor", cursor));
+    }
+    if let Some(limit) = input.limit {
+        query.push(("limit", limit.to_string()));
+    }
+    let response: model::social::ListBlockedActorsResponse = match get_proto(
+        state.station.client(), "/api/v1/social/relationships/blocked", &token, Some(&query),
+    ) {
+        Ok(response) => response,
+        Err(error) => return station_error_proto(error, "list blocked Social actors failed"),
+    };
+    AppResult::success(response.encode_to_vec())
+}
+
+#[tauri::command]
 pub fn social_block_actor(
     input: SocialRelationshipMutationInput,
     state: State<'_, Arc<AppState>>,
@@ -1380,6 +1409,7 @@ pub fn social_circle_delete(
 
 #[tauri::command]
 pub fn social_circle_list_mine(
+    input: Option<SocialCircleListInput>,
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Vec<u8>> {
@@ -1387,11 +1417,20 @@ pub fn social_circle_list_mine(
         Ok(t) => t,
         Err(e) => return e,
     };
+    let mut query = Vec::new();
+    if let Some(input) = input {
+        if let Some(cursor) = input.cursor {
+            query.push(("cursor", cursor));
+        }
+        if let Some(limit) = input.limit {
+            query.push(("limit", limit.to_string()));
+        }
+    }
     let resp: model::social::ListMyCirclesResponse = match get_proto(
         state.station.client(),
         "/api/v1/social/circles",
         &token,
-        None,
+        Some(&query),
     ) {
         Ok(r) => r,
         Err(e) => return station_error_proto(e, "list circles failed"),
@@ -1510,8 +1549,15 @@ pub fn social_circle_list_members(
         return AppResult::fail(ErrorCode::InvalidArgument, "circle_id is required", None);
     }
     let path = format!("/api/v1/social/circles/{}/members", input.circle_id);
+    let mut query = Vec::new();
+    if let Some(cursor) = input.cursor {
+        query.push(("cursor", cursor));
+    }
+    if let Some(limit) = input.limit {
+        query.push(("limit", limit.to_string()));
+    }
     let resp: model::social::ListCircleMembersResponse =
-        match get_proto(state.station.client(), &path, &token, None) {
+        match get_proto(state.station.client(), &path, &token, Some(&query)) {
             Ok(r) => r,
             Err(e) => return station_error_proto(e, "list circle members failed"),
         };

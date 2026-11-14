@@ -22,10 +22,12 @@ export interface CardProps extends HTMLAttributes<HTMLDivElement> {
   contentStyle?: CSSProperties; pending?: boolean;
   /** Drop the resting shadow for a card nested in an already-raised region. */
   flat?: boolean;
+  /** App-owned class merged onto the card header (layout). */
+  headerClassName?: string;
 }
-export const Card = forwardRef<HTMLDivElement, CardProps>(function Card({ heading, actions, footer, children, contentStyle, pending, flat = false, className = '', ...props }, ref) {
+export const Card = forwardRef<HTMLDivElement, CardProps>(function Card({ heading, actions, footer, children, contentStyle, pending, flat = false, className = '', headerClassName = '', ...props }, ref) {
   return <section {...props} ref={ref} className={`pt-card ${className}`} data-flat={flat || undefined}>
-    {(heading || actions) && <header className="pt-card-header"><div className="pt-card-title">{heading}</div>{actions}</header>}
+    {(heading || actions) && <header className={`pt-card-header ${headerClassName}`}><div className="pt-card-title">{heading}</div>{actions}</header>}
     <div className="pt-card-body" style={contentStyle} aria-busy={pending || undefined}>{pending ? <div role="status" aria-label="Loading" className="pt-skeleton" style={{height:64}} /> : children}</div>
     {footer && <footer>{footer}</footer>}
   </section>;

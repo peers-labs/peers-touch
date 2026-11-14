@@ -3042,3 +3042,143 @@ func runtimeAuthorityReadiness(
 		ExpiresAt:         timestamppb.New(time.Now().UTC().Add(time.Minute)),
 	}
 }
+
+// persistAuthorityTwice drives a second admission against a conversation whose
+// first binding points at firstProvider/firstModel while the new admission
+// resolves a different tuple.
+func persistAuthorityTwice(
+	t *testing.T,
+	dbName string,
+	firstProvider string,
+	secondProvider string,
+) error {
+	t.Helper()
+	db := openRuntimeAuthorityDB(t, dbName)
+	if err := db.AutoMigrate(
+		&persistence.AgentProvider{},
+		&persistence.AgentModel{},
+	); err != nil {
+		t.Fatalf("migrate catalog tables: %v", err)
+	}
+	seedRuntimeAuthorityRows(t, db, "turn-1", "attempt-1")
+
+	firstAdmission := runtimeAuthorityAdmission(firstProvider, "model-1", 1)
+	firstConfig := runtimeAuthorityConfig("turn-1", "attempt-1")
+	turns := &TurnService{}
+	if err := turns.persistRuntimeAuthority(
+		context.Background(),
+		firstConfig,
+		firstAdmission,
+		runtimeAuthorityReadiness(firstConfig, firstAdmission),
+		11,
+	); err != nil {
+		t.Fatalf("persist first runtime authority: %v", err)
+	}
+
+	seedRuntimeAuthorityAttempt(t, db, "turn-2", "attempt-2")
+	nextAdmission := runtimeAuthorityAdmission(secondProvider, "model-2", 2)
+	nextConfig := runtimeAuthorityConfig("turn-2", "attempt-2")
+	return turns.persistRuntimeAuthority(
+		context.Background(),
+		nextConfig,
+		nextAdmission,
+		runtimeAuthorityReadiness(nextConfig, nextAdmission),
+		11,
+	)
+}
+
+func TestReconcileBoundRuntimeRetiredTupleReturnsBindingStale(t *testing.T) {
+	// Empty catalog tables: the bound provider/model tuple no longer exists,
+	// so an identity mismatch must surface the rebindable STALE error rather
+	// than the stricter version conflict.
+	err := persistAuthorityTwice(
+		t,
+		"runtime_authority_binding_stale",
+		"provider-1",
+		"provider-2",
+	)
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) {
+		t.Fatalf("second authority error = %T (%v), want *errcode.BizError", err, err)
+	}
+	if bizErr.Code != errcode.AgentRuntimeBindingStale {
+		t.Fatalf("error code = %s, want %s (err=%v)",
+			bizErr.Code, errcode.AgentRuntimeBindingStale, err)
+	}
+	if bizErr.Payload.GetDetails()["provider_id"] != "provider-1" ||
+		bizErr.Payload.GetDetails()["model_id"] != "model-1" {
+		t.Fatalf("stale details = %+v, want the retired bound tuple",
+			bizErr.Payload.GetDetails())
+	}
+}
+
+func TestReconcileBoundRuntimeCatalogPresentTupleKeepsVersionConflict(t *testing.T) {
+	dbName := "runtime_authority_binding_conflict"
+	db := openRuntimeAuthorityDB(t, dbName)
+	if err := db.AutoMigrate(
+		&persistence.AgentProvider{},
+		&persistence.AgentModel{},
+	); err != nil {
+		t.Fatalf("migrate catalog tables: %v", err)
+	}
+	now := time.Now().UTC()
+	if err := db.Create(&persistence.AgentProvider{
+		ID:        "provider-row-1",
+		ActorPTID: "ptid:person:owner",
+		Name:      "provider-1",
+		Enabled:   true,
+		Version:   1,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed provider row: %v", err)
+	}
+	if err := db.Create(&persistence.AgentModel{
+		ID:         "model-row-1",
+		ActorPTID:  "ptid:person:owner",
+		ProviderID: "provider-1",
+		ModelID:    "model-1",
+		Enabled:    true,
+		Version:    1,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}).Error; err != nil {
+		t.Fatalf("seed model row: %v", err)
+	}
+
+	// Reuse the shared two-admission driver against the same in-memory DSN:
+	// openRuntimeAuthorityDB reopens the named shared-cache database.
+	seedRuntimeAuthorityRows(t, db, "turn-1", "attempt-1")
+	firstAdmission := runtimeAuthorityAdmission("provider-1", "model-1", 1)
+	firstConfig := runtimeAuthorityConfig("turn-1", "attempt-1")
+	turns := &TurnService{}
+	if err := turns.persistRuntimeAuthority(
+		context.Background(),
+		firstConfig,
+		firstAdmission,
+		runtimeAuthorityReadiness(firstConfig, firstAdmission),
+		11,
+	); err != nil {
+		t.Fatalf("persist first runtime authority: %v", err)
+	}
+	seedRuntimeAuthorityAttempt(t, db, "turn-2", "attempt-2")
+	nextAdmission := runtimeAuthorityAdmission("provider-2", "model-2", 2)
+	nextConfig := runtimeAuthorityConfig("turn-2", "attempt-2")
+	err := turns.persistRuntimeAuthority(
+		context.Background(),
+		nextConfig,
+		nextAdmission,
+		runtimeAuthorityReadiness(nextConfig, nextAdmission),
+		11,
+	)
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) {
+		t.Fatalf("second authority error = %T (%v), want *errcode.BizError", err, err)
+	}
+	// The bound tuple is still catalog-present: hash/identity drift keeps the
+	// generic conflict so a model downgrade can never pass as a silent rebind.
+	if bizErr.Code != errcode.AgentVersionConflict {
+		t.Fatalf("error code = %s, want %s (err=%v)",
+			bizErr.Code, errcode.AgentVersionConflict, err)
+	}
+}

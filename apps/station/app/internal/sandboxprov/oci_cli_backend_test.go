@@ -1,0 +1,277 @@
+package sandboxprov
+
+import (
+	"context"
+	"errors"
+	"os/exec"
+	"strings"
+	"testing"
+)
+
+func TestRunArgsSecurityTranslation(t *testing.T) {
+	req := AllocRequest{
+		SandboxRef: "wbox-AbC/123", ImageRef: "registry.example.com/peers/sandboxes/u:24.04@sha256:" + strings.Repeat("c", 64),
+		VolumeRef: "vol-x", Security: validSpec(),
+	}
+	args := runArgs(req, "wbox-isolated")
+	joined := strings.Join(args, " ")
+
+	mustContain := []string{
+		"--user 10001:10001",
+		"--read-only",
+		"--security-opt no-new-privileges",
+		"--cap-drop ALL",
+		"--network wbox-isolated",
+		"--pids-limit 128",
+		"--memory 268435456",
+		"wbox-vol-wbox-abc-123:/workspace",
+		"sleep infinity",
+	}
+	for _, m := range mustContain {
+		if !strings.Contains(joined, m) {
+			t.Fatalf("docker args missing %q\n%s", m, joined)
+		}
+	}
+	if strings.Contains(joined, "--privileged") {
+		t.Fatalf("must never pass --privileged")
+	}
+	// Container name is deterministic and sanitized.
+	if !strings.Contains(joined, "--name wbox-wbox-abc-123") {
+		t.Fatalf("bad name in args: %s", joined)
+	}
+}
+
+func TestAllocatePolicyRejectsBeforeRuntime(t *testing.T) {
+	p := Policy{AllowedRepositories: []string{"r"}, IsolatedNetwork: "n"}
+	b := NewOCICLIBBackend(p).WithRunner(func(ctx context.Context, _ string, _ ...string) ([]byte, error) {
+		t.Fatalf("runtime must not be called when policy rejects")
+		return nil, nil
+	})
+	// Mutable tag -> rejected without any docker invocation.
+	_, err := b.Allocate(AllocRequest{SandboxRef: "x", VolumeRef: "v", ImageRef: "r/u:latest", Security: validSpec()})
+	if !errors.Is(err, ErrPolicyRejected) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestAllocateIdempotentReattach(t *testing.T) {
+	p := Policy{AllowedRepositories: []string{"r"}, IsolatedNetwork: "n"}
+	calls := []string{}
+	b := NewOCICLIBBackend(p).WithRunner(func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		calls = append(calls, args[0])
+		// First inspect reports running -> re-attach, no run/volume create.
+		if args[0] == "inspect" {
+			return []byte("true\n"), nil
+		}
+		return []byte("ok"), nil
+	})
+	h, err := b.Allocate(AllocRequest{
+		SandboxRef: "ref1",
+		ImageRef:   "r/u:1@sha256:" + strings.Repeat("d", 64), Security: validSpec(),
+	})
+	if err != nil {
+		t.Fatalf("allocate: %v", err)
+	}
+	if h.Container != "wbox-ref1" || h.VolumeRef != "wbox-vol-ref1" {
+		t.Fatalf("handle = %+v", h)
+	}
+	for _, c := range calls {
+		if c == "run" || c == "volume" {
+			t.Fatalf("reattach must not run/create, calls=%v", calls)
+		}
+	}
+}
+
+func TestAllocateColdStartsStoppedContainer(t *testing.T) {
+	p := Policy{AllowedRepositories: []string{"r"}, IsolatedNetwork: "n"}
+	calls := []string{}
+	b := NewOCICLIBBackend(p).WithRunner(func(ctx context.Context, _ string, args ...string) ([]byte, error) {
+		calls = append(calls, args[0])
+		// inspect reports an existing but STOPPED container.
+		if args[0] == "inspect" {
+			return []byte("false\n"), nil
+		}
+		return []byte("ok"), nil
+	})
+	_, err := b.Allocate(AllocRequest{
+		SandboxRef: "ref1",
+		ImageRef:   "r/u:1@sha256:" + strings.Repeat("d", 64), Security: validSpec(),
+	})
+	if err != nil {
+		t.Fatalf("allocate: %v", err)
+	}
+	joined := strings.Join(calls, ",")
+	if !strings.Contains(joined, "start") {
+		t.Fatalf("cold start must issue docker start, calls=%v", calls)
+	}
+	if strings.Contains(joined, "run") || strings.Contains(joined, "volume") {
+		t.Fatalf("cold start must not docker run or recreate volume, calls=%v", calls)
+	}
+}
+
+func TestAllocateRunsWhenContainerAbsent(t *testing.T) {
+	p := Policy{AllowedRepositories: []string{"r"}, IsolatedNetwork: "n"}
+	calls := []string{}
+	b := NewOCICLIBBackend(p).WithRunner(func(ctx context.Context, _ string, args ...string) ([]byte, error) {
+		calls = append(calls, args[0])
+		if args[0] == "inspect" {
+			return []byte("Error: No such object: wbox-ref1"), errors.New("exit status 1")
+		}
+		return []byte("ok"), nil
+	})
+	_, err := b.Allocate(AllocRequest{
+		SandboxRef: "ref1",
+		ImageRef:   "r/u:1@sha256:" + strings.Repeat("d", 64), Security: validSpec(),
+	})
+	if err != nil {
+		t.Fatalf("allocate: %v", err)
+	}
+	joined := strings.Join(calls, ",")
+	if !strings.Contains(joined, "volume") || !strings.Contains(joined, "run") {
+		t.Fatalf("absent container must be volume-created then run, calls=%v", calls)
+	}
+}
+
+func TestDormantStopsContainer(t *testing.T) {
+	var got []string
+	b := NewOCICLIBBackend(Policy{}).WithRunner(func(ctx context.Context, _ string, args ...string) ([]byte, error) {
+		got = args
+		return []byte("ok"), nil
+	})
+	if err := b.Dormant(context.Background(), "ref1"); err != nil {
+		t.Fatalf("dormant: %v", err)
+	}
+	if got[0] != "stop" || got[len(got)-1] != "wbox-ref1" {
+		t.Fatalf("dormant args=%v", got)
+	}
+}
+
+func TestInspectReportsTruth(t *testing.T) {
+	b := NewOCICLIBBackend(Policy{}).WithRunner(func(ctx context.Context, _ string, args ...string) ([]byte, error) {
+		if len(args) >= 4 && args[3] == "wbox-live" {
+			return []byte("true\n"), nil
+		}
+		if len(args) >= 4 && args[3] == "wbox-stopped" {
+			return []byte("false\n"), nil
+		}
+		return []byte("Error: No such object"), errors.New("exit status 1")
+	})
+	proofs, err := b.Inspect(context.Background(), []string{"live", "stopped", "gone"})
+	if err != nil {
+		t.Fatalf("inspect: %v", err)
+	}
+	want := map[string]struct{ exists, running bool }{
+		"live":    {true, true},
+		"stopped": {true, false},
+		"gone":    {false, false},
+	}
+	if len(proofs) != 3 {
+		t.Fatalf("proofs=%+v", proofs)
+	}
+	for _, p := range proofs {
+		w := want[p.SandboxRef]
+		if p.Exists != w.exists || p.Running != w.running {
+			t.Fatalf("proof %+v want %+v", p, w)
+		}
+	}
+}
+
+func TestReleaseToleratesMissingAndDeletesVolume(t *testing.T) {
+	var ran [][]string
+	b := NewOCICLIBBackend(Policy{}).WithRunner(func(ctx context.Context, _ string, args ...string) ([]byte, error) {
+		ran = append(ran, args)
+		if args[0] == "rm" {
+			return nil, errors.New("Error: No such container: wbox-x")
+		}
+		return []byte("ok"), nil
+	})
+	if err := b.Release("x", "", false); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	if len(ran) != 2 || ran[0][0] != "rm" || ran[1][0] != "volume" || ran[1][2] != "wbox-vol-x" {
+		t.Fatalf("unexpected calls: %v", ran)
+	}
+}
+
+// WE-S5 ownership boundary: a release that names a foreign volume must be
+// rejected and must never invoke docker at all, so the provisioner cannot
+// delete a host volume it does not own.
+func TestReleaseRejectsForeignVolumeWithoutRuntime(t *testing.T) {
+	var called bool
+	b := NewOCICLIBBackend(Policy{}).WithRunner(func(context.Context, string, ...string) ([]byte, error) {
+		called = true
+		return nil, nil
+	})
+	err := b.Release("ref1", "wbox-vol-other", false)
+	if !errors.Is(err, ErrPolicyRejected) {
+		t.Fatalf("want ErrPolicyRejected, got %v", err)
+	}
+	if called {
+		t.Fatal("foreign volume release must not invoke docker")
+	}
+}
+
+// Confirming the owned derived name is allowed; an empty value is derived.
+func TestReleaseAcceptsOwnedOrDerivedVolume(t *testing.T) {
+	for _, supplied := range []string{"", "wbox-vol-ref1"} {
+		var rmVol string
+		b := NewOCICLIBBackend(Policy{}).WithRunner(func(_ context.Context, _ string, args ...string) ([]byte, error) {
+			if args[0] == "volume" {
+				rmVol = args[2]
+			}
+			return []byte("ok"), nil
+		})
+		if err := b.Release("ref1", supplied, false); err != nil {
+			t.Fatalf("supplied=%q release: %v", supplied, err)
+		}
+		if rmVol != "wbox-vol-ref1" {
+			t.Fatalf("supplied=%q deleted %q, want owned volume", supplied, rmVol)
+		}
+	}
+}
+
+// Allocate must also refuse a foreign volume_ref before contacting docker.
+func TestAllocateRejectsForeignVolumeWithoutRuntime(t *testing.T) {
+	var called bool
+	p := Policy{AllowedRepositories: []string{"r"}, IsolatedNetwork: "n"}
+	b := NewOCICLIBBackend(p).WithRunner(func(context.Context, string, ...string) ([]byte, error) {
+		called = true
+		return nil, nil
+	})
+	_, err := b.Allocate(AllocRequest{
+		SandboxRef: "ref1", VolumeRef: "wbox-vol-other",
+		ImageRef: "r/u:1@sha256:" + strings.Repeat("d", 64), Security: validSpec(),
+	})
+	if !errors.Is(err, ErrPolicyRejected) {
+		t.Fatalf("want ErrPolicyRejected, got %v", err)
+	}
+	if called {
+		t.Fatal("foreign volume allocate must not invoke docker")
+	}
+}
+
+func TestProbeMissingRuntimeGivesReason(t *testing.T) {
+	b := NewOCICLIBBackend(Policy{}).WithDockerBinary("/nonexistent-docker-binary-xyz")
+	ok, reason := b.Probe()
+	if ok {
+		t.Fatalf("expected unavailable")
+	}
+	if reason == "" {
+		t.Fatalf("unavailable probe must give a reason")
+	}
+}
+
+func TestProbeDaemonUnreachable(t *testing.T) {
+	// docker binary exists in PATH here; force the version call to fail to
+	// emulate a reachable CLI with no daemon.
+	if _, err := exec.LookPath("docker"); err != nil {
+		t.Skip("docker CLI not present in this environment")
+	}
+	b := NewOCICLIBBackend(Policy{}).WithRunner(func(ctx context.Context, _ string, _ ...string) ([]byte, error) {
+		return nil, errors.New("cannot connect to the Docker daemon")
+	})
+	ok, reason := b.Probe()
+	if ok || !strings.Contains(reason, "unreachable") {
+		t.Fatalf("ok=%v reason=%q", ok, reason)
+	}
+}

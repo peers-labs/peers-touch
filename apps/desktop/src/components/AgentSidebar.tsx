@@ -30,6 +30,7 @@ import { Flexbox } from 'react-layout-kit';
 import { resolveI18nValue } from '../i18n';
 import type { AgentTopic } from '../store/agentTopics';
 import { useChatStore } from '../store/chat';
+import { ActivityGlyph } from './chat/ActivityGlyph';
 import {
   useActiveAgentSlice,
   useActiveAgentTopicSlice,
@@ -634,6 +635,15 @@ function TopicItem({
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const renameRef = useRef<InputRef>(null);
+  // Live operation owned by this topic's session. The record can hold
+  // parallel composite keys, so match on sessionKey rather than the map key.
+  const liveOperation = useChatStore((state) =>
+    Object.values(state.operations).find(
+      (op) =>
+        op.sessionKey === topic.key &&
+        (op.status === 'running' || op.status === 'waiting_for_approval'),
+    ),
+  );
 
   const startRename = () => {
     setRenameValue(resolveI18nValue(topic.title));
@@ -767,24 +777,52 @@ function TopicItem({
           {resolveI18nValue(topic.title) || t('agent.sidebar.newTopic')}
         </span>
       )}
-      {!selectionMode && !renaming && (hovered || active) ? (
-        <Dropdown menu={{ items: menuItems }} trigger={['click']} placement="bottomRight">
-          <span
-            aria-label={t('agent.sidebar.topicActions')}
-            onClick={(event) => event.stopPropagation()}
-            style={{
-              width: 24,
-              height: 24,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderRadius: 6,
-              color: token.colorTextTertiary,
-            }}
-          >
-            <MoreHorizontal size={14} />
-          </span>
-        </Dropdown>
+      {!selectionMode && !renaming ? (
+        <span
+          style={{
+            flexShrink: 0,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 2,
+            minWidth: liveOperation ? 22 : 0,
+            justifyContent: 'flex-end',
+          }}
+        >
+          {liveOperation ? (
+            <span
+              role="status"
+              aria-label={t('chat.tray.phrase.thinking', { ns: 'chat' })}
+              title={t('chat.tray.phrase.thinking', { ns: 'chat' })}
+              style={{ display: 'inline-flex', alignItems: 'center' }}
+              // Preserve the acceptance probe: background (non-current)
+              // sessions expose their run state on the rail indicator.
+              {...(!active
+                ? { 'data-pt-agent-background-operation-status': liveOperation.runState }
+                : {})}
+            >
+              <ActivityGlyph color={token.colorPrimary} size={14} />
+            </span>
+          ) : null}
+          {hovered || active ? (
+            <Dropdown menu={{ items: menuItems }} trigger={['click']} placement="bottomRight">
+              <span
+                aria-label={t('agent.sidebar.topicActions')}
+                onClick={(event) => event.stopPropagation()}
+                style={{
+                  width: 24,
+                  height: 24,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 6,
+                  color: token.colorTextTertiary,
+                }}
+              >
+                <MoreHorizontal size={14} />
+              </span>
+            </Dropdown>
+          ) : null}
+        </span>
       ) : null}
     </Flexbox>
   );

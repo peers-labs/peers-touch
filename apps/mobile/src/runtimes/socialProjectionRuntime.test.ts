@@ -236,6 +236,7 @@ describe('social projection runtime', () => {
     runtime.ingestRealtimeEvent({
       kind: 'moment',
       momentKind: 'post-commented',
+      targetActorPtid: 'ptid:alice',
       postId: 'post-1',
       authorActorPtid: 'ptid:bob',
       actorPtid: 'ptid:alice',
@@ -249,6 +250,7 @@ describe('social projection runtime', () => {
     runtime.ingestRealtimeEvent({
       kind: 'moment',
       momentKind: 'post-deleted',
+      targetActorPtid: 'ptid:alice',
       postId: 'post-1',
       authorActorPtid: 'ptid:bob',
       actorPtid: 'ptid:alice',

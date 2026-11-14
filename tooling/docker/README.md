@@ -39,6 +39,8 @@ you ever wipe the volume.
 ```
 tooling/docker/
 ├── compose.yml                       station + relay + postgres, profile-driven
+├── sandbox/
+│   └── sandbox-base.Dockerfile       unprivileged Ubuntu LTS base for WORKSPACE_SANDBOX containers
 ├── station.Dockerfile                multi-stage Go build, shared by both roles
 ├── entrypoint.sh                     emits store/paths/bootstrap overlays
 ├── .env.example                      template (committed)

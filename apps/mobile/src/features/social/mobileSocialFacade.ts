@@ -1,4 +1,5 @@
 import type { MobileAuthSession } from '../auth/authSession';
+import { ReactionKind } from '../../gen/proto/domain/social/post_pb';
 import {
   createMomentsFeedStore,
   type MomentsFeedStoreController,
@@ -28,6 +29,8 @@ import {
   reconcilePrivateMoments,
   recoverPrivateMoment,
   setPrivateMomentReaction,
+  votePrivateMomentPoll,
+  retryPrivateMomentReaction,
   submitPrivateComment,
   subscribePrivateMomentsRuntime,
   trackPublicMomentPublish,
@@ -332,6 +335,67 @@ export function createMobileSocialFacade(
           replyToCommentId,
         );
         return result.ok;
+      },
+      reactComment: async (postId, commentId) => {
+        assertCurrent();
+        const privateSnapshot = readPrivateMomentsSnapshot();
+        if (!privateProjectionMatchesScope(privateSnapshot, scope) || !knownPrivatePostIds.has(postId)) {
+          throw new Error('SOCIAL_PUBLIC_FEED_NATIVE_SIGNATURE_REQUIRED');
+        }
+        const comment = privateSnapshot.comments.find((candidate) => (
+          candidate.postId === postId && candidate.commentId === commentId
+        ));
+        if (!comment || comment.state !== 'COMMENT_POSTED') {
+          throw new Error('mobile.privateSocial.reactionProjectionUnavailable');
+        }
+        const active = comment.reactions?.some((reaction) => reaction.kind === ReactionKind.REACTION_LIKE && reaction.reactedByViewer) ?? false;
+        const result = await completeCurrent(() => setPrivateMomentReaction(postId, ReactionKind.REACTION_LIKE, !active, commentId));
+        if (result.command.state !== 'REACTION_COMMITTED') return false;
+        await feedForPost(postId).reloadMoment(postId);
+        return true;
+      },
+      retryCommentReaction: async (postId, commentId) => {
+        assertCurrent();
+        const privateSnapshot = readPrivateMomentsSnapshot();
+        if (!privateProjectionMatchesScope(privateSnapshot, scope)) {
+          throw new Error('mobile.privateSocial.reactionProjectionUnavailable');
+        }
+        const command = privateSnapshot.reactionCommands.find((candidate) => (
+          candidate.postId === postId && candidate.commentId === commentId && candidate.kind === ReactionKind.REACTION_LIKE
+        ));
+        if (!command) throw new Error('mobile.privateSocial.reactionCommandUnavailable');
+        const result = await completeCurrent(() => retryPrivateMomentReaction(command.commandId));
+        if (result.command.state !== 'REACTION_COMMITTED') return false;
+        await feedForPost(postId).reloadMoment(postId);
+        return true;
+      },
+      votePoll: async (postId, options) => {
+        assertCurrent();
+        const privateSnapshot = readPrivateMomentsSnapshot();
+        const visible = feedForPost(postId).state().posts.find(post => post.id === postId);
+        if (!knownPrivatePostIds.has(postId) && (!visible?.audience || isPublicSocialAudience(visible.audience))) {
+          throw new Error('SOCIAL_PUBLIC_FEED_NATIVE_SIGNATURE_REQUIRED');
+        }
+        if (!privateProjectionMatchesScope(privateSnapshot, scope)) {
+          throw new Error('mobile.privateSocial.pollDefinitionUnavailable');
+        }
+        if (privateSnapshot.postsById[postId]?.state !== 'CONTENT_READY') {
+          await completeCurrent(() => readPrivateMoment(postId));
+        }
+        const result = await completeCurrent(() => votePrivateMomentPoll(postId, options));
+        return result.command.state === 'REACTION_COMMITTED';
+      },
+      retryPoll: async (postId) => {
+        assertCurrent();
+        const privateSnapshot = readPrivateMomentsSnapshot();
+        if (!privateProjectionMatchesScope(privateSnapshot, scope)) {
+          throw new Error('mobile.privateSocial.pollDefinitionUnavailable');
+        }
+        const command = privateSnapshot.reactionCommands.find(candidate =>
+          candidate.postId === postId && candidate.operation === 'VOTE_POLL' && candidate.commentId === '');
+        if (!command) throw new Error('mobile.privateSocial.reactionCommandUnavailable');
+        const result = await completeCurrent(() => retryPrivateMomentReaction(command.commandId));
+        return result.command.state === 'REACTION_COMMITTED';
       },
       deleteMoment: async (postId) => {
         const result = await completeCurrent(() => gateway.deletePost(postId));

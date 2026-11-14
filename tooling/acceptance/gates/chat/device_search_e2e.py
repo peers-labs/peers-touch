@@ -43,7 +43,7 @@ def validate_account_scope(search: dict) -> None:
     rendering = search["ui"]["same_window_account_isolation"]["rendering"]
     require(
         identity.get("authenticated") is True
-        and identity.get("actorPtid") == search["sessionHandoff"]["actorPtid"],
+        and identity.get("actorPtid") == search["sessionCoexistence"]["actorPtid"],
         "account isolation requires authoritative Bob identity in the receiving window",
     )
     require(
@@ -176,17 +176,16 @@ def validate_search_report(report: dict, source_ref: ArtifactRef, store: Evidenc
         result = denials.get(name, {})
         require(result.get("accepted") is False and result.get("errorCode") == code,
                 f"{name} must provide the expected typed native denial")
-    handoff = search.get("sessionHandoff", {})
-    before, after = handoff.get("before", {}), handoff.get("after", {})
+    coexistence = search.get("sessionCoexistence", {})
+    before, after = coexistence.get("before", {}), coexistence.get("after", {})
     require(
-        handoff.get("actor") == "bob"
-        and str(handoff.get("actorPtid", "")).startswith("ptid:")
+        coexistence.get("actor") == "bob"
+        and str(coexistence.get("actorPtid", "")).startswith("ptid:")
         and before.get("authenticated") is True
-        and before.get("actorPtid") == handoff.get("actorPtid")
-        and after.get("authenticated") is False
-        and after.get("phase") in {"revoked", "accountGate"}
-        and after.get("reason") == "revoked" and after.get("actorPtid") == "",
-        "same-window account switch requires authoritative original Bob session revocation",
+        and before.get("actorPtid") == coexistence.get("actorPtid")
+        and after.get("authenticated") is True
+        and after.get("actorPtid") == coexistence.get("actorPtid"),
+        "same-window account switch must preserve the original Bob installation session",
     )
     validate_account_scope(search)
     validate_continuity(search)

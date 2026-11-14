@@ -243,6 +243,11 @@ DATABASE_TARGET_SPECS = (
     ),
     DatabaseTargetSpec("social_moment_deliveries", "CLEAR_TABLE"),
     DatabaseTargetSpec("social_remote_private_commands", "CLEAR_TABLE"),
+    DatabaseTargetSpec("social_private_reaction_projections", "CLEAR_TABLE"),
+    DatabaseTargetSpec("social_private_poll_choices", "CLEAR_TABLE"),
+    DatabaseTargetSpec("social_private_poll_ballots", "CLEAR_TABLE"),
+    DatabaseTargetSpec("social_private_poll_states", "CLEAR_TABLE"),
+    DatabaseTargetSpec("social_private_poll_projections", "CLEAR_TABLE"),
     DatabaseTargetSpec("social_remote_private_envelopes", "CLEAR_TABLE"),
     DatabaseTargetSpec("social_remote_private_resources", "CLEAR_TABLE"),
     DatabaseTargetSpec("social_remote_private_tombstones", "CLEAR_TABLE"),
@@ -1866,12 +1871,17 @@ class LeaseWrappedSSHMaintenanceBoundary:
             "destructive_scope",
             pattern=IDENTIFIER,
         )
+        profile_id = _require_text(
+            request.get("profile_id"), "profile_id", pattern=IDENTIFIER,
+        )
         return [
             "node",
             "tooling/scripts/local-dev/machine-dev.mjs",
             "lease",
             "--workspace-root",
             str(self.repo_root),
+            "--target-profile",
+            profile_id,
             "--resource-kind",
             "station.reset",
             "--resource-id",

@@ -7,6 +7,7 @@
     "apps/desktop/src/runtimes/xConfigRuntime.ts",
     "apps/desktop/src/services/xConfig.ts",
     "apps/desktop/src/pages/login/StationSetupPanel.tsx",
+    "apps/desktop/src/pages/login/useStationRegistry.ts",
     "apps/mobile/src-tauri/src/runtime/x_config.rs",
     "apps/mobile/src/runtimes/runtimeRegistry.ts",
     "apps/mobile/src/features/station/xConfig.ts",

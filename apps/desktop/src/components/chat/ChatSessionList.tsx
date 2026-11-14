@@ -85,7 +85,6 @@ function ConversationListError({
         emphasis={compact ? 'quiet' : 'secondary'}
         density="compact"
         execution={retrying ? 'pending' : 'idle'}
-        availability={retrying ? { kind: 'disabled', reason: '' } : undefined}
         leading={<Icon iconId="refresh-cw" size={12} />}
         onActivate={handleRetry}
       >

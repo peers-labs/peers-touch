@@ -24,6 +24,14 @@ file selection. The prepared Cell qualifies semantic selection with a real
 open/select/close and exact file readback before Binding admits it. Window,
 status-item and exclusive permission actions retain their own contracts.
 
+`macos_operator.py` owns one read-only child per operator observation scope.
+Fresh reads compare retained AX control/window references with CFEqual; title,
+value, counts and hashes cannot substitute for object equality. Core retains
+the four-field frozen baseline and sticky failure. Bootstrap and every bounded
+pipe request bind scope, sequence, mode, PID and original deadlines. Parent
+qualification and picker close/reap the child on every exit; close performs no
+AX sample. No worker, object reference or native content survives its scope.
+
 `macos_panels.py` reads AppKit file-panel controls through native AXChildren
 and presses a button only inside one target process. Its subprocess deadline
 bounds unresponsive XPC controls; missing or ambiguous panels fail closed.

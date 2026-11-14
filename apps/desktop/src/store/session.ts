@@ -139,14 +139,31 @@ function commitAuthenticatedSession(
 
 // ── Helpers (exported for tests; mapping mirrors `restoreSession`) ──
 
-async function completeStationBindingOrRollback(): Promise<string | null> {
+/**
+ * Confirm the window landed a bound Station session after a login attempt.
+ *
+ * The native activation scopes failure rollback to the session the login
+ * actually produced. Station binding is read asynchronously: under rapid
+ * account switching a late binding failure for an abandoned attempt can land
+ * after a newer unlock rebound the window. An unscoped logout would then
+ * destroy the superseding (current) session and its Secure Content runtime.
+ * The native command no-ops when the window holds any newer activation.
+ */
+async function completeStationBindingOrRollback(
+  response: AuthSessionResponse,
+): Promise<string | null> {
   try {
     const binding = await api.stationBindingComplete();
     return binding?.phase === 'bound' ? binding.station_peer_id ?? null : null;
   } catch (error) {
     const bindingError = stationAccessError(error);
     try {
-      await api.authLogout();
+      if (response.actor_ptid && response.session_activation_id) {
+        await api.authLogout({
+          expected_actor_ptid: response.actor_ptid,
+          expected_session_activation_id: response.session_activation_id,
+        });
+      }
     } catch (rollbackError) {
       const rollbackMessage = rollbackError instanceof Error
         ? rollbackError.message
@@ -234,7 +251,7 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
     } catch (error) {
       throw stationAccessError(error);
     }
-    const stationPeerId = await completeStationBindingOrRollback();
+    const stationPeerId = await completeStationBindingOrRollback(resp);
     completeAccessSubmission(key);
     get().activateAuthenticatedSession(resp, stationPeerId);
     await runIdentityPipeline({
@@ -256,7 +273,7 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
     const previousScope = sessionIdentityScope(get());
     markLocalIdentityAction();
     const resp = await api.ensureStationSession();
-    const stationPeerId = await completeStationBindingOrRollback();
+    const stationPeerId = await completeStationBindingOrRollback(resp);
     get().activateAuthenticatedSession(resp, stationPeerId);
     const method = (resp.login_method as string) || 'oauth';
     await runIdentityPipeline({
@@ -270,7 +287,7 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
     set({ restoring: true });
     try {
       const resp = await api.authRestoreSession();
-      const stationPeerId = await completeStationBindingOrRollback();
+      const stationPeerId = await completeStationBindingOrRollback(resp);
       const method = resp.login_method || 'password';
       const isOAuth = method !== 'password';
       const user = userFromAuthResponse(resp, isOAuth ? 'oauth' : 'password', isOAuth ? method : undefined);

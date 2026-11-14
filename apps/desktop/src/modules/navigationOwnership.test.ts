@@ -59,13 +59,26 @@ describe('Desktop navigation ownership', () => {
     expect(registry).not.toContain('getModulesWithPages');
   });
 
-  it('withholds Atelier while retaining the Agent Chat work surface', () => {
-    const source = desktopSource('components/agent/AgentModuleNav.tsx');
+  it('keeps Atelier as a placeholder sub-surface of Agent with no applet kernel', () => {
+    const rail = desktopSource('components/agent/workbench/ConversationRail.tsx');
+    const placeholder = desktopSource('components/agent/workbench/AtelierPlaceholder.tsx');
+    const profile = desktopSource('pages/AgentProfilePage.tsx');
+    const agentStore = desktopSource('store/agent.ts');
 
-    expect(source).toContain('data-pt-agent-module-item="chat"');
-    expect(source).not.toContain('data-pt-agent-module-item="atelier"');
-    expect(source).not.toContain('evaluation');
-    expect(source).not.toContain("label: t('agent.canvas");
+    // Atelier is a sub-surface inside the Agent workbench, reached from the
+    // Profile Extensions section — not a top-level module page.
+    expect(agentStore).toContain("'chat' | 'profile' | 'atelier'");
+    expect(rail).toContain('data-pt-agent-atelier-frame');
+    expect(profile).toContain('data-pt-agent-atelier-entry');
+
+    // The placeholder owns no applet kernel: no runtime page and no
+    // navigation into the applet hash from the Agent workbench.
+    expect(placeholder).toContain('data-pt-atelier-placeholder');
+    expect(placeholder).not.toContain('applet:peers.atelier');
+    expect(placeholder).not.toContain('appletsRuntime');
+    expect(placeholder).not.toContain('AppletRuntimePage');
+    expect(rail).not.toContain('applet:peers.atelier');
+    expect(profile).not.toContain("navigateTo('applet:peers.atelier'");
   });
 
   it('returns restored Atelier and orchestration routes to Agent Chat', () => {

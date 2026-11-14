@@ -74,16 +74,22 @@ func RemotePrivateContentModels() []any {
 		&remotePrivateTombstoneModel{},
 		&federatedPrivateInteractionModel{},
 		&federatedPrivateReactionProjectionModel{},
+		&privatePollBallotModel{},
+		&privatePollChoiceModel{},
+		&privatePollStateModel{},
+		&privatePollProjectionModel{},
 	}
 }
 
 type RemotePrivatePostReadModel struct {
 	Delivery         *privatecontentpb.FederatedPrivateResourceDelivery
 	RecoveryEnvelope *securecontentpb.ViewerContentKeyEnvelope
+	CommentsCount    int64
 }
 
 type RemotePrivateCommentReadModel struct {
-	Delivery *privatecontentpb.FederatedPrivateResourceDelivery
+	Delivery         *privatecontentpb.FederatedPrivateResourceDelivery
+	RecoveryEnvelope *securecontentpb.ViewerContentKeyEnvelope
 }
 
 type RemotePrivateCommentPage struct {
@@ -94,6 +100,9 @@ type RemotePrivateCommentPage struct {
 func migrateRemotePrivateResources(database *gorm.DB) error {
 	if err := database.AutoMigrate(RemotePrivateContentModels()...); err != nil {
 		return fmt.Errorf("social remote private resource migrate: %w", err)
+	}
+	if err := migratePrivateReactionProjections(database); err != nil {
+		return err
 	}
 	return backfillRemotePrivateResourceAuthors(database)
 }
@@ -503,11 +512,70 @@ func (s *GORMPrivateContentStore) ReadRemotePrivatePost(
 		if err != nil {
 			return err
 		}
+		projected.CommentsCount, err = countRemotePrivatePostComments(
+			ctx, database, projected.Delivery, viewerDeviceID,
+		)
+		if err != nil {
+			return err
+		}
 		return read(
 			privateContentValidationTransaction{db: database},
 			projected,
 		)
 	})
+}
+
+func countRemotePrivatePostComments(
+	ctx context.Context,
+	database *gorm.DB,
+	parent *privatecontentpb.FederatedPrivateResourceDelivery,
+	viewerDeviceID string,
+) (int64, error) {
+	var count int64
+	err := database.WithContext(ctx).
+		Table("social_remote_private_resources AS comment").
+		Where(
+			"comment.source_station_peer_id = ? AND comment.parent_content_id = ? "+
+				"AND comment.target_actor_ptid = ? AND comment.federation_id = ? "+
+				"AND comment.target_station_peer_id = ? AND comment.resource_kind = ? AND comment.state = ?",
+			parent.GetSourceStationPeerId(), parent.GetResource().GetContentId(),
+			parent.GetTargetActor().GetPtid(), parent.GetFederationId(),
+			parent.GetTargetStationPeerId(),
+			int32(privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_COMMENT),
+			remotePrivateResourceStateActive,
+		).
+		Where(
+			"NOT "+recoverablePrivateContentBlockExistsSQL("comment.author_ptid"),
+			true, parent.GetTargetActor().GetPtid(), parent.GetTargetActor().GetPtid(),
+		).
+		Where(
+			"((SELECT COUNT(*) FROM social_remote_private_envelopes AS envelope "+
+				"WHERE envelope.source_station_peer_id = comment.source_station_peer_id "+
+				"AND envelope.content_id = comment.content_id AND envelope.generation = comment.generation "+
+				"AND envelope.target_actor_ptid = comment.target_actor_ptid "+
+				"AND envelope.recipient_key_kind = ? AND envelope.recipient_device_id = ?) = 1 "+
+				"OR ((SELECT COUNT(*) FROM social_remote_private_envelopes AS endpoint "+
+				"WHERE endpoint.source_station_peer_id = comment.source_station_peer_id "+
+				"AND endpoint.content_id = comment.content_id AND endpoint.generation = comment.generation "+
+				"AND endpoint.target_actor_ptid = comment.target_actor_ptid "+
+				"AND endpoint.recipient_key_kind = ? AND endpoint.recipient_device_id = ?) = 0 "+
+				"AND (SELECT COUNT(*) FROM social_remote_private_envelopes AS recovery "+
+				"WHERE recovery.source_station_peer_id = comment.source_station_peer_id "+
+				"AND recovery.content_id = comment.content_id AND recovery.generation = comment.generation "+
+				"AND recovery.target_actor_ptid = comment.target_actor_ptid "+
+				"AND recovery.recipient_key_kind = ? AND recovery.recipient_device_id = '') = 1))",
+			int32(securecontentpb.ContentPreKeyKind_CONTENT_PREKEY_KIND_ENDPOINT),
+			viewerDeviceID,
+			int32(securecontentpb.ContentPreKeyKind_CONTENT_PREKEY_KIND_ENDPOINT),
+			viewerDeviceID,
+			int32(securecontentpb.ContentPreKeyKind_CONTENT_PREKEY_KIND_ACTOR_RECOVERY),
+		).
+		Distinct("comment.content_id").
+		Count(&count).Error
+	if err != nil {
+		return 0, fmt.Errorf("social remote private parent Comment count: %w", err)
+	}
+	return count, nil
 }
 
 func loadRemotePrivatePost(
@@ -619,19 +687,21 @@ func (s *GORMPrivateContentStore) ReadRemotePrivateComment(
 		if err != nil {
 			return err
 		}
-		message, _, err := loadRemotePrivateDelivery(
+		message, recoveryEnvelope, err := loadRemotePrivateDelivery(
 			ctx,
 			database,
 			row,
 			viewerDeviceID,
-			false,
+			true,
 		)
 		if err != nil {
 			return err
 		}
 		return read(
 			privateContentValidationTransaction{db: database},
-			&RemotePrivateCommentReadModel{Delivery: message},
+			&RemotePrivateCommentReadModel{
+				Delivery: message, RecoveryEnvelope: recoveryEnvelope,
+			},
 		)
 	})
 }
@@ -691,19 +761,21 @@ func (s *GORMPrivateContentStore) ListRemotePrivateComments(
 		}
 		page.Comments = make([]*RemotePrivateCommentReadModel, 0, len(rows))
 		for _, row := range rows {
-			message, _, err := loadRemotePrivateDelivery(
+			message, recoveryEnvelope, err := loadRemotePrivateDelivery(
 				ctx,
 				database,
 				row,
 				query.ViewerDeviceID,
-				false,
+				true,
 			)
 			if err != nil {
 				return err
 			}
 			page.Comments = append(
 				page.Comments,
-				&RemotePrivateCommentReadModel{Delivery: message},
+				&RemotePrivateCommentReadModel{
+					Delivery: message, RecoveryEnvelope: recoveryEnvelope,
+				},
 			)
 		}
 		return read(privateContentValidationTransaction{db: database}, page)
@@ -893,6 +965,9 @@ func loadRemotePrivateDelivery(
 			"social remote private recovery envelope read: %w",
 			err,
 		)
+	}
+	if len(recoveryEnvelopes) == 0 {
+		return nil, nil, ErrPrivateContentNotFound
 	}
 	if len(recoveryEnvelopes) != 1 {
 		return nil, nil, fmt.Errorf(

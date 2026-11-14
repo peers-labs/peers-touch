@@ -93,6 +93,12 @@ projection and actor scope.
   Engine exists. Typed Registry readiness validates Actor binding; missing
   local identity stays null. The UI exposes Restore only for an actual backup,
   while phrase generation and backup creation require the real local identity.
+- Native Suite preparation maintains an already-created recovery epoch through
+  the bundled Secure Content fixture's current Actor/renderer scope. A
+  `/src/store/privateMoments.ts` import is a development module URL, not an
+  interface exposed by the prepared Native executable. The original fixture
+  checks exact epoch and positive inventory; maintenance never creates another
+  revision or returns recovery secrets.
 - The Recovery runtime bootstraps before Messaging, resets on accepted Session
   and Station edges and periodically reconciles. Its store fences every
   asynchronous completion and failure by Actor, Session epoch and reset
@@ -156,6 +162,12 @@ python3 -m unittest \
 AS23 must reach `RECOVERY_REQUIRED -> CONTENT_READY` on a replacement client
 whose storage and Actor Identity root start empty. Preloading the recovered
 Actor seed into that client is not equivalent proof.
+
+Run `src/acceptance/secureContentFixture/harness.test.ts` and the original
+portable-recovery runtime-owner tests. The created revision must be followed
+by exactly one bundled maintenance action with its epoch and the current
+renderer scope; mismatch and invalid epoch must fail before Suite scenarios.
+The prepared Native Suite remains the required runtime proof.
 
 ## Crosswalks
 

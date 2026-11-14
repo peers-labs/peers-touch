@@ -88,6 +88,7 @@ function buildAssistantActions(ctx: MessageActionContext): { primary: MessageAct
       { key: 'continue', label: 'chat.message.action.continue', icon: ChevronRight, onClick: ctx.onContinue },
       { key: 'translate', label: 'chat.message.action.translate', icon: Languages, onClick: ctx.onTranslate },
       { key: 'export', label: 'chat.message.action.export', icon: Download, onClick: ctx.onExport },
+      ...(ctx.artifactActions ?? []),
       { key: 'forward', label: 'chat.message.action.forward', icon: Forward, onClick: ctx.onForward },
       { key: 'delAndRegenerate', label: 'chat.message.action.delAndRegenerate', icon: Eraser, onClick: ctx.onDeleteAndRegenerate },
       { key: 'delete', label: 'chat.message.action.delete', icon: Trash2, danger: true, onClick: ctx.onDelete },

@@ -8854,6 +8854,7 @@ _SOCIAL_UI_ATTRIBUTES = (
     "data-actor-ptid",
     "data-profile-actor-ptid",
     "data-audience-choice",
+    "data-draft-persisted",
     "aria-label",
     "value",
 )

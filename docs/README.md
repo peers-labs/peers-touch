@@ -121,6 +121,10 @@ Search 当前真源：[封闭域 Search](./architecture/domains/search/README.md
 待确认设计：[Mobile Scan Login](./architecture/domains/identity/mobile-scan-login/README.md)
 与[通用 Schema / 二维码](./architecture/shared/schema/README.md)。草案不表示功能已实现。
 
+待确认设计：[Device Login Approval](./architecture/domains/identity/device-login-approval/README.md)
+定义凭据先行、登录卡等待、已登录设备审批的 claimant-first 登录模型与恢复短语兜底定位；
+当前为 draft，未登记架构模块 registry，不表示功能已实现。
+
 分类入口：[`architecture/README.md`](./architecture/README.md)。该入口按当前
 代码边界使用四个物理分类：
 

@@ -13,6 +13,17 @@ const EVENTS = new Map([
   ['postToolUseFailure', 'POST_TOOL_FAILURE'],
   ['Stop', 'STOP'],
   ['stop', 'STOP'],
+  // Compaction is a recovery boundary: without a mapping these events were
+  // normalized as invalid and silently dropped, so no re-entry guidance fired
+  // after the summary replaced the live context.
+  ['PreCompact', 'PRE_COMPACT'],
+  ['preCompact', 'PRE_COMPACT'],
+  ['PostCompact', 'POST_COMPACT'],
+  ['postCompact', 'POST_COMPACT'],
+  ['SubagentStart', 'SUBAGENT_START'],
+  ['subagentStart', 'SUBAGENT_START'],
+  ['SubagentStop', 'SUBAGENT_STOP'],
+  ['subagentStop', 'SUBAGENT_STOP'],
 ]);
 
 function isObject(value) {
@@ -74,10 +85,11 @@ export function normalizeHostPayload(raw, options = {}) {
   const toolName = firstString(
     payload.tool_name,
     payload.toolName,
+    payload.name,
   );
   // The kernel must not receive raw tool internals. Expose only the minimum
-  // derived facts the worktree guard needs: whether the tool mutates and the
-  // file paths it targets. (FLOW-A04 keeps toolName/toolInput unexposed.)
+  // derived facts the worktree guard needs: whether the tool mutates, its name
+  // for observation, and target paths. Raw tool input stays private.
   const mutatingTool =
     typeof toolName === 'string'
     && MUTATING_TOOL_NAME_PATTERN.test(toolName);
@@ -124,6 +136,7 @@ export function normalizeHostPayload(raw, options = {}) {
     hostEvent,
     mutatingTool,
     mutationFilepaths,
+    toolName,
     executionRootHints: uniqueStrings([
       explicitTaskRoot,
       ...(workspaceRoots.length === 1 ? workspaceRoots : []),
@@ -141,6 +154,9 @@ export function normalizeHostPayload(raw, options = {}) {
     willEditFilepaths: uniqueStrings([
       ...stringArray(payload.will_edit_filepaths),
       ...stringArray(payload.willEditFilepaths),
+      ...(event === 'PRE_TOOL_USE'
+        ? [firstString(toolInput.file_path, toolInput.filePath)]
+        : []),
     ]),
   };
 }

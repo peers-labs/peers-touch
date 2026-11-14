@@ -26,6 +26,7 @@ import {
   MachineDevError,
   checkWorkspace,
   observeLeases,
+  registeredCanonicalRoots,
   registerWorkspace,
   resetPolicyForProfile,
   resolveProfileDefinition,
@@ -310,6 +311,19 @@ test('target Profile deploy preserves the workspace binding and freezes its targ
     assert.equal(refused.status, 2);
     assert.equal(refused.stdout.includes('unexpected'), false);
     assert.equal(readFileSync(machineLeasePath('station.deploy', 'station-five', scope.home), 'utf8'), '');
+  } finally {
+    scope.close();
+  }
+});
+
+test('registered canonical roots drive pull-based observation collection', () => {
+  const scope = fixture();
+  try {
+    assert.deepEqual(registeredCanonicalRoots({ home: scope.home }), []);
+    registerWorkspace(registrationOptions(scope));
+    assert.deepEqual(registeredCanonicalRoots({ home: scope.home }), [
+      realpathSync(scope.workspaceA),
+    ]);
   } finally {
     scope.close();
   }

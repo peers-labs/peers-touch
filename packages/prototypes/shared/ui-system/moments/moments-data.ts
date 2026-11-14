@@ -62,6 +62,16 @@ export interface Moment {
   viewerReactions?: ReactionKind[];
   comments: MomentComment[];
   federated?: boolean;
+  poll?: {
+    question: string;
+    options: string[];
+    minChoices: number;
+    maxChoices: number;
+    closed: boolean;
+    choices: number[];
+    baseCounts: number[];
+    baseVoters: number;
+  };
 }
 
 export interface Person {
@@ -234,6 +244,8 @@ export const MOMENT_SEEDS: Moment[] = [
     id: 'mo-r2', author: '河埠头', tone: '#50708c', source: 'remote', station: '河埠头站',
     reason: 'public', federated: true, audience: 'public', at: '昨天 · 联邦',
     text: '旧衣修补摊每月第一个周六开市，补丁布由大家捐的碎布头拼成，每件衣服都能拼出独一无二的纹样。',
+    poll: { question: '下次修补摊想学什么？', options: ['补衣服', '改裤脚', '缝布袋'],
+      minChoices: 1, maxChoices: 2, closed: false, choices: [], baseCounts: [3, 2, 1], baseVoters: 4 },
     reactions: { like: 87, fire: 5 },
     comments: [],
   },

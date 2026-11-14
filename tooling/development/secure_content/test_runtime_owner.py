@@ -47,13 +47,11 @@ from tooling.development.secure_content.runtime_owner import (
     SOCIAL_ACCEPTANCE_PLAN_ID,
     SOCIAL_ACCEPTANCE_RUNTIME_REUSE,
     SOCIAL_ACCEPTANCE_TASK_IDS,
-    SOCIAL_CROSS_STATION_CLIENT_BINDINGS,
     SOCIAL_CROSS_STATION_FIXTURE_ONLY_CLIENT_IDS,
     SOCIAL_CROSS_STATION_JOURNEY,
     SOCIAL_CROSS_STATION_LAUNCHED_CLIENT_IDS,
     SOCIAL_CROSS_STATION_PLAN_ID,
     SOCIAL_CROSS_STATION_RUNTIME_REUSE,
-    SOCIAL_CROSS_STATION_SLOT,
     SOCIAL_CROSS_STATION_TASK_ID,
     W7_RUNTIME_REUSE,
     W8_RUNTIME_REUSE,
@@ -429,7 +427,6 @@ class RuntimeOwnerTest(unittest.TestCase):
             SOCIAL_CROSS_STATION_TASK_ID,
         )
         self.assertEqual("SOC-SEC-J10-J12", SOCIAL_CROSS_STATION_JOURNEY)
-        self.assertEqual(13, SOCIAL_CROSS_STATION_SLOT)
         self.assertEqual(
             (
                 "AS17",
@@ -456,128 +453,29 @@ class RuntimeOwnerTest(unittest.TestCase):
             SOCIAL_CROSS_STATION_RUNTIME_REUSE.allow_client_replacement,
         )
         self.assertEqual(
-            (
-                (
-                    "cross-station-social-alice",
-                    "alice",
-                    "chat-native-disposable",
-                    "station-four",
-                ),
-                (
-                    "cross-station-social-bob",
-                    "bob",
-                    "fiveArm",
-                    "station-five-arm",
-                ),
-                (
-                    "cross-station-social-eve",
-                    "eve",
-                    "fiveArm",
-                    "station-five-arm",
-                ),
-                (
-                    "cross-station-social-bob2",
-                    "bob",
-                    "fiveArm",
-                    "station-five-arm",
-                ),
-            ),
-            SOCIAL_CROSS_STATION_CLIENT_BINDINGS,
-        )
-        self.assertEqual(
-            (
-                "cross-station-social-alice",
-                "cross-station-social-bob",
-                "cross-station-social-bob2",
-            ),
+            ("alice", "bob", "bob2"),
             SOCIAL_CROSS_STATION_LAUNCHED_CLIENT_IDS,
         )
         self.assertEqual(
-            ("cross-station-social-eve",),
+            ("eve",),
             SOCIAL_CROSS_STATION_FIXTURE_ONLY_CLIENT_IDS,
         )
         self.assertEqual(
             SOCIAL_CROSS_STATION_RUNTIME_REUSE.max_client_launches,
             len(SOCIAL_CROSS_STATION_LAUNCHED_CLIENT_IDS),
         )
-        cross_source = inspect.getsource(
-            W7RuntimeOwner.run_social_cross_station_suite
+        from tooling.development.secure_content.test_prepared_native import (
+            PreparedSocialNativeTest,
         )
-        recovery_prepare = cross_source.index(
-            "recovery_phrase, recovery_preparation = _prepare_portable_recovery("
-        )
-        fixture_prepare = cross_source.index(
-            "fixture_identity = _prepare_cross_station_social_fixture("
-        )
-        scenario_loop_start = cross_source.index(
-            'scenario_id="AS17"',
-        )
-        self.assertLess(recovery_prepare, fixture_prepare)
-        self.assertLess(fixture_prepare, scenario_loop_start)
-        self.assertEqual(1, cross_source.count("SuiteRuntimeLedger("))
-        self.assertEqual(
-            1,
-            cross_source.count("SuiteRuntimeAction.PROVISION"),
-        )
-        self.assertLess(
-            cross_source.rindex("_start_client(", 0, scenario_loop_start),
-            scenario_loop_start,
-        )
-        for scenario_id in SOCIAL_CROSS_STATION_RUNTIME_REUSE.scenario_ids:
-            self.assertIn(
-                f'scenario_id="{scenario_id}"',
-                cross_source,
-            )
-        replacement = cross_source.index(
-            "SuiteRuntimeAction.CLIENT_REPLACEMENT"
-        )
-        self.assertGreater(
-            replacement,
-            cross_source.index('scenario_id="AS23"'),
-        )
-        replacement_start = cross_source.index(
-            "_start_authenticated_client(",
-            cross_source.index("bob2 = _make_client("),
-        )
-        replacement_recovery = cross_source.index(
-            "restored = _restore_portable_recovery(",
-            replacement_start,
-        )
-        replacement_snapshot = cross_source.index(
-            "bob2_snapshot = _wait_for_moments_snapshot(",
-            replacement_recovery,
-        )
-        self.assertLess(replacement_start, replacement_recovery)
-        self.assertLess(replacement_recovery, replacement_snapshot)
-        replay_start = cross_source.index('scenario_id="AS24"')
-        replay_end = cross_source.index(
-            'scenario_id="same-station-regression"',
-            replay_start,
-        )
-        replay_source = cross_source[replay_start:replay_end]
-        self.assertEqual(
-            2,
-            replay_source.count('{"postId": recovery_post}'),
-        )
-        self.assertNotIn('{"postId": as17_post}', replay_source)
-        self.assertIn("visible_text=recovery_text", replay_source)
-        same_station_source = cross_source[replay_end:]
-        self.assertIn('"findPublicMoment"', same_station_source)
-        self.assertIn('action_text="Public"', same_station_source)
-        self.assertIn(
-            '"publicProjectionFound": True',
-            same_station_source,
-        )
-        cleanup = cross_source.index(
-            "ledger.record(SuiteRuntimeAction.CLEANUP_COMPLETE)"
-        )
-        result_publication = cross_source.index(
-            "_write_immutable_json(result_path, result)"
-        )
-        self.assertLess(cleanup, result_publication)
-        self.assertNotIn("_activate_scenario_journey(", cross_source)
-        self.assertIn('"fixtureOnlyClients": ["eve"]', cross_source)
-        self.assertIn('"clientReplacements": ["bob2"]', cross_source)
+        # The source Gate retains this entry while exercising the real adapter,
+        # lifecycle and original Suite failure boundary instead of source text.
+        result = unittest.TestResult()
+        unittest.defaultTestLoader.loadTestsFromTestCase(
+            PreparedSocialNativeTest,
+        ).run(result)
+        self.assertTrue(result.wasSuccessful(), result.errors + result.failures)
+
+    def test_w8_acceptance_recovery_and_cleanup_contract_is_preserved(self) -> None:
         source_admission = inspect.getsource(
             runtime_owner_module._require_social_acceptance_source
         )
@@ -1103,79 +1001,9 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertEqual(0, status)
         run_suite.assert_called_once_with(slot=12)
 
-    def test_social_cross_station_cli_dispatches_once(self) -> None:
-        with patch.object(
-            W7RuntimeOwner,
-            "run_social_cross_station_suite",
-            return_value={
-                "status": "FUNCTIONAL_PASS",
-                "proofState": "UNPROVEN",
-            },
-        ) as run_suite:
-            status = main(
-                [
-                    "run-social-cross-station-suite",
-                    "--profiles",
-                    "chat-native-disposable,fiveArm",
-                    "--slot",
-                    "13",
-                ]
-            )
-
-        self.assertEqual(0, status)
-        run_suite.assert_called_once_with(slot=13)
-
-    def test_social_cross_station_cli_rejects_wrong_binding(self) -> None:
-        cases = (
-            (
-                ["run-social-cross-station-suite"],
-                "profile:chat-native-disposable",
-            ),
-            (
-                [
-                    "run-social-cross-station-suite",
-                    "--profiles",
-                    "fiveArm,chat-native-disposable",
-                    "--slot",
-                    "13",
-                ],
-                "runtime:social-cross-station",
-            ),
-            (
-                [
-                    "run-social-cross-station-suite",
-                    "--profiles",
-                    "chat-native-disposable,fiveArm",
-                    "--slot",
-                    "12",
-                ],
-                "profile:chat-native-disposable",
-            ),
-            (
-                [
-                    "run-social-cross-station-suite",
-                    "--profile",
-                    "fiveArm",
-                    "--profiles",
-                    "chat-native-disposable,fiveArm",
-                    "--slot",
-                    "13",
-                ],
-                "profile:chat-native-disposable",
-            ),
-        )
-        for arguments, resource in cases:
-            with self.subTest(arguments=arguments):
-                stderr = io.StringIO()
-                with redirect_stderr(stderr):
-                    status = main(arguments)
-                self.assertEqual(2, status)
-                payload = json.loads(stderr.getvalue())
-                self.assertEqual(
-                    "CONTROLLER_BINDING_MISMATCH",
-                    payload["code"],
-                )
-                self.assertEqual(resource, payload["resource"])
+    def test_social_cross_station_cli_is_not_an_execution_route(self) -> None:
+        with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            _parse_args(["run-social-cross-station-suite"])
 
     def test_w8_suite_requires_complete_profile_closure(
         self,
@@ -1359,12 +1187,6 @@ class RuntimeOwnerTest(unittest.TestCase):
                 "four,fiveArm",
                 "--slot",
                 "12",
-            ],
-            "run-social-cross-station-suite": [
-                "--profiles",
-                "chat-native-disposable,fiveArm",
-                "--slot",
-                "13",
             ],
             "run-w9-suite": [],
             "run-w2-suite": ["--profiles", "four,fiveArm"],
@@ -2466,23 +2288,18 @@ class RuntimeOwnerTest(unittest.TestCase):
     ) -> None:
         def native_result(
             payload: Mapping[str, object],
-            *,
-            stub_payload: bool = True,
         ) -> Mapping[str, object]:
             return {
                 "ok": True,
                 "value": {
                     "ok": True,
-                    "data": (
-                        {"status": json.dumps(payload)}
-                        if stub_payload
-                        else dict(payload)
-                    ),
+                    "data": {"status": json.dumps(payload)},
                 },
             }
 
         client = MagicMock()
         client.spec = SimpleNamespace(profile="bob")
+        client.harness_namespace = "moments"
         words = [f"word-{index}" for index in range(24)]
         client.driver.execute_async_script.side_effect = (
             native_result({"words": words}),
@@ -2492,14 +2309,10 @@ class RuntimeOwnerTest(unittest.TestCase):
                     "recoveryEpoch": 7,
                 }
             ),
-            native_result(
-                {
-                    "recoveryEpoch": 7,
-                    "recoveryPreKeyAvailable": 100,
-                },
-                stub_payload=False,
-            ),
         )
+        client.harness.return_value = {
+            "recoveryEpoch": 7, "recoveryPreKeyAvailable": 100,
+        }
 
         phrase, prepared = _prepare_portable_recovery(client)
 
@@ -2514,28 +2327,17 @@ class RuntimeOwnerTest(unittest.TestCase):
             },
             prepared,
         )
-        maintenance = client.driver.execute_async_script.call_args_list[2]
-        self.assertIn(
-            "import('/src/store/privateMoments.ts')",
-            maintenance.args[0],
+        client.harness.assert_called_once_with(
+            "maintainCurrentRecoveryPreKeys", {"expectedEpoch": 7}, timeout=120,
         )
-        self.assertEqual(
-            "social_private_moments_acceptance_maintain_prekeys",
-            maintenance.args[1],
-        )
+        self.assertEqual(2, client.driver.execute_async_script.call_count)
+        self.assertEqual("moments", client.harness_namespace)
 
     def test_portable_recovery_rejects_mismatched_prekey_epoch(self) -> None:
         client = MagicMock()
         client.spec = SimpleNamespace(profile="bob")
-        client.driver.execute_async_script.return_value = {
-            "ok": True,
-            "value": {
-                "ok": True,
-                "data": {
-                    "recoveryEpoch": 8,
-                    "recoveryPreKeyAvailable": 100,
-                },
-            },
+        client.harness.return_value = {
+            "recoveryEpoch": 8, "recoveryPreKeyAvailable": 100,
         }
 
         with self.assertRaisesRegex(

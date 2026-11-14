@@ -4,12 +4,11 @@
 //
 // Two mirrored operations:
 //
-//	Lookup(ctx, handle)   - returns a cached row iff it is still fresh
-//	                         (Now < CachedUntilUnixMs) AND its locator
-//	                         seq is at least as new as what the locator
-//	                         DHT would yield. Returns ErrCacheMiss
-//	                         otherwise so the resolver knows to fall
-//	                         through to the network path.
+//	Lookup(ctx, handle)   - returns a fresh Actor row and its original signed
+//	                         profile bytes. Old rows without retained proof
+//	                         return ErrCacheMiss. The resolver checks the
+//	                         current signed locator, membership, signature
+//	                         and pinned key before reusing the proof.
 //
 //	Upsert(ctx, in)        - writes a verified envelope back into the
 //	                         touch_actor row resolved by canonical PTID
@@ -28,4 +27,6 @@
 // already loads peer profiles via touch_actor (avatar / display name /
 // bio). Storing the cache there means a single SELECT renders both
 // local and remote actors with no special-casing in the UI layer.
+// The original envelope is retained in that same row; display columns
+// never reconstruct or replace a Home-signed cryptographic message.
 package cache

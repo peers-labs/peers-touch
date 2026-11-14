@@ -23,6 +23,7 @@ test('architecture diagrams use stable ids and viewpoint-specific layouts', () =
     specs.map((spec) => spec.id),
     [
       'cross-client-runtime.reuse-topology',
+      'project.actor-feed-log-target',
       'project.authority-map',
       'project.engineering-control-plane',
       'project.journey.cross-station',
@@ -31,6 +32,10 @@ test('architecture diagrams use stable ids and viewpoint-specific layouts', () =
       'project.logical-layered-architecture',
       'project.runtime-topology',
       'project.system-context',
+      'search.authority-map',
+      'search.device-query',
+      'search.reuse-topology',
+      'ui-system.design-architecture',
     ],
   );
   assert.deepEqual(

@@ -39,6 +39,7 @@ export const PROTO_INPUTS = Object.freeze([
   'domain/secure_content/prekey.proto',
   'domain/secure_content/object.proto',
   'domain/social/post.proto',
+  'domain/social/feed_log.proto',
   'domain/social/comment.proto',
   'domain/social/media.proto',
   'domain/social/poll.proto',
@@ -47,10 +48,26 @@ export const PROTO_INPUTS = Object.freeze([
   'domain/social/private_content.proto',
   'domain/social/private_federation.proto',
   'domain/federation/delivery.proto',
+  'domain/federation/profile.proto',
+  'domain/federation/federation_resolve.proto',
   'domain/key_exchange/key_exchange.proto',
 ]);
 
 export const CONTENT_PREKEY_CLIENT_SCOPE = 'content-prekey-client';
+export const FEDERATION_RESOLVE_PROOF_SCOPE = 'federation-resolve-proof';
+export const SOCIAL_INTERACTION_SCOPE = 'social-interaction';
+export const SOCIAL_INTERACTION_PROTO_INPUTS = Object.freeze([
+  'domain/social/feed_log.proto',
+  'domain/social/post.proto',
+  'domain/social/poll.proto',
+  'domain/social/private_content.proto',
+  'domain/social/private_federation.proto',
+  'domain/realtime/event.proto',
+]);
+export const FEDERATION_RESOLVE_PROOF_PROTO_INPUTS = Object.freeze([
+  'domain/federation/profile.proto',
+  'domain/federation/federation_resolve.proto',
+]);
 export const CONTENT_PREKEY_CLIENT_PROTO_INPUTS = Object.freeze([
   'domain/secure_content/prekey.proto',
   'domain/error/error.proto',
@@ -63,6 +80,7 @@ const ALLOWED_PROTO_ROOTS = Object.freeze([
   'domain/social',
   'domain/federation',
   'domain/key_exchange',
+  'domain/realtime',
 ]);
 
 const GO_OUTPUT_DIRECTORIES = Object.freeze({
@@ -72,6 +90,7 @@ const GO_OUTPUT_DIRECTORIES = Object.freeze({
   'domain/secure_content/prekey.proto': 'frame/core/types/securecontent',
   'domain/secure_content/object.proto': 'frame/core/types/securecontent',
   'domain/social/post.proto': 'frame/touch/model',
+  'domain/social/feed_log.proto': 'frame/touch/model',
   'domain/social/comment.proto': 'frame/touch/model',
   'domain/social/media.proto': 'frame/touch/model',
   'domain/social/poll.proto': 'frame/touch/model',
@@ -80,7 +99,10 @@ const GO_OUTPUT_DIRECTORIES = Object.freeze({
   'domain/social/private_content.proto': 'frame/touch/model/privatecontent',
   'domain/social/private_federation.proto': 'frame/touch/model/privatecontent',
   'domain/federation/delivery.proto': 'frame/core/federation/model',
+  'domain/federation/profile.proto': 'frame/touch/federation/profile/pb',
+  'domain/federation/federation_resolve.proto': 'frame/touch/federation/api/pb',
   'domain/key_exchange/key_exchange.proto': 'app/subserver/key_exchange/model',
+  'domain/realtime/event.proto': 'frame/touch/model/realtime',
 });
 
 const GO_PACKAGE_NAMES = Object.freeze({
@@ -90,6 +112,7 @@ const GO_PACKAGE_NAMES = Object.freeze({
   'domain/secure_content/prekey.proto': 'securecontent',
   'domain/secure_content/object.proto': 'securecontent',
   'domain/social/post.proto': 'model',
+  'domain/social/feed_log.proto': 'model',
   'domain/social/comment.proto': 'model',
   'domain/social/media.proto': 'model',
   'domain/social/poll.proto': 'model',
@@ -98,7 +121,10 @@ const GO_PACKAGE_NAMES = Object.freeze({
   'domain/social/private_content.proto': 'privatecontent',
   'domain/social/private_federation.proto': 'privatecontent',
   'domain/federation/delivery.proto': 'model',
+  'domain/federation/profile.proto': 'pb',
+  'domain/federation/federation_resolve.proto': 'pb',
   'domain/key_exchange/key_exchange.proto': 'model',
+  'domain/realtime/event.proto': 'realtime',
 });
 
 const OUTPUT_ROOT_BY_CHANNEL = Object.freeze({
@@ -235,6 +261,12 @@ function assertAllowedInput(relativePath) {
 
 function inputsForScope(scope) {
   if (scope === undefined || scope === null) return PROTO_INPUTS;
+  if (scope === SOCIAL_INTERACTION_SCOPE) {
+    return SOCIAL_INTERACTION_PROTO_INPUTS;
+  }
+  if (scope === FEDERATION_RESOLVE_PROOF_SCOPE) {
+    return FEDERATION_RESOLVE_PROOF_PROTO_INPUTS;
+  }
   if (scope === CONTENT_PREKEY_CLIENT_SCOPE) {
     return CONTENT_PREKEY_CLIENT_PROTO_INPUTS;
   }

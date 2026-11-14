@@ -9,6 +9,92 @@
       "description": "Validate Social Search contract injection, original read authority and source-bound native proof requirements; source evidence only."
     },
     "social-content-search-desktop-native-e2e": {
+      "e2e": {
+        "journeys": [
+          {
+            "id": "mixed-search",
+            "uses": [
+              "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.run",
+              "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.mixed"
+            ]
+          },
+          {
+            "id": "original-open-return",
+            "uses": [
+              "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.run",
+              "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.original_open_return"
+            ]
+          },
+          {
+            "id": "current-policy",
+            "uses": [
+              "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.run",
+              "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.policy"
+            ]
+          },
+          {
+            "id": "session-fence",
+            "uses": [
+              "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.run",
+              "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.fence"
+            ]
+          }
+        ],
+        "implementations": [
+          {
+            "ref": "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.run",
+            "purpose": "Prepare and reuse the original two-client Search Suite and finalize its owned cleanup",
+            "lifetime": "suite",
+            "dependsOn": [
+              "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.seed_social",
+              "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.finish_cleanup"
+            ],
+            "invalidatedBy": ["source", "environment", "fixture", "client", "session", "oracle", "action-plan", "verification-mode"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.seed_social",
+            "purpose": "Seed the existing public and private Social resources once before scenarios",
+            "lifetime": "suite",
+            "dependsOn": [],
+            "invalidatedBy": ["source", "fixture", "client", "session", "action-plan"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.finish_cleanup",
+            "purpose": "Close the original capability channel and clients and finalize the Suite lifecycle",
+            "lifetime": "suite",
+            "dependsOn": [],
+            "invalidatedBy": ["source", "environment", "client", "session", "oracle", "action-plan"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.mixed",
+            "purpose": "Prove mixed source Search and current public/private post and comment results",
+            "lifetime": "scenario",
+            "dependsOn": ["tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.seed_social"],
+            "invalidatedBy": ["source", "session", "oracle", "action-plan"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.original_open_return",
+            "purpose": "Open original post/comment anchors and restore the real Search return context",
+            "lifetime": "scenario",
+            "dependsOn": ["tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.seed_social"],
+            "invalidatedBy": ["source", "client", "session", "oracle", "action-plan"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.policy",
+            "purpose": "Prove source outage recovery, deletion and block invalidation at original read owners",
+            "lifetime": "scenario",
+            "dependsOn": ["tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.seed_social"],
+            "invalidatedBy": ["source", "environment", "session", "oracle", "action-plan"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.fence",
+            "purpose": "Prove private Search concealment across account switching and logout",
+            "lifetime": "scenario",
+            "dependsOn": ["tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.seed_social"],
+            "invalidatedBy": ["source", "fixture", "client", "session", "oracle", "action-plan"]
+          }
+        ]
+      },
       "argv": ["python3", "-m", "tooling.acceptance.gates.social.content_search_desktop"],
       "timeout_seconds": 1200,
       "environment": "chat-storage-native",
@@ -20,13 +106,127 @@
       "description": "Reuse one exact-source native Desktop Suite for mixed Search, public/private posts and comments, exact historical anchors, Return and read-policy invalidation."
     },
     "social-content-search-mobile-native-e2e": {
+      "e2e": {
+        "journeys": [
+          {
+            "id": "bilateral-social-search",
+            "uses": [
+              "tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.execute",
+              "tooling/acceptance/gates/social/content_search_mobile.py#SocialContentSearchMobileGate.search_scenario",
+              "tooling/acceptance/gates/social/content_search_mobile.py#SocialContentSearchMobileGate.account_scenario"
+            ]
+          }
+        ],
+        "implementations": [
+          {
+            "ref": "tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.execute",
+            "purpose": "Run the original prepared Suite and finalize all client cleanup before result publication",
+            "lifetime": "suite",
+            "dependsOn": [
+              "tooling/acceptance/gates/social/content_search_mobile.py#SocialContentSearchMobileGate.prepare_suite",
+              "tooling/acceptance/gates/social/content_search_mobile.py#SocialContentSearchMobileGate.seed",
+              "tooling/acceptance/provisioners/mobile_search.py#MobileSearchSimulatorProvisioner.provision"
+            ],
+            "invalidatedBy": ["source", "environment", "fixture", "client", "session"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/social/content_search_mobile.py#SocialContentSearchMobileGate.prepare_suite",
+            "purpose": "Attach one independent Desktop signed author through the existing mixed runtime",
+            "lifetime": "suite",
+            "dependsOn": [
+              "tooling/acceptance/gates/chat/mixed_native_runtime.py#MixedNativeRuntime.start_client",
+              "tooling/acceptance/gates/chat/mixed_native_runtime.py#MixedNativeRuntime.source_identity"
+            ],
+            "invalidatedBy": ["source", "environment", "fixture", "client", "session"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/chat/mixed_native_runtime.py#MixedNativeRuntime.start_client",
+            "purpose": "Reuse original Native Desktop launch, isolated storage, login and actor binding",
+            "lifetime": "suite",
+            "dependsOn": ["tooling/acceptance/drivers/native/runtime.py#NativeDesktopRuntimeBinding.create_bound_session"],
+            "invalidatedBy": ["source", "toolchain", "environment", "client", "session"]
+          },
+          {
+            "ref": "tooling/acceptance/drivers/native/runtime.py#NativeDesktopRuntimeBinding.create_bound_session",
+            "purpose": "Consume the parent's exact-source Desktop executable and current Cell binding",
+            "lifetime": "suite",
+            "dependsOn": [],
+            "invalidatedBy": ["source", "toolchain", "environment", "client"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/chat/mixed_native_runtime.py#MixedNativeRuntime.source_identity",
+            "purpose": "Verify exact local snapshot, clean deployed Station source and the original binary digest",
+            "lifetime": "suite",
+            "dependsOn": ["tooling/acceptance/gates/chat/native_support.py#native_runtime_source_identity"],
+            "invalidatedBy": ["source", "environment", "toolchain"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/chat/native_support.py#native_runtime_source_identity",
+            "purpose": "Retain the existing Native source and Station checkpoint verifier",
+            "lifetime": "implementation",
+            "dependsOn": [],
+            "invalidatedBy": ["source", "environment", "toolchain"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/social/content_search_mobile.py#SocialContentSearchMobileGate.seed",
+            "purpose": "Prepare public posts and historical comments, receiver recovery keys and unsigned-write denial once",
+            "lifetime": "suite",
+            "dependsOn": ["tooling/acceptance/gates/social/content_search_mobile.py#SocialContentSearchMobileGate.public_seed"],
+            "invalidatedBy": ["source", "fixture", "client", "session"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/social/content_search_mobile.py#SocialContentSearchMobileGate.public_seed",
+            "purpose": "Publish signed public seeds with the existing Desktop Moments actions",
+            "lifetime": "suite",
+            "dependsOn": ["tooling/acceptance/core/harness.py#call_async_harness"],
+            "invalidatedBy": ["source", "fixture", "session"]
+          },
+          {
+            "ref": "tooling/acceptance/core/harness.py#call_async_harness",
+            "purpose": "Reuse the existing asynchronous production Harness transport",
+            "lifetime": "implementation",
+            "dependsOn": [],
+            "invalidatedBy": ["source", "toolchain"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/social/content_search_mobile.py#SocialContentSearchMobileGate.search_scenario",
+            "purpose": "Prove both receivers' four original targets, historical anchors, Return, outage and deletion",
+            "lifetime": "scenario",
+            "dependsOn": ["tooling/acceptance/gates/social/content_search_mobile.py#SocialContentSearchMobileGate.block_policy"],
+            "invalidatedBy": ["source", "oracle", "action-plan", "fixture"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/social/content_search_mobile.py#SocialContentSearchMobileGate.block_policy",
+            "purpose": "Block both original authors and deny old private references after relationship reacceptance",
+            "lifetime": "scenario",
+            "dependsOn": [],
+            "invalidatedBy": ["source", "oracle", "action-plan", "fixture"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/social/content_search_mobile.py#SocialContentSearchMobileGate.account_scenario",
+            "purpose": "Preserve original account isolation and SELF-resource acquisition",
+            "lifetime": "scenario",
+            "dependsOn": [],
+            "invalidatedBy": ["source", "oracle", "action-plan", "fixture", "session"]
+          },
+          {
+            "ref": "tooling/acceptance/provisioners/mobile_search.py#MobileSearchSimulatorProvisioner.provision",
+            "purpose": "Compose original Mobile resources, actor fixture and Desktop storage identity at Suite scope",
+            "lifetime": "suite",
+            "dependsOn": [],
+            "invalidatedBy": ["source", "environment", "fixture", "toolchain"]
+          }
+        ]
+      },
       "argv": ["python3", "-m", "tooling.acceptance.gates.social.content_search_mobile"],
       "timeout_seconds": 1800,
       "environment": "chat-mobile-search-simulator",
       "provisioner": "chat-mobile-search-simulator",
+      "requiredRuntimeCells": ["desktop-macos-native"],
+      "runtimeCellArtifact": "acceptance-binary",
       "ephemeralCapabilities": ["mobile.station-outage"],
       "tier": "env-evidence",
-      "description": "Reuse one exact-source iOS/Android Suite for public/private content Search, independent comment anchors, Return, current policy and account/lifecycle isolation."
+      "description": "Reuse one exact-source Desktop author and iOS/Android receiver Suite for signed public seeds, private content, historical comments, Return, policy and account isolation."
     },
     "chat-device-search-contract": {
       "argv": ["python3", "-m", "tooling.acceptance.gates.chat.device_search_contract"],
@@ -135,7 +335,7 @@
       "description": "Render the confirmed X Config console hierarchy at desktop and narrow widths with typed forms, source revision strip, immediate publication boundary, history, and stable no-overflow layout."
     },
     "x-config-desktop-adapter-contract": {
-      "command": "sh -c 'pnpm --dir apps/desktop exec tsc --noEmit -p tsconfig.json && pnpm --dir apps/desktop exec vitest run src/components/common/StationPicker.test.tsx src/services/xConfig.test.ts && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml x_config --locked && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml station_discovery --locked && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml station_registry --locked && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml station_binding --locked'",
+      "command": "sh -c 'pnpm --dir apps/desktop exec tsc --noEmit -p tsconfig.json && pnpm --dir apps/desktop exec vitest run src/pages/login/authSurfaceAlignment.test.ts src/services/xConfig.test.ts && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml x_config --locked && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml station_discovery --locked && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml station_registry --locked && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml station_binding --locked'",
       "timeout_seconds": 1800,
       "environment": "local",
       "tier": "ci-cheap",
@@ -401,7 +601,7 @@
     "acceptance-runtime-provisioning-self": {
       "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "node-source-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.node_toolchain", "--gate", "acceptance-runtime-provisioning-self", "--tool", "node", "--tool", "python3", "--tool", "sh", "--tool", "bash", "--tool", "env", "--tool", "git", "--tool", "make", "--tool", "ps", "--tool", "sleep", "--node-import", "tooling/scripts/architecture/module-governance.mjs", "yaml", "--python-package", "selenium"], "timeoutSeconds": 10}},
       "dependsOn": ["acceptance-run-static-gate", "acceptance-planner-framework-self", "acceptance-validator-framework-self", "acceptance-boundary-framework-self"],
-      "command": "env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID sh -c 'python3 -m unittest tooling.acceptance.tests.test_tauri_smoke tooling.acceptance.tests.test_native_desktop_macos tooling.acceptance.tests.test_native_observation_diagnostics tooling.acceptance.tests.test_desktop_acceptance_build tooling.acceptance.tests.test_resource_diagnostic tooling.acceptance.tests.test_proof tooling.acceptance.tests.test_evidence_store tooling.acceptance.tests.test_redaction tooling.acceptance.tests.test_provisioning_model tooling.acceptance.tests.test_provisioner_runtime tooling.acceptance.tests.test_provisioning_owners tooling.acceptance.tests.test_station_equipment tooling.acceptance.tests.test_station_access_dual_relay tooling.acceptance.tests.test_station_access_relay_role tooling.acceptance.tests.test_posix_service_runtime tooling.acceptance.tests.test_profile_lease tooling.acceptance.tests.test_launch_context tooling.acceptance.tests.test_execution_budget tooling.acceptance.tests.test_execution_graph tooling.acceptance.tests.test_execution_session tooling.acceptance.tests.test_operation_observer tooling.acceptance.tests.test_fixture_authority_lifecycle tooling.acceptance.tests.test_profile_bindings tooling.acceptance.tests.test_current_profile_native tooling.acceptance.tests.test_runtime_source_snapshot tooling.acceptance.tests.test_native_runtime_binding tooling.acceptance.tests.test_mobile_simulator_provisioner tooling.acceptance.tests.test_prerequisite_aggregate_contract tooling.acceptance.tests.test_go_source_input_owner tooling.acceptance.gates.chat.native_two_client_e2e_test && python3 tooling/scripts/acceptance-report-test.py && python3 tooling/scripts/acceptance-coverage-report-test.py'",
+      "command": "env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID sh -c 'python3 -m unittest tooling.acceptance.tests.test_tauri_smoke tooling.acceptance.tests.test_native_desktop_macos tooling.acceptance.tests.test_native_observation_diagnostics tooling.acceptance.tests.test_macos_operator tooling.acceptance.tests.test_file_chooser_qualification tooling.acceptance.tests.test_desktop_acceptance_build tooling.acceptance.tests.test_resource_diagnostic tooling.acceptance.tests.test_proof tooling.acceptance.tests.test_evidence_store tooling.acceptance.tests.test_redaction tooling.acceptance.tests.test_provisioning_model tooling.acceptance.tests.test_provisioner_runtime tooling.acceptance.tests.test_provisioning_owners tooling.acceptance.tests.test_station_equipment tooling.acceptance.tests.test_station_access_dual_relay tooling.acceptance.tests.test_station_access_relay_role tooling.acceptance.tests.test_posix_service_runtime tooling.acceptance.tests.test_profile_lease tooling.acceptance.tests.test_launch_context tooling.acceptance.tests.test_execution_budget tooling.acceptance.tests.test_execution_graph tooling.acceptance.tests.test_execution_session tooling.acceptance.tests.test_operation_observer tooling.acceptance.tests.test_fixture_authority_lifecycle tooling.acceptance.tests.test_profile_bindings tooling.acceptance.tests.test_current_profile_native tooling.acceptance.tests.test_runtime_source_snapshot tooling.acceptance.tests.test_native_runtime_binding tooling.acceptance.tests.test_mobile_simulator_provisioner tooling.acceptance.tests.test_prerequisite_aggregate_contract tooling.acceptance.tests.test_go_source_input_owner tooling.acceptance.gates.chat.native_two_client_e2e_test && python3 tooling/scripts/acceptance-report-test.py && python3 tooling/scripts/acceptance-coverage-report-test.py'",
       "timeout_seconds": 180,
       "environment": "local",
       "tier": "ci-cheap",
@@ -1677,13 +1877,69 @@
       "tier": "local-evidence",
       "description": "Validate Desktop applet runtime page lease smoothness for A-to-B switching, explicit close back to launcher, LRU eviction, and launcher wakeup refresh."
     },
+    "social-public-feed-source": {
+      "command": "python3 -m tooling.acceptance.gates.social.public_feed_source",
+      "timeout_seconds": 3600,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Run Actor-Owned Moments Go regressions and Native Rust journal/cache source checks; does not prove product Journeys."
+    },
+    "social-public-feed-native-e2e": {
+      "argv": ["python3", "-m", "tooling.acceptance.gates.social.public_feed_native"],
+      "timeout_seconds": 5400,
+      "environment": "cross-station-social-native",
+      "provisioner": "cross-station-social-native",
+      "requiredRuntimeCells": ["desktop-macos-native"],
+      "runtimeCellArtifact": "acceptance-binary",
+      "ephemeralCapabilities": ["social-feed-notification", "social-relay-opaque"],
+      "tier": "env-evidence",
+      "e2e": {
+        "journeys": [
+          {"id": "actor-owned-moments-public", "uses": ["tooling/acceptance/gates/social/public_feed_native.py#Gate.run"]}
+        ],
+        "implementations": [
+          {"ref": "tooling/acceptance/gates/social/public_feed_native.py#Gate.run", "purpose": "Execute publication, comments, poll replacement and cutoff, edit, restart, Search, tombstone, opaque Relay delivery and Circle lifecycle UI assertions", "lifetime": "scenario", "dependsOn": ["tooling/acceptance/gates/social/public_feed_native.py#Gate.start_suite_clients", "tooling/acceptance/gates/social/public_feed_native.py#Gate.action", "tooling/acceptance/gates/social/public_feed_native.py#Gate.prepare_fixture", "tooling/acceptance/gates/chat/device_search_runner.py#DeviceSearchGate.open_search", "tooling/acceptance/gates/social/public_feed_native.py#Gate.poll_scenario", "tooling/acceptance/gates/social/public_feed_native.py#Gate.create_poll", "tooling/acceptance/gates/social/public_feed_native.py#Gate.assert_poll", "tooling/acceptance/gates/social/public_feed_native.py#Gate.circle_scenarios", "tooling/acceptance/gates/social/public_feed_native.py#Gate.lost_notification_scenario", "tooling/acceptance/gates/social/public_feed_native.py#Gate.relay_opaque_scenario"], "invalidatedBy": ["source", "oracle", "action-plan"]},
+          {"ref": "tooling/acceptance/gates/social/public_feed_native.py#Gate.relay_opaque_scenario", "purpose": "Publish and confirm a real bilateral comment in the original Suite, require receiver paint and verified head plus exact signed Circuit routes, both TCP legs and absent plaintext markers", "lifetime": "scenario", "dependsOn": ["tooling/acceptance/gates/social/public_feed_native.py#Gate.action", "tooling/acceptance/fixtures/social_relay_capture.py#SocialRelayCaptureHandler.invoke"], "invalidatedBy": ["source", "environment", "fixture", "oracle", "action-plan"]},
+          {"ref": "tooling/acceptance/fixtures/social_relay_capture.py#SocialRelayCaptureHandler.invoke", "purpose": "Own bounded namespace capture, unchanged source-bound signed routes and authenticated TCP connections, immutable packet evidence and exact child cleanup", "lifetime": "implementation", "dependsOn": [], "invalidatedBy": ["source", "environment", "fixture", "toolchain"]},
+          {"ref": "tooling/acceptance/gates/social/public_feed_native.py#Gate.start_suite_clients", "purpose": "Prepare Bob identity recovery once before authenticating and hydrating his separate second device through original Native and portable-recovery owners", "lifetime": "suite", "dependsOn": ["tooling/acceptance/gates/chat/native_two_client_runner.py#NativeTwoClientGate.start_client"], "invalidatedBy": ["source", "environment", "fixture", "client", "session"]},
+          {"ref": "tooling/acceptance/gates/social/public_feed_native.py#Gate.lost_notification_scenario", "purpose": "Publish through real UI, drop one actual authenticated Federation hint and observe bounded verified repair and receiver paint", "lifetime": "scenario", "dependsOn": ["tooling/acceptance/gates/social/public_feed_native.py#Gate.notification_control", "tooling/acceptance/gates/social/public_feed_native.py#Gate.action"], "invalidatedBy": ["source", "environment", "fixture", "oracle", "action-plan"]},
+          {"ref": "tooling/acceptance/gates/social/public_feed_native.py#Gate.notification_control", "purpose": "Use the existing ephemeral parent channel to arm, observe and clear the source-bound original Station control", "lifetime": "implementation", "dependsOn": [], "invalidatedBy": ["source", "environment", "fixture"]},
+          {"ref": "tooling/acceptance/gates/social/public_feed_native.py#Gate.poll_scenario", "purpose": "Exercise original shared poll publication, bilateral voting, replacement, local cancellation and body edit", "lifetime": "scenario", "dependsOn": ["tooling/acceptance/gates/social/public_feed_native.py#Gate.create_poll", "tooling/acceptance/gates/social/public_feed_native.py#Gate.assert_poll"], "invalidatedBy": ["source", "oracle", "action-plan"]},
+          {"ref": "tooling/acceptance/gates/social/public_feed_native.py#Gate.create_poll", "purpose": "Use actual composer fields and verify retained draft after dismissal through the original owner", "lifetime": "scenario", "dependsOn": ["tooling/acceptance/gates/social/public_feed_native.py#Gate.action"], "invalidatedBy": ["source", "oracle", "action-plan"]},
+          {"ref": "tooling/acceptance/gates/social/public_feed_native.py#Gate.assert_poll", "purpose": "Check painted verified option counts, unique voters, viewer choices and closed controls", "lifetime": "scenario", "dependsOn": ["tooling/acceptance/gates/social/public_feed_native.py#Gate.action"], "invalidatedBy": ["source", "oracle"]},
+          {"ref": "tooling/acceptance/gates/social/public_feed_native.py#Gate.circle_scenarios", "purpose": "Select 22 real local and remote members, save and reopen the complete membership, cancel changes, retry a partial save, block a remote member and inspect account epoch isolation", "lifetime": "scenario", "dependsOn": ["tooling/acceptance/gates/social/public_feed_native.py#Gate.assert_circle", "tooling/acceptance/gates/social/public_feed_native.py#Gate.assert_circle_editor", "tooling/acceptance/gates/social/public_feed_native.py#Gate.circle_block_scenario", "tooling/acceptance/gates/social/public_feed_native.py#Gate.circle_epoch_scenario"], "invalidatedBy": ["source", "fixture", "oracle", "action-plan"]},
+          {"ref": "tooling/acceptance/gates/social/public_feed_native.py#Gate.circle_block_scenario", "purpose": "Use original identity/detail controls to block and unblock a real remote Circle member; observe reciprocal denial and retained publisher membership", "lifetime": "scenario", "dependsOn": ["tooling/acceptance/gates/social/public_feed_native.py#Gate.action", "tooling/acceptance/gates/social/public_feed_native.py#Gate.assert_circle", "tooling/acceptance/gates/social/public_feed_native.py#Gate.assert_circle_element_painted"], "invalidatedBy": ["source", "fixture", "oracle", "action-plan", "session"]},
+          {"ref": "tooling/acceptance/gates/social/public_feed_native.py#Gate.circle_epoch_scenario", "purpose": "Type a real unsaved Circle draft, switch prepared native PIN accounts, inspect secondary painted isolation and primary canonical readback; no Auth UI proof is claimed", "lifetime": "scenario", "dependsOn": ["tooling/acceptance/gates/social/public_feed_native.py#Gate.fixture_action", "tooling/acceptance/gates/social/public_feed_native.py#Gate.assert_circle", "tooling/acceptance/gates/social/public_feed_native.py#Gate.assert_circle_editor"], "invalidatedBy": ["source", "fixture", "oracle", "action-plan", "session"]},
+          {"ref": "tooling/acceptance/gates/social/public_feed_native.py#Gate.fixture_action", "purpose": "Bind the original secure-content fixture Harness to prepared native account commands without supplying product success", "lifetime": "implementation", "dependsOn": ["tooling/acceptance/core/harness.py#call_async_harness"], "invalidatedBy": ["source", "fixture", "session"]},
+          {"ref": "tooling/acceptance/gates/social/public_feed_native.py#Gate.assert_circle", "purpose": "Compare the original scoped Circle projection with its actually painted card after save, cancel and retry", "lifetime": "scenario", "dependsOn": ["tooling/acceptance/gates/social/public_feed_native.py#Gate.circle_projection"], "invalidatedBy": ["source", "oracle", "session"]},
+          {"ref": "tooling/acceptance/gates/social/public_feed_native.py#Gate.assert_circle_editor", "purpose": "Assert all real member rows, retained draft values and the last member painted over two animation frames", "lifetime": "scenario", "dependsOn": ["tooling/acceptance/gates/social/public_feed_native.py#Gate.assert_circle_element_painted"], "invalidatedBy": ["source", "oracle", "action-plan"]},
+          {"ref": "tooling/acceptance/gates/social/public_feed_native.py#Gate.assert_circle_element_painted", "purpose": "Observe an original Circle member or actual save warning with viewport hit target and two painted frames", "lifetime": "implementation", "dependsOn": [], "invalidatedBy": ["source", "oracle"]},
+          {"ref": "tooling/acceptance/gates/social/public_feed_native.py#Gate.circle_projection", "purpose": "Observe the original scoped Moments Store through its existing Harness without supplying product success", "lifetime": "implementation", "dependsOn": ["tooling/acceptance/gates/social/public_feed_native.py#Gate.action"], "invalidatedBy": ["source", "oracle", "session"]},
+          {"ref": "tooling/acceptance/gates/chat/native_two_client_runner.py#NativeTwoClientGate.start_client", "purpose": "Reuse source-bound Native launch, login and cleanup", "lifetime": "suite", "dependsOn": ["tooling/acceptance/core/harness.py#call_async_harness"], "invalidatedBy": ["source", "environment", "fixture", "client", "session"]},
+          {"ref": "tooling/acceptance/gates/social/public_feed_native.py#Gate.action", "purpose": "Bind the existing production Moments Harness through its asynchronous transport", "lifetime": "implementation", "dependsOn": ["tooling/acceptance/core/harness.py#call_async_harness"], "invalidatedBy": ["source", "oracle"]},
+          {"ref": "tooling/acceptance/gates/social/public_feed_native.py#Gate.prepare_fixture", "purpose": "Bind original Federation and Actor owners, register all real Circle candidates and prepare distinct PIN-protected account partitions before the first scenario", "lifetime": "suite", "dependsOn": ["tooling/acceptance/gates/social/public_feed_native.py#Gate.action", "tooling/acceptance/gates/social/public_feed_native.py#Gate.fixture_action"], "invalidatedBy": ["source", "environment", "fixture"]},
+          {"ref": "tooling/acceptance/gates/chat/device_search_runner.py#DeviceSearchGate.open_search", "purpose": "Reuse original Native Search input, settlement and painted geometry oracle on the existing receiver", "lifetime": "scenario", "dependsOn": ["tooling/acceptance/core/harness.py#call_async_harness"], "invalidatedBy": ["source", "oracle", "client", "session"]},
+          {"ref": "tooling/acceptance/core/harness.py#call_async_harness", "purpose": "Reuse existing asynchronous Harness transport", "lifetime": "implementation", "dependsOn": [], "invalidatedBy": ["source", "toolchain"]}
+        ]
+      },
+      "description": "Prove public signed publication, late followers, non-follower comments/reactions, single/multiple poll voting and replacement, cutoff, body edit, restart, replicated Search and tombstone rendering through one reusable two-Station Native Suite; fault and visual parity scope remains unproven."
+    },
     "social-private-desktop-e2e": {
       "command": "python3 -m tooling.acceptance.gates.social.desktop_private_e2e",
-      "catalogExecution": "manual",
+      "dependsOn": ["social-cross-station-native-e2e"],
       "timeout_seconds": 9000,
       "environment": "local",
       "tier": "env-evidence",
-      "description": "Prove Desktop Private Moments with one reusable Alice/Bob/Eve Native Suite while leaving Mobile unproven."
+      "e2e": {
+        "journeys": [
+          {"id": "private-social-comment-reactions", "uses": ["tooling/acceptance/gates/social/desktop_private_e2e.py#SocialPrivateDesktopGate.run"]}
+        ],
+        "implementations": [
+          {"ref": "tooling/acceptance/gates/social/desktop_private_e2e.py#SocialPrivateDesktopGate.run", "purpose": "Validate bilateral root/reply painted reactions, durable command retry and Bob2 readback from the original producer", "lifetime": "scenario", "dependsOn": ["tooling/acceptance/gates/social/cross_station_support.py#load_suite_result"], "invalidatedBy": ["source", "oracle", "fixture"]},
+          {"ref": "tooling/acceptance/gates/social/cross_station_support.py#load_suite_result", "purpose": "Read only the same execution graph original source-bound prerequisite inventory", "lifetime": "suite", "dependsOn": [], "invalidatedBy": ["source", "environment", "fixture"]}
+        ]
+      },
+      "description": "Validate private comment reactions, Native durable retry and replacement readback from this execution graph's original nine-scenario producer without provisioning again."
     },
     "social-cross-station-contract": {
       "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-contract",
@@ -1729,19 +1985,45 @@
     },
     "social-cross-station-desktop-functional": {
       "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-desktop-functional",
-      "catalogExecution": "manual",
+      "dependsOn": ["social-cross-station-native-e2e"],
       "timeout_seconds": 10800,
       "environment": "local",
       "tier": "local-evidence",
-      "description": "Run the source-only development two-Station Native Social Suite and retain its non-formal evidence."
+      "e2e": {
+        "journeys": [
+          {"id": "private-social-nine-scenario-functional", "uses": ["tooling/acceptance/gates/social/cross_station_desktop_functional.py#Gate.run"]}
+        ],
+        "implementations": [
+          {"ref": "tooling/acceptance/gates/social/cross_station_desktop_functional.py#Gate.run", "purpose": "Validate the original nine scenario results without launching or provisioning a second Suite", "lifetime": "suite", "dependsOn": ["tooling/acceptance/gates/social/cross_station_support.py#load_suite_result"], "invalidatedBy": ["source", "oracle", "fixture"]},
+          {"ref": "tooling/acceptance/gates/social/cross_station_support.py#load_suite_result", "purpose": "Verify the original current execution graph prerequisite and policy", "lifetime": "suite", "dependsOn": [], "invalidatedBy": ["source", "environment", "fixture"]}
+        ]
+      },
+      "description": "Retain non-formal nine-scenario observations from the current graph's source-bound private Social producer."
     },
     "social-cross-station-native-e2e": {
       "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-native-e2e",
-      "catalogExecution": "manual",
       "timeout_seconds": 10800,
-      "environment": "local",
+      "environment": "cross-station-social-native",
+      "provisioner": "cross-station-social-native",
+      "requiredRuntimeCells": ["desktop-macos-native"],
+      "runtimeCellArtifact": "acceptance-binary",
       "tier": "env-evidence",
-      "description": "Attach formal proof to the exact-source CSS-09 Native Suite for AS17 through AS24 and same-Station regression."
+      "e2e": {
+        "journeys": [
+          {"id": "SOC-SEC-J10-J12", "uses": ["tooling/acceptance/gates/social/cross_station_native_e2e.py#Gate.run"]}
+        ],
+        "implementations": [
+          {"ref": "tooling/acceptance/gates/social/cross_station_native_e2e.py#Gate.run", "purpose": "Execute and validate the original AS17-AS24 and same-Station Suite on Runner preparation", "lifetime": "suite", "dependsOn": ["tooling/development/secure_content/runtime_owner.py#W7RuntimeOwner.run_social_cross_station_suite", "tooling/acceptance/provisioners/native_tauri_embedded_webdriver.py#CrossStationSocialNativeProvisioner"], "invalidatedBy": ["source", "environment", "oracle", "fixture"]},
+          {"ref": "tooling/development/secure_content/runtime_owner.py#W7RuntimeOwner.run_social_cross_station_suite", "purpose": "Preserve the original nine scenarios, painted comment/reply oracle, native command retry and empty-device recovery", "lifetime": "suite", "dependsOn": ["tooling/development/secure_content/prepared_native.py#PreparedSocialNativeClient.start", "tooling/development/secure_content/prepared_native.py#PreparedSocialNativeClient.harness", "tooling/development/secure_content/prepared_native.py#PreparedSocialNativeRuntime.cleanup"], "invalidatedBy": ["source", "oracle", "action-plan", "fixture"]},
+          {"ref": "tooling/acceptance/provisioners/native_tauri_embedded_webdriver.py#CrossStationSocialNativeProvisioner", "purpose": "Prepare both physical schemas before retained service leases and independently re-attest their source and runtime", "lifetime": "suite", "dependsOn": ["tooling/development/secure_content/runtime_schema.py#prepare_private_social_runtime"], "invalidatedBy": ["source", "environment", "fixture"]},
+          {"ref": "tooling/development/secure_content/runtime_schema.py#prepare_private_social_runtime", "purpose": "Use the original capability and lease governed exact-profile schema reset owner", "lifetime": "suite", "dependsOn": [], "invalidatedBy": ["source", "environment", "fixture"]},
+          {"ref": "tooling/development/secure_content/prepared_native.py#PreparedSocialNativeClient.start", "purpose": "Adapt already-prepared Native binding with Eve fixture-only and Bob2 replacing Bob within two windows", "lifetime": "suite", "dependsOn": ["tooling/acceptance/drivers/native/runtime.py#NativeDesktopRuntimeBinding.create_bound_session"], "invalidatedBy": ["source", "client", "session"]},
+          {"ref": "tooling/acceptance/drivers/native/runtime.py#NativeDesktopRuntimeBinding.create_bound_session", "purpose": "Reuse the existing Native binary, storage, launch and live binding proof owner", "lifetime": "suite", "dependsOn": [], "invalidatedBy": ["source", "toolchain", "environment", "client", "session"]},
+          {"ref": "tooling/development/secure_content/prepared_native.py#PreparedSocialNativeClient.harness", "purpose": "Expose the original Foundation Harness and authentication helper to the prepared session", "lifetime": "suite", "dependsOn": [], "invalidatedBy": ["source", "client", "session", "fixture"]},
+          {"ref": "tooling/development/secure_content/prepared_native.py#PreparedSocialNativeRuntime.cleanup", "purpose": "Delegate logout, stop and exact owned-resource release to the existing Native lifecycle and binding owners", "lifetime": "suite", "dependsOn": [], "invalidatedBy": ["source", "client", "session"]}
+        ]
+      },
+      "description": "Run the original nine private Social scenarios through one Runner preparation, three Native launches and at most two windows; preserve original receiver, painted, retry and recovery proof."
     },
     "social-cross-station-mobile-desktop-e2e": {
       "argv": [
@@ -1791,6 +2073,8 @@
         "social-cross-station-prekey",
         "social-cross-station-revocation-recovery",
         "social-private-desktop-e2e",
+        "social-public-feed-native-e2e",
+        "social-public-feed-source",
         "station-api-ownership"
       ],
       "command": "python3 tooling/scripts/acceptance-validate.py --domain social --require-proven",

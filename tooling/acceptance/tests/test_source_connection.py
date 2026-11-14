@@ -59,6 +59,49 @@ class SourceConnectionTests(unittest.TestCase):
             self.assertEqual(owner.remote_source_environment, {})
             lease.release.assert_called_once_with()
 
+    def test_cleanup_children_borrow_only_connections_not_yet_released(self) -> None:
+        class Owner(EnvironmentProvisioner):
+            environment_id = "source-context-test"
+
+            def provision(self, gate_id: str):
+                raise NotImplementedError
+
+        owner = Owner(EnvironmentContract(id="source-context-test"))
+        descriptor = {
+            "target": ssh_target_identity(SshTarget("host.example", "runner")),
+            "pid": 123, "controlPath": "/tmp/private-owner/control",
+            "resource": "test-source", "owner": "test-owner",
+        }
+        lease = Mock(resource="test-source", connection_descriptor=descriptor)
+        lease.release.side_effect = lambda: setattr(lease, "connection_descriptor", None)
+        observed = []
+
+        def child_observation():
+            completed = subprocess.run(
+                [sys.executable, "-c",
+                 "import json,os; print(json.dumps(os.environ.get("
+                 "'PT_ACCEPTANCE_SSH_CONNECTIONS')))"],
+                capture_output=True, text=True, check=True, timeout=5,
+            )
+            observed.append(json.loads(completed.stdout))
+
+        inherited = json.dumps([descriptor])
+        with patch.dict(os.environ, {SSH_CONNECTIONS_ENV: inherited}):
+            owner.register_cleanup("ordinary-runtime", child_observation)
+            owner._source_leases.append(lease)
+            owner.register_cleanup("source-lease:test-source", lease.release)
+            owner.register_cleanup("borrower", child_observation)
+            completed = owner.cleanup()
+            self.assertEqual(os.environ[SSH_CONNECTIONS_ENV], inherited)
+
+        self.assertEqual(completed, (
+            "borrower", "source-lease:test-source", "ordinary-runtime",
+        ))
+        self.assertEqual(json.loads(observed[0]), [descriptor])
+        self.assertIsNone(observed[1])
+        self.assertEqual(owner.remote_source_environment, {})
+        lease.release.assert_called_once_with()
+
     def test_forward_probe_rejection_terminates_owned_process(self) -> None:
         process = subprocess.Popen(
             [sys.executable, "-c", "import time;time.sleep(30)"],

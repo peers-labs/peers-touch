@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "peer-only-gate": "node agent/peer-only-gate.mjs"
   },
   "dependencies": {
     "@peers-touch/prototype-mobile-chat": "workspace:*",

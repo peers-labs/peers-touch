@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -22,6 +23,7 @@ type ConversationHandlers struct {
 	convService     *service.ConversationService
 	turnService     *service.TurnService
 	externalRuntime *service.ExternalRuntimeService
+	chatTaskID      func(ctx context.Context, actorPTID string, conversationIDs []string) (map[string]string, error)
 }
 
 func NewConversationHandlers(
@@ -34,6 +36,38 @@ func NewConversationHandlers(
 		turnService:     turnService,
 		externalRuntime: externalRuntime,
 	}
+}
+
+// SetChatTaskIdentityResolver attaches the canonical Chat task identity
+// resolver so conversation reads project the owning TaskRun id.
+func (h *ConversationHandlers) SetChatTaskIdentityResolver(resolver func(ctx context.Context, actorPTID string, conversationIDs []string) (map[string]string, error)) {
+	h.chatTaskID = resolver
+}
+
+// enrichTaskIDs projects canonical Chat task ids onto conversations. Read
+// failures surface as 500 because task identity is part of the conversation
+// contract, never silently omitted.
+func (h *ConversationHandlers) enrichTaskIDs(ctx context.Context, actorPTID string, conversations []*domain.Conversation) error {
+	if h.chatTaskID == nil || len(conversations) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(conversations))
+	for _, conversation := range conversations {
+		if conversation != nil && conversation.ConversationID != "" {
+			ids = append(ids, conversation.ConversationID)
+		}
+	}
+	identity, err := h.chatTaskID(ctx, actorPTID, ids)
+	if err != nil {
+		return err
+	}
+	for _, conversation := range conversations {
+		if conversation == nil {
+			continue
+		}
+		conversation.TaskID = identity[conversation.ConversationID]
+	}
+	return nil
 }
 
 type conversationListRequest struct {
@@ -119,6 +153,10 @@ func (h *ConversationHandlers) HandleListConversations(ctx context.Context, req 
 		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
 		return nil
 	}
+	if err := h.enrichTaskIDs(ctx, ptid, conversations); err != nil {
+		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
+		return nil
+	}
 	writeJSON(resp, http.StatusOK, map[string]any{
 		"ok":            true,
 		"conversations": conversationsToJSON(conversations),
@@ -142,6 +180,10 @@ func (h *ConversationHandlers) HandleGetConversation(ctx context.Context, req se
 	conv, err := h.convService.GetConversation(ctx, subjectActorID(ctx), input.ConversationID)
 	if err != nil {
 		writeJSON(resp, http.StatusNotFound, map[string]any{"ok": false, "error": err.Error()})
+		return nil
+	}
+	if err := h.enrichTaskIDs(ctx, subjectActorID(ctx), []*domain.Conversation{conv}); err != nil {
+		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
 		return nil
 	}
 	writeJSON(resp, http.StatusOK, map[string]any{
@@ -320,6 +362,57 @@ func (h *ConversationHandlers) HandleResetConversationRuntime(
 	}, nil
 }
 
+type conversationRuntimeRebindRequest struct {
+	ConversationID  string `json:"conversation_id"`
+	ExpectedVersion uint64 `json:"expected_conversation_version"`
+}
+
+// HandleRebindConversationRuntime releases a stale DIRECT_MODEL runtime
+// binding so the next turn re-admits against the current default runtime.
+// It is the explicit, audited recovery for RUNTIME_BINDING_STALE and never
+// applies to external-agent runtimes (which use the reset endpoint).
+func (h *ConversationHandlers) HandleRebindConversationRuntime(
+	ctx context.Context,
+	req server.Request,
+	resp server.Response,
+) error {
+	var input conversationRuntimeRebindRequest
+	if err := json.Unmarshal(req.Body(), &input); err != nil {
+		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
+		return nil
+	}
+	if input.ConversationID == "" || input.ExpectedVersion == 0 {
+		writeJSON(resp, http.StatusBadRequest, map[string]any{
+			"ok": false, "error": "conversation_id and expected_conversation_version are required",
+		})
+		return nil
+	}
+	result, err := h.convService.RebindConversationRuntime(
+		ctx,
+		subjectActorID(ctx),
+		input.ConversationID,
+		input.ExpectedVersion,
+	)
+	if err != nil {
+		status := http.StatusConflict
+		errorType := ""
+		var bizErr *errcode.BizError
+		if errors.As(err, &bizErr) {
+			status = bizErr.HTTPStatus
+			errorType = string(bizErr.Code)
+		}
+		writeJSON(resp, status, map[string]any{
+			"ok": false, "error": err.Error(), "error_type": errorType,
+		})
+		return nil
+	}
+	writeJSON(resp, http.StatusOK, map[string]any{
+		"ok":           true,
+		"conversation": conversationToJSON(result.Conversation),
+	})
+	return nil
+}
+
 func (h *ConversationHandlers) HandleListMessages(ctx context.Context, req server.Request, resp server.Response) error {
 	var input messageListRequest
 	if err := json.Unmarshal(req.Body(), &input); err != nil {
@@ -457,6 +550,18 @@ func (h *ConversationHandlers) HandleStreamConversationEvents(ctx context.Contex
 		writeTurnReplayFailure(resp, "snapshot_failed", err)
 		return nil
 	}
+	if isTerminalTurnStatus(snapshot.Status) {
+		// The turn is already terminal at the snapshot fence, but the
+		// terminal status can become visible before every event row is.
+		// Drain through the snapshot's last sequence BEFORE emitting the
+		// terminal snapshot, so late-committed facts (e.g. a client
+		// tool_result sharing the completion transaction) are never skipped.
+		if _, err := replay(snapshot.LastSequence); err != nil {
+			writeTurnReplayFailure(resp, "drain_failed", err)
+			return nil
+		}
+		terminal = true
+	}
 	if err := writeSSEEventChecked(resp, "snapshot", map[string]any{
 		"type":            "snapshot",
 		"turnId":          snapshot.TurnID,
@@ -464,7 +569,7 @@ func (h *ConversationHandlers) HandleStreamConversationEvents(ctx context.Contex
 		"agentId":         snapshot.AgentID,
 		"status":          snapshot.Status,
 		"text":            snapshot.Text,
-		"seq":             snapshot.LastSequence,
+		"seq":             lastSequence,
 		"terminal_reason": snapshot.TerminalReason,
 		"updated_at":      snapshot.UpdatedAt,
 	}); err != nil {
@@ -554,6 +659,7 @@ func conversationToJSON(c *domain.Conversation) map[string]any {
 		"conversation_id":          c.ConversationID,
 		"agent_id":                 c.AgentID,
 		"ptid":                     c.ActorPTID,
+		"task_id":                  c.TaskID,
 		"title":                    c.Title,
 		"description":              c.Description,
 		"provider_id":              c.ProviderID,

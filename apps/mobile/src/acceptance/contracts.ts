@@ -144,6 +144,8 @@ export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'moments.private.recover',
   'moments.private.reconcile',
   'moments.private.snapshot',
+  'moments.private.interaction.replay',
+  'moments.private.interaction.observe',
   'moments.feed.read',
   'moments.publish',
   'moments.react',
@@ -1204,6 +1206,7 @@ export interface MomentsFeedReadOutput {
 export interface MomentsPublishActionInput {
   text: string;
   audienceKind: number;
+  audience?: PrivateSocialAudience;
 }
 
 export interface MomentsReactionActionInput {
@@ -1600,13 +1603,38 @@ export interface MobileAcceptanceActionContract extends MobileSearchAcceptanceCo
     input: undefined;
     output: PrivateMomentSnapshotActionOutput;
   };
+  'moments.private.interaction.replay': {
+    input: { postId: string; commentId?: string };
+    output: {
+      commandIdSha256: string;
+      postIdSha256: string;
+      commentIdSha256: string;
+      state: string;
+      operation: string;
+      attemptCount: number;
+      nativeRetryCount: number;
+      replays: Array<{
+        projectionRevision: string;
+        exactReplay: boolean;
+        voteCounts?: string[];
+        voterCount?: string;
+        selectedOptionsSha256?: string;
+        pollProjectionRevision?: string;
+        reactionsSha256?: string;
+      }>;
+    };
+  };
+  'moments.private.interaction.observe': {
+    input: { selector: string };
+    output: { visible: boolean; paintFrames: number; tagName: string };
+  };
   'moments.feed.read': {
     input: undefined;
     output: MomentsFeedReadOutput;
   };
   'moments.publish': {
     input: MomentsPublishActionInput;
-    output: PublicMomentProjection;
+    output: PublicMomentProjection | { rejected: true; code: 'FEED_SIGNED_WRITE_REQUIRED'; text: string };
   };
   'moments.react': {
     input: MomentsReactionActionInput;

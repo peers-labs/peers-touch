@@ -21,6 +21,7 @@ Thumbs.db
 # .env.example stays committed as the template; everything else is local.
 tooling/docker/.env
 tooling/docker/.env.pt-*
+tooling/docker/.env.tw-*
 tooling/docker/.env.orangepi-*
 !tooling/docker/.env.orangepi-*.template
 tooling/docker/docker-compose.override.yml
@@ -111,6 +112,7 @@ apps/mobile/flutter/
 packages/messaging-core/target/
 packages/messaging-native-filesystem/target/
 packages/secure-content-core/target/
+packages/station-trust/target/
 packages/search-core/target/
 packages/x-config-core/target/
 packages/schema-core/target/

@@ -336,10 +336,26 @@ button.pt-link:hover:not(:disabled){background:var(--pt-subtle)}
 .pt-select-option[aria-selected=true]{background:var(--pt-primarySubtle);color:var(--pt-primary)}
 .pt-select-option:disabled{color:var(--pt-secondary)}
 .pt-choice-group,.pt-segmented{display:flex;align-items:center;gap:var(--pt-space-xs);flex-wrap:wrap}
-.pt-segmented{padding:var(--pt-space-xxs);gap:var(--pt-space-xxs);background:var(--pt-subtle);border-radius:var(--pt-radius-md)}
+.pt-segmented{position:relative;padding:var(--pt-space-xxs);gap:var(--pt-space-xxs);background:var(--pt-subtle);border-radius:var(--pt-radius-md)}
 .pt-segmented>.pt-button{min-width:0;flex-shrink:1;border-color:transparent;white-space:nowrap}
 .pt-segmented>.pt-button .pt-button-content{white-space:nowrap}
 .pt-segmented[data-full-width=true]>.pt-button{flex:1}
+/* Off-screen intrinsic-width probe for the icon-only cramp decision. It
+   mirrors the real option row gap and never shrinks, so its scrollWidth is
+   the stable "fully labelled" width regardless of the live collapsed state. */
+.pt-segmented__measure{position:absolute;left:0;top:0;height:0;width:max-content;overflow:hidden;visibility:hidden;pointer-events:none;display:flex;gap:var(--pt-space-xxs);white-space:nowrap}
+/* Each probe item must reproduce the .pt-button box model — horizontal
+   padding, icon/label gap and 1px border — or the intrinsic width is
+   under-counted and cramp never fires (measured 324 vs real ~467). */
+.pt-segmented__measure-item{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;gap:var(--pt-space-xs);padding:0 var(--pt-space-sm);border:1px solid transparent}
+/* Cramp-able groups stay on one line: spatial squeeze swaps labels for icons,
+   it never wraps buttons onto a second row. Text-only groups keep the base
+   flex-wrap:wrap fallback because they cannot collapse. */
+.pt-segmented[data-crampable='true']{flex-wrap:nowrap}
+/* Spatial squeeze: labels collapse to leading icons. The span (not the icon)
+   is hidden so the control keeps its squircle tile and centered glyph. */
+.pt-segmented[data-icon-only='true'] .pt-segmented__label{display:none}
+.pt-segmented[data-icon-only='true']>.pt-button{justify-content:center;gap:0}
 /* Scrollable island: never wraps; the group scrolls in one line and keeps
    peer elements' relative positions under spatial squeeze. Options keep
    intrinsic width; the scroll gutter is invisible, clipping at the pill edge. */
@@ -548,3 +564,17 @@ button.pt-link:hover:not(:disabled){background:var(--pt-subtle)}
 .pt-emoji-picker-grid .pt-button{padding:0;font-size:21px}
 @media(prefers-reduced-motion:reduce){.pt-ui *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 @media(pointer:coarse){.pt-ui .pt-icon-button,.pt-ui .pt-select-option,.pt-ui .pt-check-label,.pt-ui .pt-button,.pt-ui .pt-field-frame{min-height:var(--pt-control-comfortable)}.pt-ui .pt-icon-button,.pt-ui .pt-check-label{min-width:var(--pt-control-comfortable)}.pt-ui .pt-switch{width:var(--pt-control-comfortable);height:var(--pt-control-comfortable)}}
+/* TerminalSurface — presentational process output (no PTY ownership). */
+.pt-terminal{display:flex;flex-direction:column;min-width:0;border:1px solid var(--pt-border);border-radius:var(--pt-radius-md);background:var(--pt-subtle);overflow:hidden}
+.pt-terminal__bar{display:flex;align-items:center;gap:var(--pt-space-sm);padding:var(--pt-space-xxs) var(--pt-space-sm);border-bottom:1px solid var(--pt-border);font:12px var(--pt-font);color:var(--pt-secondary)}
+.pt-terminal__command{font-family:var(--pt-mono);font-size:12px;color:var(--pt-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46%}
+.pt-terminal__cwd{font-size:11px;color:var(--pt-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pt-terminal__spacer{flex:1}
+.pt-terminal__actions{display:inline-flex;align-items:center;gap:var(--pt-space-xxs)}
+.pt-terminal__viewport{margin:0;padding:var(--pt-space-xs) var(--pt-space-sm);overflow:auto;white-space:pre-wrap;word-break:break-word;font:11px/1.6 var(--pt-mono);color:var(--pt-secondary)}
+.pt-terminal__line{display:block}
+.pt-terminal__line--stdin{color:var(--pt-text)}
+.pt-terminal__line--stderr{color:var(--pt-danger)}
+.pt-terminal__line--system{color:var(--pt-muted);font-style:italic}
+.pt-terminal__prompt{color:var(--pt-primary);user-select:none}
+.pt-terminal__empty{color:var(--pt-muted)}

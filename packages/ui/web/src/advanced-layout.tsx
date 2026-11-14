@@ -18,8 +18,10 @@ export function OverflowToolbar({actions,visibleCount=3,label}: {actions:readonl
 }
 export interface ResizablePanelProps extends HTMLAttributes<HTMLDivElement> {
   size?:number;defaultSize?:number;onSizeChange?:(size:number)=>void;minimum?:number;maximum?:number;axis?:'horizontal'|'vertical';label:string;open?:boolean;
+  /** App-owned class for the inner body wrapper (layout). */
+  bodyClassName?: string;
 }
-export function ResizablePanel({size:supplied,defaultSize=320,onSizeChange:onChange,minimum=180,maximum=600,axis='horizontal',label,children,style,open=true,...props}:ResizablePanelProps) {
+export function ResizablePanel({size:supplied,defaultSize=320,onSizeChange:onChange,minimum=180,maximum=600,axis='horizontal',label,children,style,open=true,bodyClassName='',...props}:ResizablePanelProps) {
   const [local,setLocal]=useState(defaultSize),size=supplied??local;
   const onSizeChange=(next:number)=>{setLocal(next);onChange?.(next);};
   const dragging=useRef<{id:number;position:number;size:number}|null>(null), root=useRef<HTMLDivElement>(null), id=useId();
@@ -27,7 +29,7 @@ export function ResizablePanel({size:supplied,defaultSize=320,onSizeChange:onCha
   useEffect(()=>()=>{dragging.current=null;},[]);
   return <div {...props} ref={root} className={`pt-resizable ${props.className??''}`}
     hidden={!open} style={{...(axis==='horizontal'?{width:clamp(size),height:'100%'}:{height:clamp(size),width:'100%'}),...style}}>
-    <div id={id} className="pt-resizable-body">{children}</div>
+    <div id={id} className={`pt-resizable-body ${bodyClassName}`}>{children}</div>
     <div role="separator" tabIndex={0} aria-label={label} aria-controls={id} aria-orientation={axis==='horizontal'?'vertical':'horizontal'}
       aria-valuemin={minimum} aria-valuemax={maximum} aria-valuenow={clamp(size)} className="pt-resize-handle" data-axis={axis}
       onPointerDown={e=>{if(e.button!==0)return;e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);dragging.current={id:e.pointerId,position:axis==='horizontal'?e.clientX:e.clientY,size};}}

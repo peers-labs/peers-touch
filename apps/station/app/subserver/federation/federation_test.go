@@ -537,12 +537,13 @@ func TestFederationResolveViewUsesCanonicalHandleAndContext(t *testing.T) {
 		"alice@station.example",
 		"@alice@station.example",
 	} {
+		envelope := &profilepb.ActorProfileEnvelope{
+			FederatedHandle: handle, Signature: []byte{7, 8, 9}, SigningKeyKid: "home-key",
+		}
 		view := federationResolveView(
 			"federation-1",
 			&resolver.Resolved{
-				Envelope: &profilepb.ActorProfileEnvelope{
-					FederatedHandle: handle,
-				},
+				Envelope: envelope,
 				Locator: &locatorpb.ActorLocatorRecord{Seq: 74},
 			},
 		)
@@ -551,6 +552,9 @@ func TestFederationResolveViewUsesCanonicalHandleAndContext(t *testing.T) {
 		}
 		if got := view.GetFederationId(); got != "federation-1" {
 			t.Fatalf("resolve Federation context = %q", got)
+		}
+		if !proto.Equal(view.GetSignedProfile(), envelope) {
+			t.Fatal("resolver dropped or changed the original Home Station proof")
 		}
 	}
 }

@@ -43,7 +43,7 @@ func TestMomentEventPublisherPublishesCreatedSelfEcho(t *testing.T) {
 		if moment.PostId != "1001" {
 			t.Fatalf("post_id = %q, want 1001", moment.PostId)
 		}
-		if moment.ActorPtid != actorPTID || moment.AuthorActorPtid != actorPTID {
+		if moment.ActorPtid != actorPTID || moment.AuthorActorPtid != actorPTID || moment.TargetActorPtid != actorPTID {
 			t.Fatalf("actor PTIDs = actor:%q author:%q, want %q", moment.ActorPtid, moment.AuthorActorPtid, actorPTID)
 		}
 		if moment.Audience != model.Audience_FOLLOWERS.String() {
@@ -54,5 +54,31 @@ func TestMomentEventPublisherPublishesCreatedSelfEcho(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for moment event")
+	}
+}
+
+func TestMomentEventRecipientDoesNotReplaceOperationActor(t *testing.T) {
+	ctx := context.Background()
+	bus := events.NewEventBus()
+	defer bus.Close()
+	sub, cancel, err := bus.Subscribe(ctx, "ptid:bob", "device-b", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+	publisher := NewMomentEventPublisher()
+	publisher.bus = func() events.EventBus { return bus }
+	notice := &realtime.MomentEvent{Kind: realtime.MomentEvent_REACTED,
+		PostId: "1001", ActorPtid: "ptid:alice", AuthorActorPtid: "ptid:bob"}
+	publisher.publish(ctx, "ptid:bob", notice)
+	select {
+	case event := <-sub.Events:
+		got := event.GetMoment()
+		if got == nil || got.ActorPtid != "ptid:alice" || got.TargetActorPtid != "ptid:bob" ||
+			notice.TargetActorPtid != "" {
+			t.Fatal("recipient binding changed operation actor or original notice")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cross-Actor invalidation was not published")
 	}
 }

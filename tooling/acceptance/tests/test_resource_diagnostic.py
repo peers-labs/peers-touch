@@ -156,20 +156,39 @@ class ResourceDiagnosticTests(unittest.TestCase):
                         "probeError": control.error,
                     },
                 }}
+                support = "\n".join((
+                    "import json",
+                    "bootstrap = json.loads(input())",
+                    "request = json.loads(input())",
+                    "request.pop('deadlineMonotonicSeconds')",
+                    "request.pop('focusDeadlineMonotonicSeconds')",
+                    f"request.update({response!r})",
+                    "print(json.dumps(request), flush=True)",
+                    "request = json.loads(input())",
+                    "request.pop('deadlineMonotonicSeconds')",
+                    "request.pop('focusDeadlineMonotonicSeconds')",
+                    "request['closed'] = True",
+                    "print(json.dumps(request), flush=True)",
+                    "raise SystemExit(0)",
+                )) + "\n"
                 with patch(
-                    "tooling.acceptance.drivers.native.macos.subprocess.run",
-                    return_value=subprocess.CompletedProcess(
-                        (), 0, stdout=json.dumps(response), stderr="",
-                    ),
+                    "tooling.acceptance.drivers.native.macos._NATIVE_AX_SUPPORT",
+                    support,
                 ), self.assertRaises(BlockedError) as caught:
                     adapter.snapshot_operator_state()
                 error = caught.exception
                 details = error.diagnostic.to_dict()
                 check = details["resourceChecks"][0]
-                self.assertEqual(check["expected"]["frontmostPid"], 41)
+                self.assertEqual(check["expected"], {
+                    "operation": "operator",
+                    "processId": 0,
+                    "timeoutSeconds": 3.0,
+                    "focusTimeoutSeconds": 1.0,
+                })
                 self.assertEqual(
                     check["observed"]["frontmostPid"], control.actual_frontmost_pid,
                 )
+                self.assertEqual(check["observed"]["probeError"], control.error)
                 self.assertNotIn("private-title-not-evidence", json.dumps(details))
                 gate_id = f"operator-focus-probe-{index}"
                 with tempfile.TemporaryDirectory() as directory:

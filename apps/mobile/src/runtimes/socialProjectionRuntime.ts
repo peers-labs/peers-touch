@@ -441,6 +441,7 @@ export function createSocialProjectionRuntime(
       dependencies.ingestGroupCallRoom?.(event);
       return;
     }
+    if (event.kind === 'moment' && event.targetActorPtid !== getSocialStore().currentUserPtid) return;
     if (event.kind === 'call-signal') {
       dependencies.ingestCallSignal(event);
       return;

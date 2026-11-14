@@ -3332,20 +3332,25 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertNotIn("CHAT_RAIL_WIDTH", self.chat_session_list)
         self.assertNotIn('style={{ width:', self.chat_session_list)
 
-        # chat.css owns the fixed desktop rail and the narrow swap contract:
-        # the catalog owns the stage by default, data-narrow-open flips it.
+        # chat.css owns the fixed desktop rail and the narrow navigation
+        # contract: the catalog is the base layer, data-narrow-open slides the
+        # conversation in from the right as a persistent overlay.
         chat_css = CHAT_CSS.read_text(encoding="utf-8")
         self.assertIn("width: 300px;", chat_css)
         self.assertIn("flex: 0 0 300px;", chat_css)
         self.assertIn(
-            ".sc-chat[data-narrow='true'] .sc-conversation { display: none; }",
+            ".sc-chat[data-narrow='true'] .sc-conversation",
             chat_css,
         )
+        # WeChat-style push: parked off-screen with a transform, never a
+        # display:none flip, and slid to rest when data-narrow-open is set.
+        self.assertIn("transform: translateX(100%);", chat_css)
         self.assertIn(
             ".sc-chat[data-narrow='true'][data-narrow-open='true'] "
             ".sc-conversation",
             chat_css,
         )
+        self.assertIn("transform: translateX(0);", chat_css)
         self.assertIn("@media (max-width: 480px)", chat_css)
 
         # The page state machine drives the swap attributes from the media

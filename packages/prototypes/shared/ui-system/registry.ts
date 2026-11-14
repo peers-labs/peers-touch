@@ -54,6 +54,7 @@ export const CATEGORIES: { id: CategoryId; title: string }[] = [
 const CHAT = '桌面原型 · 消息';
 const MOMENTS = '桌面原型 · 动态';
 const SETTINGS = '桌面原型 · 设置';
+const AGENT = '桌面原型 · Agent';
 
 /** Implemented primitives/components actually shipped in packages/ui/web. */
 const IMPLEMENTED: Array<[CategoryId, string, string]> = [
@@ -173,6 +174,27 @@ const IMPLEMENTED: Array<[CategoryId, string, string]> = [
   ['identity', 'BrandMark', '品牌标'],
   ['identity', 'Avatar', '头像'],
   ['identity', 'AvatarGroup', '头像组'],
+  ['identity', 'IdentityCard', '快捷身份名片'],
+  ['identity', 'IdentityTrigger', '身份名片触发器'],
+  ['identity', 'FollowButton', '受控关注动作'],
+  ['identity', 'ImageGrid', '多图网格'],
+  ['identity', 'Lightbox', '多图灯箱（网格宿主）'],
+  ['identity', 'MomentCard', '动态卡片'],
+  ['identity', 'MomentCommentRow', '动态评论行'],
+  ['identity', 'MomentCommentComposer', '动态评论输入'],
+  ['identity', 'MomentPoll', '动态投票与已确认结果'],
+  ['identity', 'MomentPollComposer', '投票题目、选项与截止时间'],
+  ['identity', 'MomentScopeBar', '动态范围与搜索'],
+  ['identity', 'MomentComposerSurface', '动态发布器'],
+  ['identity', 'MomentAudiencePicker', '动态受众选择'],
+  ['identity', 'MomentCircleCard', '圈友分组卡'],
+  ['identity', 'MomentCircleEditor', '圈友草稿编辑'],
+  ['identity', 'MomentAuthor', '作者名片触发（动态宿主）'],
+  ['identity', 'MomentTrustMeta', '来源与受众（动态宿主）'],
+  ['identity', 'MomentReactionBar', '动态互动'],
+  ['identity', 'UserProfileHeader', '个人头部'],
+  ['identity', 'StatGrid', '动态统计'],
+  ['identity', 'FeedSortFloat', '滚动排序浮层'],
   ['identity', 'AgentAvatar', 'Agent 身份'],
   ['identity', 'GroupAvatar', '协作组头像'],
   ['identity', 'EmojiArtwork', '表情艺术字'],
@@ -189,6 +211,7 @@ const IMPLEMENTED: Array<[CategoryId, string, string]> = [
   ['code', 'CodeSnippet', '行内/小段代码片'],
   ['code', 'CodeEditor', '代码编辑器'],
   ['code', 'CodeDiff', '差异对比'],
+  ['code', 'TerminalSurface', '终端输出面（流/状态/退出码，纯展示）'],
   ['code', 'DiagramPreview', '图表预览'],
   ['code', 'Markdown', 'Markdown 渲染'],
   // advanced
@@ -240,6 +263,7 @@ const VETTED_CONSUMERS: Record<string, string[]> = {
   QrCode: [SETTINGS],
   ListSection: [SETTINGS],
   ListRow: [SETTINGS],
+  TerminalSurface: [AGENT],
 };
 
 /** Registered gaps — hand-rolled in prototypes today, awaiting promotion. */

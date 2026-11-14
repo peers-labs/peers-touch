@@ -442,6 +442,7 @@ pub struct StationClient {
     executor: Arc<dyn StationRequestExecutor>,
     device_id: Arc<RwLock<Option<String>>>,
     resource_origins: Arc<RwLock<HashMap<String, Vec<String>>>>,
+    expected_scope: Option<StationRequestScope>,
 }
 
 impl StationClient {
@@ -450,6 +451,7 @@ impl StationClient {
             executor,
             device_id: Arc::new(RwLock::new(None)),
             resource_origins: Arc::new(RwLock::new(HashMap::new())),
+            expected_scope: None,
         }
     }
 
@@ -485,6 +487,14 @@ impl StationClient {
 
     pub fn active_scope(&self) -> Option<StationRequestScope> {
         self.executor.active_scope()
+    }
+
+    /// Bind every request in one identity-captured operation, including
+    /// nested manifest/profile reads, before runtime dispatch can select a route.
+    pub fn bound_to_scope(&self, scope: &StationRequestScope) -> Self {
+        let mut client = self.clone();
+        client.expected_scope = Some(scope.clone());
+        client
     }
 
     pub fn active_endpoint_origin(&self) -> Option<String> {
@@ -531,8 +541,18 @@ impl StationClient {
 
     pub fn execute_raw(
         &self,
-        request: StationRequest,
+        mut request: StationRequest,
     ) -> Result<StationResponse, StationClientError> {
+        if let Some(scope) = &self.expected_scope {
+            if request.expected_scope.as_ref().is_some_and(|expected| expected != scope) {
+                return Err(StationClientError::new(
+                    StationClientErrorKind::Cancelled,
+                    "Station request conflicts with its captured scope",
+                    None,
+                ));
+            }
+            request.expected_scope = Some(scope.clone());
+        }
         let replay_policy = request.replay_policy.clone();
         self.executor
             .execute(request)
@@ -1520,20 +1540,37 @@ fn buffer_response(
         )
     })?;
     if !(200..300).contains(&response.status) {
-        // Content-type aware extraction: Station error bodies may be JSON,
-        // plain text or protobuf; the helper decodes each shape without
-        // assuming a JSON envelope and has dedicated binary-response tests.
+        // Decode protocol details before display; safe HTTP error headers
+        // remain authoritative over the numeric protobuf error code.
+        let decoded = peers_failure_error(response.status, &body);
         let content_type = response
             .headers
             .get(reqwest::header::CONTENT_TYPE)
             .and_then(|value| value.to_str().ok());
-        let display_message = status_error_display_message(content_type, &body);
-        return Err(build_error_for_status_with_headers(
+        let display_message = decoded
+            .details
+            .as_ref()
+            .and_then(|details| details.get("server_message"))
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+            .unwrap_or_else(|| status_error_display_message(content_type, &body));
+        let mut error = build_error_for_status_with_headers(
             response.status,
             path,
             &display_message,
             Some(&headers_to_json(&response.headers)),
-        ));
+        );
+        if let (Some(details), Some(protocol)) = (
+            error.details.as_mut().and_then(Value::as_object_mut),
+            decoded.details.as_ref().and_then(Value::as_object),
+        ) {
+            for field in ["server_message", "error_code"] {
+                if let Some(value) = protocol.get(field) {
+                    details.entry(field.to_owned()).or_insert_with(|| value.clone());
+                }
+            }
+        }
+        return Err(error);
     }
     Ok(BufferedResponse {
         status: response.status,
@@ -2117,6 +2154,51 @@ mod tests {
         )
         .unwrap();
         assert_eq!(response.body, body);
+    }
+
+    struct SwitchedScopeExecutor {
+        captured: StationRequestScope,
+        requests: std::sync::atomic::AtomicUsize,
+    }
+
+    impl StationRequestExecutor for SwitchedScopeExecutor {
+        fn execute(&self, request: StationRequest) -> Result<StationResponse, StationTransportError> {
+            // The original executor rejects this scope before submitting bytes.
+            // A request with None would instead inherit the replacement Station.
+            assert_eq!(request.expected_scope.as_ref(), Some(&self.captured));
+            assert_ne!(request.expected_scope, self.active_scope());
+            self.requests.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Err(StationTransportError::new(
+                StationTransportErrorKind::StaleRoute, "Station switched before dispatch", false,
+            ))
+        }
+        fn active_scope(&self) -> Option<StationRequestScope> {
+            Some(StationRequestScope { station_peer_id: "station-b".into(), lifecycle_generation: 2 })
+        }
+        fn active_station_peer_id(&self) -> Option<String> { Some("station-b".into()) }
+        fn active_endpoint_origin(&self) -> Option<String> { None }
+    }
+
+    #[test]
+    fn captured_scope_survives_switch_for_submission_and_nested_identity_reads() {
+        let scope = StationRequestScope { station_peer_id: "station-a".into(), lifecycle_generation: 1 };
+        let executor = Arc::new(SwitchedScopeExecutor {
+            captured: scope.clone(), requests: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let original = StationClient::new(executor.clone());
+        let client = original.bound_to_scope(&scope);
+        assert_eq!(original.expected_scope, None);
+        for path in [
+            "/api/v1/social/feed/events/submit", "/api/v1/social/feed/read",
+            "/actor/endpoint-manifest", "/actor/federation/profile",
+            "/sub-federation/contexts", "/actor/federation/resolve",
+        ] {
+            let error = client.request_proto_for_device::<(), ()>(
+                Method::POST, path, "captured-token", None, None, "captured-device",
+            ).unwrap_err();
+            assert!(matches!(error.kind, StationClientErrorKind::StaleRoute));
+        }
+        assert_eq!(executor.requests.load(std::sync::atomic::Ordering::SeqCst), 6);
     }
 
     #[derive(Clone, Copy)]

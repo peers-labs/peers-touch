@@ -66,7 +66,9 @@ fn bind_window_session(
             session.window_label != window.label() && session.actor.ptid == actor_ptid
         });
     if replaces_window_session || takes_over_actor {
-        state.secure_content.teardown_actor(&actor_ptid)?;
+        state
+            .secure_content
+            .teardown_actor_with_source(&actor_ptid, "auth-bind:replace-or-takeover")?;
     }
     if let Err(error) =
         auth_service::activate_messaging_profile(state, &account_id, &actor_ptid, &token)
@@ -120,7 +122,7 @@ fn bind_after(
     state: &Arc<AppState>,
     app: &AppHandle,
     window: &Window,
-    result: AppResult<AuthSessionPayload>,
+    mut result: AppResult<AuthSessionPayload>,
 ) -> AppResult<AuthSessionPayload> {
     let _transition = match state.identity_transition.lock() {
         Ok(guard) => guard,
@@ -134,16 +136,27 @@ fn bind_after(
     };
     if !result.ok {
         if is_session_revoked(&result) {
+            let result_actor = result.data.as_ref().and_then(|d| d.actor_ptid.clone());
+            let window_actor = state
+                .sessions
+                .get(window.label())
+                .map(|session| session.actor.ptid.clone());
+            tracing::warn!(
+                result_actor = result_actor.as_deref().unwrap_or("-"),
+                window_actor = window_actor.as_deref().unwrap_or("-"),
+                "auth response revoked: detaching window session (bind_after)"
+            );
             if let Err(error) = unbind_for_logout(state, window) {
                 return secure_content_teardown_failure(error);
             }
         }
         return result;
     }
-    if let Some(data) = &result.data {
+    if let Some(data) = &mut result.data {
         if let Err(error) = bind_window_session(state, app, window, data) {
             return AppResult::fail(crate::error::ErrorCode::Unauthorized, error, None);
         }
+        data.session_activation_id = state.sessions.get(window.label()).map(|session| session.activation_id);
     }
     result
 }
@@ -160,7 +173,9 @@ fn is_session_revoked(result: &AppResult<AuthSessionPayload>) -> bool {
 
 fn unbind_for_logout(state: &Arc<AppState>, window: &Window) -> Result<(), String> {
     if let Some(session) = state.sessions.unbind(window.label()) {
-        let teardown = state.secure_content.teardown_actor(&session.actor.ptid);
+        let teardown = state
+            .secure_content
+            .teardown_actor_with_source(&session.actor.ptid, "logout");
         state.event_streams.stop(&session.actor.ptid)?;
         teardown?;
     }
@@ -250,8 +265,21 @@ pub fn access_submit_login(
     result
 }
 
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ScopedLogoutInput {
+    /// The exact native window activation whose binding failed.
+    pub expected_actor_ptid: String,
+    pub expected_session_activation_id: String,
+}
+
+fn scoped_logout_matches(current: &ActiveSession, scope: &ScopedLogoutInput) -> bool {
+    current.actor.ptid == scope.expected_actor_ptid &&
+        current.activation_id == scope.expected_session_activation_id
+}
+
 #[tauri::command]
 pub fn auth_logout(
+    input: Option<ScopedLogoutInput>,
     state: State<'_, Arc<AppState>>,
     app: AppHandle,
     window: Window,
@@ -266,6 +294,33 @@ pub fn auth_logout(
             )
         }
     };
+    // A binding-rollback logout is scoped to the login attempt that failed.
+    // Under rapid account switching a late/stale rollback can arrive after a
+    // newer unlock already rebound the window, including to the same actor; tearing that
+    // session down would destroy the live Secure Content runtime for the
+    // current identity. Skip the destructive transition and report success so
+    // the superseding session survives.
+    if let Some(scope) = input.as_ref() {
+        let current = state.sessions.get(window.label());
+        if current.as_ref().is_none_or(|current| !scoped_logout_matches(current, scope)) {
+            tracing::info!(
+                expected_actor_ptid = %scope.expected_actor_ptid,
+                "scoped logout skipped: window session was superseded"
+            );
+            return AppResult::success(AuthSessionPayload {
+                command: "auth_logout".to_string(),
+                status: "session_superseded".to_string(),
+                actor_ptid: current.as_ref().map(|session| session.actor.ptid.clone()),
+                session_activation_id: current.map(|session| session.activation_id),
+                session_token: None,
+                name: None,
+                email: None,
+                avatar_url: None,
+                avatar_local_path: None,
+                login_method: None,
+            });
+        }
+    }
     run_logout_transition(
         || unbind_for_logout(state.inner(), &window),
         || auth_service::auth_logout(state.inner()),
@@ -327,7 +382,7 @@ pub fn acceptance_logout_window_session(
             })),
         );
     }
-    auth_logout(state, app, window)
+    auth_logout(None, state, app, window)
 }
 
 #[cfg(feature = "acceptance-webdriver")]
@@ -481,11 +536,29 @@ pub fn ensure_station_session(
 
 #[cfg(test)]
 mod tests {
-    use super::{is_session_revoked, run_logout_transition, secure_content_session_replaced};
+    use super::{is_session_revoked, run_logout_transition, scoped_logout_matches,
+        secure_content_session_replaced, ScopedLogoutInput};
     use crate::contracts::AuthSessionPayload;
     use crate::domain::identity::{ActiveSession, ActorRef};
     use crate::error::{AppResult, ErrorCode};
     use std::cell::RefCell;
+
+    #[test]
+    fn binding_rollback_rejects_superseding_same_actor_activation() {
+        let original = ActiveSession::new("main", "account-1", ActorRef::new_person("ptid:alice"), "token");
+        let scope = ScopedLogoutInput {
+            expected_actor_ptid: original.actor.ptid.clone(),
+            expected_session_activation_id: original.activation_id.clone(),
+        };
+        assert!(scoped_logout_matches(&original, &scope));
+        let replacement = ActiveSession::new("main", "account-1", ActorRef::new_person("ptid:alice"), "token");
+        assert!(!scoped_logout_matches(&replacement, &scope));
+        let different_actor = ActiveSession::new("main", "account-2", ActorRef::new_person("ptid:bob"), "token");
+        assert!(!scoped_logout_matches(&different_actor, &scope));
+        assert!(serde_json::from_value::<ScopedLogoutInput>(
+            serde_json::json!({"expected_actor_ptid": "ptid:alice"})
+        ).is_err());
+    }
 
     #[test]
     fn recognizes_only_typed_session_revocation() {
@@ -571,6 +644,7 @@ mod tests {
                     command: "auth_logout".to_string(),
                     status: "logged_out".to_string(),
                     actor_ptid: None,
+                    session_activation_id: None,
                     session_token: None,
                     name: None,
                     email: None,

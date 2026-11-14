@@ -47,19 +47,37 @@
   /* WeChat-parity faint column hairline: material carries the separation, the
      line is only a 6% ink whisper, never a hard rule. */
   --pt-column-hairline: color-mix(in srgb, var(--pt-text) 6%, transparent);
+  /* Non-mac windows are square; macOS overrides this to the native corner. */
+  --pt-window-radius: 0px;
 }
 :root[data-platform='macos'] {
   --pt-titlebar-inset: 8px;
-  /* 48px header band: matches the `.sc-rail-header` 48px rhythm and leaves
-     the traffic lights (~20px tall) a full zone to themselves, so the avatar
-     starts on the content-band top instead of the header/content seam. */
-  --pt-rail-top: 48px;
+  /* Slim header band: the traffic lights keep their native top position
+     (~24px tall), so 40px gives a small breathing gap before the self avatar
+     instead of wasting a full 48px strip that pushed the avatar down. */
+  --pt-rail-top: 40px;
+  /* Traces the measured native NSWindow continuous-corner silhouette
+     (~13.5pt circular-equivalent on a 2x display). The previous 20px was read
+     off physical pixels instead of CSS points, so its arc overshot the native
+     corner and left a crescent sliver between the native edge and this frame.
+     CSS points equal screen points; 14px keeps the frame on the native edge,
+     and the 3px border absorbs the residual continuous-vs-circular difference. */
+  --pt-window-radius: 14px;
 }
 
 /* ── Shell frame ──────────────────────────────────────────────────────────
  * Full-bleed production window: a constant 60px icon rail beside a flexible
  * content stage. Unlike the centered prototype card there is no outer margin;
- * the rail is the material zone and the stage is the canvas. */
+ * the rail is the material zone and the stage is the canvas.
+ *
+ * The frame is deliberately three-sided, not a uniform ring. The L1 rail is a
+ * translucent, backdrop-blurred material whose flattened color shifts with
+ * whatever is behind it, so no solid border color can match it on every
+ * surface — a solid ring always reads as a darker frame painted ON the menu.
+ * Instead the left edge has NO border: the rail's own frosted fill runs to the
+ * window's rounded corner (the shell's overflow + radius clip it), which is the
+ * native macOS sidebar treatment. The subtle solid frame stays only on the
+ * stage edges (top/right/bottom), where it also covers the corner crescent. */
 .ds-shell {
   width: 100%;
   flex: 1 1 auto;
@@ -69,6 +87,10 @@
   overflow: hidden;
   background: var(--pt-canvas);
   color: var(--pt-text);
+  border-style: solid;
+  border-color: var(--pt-subtle);
+  border-width: 3px 3px 3px 0;
+  border-radius: var(--pt-window-radius);
 }
 
 .ds-rail {
@@ -77,6 +99,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  position: relative;
   /* The rail is the column under the traffic lights; the rail-top padding
      reserves the header band so the self avatar anchors the content band
      below it while other columns rise into the title-bar strip. */
@@ -97,9 +120,28 @@
   );
   backdrop-filter: blur(26px) saturate(1.8);
   -webkit-backdrop-filter: blur(26px) saturate(1.8);
+  /* Only the soft inset glow spans the full height. The hard 1px column
+     hairline lives on ::after and starts below the traffic-light header band,
+     so the native lights never straddle a vertical seam. */
   box-shadow:
-    inset -1px 0 0 color-mix(in srgb, var(--pt-text) 5%, transparent),
     inset 8px 0 18px -16px color-mix(in srgb, var(--pt-text) 18%, transparent);
+}
+/* Rail/stage hairline. It begins at --pt-rail-top (the bottom of the title
+   band), not at the window's top edge: with macOS titleBarStyle Overlay the
+   traffic lights float in this top strip, and a full-height line made the
+   green light look like it overflowed across the rail/stage boundary. The
+   strip now reads as one continuous title bar. Non-macOS sets --pt-rail-top
+   to 0, so the line still runs the full edge there. */
+.ds-rail::after {
+  content: '';
+  position: absolute;
+  top: var(--pt-rail-top);
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  background: color-mix(in srgb, var(--pt-text) 5%, transparent);
+  pointer-events: none;
+  z-index: 1;
 }
 
 .ds-stage {
@@ -371,20 +413,27 @@
      flex:1 alone never constrains this surface: it grew to the document's
      full height and got clipped by .ds-stage's overflow:hidden with no
      scrollable overflow. A definite percentage height against the host's
-     flex-resolved height restores the internal overflow:auto scroll chain. */
+     flex-resolved height restores the internal overflow:auto scroll chain.
+     min-width:0 closes the horizontal constraint chain: without it the
+     nowrap group island stretched this column to its content width and the
+     subbar could never observe a narrowed window. */
   height: 100%;
   flex: 1;
   min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
 }
 .sc-settings__subbar {
   flex-shrink: 0;
+  min-width: 0;
   display: flex;
   align-items: center;
   padding: 8px 14px 10px;
 }
-.sc-settings__groups { flex: 0 0 auto; }
+/* shrink allowed (0 1 auto) so the island yields to the subbar budget; the
+   Segmented itself swaps labels for icons before any clipping can occur. */
+.sc-settings__groups { flex: 0 1 auto; min-width: 0; }
 .sc-settings__body {
   flex: 1;
   min-height: 0;
@@ -393,12 +442,17 @@
 .sc-settings__sidebar {
   width: 190px;
   flex-shrink: 0;
-  border-right: 1px solid var(--pt-border);
+  /* Level-2 zone: subtle fill, separated from the white content region by
+     tonal step alone — no border-right hairline (north-star grammar #2). */
+  background: var(--pt-subtle);
   padding: 14px 8px;
   display: flex;
   flex-direction: column;
   gap: 2px;
   overflow-y: auto;
+  /* Reserve the scrollbar lane permanently so the menu's right content edge
+     never shifts between a short (no thumb) and a long (thumb) section. */
+  scrollbar-gutter: stable;
 }
 /* Section items are quiet full-width peers-ui buttons; the app class only
  * reclaims left alignment and the 160ms neutral wash grammar.
@@ -436,12 +490,17 @@
   flex: 1;
   min-width: 0;
   overflow: auto;
-  /* Single edge inset owner: the inner column carries no padding of its own
-     so the content keeps a uniform 8px gutter instead of two stacked paddings. */
-  padding: 8px;
+  /* Level-3 zone: the brightest field. The subtle sidebar beside it and the
+     subtle inset cards on top of it read purely through tonal step. */
+  background: var(--pt-surface);
+  /* Left/top/bottom use the shared 8px inset; the RIGHT edge gets the explicit
+     edge-gutter token in addition to the stable scrollbar lane. The lane alone
+     is transparent and let cards crowd the window frame. The nested provider
+     detail consumes the same token while the locked state zeroes this padding,
+     so the two panes keep one shared scrollbar right edge instead of drifting. */
+  padding: 8px var(--pt-settings-edge-gutter) 8px 8px;
+  scrollbar-gutter: stable;
 }
-.sc-settings__scroll[data-scroll-lock='true'] { overflow: hidden; }
-
 /* ─────────────────────────────────────────────────────────────────────────
  * Shared settings layout primitives (SettingsLayout.tsx): grouped cards on
  * the paper floor, plain-text titles, and quiet inset item wells.
@@ -462,6 +521,12 @@
   --sk-radius-control: var(--pt-radius-md);
   --sk-row-hairline: color-mix(in srgb, var(--pt-text) 6%, transparent);
   --sk-set-ease: cubic-bezier(.22, 1, .36, 1);
+  /* Real right content gutter for every settings pane. The 8px scrollbar lane
+     is transparent, so without this the cards ran to within a few px of the
+     window frame. Both scroll containers (.sc-settings__scroll and
+     .sc-provider-detail) consume this one token so their content and scrollbar
+     right edges stay on a shared line across all settings tabs. */
+  --pt-settings-edge-gutter: 16px;
 }
 .sc-settings-column {
   display: flex;
@@ -475,11 +540,6 @@
   padding: 0;
   box-sizing: border-box;
 }
-.sc-settings-column[data-full-height='true'] {
-  height: 100%;
-  overflow: auto;
-}
-
 /* Section = title block ABOVE one elevated card; sections separate by
    whitespace, never a full-bleed hairline (north-star grouped-card grammar). */
 .sc-settings-section {
@@ -526,7 +586,9 @@
 .sc-settings-card {
   display: flex;
   flex-direction: column;
-  background: var(--pt-surface);
+  /* Inset well on the white level-3 field: subtle fill + a quiet hairline,
+     never a raised white card (that would vanish against the white field). */
+  background: var(--pt-subtle);
   border: 1px solid color-mix(in srgb, var(--pt-text) 4%, transparent);
   border-radius: 12px;
   padding: 0 8px;
@@ -899,14 +961,16 @@
 .sk-banner .sc-account-banner__image {
   border-radius: 0 !important;
 }
-/* No header image yet: collapse the 120px blank bar into a compact,
-   self-explanatory upload zone instead of a large empty white strip. The
-   edit tile stays visible at rest so the affordance does not depend on hover. */
+/* No header image yet: render a compact, self-explanatory upload zone instead
+   of a large empty white strip. The edit tile stays visible at rest so the
+   affordance does not depend on hover. Height is 1.5x the original 56px compact
+   zone (84px); the outer .sk-banner and inner surface must stay the same height
+   or a blank strip opens above the dashed zone. */
 .sk-banner[data-has-image='false'] {
-  height: 56px;
+  height: 84px;
 }
 .sk-banner[data-has-image='false'] .sc-account-banner {
-  height: 56px;
+  height: 84px;
   border: 1px dashed var(--pt-border);
   border-radius: 8px;
   background: var(--pt-subtle);
@@ -962,26 +1026,26 @@
   flex-wrap: wrap;
 }
 
-/* Provider settings split layout (replaces react-layout-kit Flexbox). */
+/* Provider settings: single Federation column. The provider list and the
+   selected-provider detail stack vertically and flow with the page; the outer
+   settings pane owns the only scroll, so no nested split-pane scrollbar. */
 .sc-provider-layout {
   display: flex;
-  flex-direction: row;
-  height: 100%;
+  flex-direction: column;
   width: 100%;
-  overflow: hidden;
+  min-width: 0;
 }
 .sc-provider-layout__menu {
-  width: 260px;
-  min-width: 260px;
-  border-right: 1px solid var(--pt-border);
-  height: 100%;
-  overflow: hidden;
+  width: 100%;
+  min-width: 0;
+  /* Quiet well for the picker; tonal step only, never a vertical hairline. */
+  background: var(--pt-subtle);
+  border-radius: 12px;
 }
 .sc-provider-layout__detail {
-  flex: 1;
-  height: 100%;
-  overflow: hidden;
+  width: 100%;
   min-width: 0;
+  background: transparent;
 }
 
 /* Settings forms composed from peers-ui Field primitives. */
@@ -998,12 +1062,12 @@
   min-width: 0;
 }
 
-/* Direct provider detail (peers-ui replacement for antd/lobehub detail). */
+/* Direct provider detail (peers-ui replacement for antd/lobehub detail).
+   Natural flow inside the single settings column; horizontal insets stay zero
+   because the outer scroll pane already owns the shared edge gutter. */
 .sc-provider-detail {
-  height: 100%;
   min-height: 0;
-  overflow-y: auto;
-  padding: 16px 24px 24px;
+  padding: 8px 0 24px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -1014,7 +1078,7 @@
   min-height: 120px;
 }
 .sc-provider-card {
-  background: var(--pt-surface);
+  background: var(--pt-subtle);
   border: 1px solid var(--pt-border);
   border-radius: 12px;
   overflow: hidden;
@@ -1258,9 +1322,8 @@
 
 /* Memory settings (peers-ui replacement for antd/lobehub memory section). */
 .sc-memory {
-  height: 100%;
-  min-height: 0;
-  overflow: hidden;
+  /* Natural content height: the outer settings pane owns the single scroll,
+     so this surface must not viewport-lock or open a nested scroll context. */
   padding: 18px 0;
   display: flex;
   flex-direction: column;
@@ -1301,9 +1364,8 @@
   flex-shrink: 0;
 }
 .sc-memory__panel {
-  flex: 1;
+  /* Flows with the page instead of scrolling inside a bounded pane. */
   min-height: 0;
-  overflow: auto;
 }
 .sc-memory__loading {
   padding: 48px;
@@ -1978,8 +2040,10 @@
   width: 220px;
 }
 .sc-logs-console {
-  flex: 1;
-  min-height: 0;
+  /* Capped card region, not a viewport-locked pane: the page keeps one outer
+     scroll while the console retains its own scroll + auto-follow behavior. */
+  min-height: 240px;
+  max-height: 60vh;
   display: flex;
   flex-direction: column;
   background: var(--pt-surface);
@@ -2452,6 +2516,64 @@
   display: flex;
   gap: 12px;
   height: 36px;
+}
+
+/* Login approval — claimant waiting card and Shell approver dialog. The
+   recovery fallback stays visually subordinate to the main approval path. */
+.pt-login-approval-waiting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 8px 4px;
+  text-align: center;
+}
+.pt-login-approval-waiting-title { font-size: 17px; }
+.pt-login-approval-waiting-code,
+.pt-login-approval-code {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  padding: 14px 22px;
+  border: 1px solid var(--pt-border);
+  border-radius: 12px;
+  background: var(--pt-surface);
+}
+.pt-login-approval-waiting-code-value,
+.pt-login-approval-code-value {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: .24em;
+  font-variant-numeric: tabular-nums;
+  color: var(--pt-text);
+}
+.pt-login-approval-fallback-toggle {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 4px;
+  font-size: 12.5px;
+  color: var(--pt-muted);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.pt-login-approval-fallback {
+  width: 100%;
+  padding-top: 8px;
+  border-top: 1px solid var(--pt-border);
+}
+.pt-login-approval-dialog .pt-login-approval-device {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 12px 0;
+}
+.pt-login-approval-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
 }
 
 /* Memory status settings */
@@ -3050,8 +3172,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  height: 100%;
-  padding: 16px 12px 12px;
+  padding: 12px;
   box-sizing: border-box;
 }
 .sc-provider-menu__search {
@@ -3069,14 +3190,17 @@
   padding: 0 4px;
 }
 .sc-provider-menu__list {
-  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  min-height: 0;
+  /* Capped picker inside the page column: long provider lists scroll within
+     the well instead of viewport-locking the whole settings surface. */
+  max-height: 320px;
   overflow-x: hidden;
   overflow-y: auto;
   padding-right: 4px;
+  /* Keep the menu rows' right edge fixed whether or not the list overflows. */
+  scrollbar-gutter: stable;
 }
 .sc-provider-menu-row {
   display: flex;

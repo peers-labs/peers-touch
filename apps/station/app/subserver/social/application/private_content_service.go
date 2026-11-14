@@ -1173,6 +1173,7 @@ func (s *PrivateContentService) submitPrivateComment(
 				commitProof,
 				commitProofRow,
 				committedAt,
+				authorFederationID,
 			)
 		},
 		response,
@@ -1640,6 +1641,15 @@ func (s *PrivateContentService) GetPrivateMoment(
 	if err != nil {
 		return nil, err
 	}
+	access := privateContentAccess(payload, objects, viewerEnvelope, proof, attestation,
+		mentionRouting, pollAuthority, repostAuthority)
+	if pollAuthority != nil {
+		access.Poll, err = s.interactionStore.LoadPrivatePollProjection(ctx, nil, s.localStationPeerID,
+			viewer.GetActor().GetPtid(), pollAuthority)
+		if err != nil {
+			return nil, mapPrivateStoreError(operation, err)
+		}
+	}
 	return &privatecontentpb.GetMomentResourceResponse{
 		Post:                       postProjection,
 		ReactionProjectionRevision: reactionProjectionRevision,
@@ -1647,16 +1657,7 @@ func (s *PrivateContentService) GetPrivateMoment(
 		Resource: &privatecontentpb.PostResource{
 			Metadata: metadata,
 			Body: &privatecontentpb.PostResource_PrivateContent{
-				PrivateContent: privateContentAccess(
-					payload,
-					objects,
-					viewerEnvelope,
-					proof,
-					attestation,
-					mentionRouting,
-					pollAuthority,
-					repostAuthority,
-				),
+				PrivateContent: access,
 			},
 		},
 	}, nil
@@ -2481,7 +2482,8 @@ func allowsRemotePrivateRecipients(
 	switch material.MomentKind {
 	case privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_TEXT,
 		privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_IMAGE,
-		privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_VIDEO:
+		privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_VIDEO,
+		privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_POLL:
 		return true
 	default:
 		return false
@@ -2836,6 +2838,7 @@ func (s *PrivateContentService) persistComment(
 	proof *securecontentpb.ViewerContentCommitProof,
 	proofRow dbmodel.SocialPrivateCommitProof,
 	committedAt time.Time,
+	authorFederationID string,
 ) ([]byte, error) {
 	retryAfter, err := tx.PrivateCommentRetryAfter(
 		ctx,
@@ -2946,6 +2949,7 @@ func (s *PrivateContentService) persistComment(
 		proof,
 		receiverVerifiedSenderKey,
 		committedAt,
+		authorFederationID,
 	); err != nil {
 		return nil, err
 	}

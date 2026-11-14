@@ -18,7 +18,10 @@ import {
   findUniqueAvailableModelById,
 } from '../utils/modelIdentity';
 
-type AgentSurface = 'chat' | 'profile';
+// Sub-surfaces of the Agent workbench (hash stays on the `agent` page):
+// chat = conversation work area, profile = agent configuration, atelier =
+// placeholder for the former top-level Atelier module (no applet kernel).
+type AgentSurface = 'chat' | 'profile' | 'atelier';
 export type AgentSaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'failed' | 'conflict';
 export interface AgentCapabilityFocus {
   capabilityId: string;

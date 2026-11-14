@@ -63,6 +63,7 @@ const (
 	GroupCallEndpointControlRoute = "/federation/realtime/group-call/endpoint-control"
 	// SocialPrivateObjectReadRoute streams one bounded Social ciphertext range.
 	SocialPrivateObjectReadRoute = "/federation/social/private/objects/:object_id/read"
+	SocialPublicFeedReadRoute    = "/federation/social/feed/read"
 )
 
 // PeerRoute identifies one Federation-owned peer HTTP capability.
@@ -92,6 +93,7 @@ const (
 	PeerRouteGroupCallAuthorityJoin           PeerRoute = "group-call-authority-join"
 	PeerRouteGroupCallEndpointControl         PeerRoute = "group-call-endpoint-control"
 	PeerRouteSocialPrivateObjectRead          PeerRoute = "social-private-object-read"
+	PeerRouteSocialPublicFeedRead             PeerRoute = "social-public-feed-read"
 )
 
 // PeerEndpointResolver resolves a resource-owner endpoint lazily at request
@@ -147,6 +149,7 @@ var peerRouteSpecs = []peerRouteSpec{
 	{PeerRouteGroupCallAuthorityJoin, "federation-group-call-authority-join", GroupCallAuthorityJoinRoute, server.POST, GroupCallAuthorityJoinScope},
 	{PeerRouteGroupCallEndpointControl, "federation-group-call-endpoint-control", GroupCallEndpointControlRoute, server.POST, GroupCallEndpointControlScope},
 	{PeerRouteSocialPrivateObjectRead, "federation-social-private-object-read", SocialPrivateObjectReadRoute, server.POST, SocialPrivateObjectReadScope},
+	{PeerRouteSocialPublicFeedRead, "federation-social-public-feed-read", SocialPublicFeedReadRoute, server.POST, SocialPublicFeedReadScope},
 }
 
 // PeerCapabilityManifestDigest binds Relay route attestations to the exact
@@ -384,6 +387,13 @@ func (f *PeerRouteFactory) Handlers() []server.Handler {
 			server.POST,
 			f.dispatchRoute(PeerRouteSocialPrivateObjectRead),
 			f.wrappers[PeerRouteSocialPrivateObjectRead],
+		),
+		server.NewSimpleHandler(
+			"federation-social-public-feed-read",
+			SocialPublicFeedReadRoute,
+			server.POST,
+			f.dispatchRoute(PeerRouteSocialPublicFeedRead),
+			f.wrappers[PeerRouteSocialPublicFeedRead],
 		),
 	}
 }

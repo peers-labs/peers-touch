@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { UIProvider } from '@peers-touch/ui';
 import { expect, it, vi } from 'vitest';
 
 import { PrivateMediaGrid } from './PrivateMediaGrid';
@@ -10,32 +11,11 @@ import {
   releasePrivateMediaLocalPreviews,
 } from '../../services/privateMediaLocalPreview';
 
+const render = (children: ReactNode) => renderToStaticMarkup(<UIProvider>{children}</UIProvider>);
+
 vi.mock('@tauri-apps/api/core', () => ({
   convertFileSrc: (path: string, protocol: string) => `${protocol}://localhost/${path}`,
   invoke: vi.fn(),
-}));
-
-vi.mock('@lobehub/ui', () => ({
-  Button: ({ children }: { children?: ReactNode }) => <button>{children}</button>,
-}));
-
-vi.mock('antd', () => ({
-  Image: ({ alt, src }: { alt?: string; src?: string }) => <img alt={alt} src={src} />,
-  Spin: () => <span data-spin />,
-  Typography: {
-    Text: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
-  },
-  theme: {
-    useToken: () => ({
-      token: {
-        borderRadius: 8,
-        colorError: '#f00',
-        colorFillSecondary: '#eee',
-        colorTextTertiary: '#888',
-        colorWarning: '#fa0',
-      },
-    }),
-  },
 }));
 
 vi.mock('lucide-react', () => ({
@@ -81,7 +61,7 @@ it('renders remote private image from home station', () => {
   });
   expect(projection.content?.kind).toBe('IMAGE');
   if (projection.content?.kind !== 'IMAGE') return;
-  const html = renderToStaticMarkup(
+  const html = render(
     <PrivateMediaGrid
       media={projection.content.media}
       postId="test-post"
@@ -120,7 +100,7 @@ it('renders remote private video retry state without direct remote URL', () => {
   });
   expect(projection.content?.kind).toBe('VIDEO');
   if (projection.content?.kind !== 'VIDEO') return;
-  const html = renderToStaticMarkup(
+  const html = render(
     <PrivateMediaGrid
       media={projection.content.media}
       postId="test-post"
@@ -163,7 +143,7 @@ it('never embeds the publisher local file in server markup during the grant gap'
     },
   });
   if (projection.content?.kind !== 'IMAGE') throw new Error('expected IMAGE content');
-  const html = renderToStaticMarkup(
+  const html = render(
     <PrivateMediaGrid
       media={projection.content.media}
       postId="post-pending"
@@ -187,4 +167,22 @@ it('localizes the remote private media retry state', () => {
   expect(en['moments.private.media.remoteRetryable'])
     .toBe('Source temporarily unavailable');
   expect(zh['moments.private.media.remoteRetryable']).toBe('来源暂时不可用');
+});
+
+it('renders available video through the shared player and removes revoked media', () => {
+  const item = {
+    objectId: 'private-video', state: 'MEDIA_READY' as const,
+    accessPath: 'HOME_STATION_REMOTE_PEER_STREAM' as const, retryable: false,
+    mimeType: 'video/mp4', renderUrl: 'private-media://localhost/window-grant',
+  };
+  const ready = render(<PrivateMediaGrid postId="private-video-post" media={[item]} onOpen={vi.fn()} />);
+  expect(ready).toContain('class="pt-media-player');
+  expect(ready).toContain('src="private-media://localhost/window-grant"');
+  const revoked = render(<PrivateMediaGrid
+    postId="private-video-post"
+    media={[{ ...item, state: 'MEDIA_ACCESS_DENIED', renderUrl: undefined }]} onOpen={vi.fn()} />);
+  expect(revoked).toContain('data-private-media-state="MEDIA_ACCESS_DENIED"');
+  expect(revoked).not.toContain('<video');
+  expect(revoked).not.toContain('<img');
+  expect(revoked).not.toContain('window-grant');
 });

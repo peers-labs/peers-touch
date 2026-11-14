@@ -38,6 +38,7 @@ export interface MomentsDataEvent {
     | 'post-created'
     | 'post-reacted'
     | 'post-commented'
+    | 'post-updated'
     | 'post-deleted';
   readonly postId?: string;
   readonly payload: Readonly<Record<string, unknown>>;

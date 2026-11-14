@@ -12,7 +12,8 @@ use crate::application::{agent_workspace, desktop_executor_worker, error_resolve
 use crate::contracts::{
     AgentConversationArchiveInput, AgentConversationCreateInput, AgentConversationGetInput,
     AgentConversationListInput, AgentConversationMessagesInput, AgentConversationRestoreInput,
-    AgentConversationRuntimeResetInput, AgentConversationUpdateInput, AgentEditAndResendInput,
+    AgentConversationRuntimeRebindInput, AgentConversationRuntimeResetInput,
+    AgentConversationUpdateInput, AgentEditAndResendInput,
     AgentExecuteTurnInput, AgentGroupCreateInput, AgentGroupDeleteInput, AgentGroupUpdateInput,
     AgentMessageTranslateInput, AgentRegenerateTurnInput, AgentRetryTurnInput,
     AgentSelectActiveBranchInput, AgentTaskCreateInput, AgentTaskDeleteInput, AgentTaskListInput,
@@ -2904,6 +2905,42 @@ pub fn agent_conversation_runtime_reset(
                 "Conversation runtime reset failed",
             );
             err.into_app_result("Failed to reset agent conversation runtime")
+        }
+    }
+}
+
+pub fn agent_conversation_runtime_rebind(
+    station_client: &StationClient,
+    input: AgentConversationRuntimeRebindInput,
+    token: &str,
+) -> AppResult<StubPayload> {
+    let conversation_id = input.conversation_id.trim().to_string();
+    if conversation_id.is_empty() || input.expected_conversation_version == 0 {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "conversation_id and expected_conversation_version are required",
+            None,
+        );
+    }
+    let body = json!({
+        "conversation_id": conversation_id,
+        "expected_conversation_version": input.expected_conversation_version,
+    });
+    match station_client.request_json(
+        Method::POST,
+        "/sub-agent/agent/conversation/runtime/rebind",
+        token,
+        None,
+        Some(body),
+    ) {
+        Ok(result) => success_payload("agent_conversation_runtime_rebind", result),
+        Err(err) => {
+            tracing::error!(
+                command = "agent_conversation_runtime_rebind",
+                error = %err,
+                "Conversation runtime rebind failed",
+            );
+            err.into_app_result("Failed to rebind agent conversation runtime")
         }
     }
 }

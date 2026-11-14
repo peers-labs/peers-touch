@@ -6,6 +6,7 @@
     "apps/desktop/src/store/federation.ts",
     "apps/desktop/src/runtimes/federationRuntime.ts",
     "apps/desktop/src/pages/login/StationSetupPanel.tsx",
+    "apps/desktop/src/pages/login/useStationRegistry.ts",
     "apps/desktop/src/components/chat/FindPeopleModal.tsx",
     "apps/desktop/src/store/stationRegistry.ts",
     "apps/desktop/src-tauri/src/application/federation/mod.rs",

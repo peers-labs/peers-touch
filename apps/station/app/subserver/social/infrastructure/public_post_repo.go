@@ -3,7 +3,6 @@ package infrastructure
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
@@ -26,40 +25,9 @@ type publicPostRepo struct {
 }
 
 // NewPublicPostRepository wires the repo against an existing *gorm.DB
-// handle. The handle MAY be a sub-transaction (`db.Begin()`-derived);
-// MomentService threads a single TX through both the post insert and
-// the audience-grant inserts when creating a CUSTOM_* post.
+// handle. Public object writes are owned by the verified FeedProjector.
 func NewPublicPostRepository(gdb *gorm.DB) domain.PublicPostRepository {
 	return &publicPostRepo{db: gdb, conv: domain.NewPostConverter(), identity: NewActorIdentity(gdb)}
-}
-
-// Create persists a public post. Panics if the supplied Post is not
-// PUBLIC — that's the first defense line against the storage-separation
-// invariant being violated by a service-layer bug. Panic (rather than
-// returning an error) is intentional: a non-PUBLIC post landing in
-// `social_public_posts` would be an immediate federation safety
-// problem the moment AP outbound goes live, so we want to crash the
-// request loudly in tests / staging rather than silently leak in prod.
-func (r *publicPostRepo) Create(ctx context.Context, p *domain.Post) error {
-	if !p.IsPublic() {
-		panic(fmt.Sprintf("publicPostRepo.Create: non-PUBLIC audience kind=%s — storage-separation invariant violated", p.Audience.Kind))
-	}
-	row, err := r.conv.DomainToPublicDB(p)
-	if err != nil {
-		return err
-	}
-	authorID, err := r.identity.RequireID(ctx, p.AuthorPTID)
-	if err != nil {
-		return err
-	}
-	row.AuthorID = authorID
-	if err := r.db.WithContext(ctx).Create(row).Error; err != nil {
-		return err
-	}
-	p.ID = row.ID
-	p.CreatedAt = row.CreatedAt
-	p.UpdatedAt = row.UpdatedAt
-	return nil
 }
 
 func (r *publicPostRepo) GetByID(ctx context.Context, id uint64) (*domain.Post, error) {
@@ -111,22 +79,6 @@ func (r *publicPostRepo) ProbeRecordState(
 		return domain.PostRecordDeleted, nil
 	}
 	return domain.PostRecordLive, nil
-}
-
-// Delete soft-deletes by setting `deleted_at = NOW()`. Author check
-// is enforced server-side via `WHERE author_id = ?` — a delete from
-// the wrong author is a no-op (no error, zero rows affected). The
-// application layer surfaces "no rows affected" as a 404/403 to avoid
-// confirming the post's existence to a non-author.
-func (r *publicPostRepo) Delete(ctx context.Context, id uint64, authorPTID string) error {
-	authorID, err := r.identity.RequireID(ctx, authorPTID)
-	if err != nil {
-		return err
-	}
-	return r.db.WithContext(ctx).
-		Model(&db.SocialPublicPost{}).
-		Where("id = ? AND author_id = ? AND deleted_at IS NULL", id, authorID).
-		Update("deleted_at", gorm.Expr("CURRENT_TIMESTAMP")).Error
 }
 
 func (r *publicPostRepo) ListByAuthor(ctx context.Context, authorPTID string, c domain.Cursor, limit int) ([]*domain.Post, error) {
@@ -257,10 +209,16 @@ func (r *publicPostRepo) UpdateReactionsCount(ctx context.Context, id uint64, sn
 
 func (r *publicPostRepo) hydrate(ctx context.Context, rows []*db.SocialPublicPost) ([]*domain.Post, error) {
 	ids := make([]uint64, 0, len(rows))
+	postIDs := make([]uint64, 0, len(rows))
 	for _, row := range rows {
 		ids = append(ids, row.AuthorID)
+		postIDs = append(postIDs, row.ID)
 	}
 	ptids, err := r.identity.PTIDsByIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	refs, err := feedObjectRefs(ctx, r.db, "post", postIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -268,17 +226,16 @@ func (r *publicPostRepo) hydrate(ctx context.Context, rows []*db.SocialPublicPos
 	for _, row := range rows {
 		post := r.conv.PublicDBToDomain(row)
 		post.AuthorPTID = ptids[row.AuthorID]
+		post.PublicFeedRef = refs[row.ID]
 		out = append(out, post)
 	}
 	return out, nil
 }
 
 func (r *publicPostRepo) hydrateOne(ctx context.Context, row *db.SocialPublicPost) (*domain.Post, error) {
-	authorPTID, err := r.identity.ResolveID(ctx, row.AuthorID)
+	posts, err := r.hydrate(ctx, []*db.SocialPublicPost{row})
 	if err != nil {
 		return nil, err
 	}
-	post := r.conv.PublicDBToDomain(row)
-	post.AuthorPTID = authorPTID
-	return post, nil
+	return posts[0], nil
 }

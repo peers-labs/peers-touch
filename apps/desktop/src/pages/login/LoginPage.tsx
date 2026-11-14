@@ -36,6 +36,9 @@ import { SetPinView } from './views/SetPinView';
 import { RelinkPinView } from './views/RelinkPinView';
 import { WelcomeBackView } from './views/WelcomeBackView';
 import { LoginFormView, type GateState } from './views/LoginFormView';
+import { LoginApprovalWaitingView } from './views/LoginApprovalWaitingView';
+import { isClaimantWaitingStage, useLoginApprovalStore } from '../../store/loginApproval';
+import { loginApprovalActions } from '../../runtimes/loginApprovalRuntime';
 import { accountIdentityToSessionUser, type LoginState, type LoginTab, type AuthState, type SessionUser } from './types';
 
 interface Props {
@@ -103,6 +106,21 @@ export function LoginPage({
   // ── Core state machine ──
   const [loginState, setLoginState] = useState<LoginState>(initialState);
 
+  // ── Claimant-first device approval waiting surface ──
+  // When a login approval transaction is pending the card yields to the
+  // waiting view regardless of the inner LoginState. A terminal projection is
+  // cleared so the user returns to the credential form with a typed reason.
+  const claimant = useLoginApprovalStore((state) => state.claimant);
+  const claimantBusy = useLoginApprovalStore((state) => state.claimantBusy);
+  const claimantError = useLoginApprovalStore((state) => state.claimantError);
+  useEffect(() => {
+    if (claimant && !isClaimantWaitingStage(claimant)) {
+      const timer = setTimeout(() => loginApprovalActions.clearClaimant(), 4_000);
+      return () => clearTimeout(timer);
+    }
+    return undefined;
+  }, [claimant]);
+
   // ── Outer gate: Station setup vs credential/account auth ──
   // One registry instance feeds both the first-run Station card and the
   // gear-opened one. The gear pins the gate to `station_setup` via override;
@@ -111,9 +129,18 @@ export function LoginPage({
   const { t: tCommon } = useTranslation('common');
   const stationRegistry = useStationRegistry();
   const [gateOverride, setGateOverride] = useState<AuthGateOverride>(null);
+  // Session-only explicit exit from first-run Station setup. It cannot block
+  // the auth surface; it only lets a user leave setup after configuring a
+  // Station, matching the disabled→enabled "continue to sign in" control.
+  const [firstRunProceeded, setFirstRunProceeded] = useState(false);
+  // Account presence outranks Station setup: an existing signed-in account
+  // always lands on the account list card even if no Station is configured.
+  const hasExistingAccount = hasMultipleAccounts || hasValidRestoredUser;
   const gateInput = {
     hydrated: stationRegistry.hydrated,
     hasStation: stationRegistry.hasStation,
+    hasAccounts: hasExistingAccount,
+    proceeded: firstRunProceeded,
     override: gateOverride,
   };
   const gateStage: AuthGateStage = embedded
@@ -122,10 +149,21 @@ export function LoginPage({
   const showInlineStationSetup = gateStage === 'station_setup';
   // The automatic first-run gate has nowhere to go back to; a gear-opened
   // Station card gets a back control that releases the override.
+  const isAutoFirstRun = isAutoStationSetup(gateInput);
   const stationPanelOnBack = showInlineStationSetup
     && !embedded
-    && !isAutoStationSetup(gateInput)
+    && !isAutoFirstRun
     ? () => setGateOverride(null)
+    : undefined;
+  // First-run only: the top-left "continue to sign in" action stays disabled
+  // until a Station exists, then explicitly advances to the auth surface.
+  const stationPanelProceed = showInlineStationSetup
+    && !embedded
+    && isAutoFirstRun
+    ? {
+        disabled: !stationRegistry.hasStation,
+        onActivate: () => setFirstRunProceeded(true),
+      }
     : undefined;
 
   const [tab, setTab] = useState<LoginTab>('quick');
@@ -835,11 +873,25 @@ export function LoginPage({
         <StationSetupPanel
           registry={stationRegistry}
           onBack={stationPanelOnBack}
+          proceed={stationPanelProceed}
           autoHint={stationPanelOnBack
             ? undefined
             : tCommon('stationPicker.firstRunHint', {
                 defaultValue: 'Set up a Station to connect to the network before signing in.',
               })}
+        />
+      );
+    }
+
+    // Claimant-first approval takes over the card while the transaction is
+    // unresolved. The fallback slot reuses the existing PIN recovery entry so
+    // recovery stays folded away from the main path until explicitly opened.
+    if (isClaimantWaitingStage(claimant)) {
+      return (
+        <LoginApprovalWaitingView
+          projection={claimant}
+          busy={claimantBusy}
+          error={claimantError}
         />
       );
     }

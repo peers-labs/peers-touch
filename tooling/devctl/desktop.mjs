@@ -126,9 +126,14 @@ export async function waitForDesktopFrontend(
     timeoutMs = 90_000,
     intervalMs = 250,
     processAlive,
+    // `fromOffset` is a byte offset captured from `fs.statSync(...).size`.
+    // Slice the raw buffer at that byte boundary first, then decode — slicing
+    // the already-decoded UTF-8 string would index by characters, and any
+    // multibyte log line makes the byte offset overshoot the string length,
+    // yielding an empty slice and a false mount timeout.
     readLog = () =>
       fs.existsSync(logPath)
-        ? fs.readFileSync(logPath, 'utf8').slice(fromOffset)
+        ? fs.readFileSync(logPath).subarray(fromOffset).toString('utf8')
         : '',
     wait = (durationMs) =>
       new Promise((resolve) => setTimeout(resolve, durationMs)),

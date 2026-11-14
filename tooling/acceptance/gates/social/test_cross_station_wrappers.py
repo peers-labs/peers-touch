@@ -5,6 +5,7 @@ import json
 import unittest
 from pathlib import Path
 from unittest import mock
+from types import SimpleNamespace
 
 from tooling.acceptance.gates.social.cross_station_support import (
     SCENARIO_IDS,
@@ -122,6 +123,7 @@ class CrossStationSuiteWrapperTest(unittest.TestCase):
             MODULE_PREFIX + "cross_station_desktop_functional"
         )
         gate = module.Gate()
+        gate.e2e_preflight = {"executionPolicy": "development"}
         suite = _suite_result()
         with (
             mock.patch.object(module, "load_suite_result", return_value=suite),
@@ -133,27 +135,57 @@ class CrossStationSuiteWrapperTest(unittest.TestCase):
         self.assertEqual("UNPROVEN", result["proofState"])
         self.assertEqual([], result["provenScope"])
 
-    def test_native_gate_consumes_suite_without_launching_runtime(self) -> None:
+    def test_native_gate_runs_original_suite_once_on_prepared_binding(self) -> None:
         module = importlib.import_module(
             MODULE_PREFIX + "cross_station_native_e2e"
         )
         gate = module.Gate()
         suite = _suite_result()
+        selected = SimpleNamespace(manifest={"runId": "provisioning"}, binding=mock.Mock(cell_id="desktop-macos-native"))
+        prepared = mock.Mock()
+        outcome = {**suite.payload, "suiteResult": str(suite.path)}
         with (
-            mock.patch.object(module, "load_suite_result", return_value=suite),
+            mock.patch.object(module, "selected_native_runtime", return_value=selected),
+            mock.patch.object(module, "PreparedSocialNativeRuntime", return_value=prepared),
+            mock.patch.object(module, "current_run_directory", return_value=Path("/tmp/evidence")),
+            mock.patch.object(module, "source_identity", return_value={}),
+            mock.patch.object(module, "W7RuntimeOwner") as owner,
+            mock.patch.object(module, "validate_suite_result", return_value=suite),
             mock.patch.object(module, "attach_suite_evidence") as attach,
         ):
+            owner.return_value.run_social_cross_station_suite.return_value = outcome
             result = gate.run()
 
+        owner.return_value.run_social_cross_station_suite.assert_called_once_with(prepared=prepared)
+        prepared.cleanup.assert_called_once()
         attach.assert_called_once_with(gate, suite)
         self.assertEqual(
-            suite.payload["runtimeManifest"],
+            selected.manifest,
             gate.report.manifest,
         )
         self.assertEqual(list(SCENARIO_IDS), result["provenScope"])
         self.assertEqual("UNPROVEN", result["suiteArtifactProofState"])
 
-    def test_native_gate_catalog_is_attach_only(self) -> None:
+    def test_native_gate_failure_preserves_primary_and_cleans_once(self) -> None:
+        module = importlib.import_module(MODULE_PREFIX + "cross_station_native_e2e")
+        gate = module.Gate()
+        failure = RuntimeError("original Suite failure")
+        prepared = mock.Mock()
+        prepared.cleanup.side_effect = RuntimeError("cleanup failed")
+        with (
+            mock.patch.object(module, "selected_native_runtime", return_value=SimpleNamespace(manifest={})),
+            mock.patch.object(module, "PreparedSocialNativeRuntime", return_value=prepared),
+            mock.patch.object(module, "current_run_directory", return_value=Path("/tmp/evidence")),
+            mock.patch.object(module, "W7RuntimeOwner") as owner,
+        ):
+            owner.return_value.run_social_cross_station_suite.side_effect = failure
+            with self.assertRaises(RuntimeError) as raised:
+                gate.run()
+        self.assertIs(failure, raised.exception)
+        prepared.cleanup.assert_called_once()
+        self.assertIn("cleanupFailure", gate.report.runtime)
+
+    def test_native_gate_catalog_owns_preparation_and_shared_consumers(self) -> None:
         gate_catalog = json.loads(
             (
                 Path(__file__).resolve().parents[2]
@@ -162,9 +194,13 @@ class CrossStationSuiteWrapperTest(unittest.TestCase):
         )
         definition = gate_catalog["gates"]["social-cross-station-native-e2e"]
 
-        self.assertEqual("local", definition["environment"])
+        self.assertEqual("cross-station-social-native", definition["environment"])
         self.assertEqual("env-evidence", definition["tier"])
-        self.assertNotIn("provisioner", definition)
+        self.assertEqual(["desktop-macos-native"], definition["requiredRuntimeCells"])
+        self.assertEqual("acceptance-binary", definition["runtimeCellArtifact"])
+        for consumer in ("social-private-desktop-e2e", "social-cross-station-desktop-functional"):
+            self.assertEqual(["social-cross-station-native-e2e"], gate_catalog["gates"][consumer]["dependsOn"])
+            self.assertEqual("local", gate_catalog["gates"][consumer]["environment"])
 
 
 class CrossStationMainContractTest(unittest.TestCase):

@@ -47,12 +47,13 @@ describe('composer vertical shell (WeChat grammar)', () => {
     expect(composerSource).not.toContain('0.18s ease');
   });
 
-  it('renders tool glyphs and send as a matched set of 34px circles', () => {
-    expect(rule('.sc-composer__tool.pt-button')).toContain('border-radius: 999px');
+  it('renders tool glyphs and send as a matched set of 34px squircle tiles', () => {
+    // UI identity: icon tiles are rounded squares (r8), never pure circles.
+    expect(rule('.sc-composer__tool.pt-button')).toContain('border-radius: 8px');
     const send = rule('.sc-composer__send.pt-icon-button');
     expect(send).toContain('width: 34px');
     expect(send).toContain('height: 34px');
-    expect(send).toContain('border-radius: 999px');
+    expect(send).toContain('border-radius: 8px');
   });
 
   it('keeps the send control borderless in every state (no black filled chip)', () => {
@@ -138,21 +139,21 @@ describe('composer expand toggle and frame inset', () => {
   });
 });
 
-describe('composer emoji panel (north-star .sk-emoji-panel parity)', () => {
-  it('is a 312px / 10px-inset popover with a 10-column cell grid', () => {
+describe('composer emoji panel (WeChat-parity legible grid)', () => {
+  it('is a 400px / 12px-inset popover with a 10-column cell grid', () => {
     const panel = rule('.sc-emoji-panel');
-    expect(panel).toContain('width: 312px');
-    expect(panel).toContain('padding: 10px');
-    expect(panel).toContain('gap: 10px');
+    expect(panel).toContain('width: 400px');
+    expect(panel).toContain('padding: 12px');
+    expect(panel).toContain('gap: 12px');
     const grid = rule('.sc-emoji-panel__grid');
     expect(grid).toContain('grid-template-columns: repeat(10, 1fr)');
-    expect(grid).toContain('gap: 2px');
+    expect(grid).toContain('gap: 4px');
   });
 
-  it('renders cells as 19px text on 7px-radius hover tiles', () => {
+  it('renders cells as 28px text on 8px-radius hover tiles', () => {
     const item = rule('.sc-emoji-panel__item');
-    expect(item).toContain('font-size: 19px');
-    expect(item).toContain('border-radius: 7px');
-    expect(item).toContain('padding: 5px 0');
+    expect(item).toContain('font-size: 28px');
+    expect(item).toContain('border-radius: 8px');
+    expect(item).toContain('padding: 6px 0');
   });
 });

@@ -3,6 +3,7 @@ package infrastructure
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -46,6 +47,7 @@ func (federatedPrivateInteractionModel) TableName() string {
 type federatedPrivateReactionProjectionModel struct {
 	SourceStationPeerID string `gorm:"column:source_station_peer_id;primaryKey;size:512"`
 	PostID              string `gorm:"column:post_id;primaryKey;size:128"`
+	CommentID           string `gorm:"column:comment_id;primaryKey;size:128;not null;default:''"`
 	ViewerPTID          string `gorm:"column:viewer_ptid;primaryKey;size:255"`
 
 	ProjectionRevision uint64    `gorm:"column:projection_revision;not null"`
@@ -56,6 +58,120 @@ type federatedPrivateReactionProjectionModel struct {
 
 func (federatedPrivateReactionProjectionModel) TableName() string {
 	return "social_private_reaction_projections"
+}
+
+// Reconcile the real key (AutoMigrate alone does not widen composite keys),
+// then translate the old derived Post bytes once. No legacy read path survives.
+func migratePrivateReactionProjections(database *gorm.DB) error {
+	return database.Transaction(func(tx *gorm.DB) error {
+		switch tx.Dialector.Name() {
+		case "sqlite":
+			var columns []struct {
+				Name string
+				PK   int
+			}
+			if err := tx.Raw("PRAGMA table_info(social_private_reaction_projections)").Scan(&columns).Error; err != nil {
+				return err
+			}
+			hasKey := false
+			for _, column := range columns {
+				hasKey = hasKey || (column.Name == "comment_id" && column.PK > 0)
+			}
+			if !hasKey {
+				const temporary = "social_private_reaction_projections_migration"
+				if tx.Migrator().HasTable(temporary) {
+					return ErrPrivateContentConflict
+				}
+				if err := tx.Exec("ALTER TABLE social_private_reaction_projections RENAME TO " + temporary).Error; err != nil {
+					return err
+				}
+				if err := tx.AutoMigrate(&federatedPrivateReactionProjectionModel{}); err != nil {
+					return err
+				}
+				if err := tx.Exec(`INSERT INTO social_private_reaction_projections
+					(source_station_peer_id, post_id, comment_id, viewer_ptid,
+						projection_revision, command_id, projection_bytes, updated_at)
+					SELECT source_station_peer_id, post_id, COALESCE(comment_id, ''), viewer_ptid,
+						projection_revision, command_id, projection_bytes, updated_at
+					FROM ` + temporary).Error; err != nil {
+					return err
+				}
+				if err := tx.Migrator().DropTable(temporary); err != nil {
+					return err
+				}
+			}
+		case "postgres":
+			var key struct{ Name, Definition string }
+			if err := tx.Raw(`SELECT conname AS name, pg_get_constraintdef(oid) AS definition
+				FROM pg_constraint WHERE conrelid = 'social_private_reaction_projections'::regclass AND contype = 'p'`).
+				Scan(&key).Error; err != nil {
+				return err
+			}
+			if !strings.Contains(key.Definition, "comment_id") {
+				if key.Name != "" {
+					if err := tx.Exec(`ALTER TABLE social_private_reaction_projections DROP CONSTRAINT "` +
+						strings.ReplaceAll(key.Name, `"`, `""`) + `"`).Error; err != nil {
+						return err
+					}
+				}
+				if err := tx.Exec("ALTER TABLE social_private_reaction_projections ADD PRIMARY KEY (source_station_peer_id, post_id, comment_id, viewer_ptid)").Error; err != nil {
+					return err
+				}
+			}
+		case "mysql":
+			var columns []struct{ ColumnName string }
+			if err := tx.Raw(`SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE
+				WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'social_private_reaction_projections'
+				AND CONSTRAINT_NAME = 'PRIMARY'`).Scan(&columns).Error; err != nil {
+				return err
+			}
+			hasKey := false
+			for _, column := range columns {
+				hasKey = hasKey || column.ColumnName == "comment_id"
+			}
+			if !hasKey {
+				if err := tx.Exec("ALTER TABLE social_private_reaction_projections DROP PRIMARY KEY, ADD PRIMARY KEY (source_station_peer_id, post_id, comment_id, viewer_ptid)").Error; err != nil {
+					return err
+				}
+			}
+		default:
+			return ErrPrivateContentInvalid
+		}
+		var rows []federatedPrivateReactionProjectionModel
+		if err := tx.Find(&rows).Error; err != nil {
+			return err
+		}
+		for _, row := range rows {
+			projection := &privatecontentpb.PrivateReactionProjection{}
+			if err := proto.Unmarshal(row.ProjectionBytes, projection); err == nil &&
+				projection.GetPostId() == row.PostID && projection.GetCommentId() == row.CommentID &&
+				len(projection.ProtoReflect().GetUnknown()) == 0 {
+				canonical, _, err := canonicalFederatedPrivateReactionProjection(row.PostID, row.CommentID, projection.GetReactions())
+				if err == nil && bytes.Equal(canonical, row.ProjectionBytes) {
+					continue
+				}
+			}
+			legacy := &actormodel.Post{}
+			if err := proto.Unmarshal(row.ProjectionBytes, legacy); err != nil || row.CommentID != "" || legacy.GetId() != row.PostID {
+				return ErrPrivateContentConflict
+			}
+			oldCanonical, err := socialdomain.CanonicalProtoBytes(&actormodel.Post{Id: row.PostID, Reactions: legacy.GetReactions()})
+			if err != nil || !bytes.Equal(oldCanonical, row.ProjectionBytes) {
+				return ErrPrivateContentConflict
+			}
+			canonical, _, err := canonicalFederatedPrivateReactionProjection(row.PostID, "", legacy.GetReactions())
+			if err != nil {
+				return err
+			}
+			if err := tx.Model(&federatedPrivateReactionProjectionModel{}).
+				Where("source_station_peer_id = ? AND post_id = ? AND comment_id = ? AND viewer_ptid = ?",
+					row.SourceStationPeerID, row.PostID, row.CommentID, row.ViewerPTID).
+				UpdateColumn("projection_bytes", canonical).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 type RemotePrivatePostAuthority struct {
@@ -86,6 +202,7 @@ type FederatedPrivateReactionMutation struct {
 type FederatedPrivateReactionProjection struct {
 	SourceStationPeerID string
 	PostID              string
+	CommentID           string
 	ViewerPTID          string
 	ProjectionRevision  uint64
 	CommandID           string
@@ -111,6 +228,8 @@ type FederatedPrivateInteractionStore interface {
 		string,
 		string,
 		*securecontentpb.SecureResourceRef,
+		string,
+		string,
 		string,
 	) error
 	LoadFederatedPrivateInteraction(
@@ -157,6 +276,7 @@ type FederatedPrivateInteractionStore interface {
 		string,
 		*securecontentpb.SecureResourceRef,
 		string,
+		string,
 		actormodel.ReactionKind,
 		bool,
 		time.Time,
@@ -172,7 +292,17 @@ type FederatedPrivateInteractionStore interface {
 		string,
 		string,
 		string,
+		string,
 	) (*FederatedPrivateReactionProjection, error)
+	FindLocalPrivateReactionParent(context.Context, delivery.Transaction, string, string, string) (*securecontentpb.SecureResourceRef, error)
+	ListPrivateTargetReactions(context.Context, delivery.Transaction, string, string) ([]socialdomain.Reaction, uint64, error)
+	ListPrivateReactionRecipients(context.Context, delivery.Transaction, *securecontentpb.SecureResourceRef, string) ([]socialdomain.RecipientLocality, error)
+	ValidateRemotePrivateReactionProjection(context.Context, delivery.Transaction, *privatecontentpb.FederatedPrivateResourceDelivery) error
+	LoadPrivatePollAuthority(context.Context, delivery.Transaction, string, string, string) (*privatecontentpb.PrivatePollAuthority, error)
+	MutatePrivatePoll(context.Context, delivery.Transaction, *securecontentpb.SecureResourceRef, string, *privatecontentpb.VotePrivatePollRequest, func() time.Time) (PrivatePollMutation, error)
+	LocalPrivatePollProjection(context.Context, delivery.Transaction, *privatecontentpb.PrivatePollAuthority, string) (*privatecontentpb.PrivatePollProjection, error)
+	PutPrivatePollProjection(context.Context, delivery.Transaction, string, string, *privatecontentpb.PrivatePollAuthority, *privatecontentpb.PrivatePollProjection) (bool, error)
+	LoadPrivatePollProjection(context.Context, delivery.Transaction, string, string, *privatecontentpb.PrivatePollAuthority) (*privatecontentpb.PrivatePollProjection, error)
 }
 
 func (s *GORMPrivateContentStore) ValidateRemotePrivateCommentParent(
@@ -232,7 +362,29 @@ func (s *GORMPrivateContentStore) ValidateRemotePrivateReactionParent(
 	targetStationPeerID string,
 	federationID string,
 	parent *securecontentpb.SecureResourceRef,
+	commentID string,
 	targetActorPTID string,
+	targetDeviceID string,
+) error {
+	if strings.TrimSpace(targetDeviceID) == "" {
+		return ErrPrivateContentInvalid
+	}
+	return s.validateRemotePrivateReactionTarget(ctx, transaction, sourceStationPeerID,
+		targetStationPeerID, federationID, parent, commentID, targetActorPTID, targetDeviceID)
+}
+
+func (s *GORMPrivateContentStore) ValidateRemotePrivateReactionProjection(
+	ctx context.Context, transaction delivery.Transaction, message *privatecontentpb.FederatedPrivateResourceDelivery,
+) error {
+	return s.validateRemotePrivateReactionTarget(ctx, transaction, message.GetSourceStationPeerId(),
+		message.GetTargetStationPeerId(), message.GetFederationId(), message.GetResource(),
+		message.GetReaction().GetCommentId(), message.GetTargetActor().GetPtid(), "")
+}
+
+func (s *GORMPrivateContentStore) validateRemotePrivateReactionTarget(
+	ctx context.Context, transaction delivery.Transaction,
+	sourceStationPeerID, targetStationPeerID, federationID string,
+	parent *securecontentpb.SecureResourceRef, commentID, targetActorPTID, targetDeviceID string,
 ) error {
 	if transaction == nil || transaction.DB() == nil ||
 		strings.TrimSpace(sourceStationPeerID) == "" ||
@@ -263,9 +415,179 @@ func (s *GORMPrivateContentStore) ValidateRemotePrivateReactionParent(
 		return fmt.Errorf("social remote private Reaction parent read: %w", err)
 	}
 	if count != 1 {
+		var tombstones int64
+		if err := transaction.DB().WithContext(ctx).Model(&remotePrivateTombstoneModel{}).
+			Where("source_station_peer_id = ? AND content_id = ? AND target_actor_ptid = ?",
+				sourceStationPeerID, parent.GetContentId(), targetActorPTID).Count(&tombstones).Error; err != nil {
+			return err
+		}
+		if tombstones > 0 {
+			return ErrPrivateContentStaleRevision
+		}
 		return ErrPrivateContentNotFound
 	}
+	var parentRow remotePrivateResourceModel
+	if err := transaction.DB().WithContext(ctx).Where(
+		"source_station_peer_id = ? AND content_id = ? AND generation = ? AND target_actor_ptid = ?",
+		sourceStationPeerID, parent.GetContentId(), parent.GetGeneration(), targetActorPTID).First(&parentRow).Error; err != nil {
+		return err
+	}
+	blocked, err := remotePrivateRelationshipBlocked(ctx, transaction.DB(), targetActorPTID, parentRow.AuthorPTID)
+	if err != nil {
+		return err
+	}
+	if blocked {
+		return ErrPrivateContentStaleRevision
+	}
+	if targetDeviceID != "" {
+		if _, err := loadRemotePrivatePost(ctx, transaction.DB(), parent.GetContentId(), targetActorPTID, targetDeviceID); err != nil {
+			return err
+		}
+	}
+	if commentID != "" {
+		var comment remotePrivateResourceModel
+		if err := transaction.DB().WithContext(ctx).Where(
+			"source_station_peer_id = ? AND content_id = ? AND parent_content_id = ? AND target_actor_ptid = ? AND federation_id = ? AND target_station_peer_id = ? AND resource_kind = ? AND state = ?",
+			sourceStationPeerID, commentID, parent.GetContentId(), targetActorPTID,
+			federationID, targetStationPeerID,
+			int32(privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_COMMENT),
+			remotePrivateResourceStateActive,
+		).First(&comment).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				var tombstones int64
+				if err := transaction.DB().Model(&remotePrivateTombstoneModel{}).
+					Where("source_station_peer_id = ? AND content_id = ? AND target_actor_ptid = ?",
+						sourceStationPeerID, commentID, targetActorPTID).Count(&tombstones).Error; err != nil {
+					return err
+				}
+				if tombstones > 0 {
+					return ErrPrivateContentStaleRevision
+				}
+				return ErrPrivateContentNotFound
+			}
+			return err
+		}
+		metadata := &privatecontentpb.CommentMetadata{}
+		if err := proto.Unmarshal(comment.ViewerMetadataBytes, metadata); err != nil ||
+			metadata.GetPostId() != parent.GetContentId() || metadata.GetCommentId() != commentID ||
+			metadata.GetIsDeleted() {
+			return ErrPrivateContentConflict
+		}
+		blocked, err := remotePrivateRelationshipBlocked(ctx, transaction.DB(), targetActorPTID, metadata.GetAuthor().GetPtid())
+		if err != nil {
+			return err
+		}
+		if blocked {
+			return ErrPrivateContentStaleRevision
+		}
+		if targetDeviceID != "" {
+			if _, _, err := loadRemotePrivateDelivery(ctx, transaction.DB(), comment, targetDeviceID, true); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
+}
+
+// Fanout uses the frozen original parent locality and revalidates the current
+// parent/comment authority before exposing a viewer-specific summary.
+func (s *GORMPrivateContentStore) ListPrivateReactionRecipients(
+	ctx context.Context, transaction delivery.Transaction, parent *securecontentpb.SecureResourceRef, commentID string,
+) ([]socialdomain.RecipientLocality, error) {
+	database, err := privateInteractionDatabase(s.db, transaction)
+	if err != nil || parent == nil {
+		return nil, ErrPrivateContentInvalid
+	}
+	var post dbmodel.SocialPrivateContentPost
+	if err := database.WithContext(ctx).Where("post_id = ? AND generation = ? AND lifecycle_state = ? AND deleted_at IS NULL",
+		parent.GetContentId(), parent.GetGeneration(), privateContentLifecycleActive).First(&post).Error; err != nil {
+		return nil, err
+	}
+	var plan dbmodel.SocialPrivateContentPlan
+	if err := database.WithContext(ctx).Where("content_id = ? AND generation = ? AND audience_snapshot_id = ? AND resource_kind = ?",
+		post.ContentID, post.Generation, post.AudienceSnapshotID, PrivateContentResourcePost).First(&plan).Error; err != nil {
+		return nil, err
+	}
+	digest := sha256.Sum256(plan.RecipientLocalitiesBytes)
+	if !bytes.Equal(digest[:], plan.RecipientLocalitiesSHA256) {
+		return nil, ErrPrivateContentConflict
+	}
+	localities, err := socialdomain.ParseCanonicalRecipientLocalities(plan.RecipientLocalitiesBytes)
+	if err != nil {
+		return nil, err
+	}
+	localities = append(localities, socialdomain.RecipientLocality{ActorPTID: post.AuthorPTID, HomeStationPeerID: plan.AuthorHomeStationPeerID})
+	visible := make([]socialdomain.RecipientLocality, 0, len(localities))
+	for _, target := range localities {
+		current, err := s.FindLocalPrivateReactionParent(ctx, transaction, post.PostID, commentID, target.ActorPTID)
+		if errors.Is(err, ErrPrivateContentNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if !proto.Equal(current, parent) {
+			return nil, ErrPrivateContentConflict
+		}
+		visible = append(visible, target)
+	}
+	return visible, nil
+}
+
+func (s *GORMPrivateContentStore) FindLocalPrivateReactionParent(
+	ctx context.Context, transaction delivery.Transaction, postID, commentID, actorPTID string,
+) (*securecontentpb.SecureResourceRef, error) {
+	database, err := privateInteractionDatabase(s.db, transaction)
+	if err != nil {
+		return nil, err
+	}
+	var post dbmodel.SocialPrivateContentPost
+	if err := database.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("post_id = ? AND lifecycle_state = ? AND deleted_at IS NULL", postID, privateContentLifecycleActive).
+		First(&post).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrPrivateContentNotFound
+		}
+		return nil, err
+	}
+	if err := authorizePrivatePostViewer(database, post, actorPTID); err != nil {
+		return nil, err
+	}
+	if commentID != "" {
+		var comment dbmodel.SocialPrivateContentComment
+		if err := privateCommentVisibilityScope(database, post, actorPTID).
+			Where("comment_id = ? AND post_id = ?", commentID, postID).First(&comment).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, ErrPrivateContentNotFound
+			}
+			return nil, err
+		}
+	}
+	return &securecontentpb.SecureResourceRef{
+		OwnerDomain: securecontentpb.SecureContentOwnerDomain_SECURE_CONTENT_OWNER_DOMAIN_SOCIAL,
+		ContentId:   post.ContentID, Generation: post.Generation,
+	}, nil
+}
+
+func (s *GORMPrivateContentStore) ListPrivateTargetReactions(
+	ctx context.Context, transaction delivery.Transaction, postID, commentID string,
+) ([]socialdomain.Reaction, uint64, error) {
+	database, err := privateInteractionDatabase(s.db, transaction)
+	if err != nil {
+		return nil, 0, err
+	}
+	var maximum sql.NullInt64
+	if err := database.WithContext(ctx).Model(&federatedPrivateReactionProjectionModel{}).
+		Select("MAX(projection_revision)").Where("post_id = ? AND comment_id = ?", postID, commentID).
+		Row().Scan(&maximum); err != nil {
+		return nil, 0, err
+	}
+	if !maximum.Valid {
+		return nil, 0, nil
+	}
+	repository := &reactionRepo{db: database, identity: NewActorIdentity(database)}
+	reactions, err := repository.listByTarget(ctx, database, postID, commentID)
+	return reactions, uint64(maximum.Int64), err
 }
 
 func (s *GORMPrivateContentStore) FindRemotePrivatePostAuthority(
@@ -530,6 +852,7 @@ func (s *GORMPrivateContentStore) MutateFederatedPrivateReaction(
 	transaction delivery.Transaction,
 	sourceStationPeerID string,
 	parent *securecontentpb.SecureResourceRef,
+	commentID string,
 	actorPTID string,
 	kind actormodel.ReactionKind,
 	remove bool,
@@ -568,14 +891,27 @@ func (s *GORMPrivateContentStore) MutateFederatedPrivateReaction(
 	if err := authorizePrivatePostViewer(database, post, actorPTID); err != nil {
 		return FederatedPrivateReactionMutation{}, err
 	}
+	if commentID != "" {
+		var comment dbmodel.SocialPrivateContentComment
+		if err := privateCommentVisibilityScope(database, post, actorPTID).
+			Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("comment_id = ? AND post_id = ?", commentID, post.PostID).
+			First(&comment).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return FederatedPrivateReactionMutation{}, ErrPrivateContentNotFound
+			}
+			return FederatedPrivateReactionMutation{}, err
+		}
+	}
 	actorID, err := NewActorIdentity(database).RequireID(ctx, actorPTID)
 	if err != nil {
 		return FederatedPrivateReactionMutation{}, err
 	}
 	if remove {
 		if err := database.Where(
-			"post_id = ? AND actor_id = ? AND kind = ? AND post_class = ?",
+			"post_id = ? AND comment_id = ? AND actor_id = ? AND kind = ? AND post_class = ?",
 			post.PostID,
+			commentID,
 			actorID,
 			kind.String(),
 			string(socialdomain.PostClassPrivate),
@@ -585,6 +921,7 @@ func (s *GORMPrivateContentStore) MutateFederatedPrivateReaction(
 	} else {
 		row := dbmodel.SocialReaction{
 			PostID:    post.PostID,
+			CommentID: commentID,
 			ActorID:   actorID,
 			Kind:      kind.String(),
 			PostClass: string(socialdomain.PostClassPrivate),
@@ -599,27 +936,40 @@ func (s *GORMPrivateContentStore) MutateFederatedPrivateReaction(
 		db:       database,
 		identity: NewActorIdentity(database),
 	}
-	reactions, err := repository.listByPost(ctx, database, post.PostID)
+	reactions, err := repository.listByTarget(ctx, database, post.PostID, commentID)
 	if err != nil {
 		return FederatedPrivateReactionMutation{}, err
 	}
-	if err := database.Model(&dbmodel.SocialPrivateContentPost{}).
+	stats := database.Model(&dbmodel.SocialPrivateContentPost{}).
 		Where(
 			"post_id = ? AND generation = ? AND lifecycle_state = ? AND deleted_at IS NULL",
 			post.PostID,
 			post.Generation,
 			privateContentLifecycleActive,
-		).
-		UpdateColumn("reactions_count", len(reactions)).Error; err != nil {
+		)
+	count := int64(len(reactions))
+	if commentID != "" {
+		stats = database.Model(&dbmodel.SocialPrivateContentComment{}).
+			Where("post_id = ? AND comment_id = ? AND lifecycle_state = ? AND deleted_at IS NULL",
+				post.PostID, commentID, privateContentLifecycleActive)
+		count = 0
+		for _, reaction := range reactions {
+			if reaction.Kind == actormodel.ReactionKind_REACTION_LIKE {
+				count++
+			}
+		}
+	}
+	if err := stats.UpdateColumn("reactions_count", count).Error; err != nil {
 		return FederatedPrivateReactionMutation{}, err
 	}
 	var maximum sql.NullInt64
 	if err := database.Model(&federatedPrivateReactionProjectionModel{}).
 		Select("MAX(projection_revision)").
 		Where(
-			"source_station_peer_id = ? AND post_id = ?",
+			"source_station_peer_id = ? AND post_id = ? AND comment_id = ?",
 			sourceStationPeerID,
 			post.PostID,
+			commentID,
 		).
 		Row().
 		Scan(&maximum); err != nil {
@@ -652,6 +1002,7 @@ func (s *GORMPrivateContentStore) PutFederatedPrivateReactionProjection(
 	projectionBytes, reactions, err :=
 		canonicalFederatedPrivateReactionProjection(
 			candidate.PostID,
+			candidate.CommentID,
 			candidate.Reactions,
 		)
 	if err != nil {
@@ -665,6 +1016,7 @@ func (s *GORMPrivateContentStore) PutFederatedPrivateReactionProjection(
 	row := federatedPrivateReactionProjectionModel{
 		SourceStationPeerID: candidate.SourceStationPeerID,
 		PostID:              candidate.PostID,
+		CommentID:           candidate.CommentID,
 		ViewerPTID:          candidate.ViewerPTID,
 		ProjectionRevision:  candidate.ProjectionRevision,
 		CommandID:           candidate.CommandID,
@@ -685,10 +1037,11 @@ func (s *GORMPrivateContentStore) PutFederatedPrivateReactionProjection(
 	}
 	var current federatedPrivateReactionProjectionModel
 	if err := database.WithContext(ctx).Where(
-		"source_station_peer_id = ? AND post_id = ? AND viewer_ptid = ?",
+		"source_station_peer_id = ? AND post_id = ? AND viewer_ptid = ? AND comment_id = ?",
 		row.SourceStationPeerID,
 		row.PostID,
 		row.ViewerPTID,
+		row.CommentID,
 	).First(&current).Error; err != nil {
 		return false, fmt.Errorf(
 			"social private reaction projection read: %w",
@@ -708,10 +1061,11 @@ func (s *GORMPrivateContentStore) PutFederatedPrivateReactionProjection(
 	update := database.WithContext(ctx).
 		Model(&federatedPrivateReactionProjectionModel{}).
 		Where(
-			"source_station_peer_id = ? AND post_id = ? AND viewer_ptid = ? AND projection_revision < ?",
+			"source_station_peer_id = ? AND post_id = ? AND viewer_ptid = ? AND comment_id = ? AND projection_revision < ?",
 			row.SourceStationPeerID,
 			row.PostID,
 			row.ViewerPTID,
+			row.CommentID,
 			row.ProjectionRevision,
 		).
 		Updates(map[string]any{
@@ -737,6 +1091,7 @@ func (s *GORMPrivateContentStore) LoadFederatedPrivateReactionProjection(
 	transaction delivery.Transaction,
 	sourceStationPeerID string,
 	postID string,
+	commentID string,
 	viewerPTID string,
 ) (*FederatedPrivateReactionProjection, error) {
 	if strings.TrimSpace(sourceStationPeerID) == "" ||
@@ -750,10 +1105,11 @@ func (s *GORMPrivateContentStore) LoadFederatedPrivateReactionProjection(
 	}
 	var row federatedPrivateReactionProjectionModel
 	err = database.WithContext(ctx).Where(
-		"source_station_peer_id = ? AND post_id = ? AND viewer_ptid = ?",
+		"source_station_peer_id = ? AND post_id = ? AND viewer_ptid = ? AND comment_id = ?",
 		sourceStationPeerID,
 		postID,
 		viewerPTID,
+		commentID,
 	).First(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
@@ -764,14 +1120,15 @@ func (s *GORMPrivateContentStore) LoadFederatedPrivateReactionProjection(
 			err,
 		)
 	}
-	post := &actormodel.Post{}
-	if err := proto.Unmarshal(row.ProjectionBytes, post); err != nil ||
-		post.GetId() != row.PostID {
+	projection := &privatecontentpb.PrivateReactionProjection{}
+	if err := proto.Unmarshal(row.ProjectionBytes, projection); err != nil ||
+		projection.GetPostId() != row.PostID || projection.GetCommentId() != row.CommentID {
 		return nil, ErrPrivateContentConflict
 	}
 	canonical, reactions, err := canonicalFederatedPrivateReactionProjection(
 		row.PostID,
-		post.GetReactions(),
+		row.CommentID,
+		projection.GetReactions(),
 	)
 	if err != nil {
 		return nil, err
@@ -782,6 +1139,7 @@ func (s *GORMPrivateContentStore) LoadFederatedPrivateReactionProjection(
 	return &FederatedPrivateReactionProjection{
 		SourceStationPeerID: row.SourceStationPeerID,
 		PostID:              row.PostID,
+		CommentID:           row.CommentID,
 		ViewerPTID:          row.ViewerPTID,
 		ProjectionRevision:  row.ProjectionRevision,
 		CommandID:           row.CommandID,
@@ -865,6 +1223,7 @@ func federatedPrivateInteractionRecord(
 
 func canonicalFederatedPrivateReactionProjection(
 	postID string,
+	commentID string,
 	reactions []*actormodel.ReactionSummary,
 ) ([]byte, []*actormodel.ReactionSummary, error) {
 	if strings.TrimSpace(postID) == "" {
@@ -897,8 +1256,9 @@ func canonicalFederatedPrivateReactionProjection(
 		return normalized[i].GetKind() < normalized[j].GetKind()
 	})
 	canonical, err := proto.MarshalOptions{Deterministic: true}.Marshal(
-		&actormodel.Post{
-			Id:        postID,
+		&privatecontentpb.PrivateReactionProjection{
+			PostId:    postID,
+			CommentId: commentID,
 			Reactions: normalized,
 		},
 	)

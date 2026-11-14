@@ -216,6 +216,7 @@ fn readable_post(
             p.state == PrivateReadState::ContentReady
                 && p.content.is_some()
                 && !p.authority_namespace.is_empty()
+                && !crate::social::private_poll::requires_definition_read(p)
         }))
 }
 
@@ -323,6 +324,9 @@ pub(super) fn update_post(connection: &Connection, id: &str, bytes: &[u8]) -> Re
             id,
             p.state == PrivateReadState::DeletedOrRevoked,
         );
+    }
+    if crate::social::private_poll::requires_definition_read(&p) {
+        return deny_post(connection, id, false);
     }
     require_upsert(connection, "social-post", id, "")?;
     connection.execute(
@@ -940,6 +944,9 @@ mod tests {
             text: Some(text.into()),
             mentions: vec![],
             reactions_count: 0,
+            reactions: vec![],
+            reaction_revision: "0".into(),
+            reactions_hydrated: false,
             replies_count: 0,
             created_at_millis: Some(created),
             updated_at_millis: Some(created),

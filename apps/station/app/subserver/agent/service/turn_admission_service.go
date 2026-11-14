@@ -364,6 +364,26 @@ func (s *TurnAdmissionService) Admit(
 		if pendingCount >= int64(turnQueueCapacity) {
 			return errcode.NewQueueFull(conversation.ID, turnQueueCapacity)
 		}
+		// TW-D2: a single Running Turn that has not crossed its irreversible
+		// dispatch fence accepts the request as an amendment. The empty-queue
+		// condition is enforced inside the attempt so amendments can never
+		// jump a queued Turn.
+		amended, amendErr := amendActiveTurnTx(
+			tx,
+			conversation,
+			request,
+			payloadHash,
+			payload,
+			pendingCount,
+			now,
+		)
+		if amendErr != nil {
+			return amendErr
+		}
+		if amended != nil {
+			admission = amended
+			return nil
+		}
 		var maxSequence uint64
 		if sequenceErr := tx.Model(&persistence.TurnQueueEntry{}).
 			Where("conversation_id = ?", conversation.ID).
@@ -493,6 +513,9 @@ func (s *TurnAdmissionService) ResolveAdmission(
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, admissionInternal("resolve admitted turn", err)
+	}
+	if amended, amendErr := amendedReplayTx(db.WithContext(ctx), &conversation, idempotencyKey, ""); amendErr != nil || amended != nil {
+		return amended, amendErr
 	}
 	var entry persistence.TurnQueueEntry
 	err = db.WithContext(ctx).
@@ -933,6 +956,10 @@ func findAdmissionReplay(
 		return nil, admissionInternal("load admitted turn replay", turnErr)
 	}
 
+	if amended, amendErr := amendedReplayTx(tx, conversation, idempotencyKey, payloadHash); amendErr != nil || amended != nil {
+		return amended, amendErr
+	}
+
 	var entry persistence.TurnQueueEntry
 	queueErr := tx.Where(
 		"conversation_id = ? AND client_idempotency_key = ?",
@@ -1111,6 +1138,213 @@ func queuedUserInput(payload []byte) string {
 		return ""
 	}
 	return request.GetUserInput()
+}
+
+// amendActiveTurnTx merges the request into the conversation's unique
+// pre-dispatch Running Turn as a TW-D2 amendment. It returns nil admission
+// when the request must queue instead: the fence is already crossed, the
+// Turn is waiting on a local tool, zero/multiple eligible Turns exist, or
+// the FIFO queue is non-empty.
+func amendActiveTurnTx(
+	tx *gorm.DB,
+	conversation *persistence.Conversation,
+	request *model.ExecuteTurnRequest,
+	payloadHash string,
+	payload []byte,
+	pendingQueueCount int64,
+	now time.Time,
+) (*model.TurnAdmission, error) {
+	if pendingQueueCount > 0 {
+		return nil, nil
+	}
+	var unfencedCount int64
+	if err := tx.Model(&persistence.AgentTurn{}).
+		Where(
+			"conversation_id = ? AND status = ? AND dispatch_fenced_at IS NULL",
+			conversation.ID,
+			string(domain.TurnStatusRunning),
+		).
+		Count(&unfencedCount).Error; err != nil {
+		return nil, admissionInternal("count unfenced turns for amendment", err)
+	}
+	if unfencedCount != 1 {
+		return nil, nil
+	}
+	var candidate persistence.AgentTurn
+	if err := tx.
+		Where(
+			"conversation_id = ? AND status = ? AND dispatch_fenced_at IS NULL",
+			conversation.ID,
+			string(domain.TurnStatusRunning),
+		).
+		Order("started_at ASC, id ASC").
+		First(&candidate).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, admissionInternal("load amendable turn", err)
+	}
+
+	key := request.GetClientIdempotencyKey()
+	var maxSeq uint32
+	if err := tx.Model(&persistence.AgentTurnAmendment{}).
+		Where("turn_id = ?", candidate.ID).
+		Select("COALESCE(MAX(seq), 0)").
+		Scan(&maxSeq).Error; err != nil {
+		return nil, admissionInternal("allocate amendment sequence", err)
+	}
+
+	nextVersion := conversation.Version + 1
+	row := &persistence.AgentTurnAmendment{
+		TurnID:               candidate.ID,
+		ConversationID:       conversation.ID,
+		AgentID:              strings.TrimSpace(request.GetAgentId()),
+		Ptid:                 conversation.ActorPTID,
+		Seq:                  maxSeq + 1,
+		ClientIdempotencyKey: key,
+		AdmissionPayloadHash: payloadHash,
+		RequestPayload:       payload,
+		CreatedAt:            now,
+	}
+	if err := tx.Create(row).Error; err != nil {
+		return nil, admissionInternal("persist turn amendment", err)
+	}
+	if err := tx.Model(&persistence.Conversation{}).
+		Where("id = ?", conversation.ID).
+		Updates(map[string]interface{}{
+			"version":    nextVersion,
+			"updated_at": now,
+		}).Error; err != nil {
+		return nil, admissionInternal("advance conversation amendment version", err)
+	}
+	return &model.TurnAdmission{
+		Status:              model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_AMENDED,
+		TurnId:              candidate.ID,
+		AmendedCount:        row.Seq,
+		QueueCapacity:       turnQueueCapacity,
+		ConversationVersion: nextVersion,
+	}, nil
+}
+
+// amendedReplayTx resolves a client idempotency key that was admitted as an
+// amendment. A non-empty payloadHash enforces the duplicate-conflict check.
+func amendedReplayTx(
+	db *gorm.DB,
+	conversation *persistence.Conversation,
+	idempotencyKey string,
+	payloadHash string,
+) (*model.TurnAdmission, error) {
+	var amendment persistence.AgentTurnAmendment
+	err := db.
+		Where("conversation_id = ? AND client_idempotency_key = ?",
+			conversation.ID, idempotencyKey).
+		First(&amendment).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, admissionInternal("load turn amendment replay", err)
+	}
+	if payloadHash != "" && amendment.AdmissionPayloadHash != payloadHash {
+		return nil, errcode.NewAdmissionDuplicateConflict(
+			idempotencyKey,
+			amendment.TurnID,
+		)
+	}
+	var count int64
+	if err := db.Model(&persistence.AgentTurnAmendment{}).
+		Where("turn_id = ?", amendment.TurnID).
+		Count(&count).Error; err != nil {
+		return nil, admissionInternal("count amendment replay", err)
+	}
+	return &model.TurnAdmission{
+		Status:              model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_AMENDED,
+		TurnId:              amendment.TurnID,
+		AmendedCount:        uint32(count),
+		QueueCapacity:       turnQueueCapacity,
+		ConversationVersion: conversation.Version,
+	}, nil
+}
+
+// ClaimTurnAmendments crosses the Turn's irreversible-dispatch fence and
+// returns the amendments admitted up to that instant, in FIFO sequence.
+// It is idempotent: a Turn already fenced returns no requests so a retried
+// execution never merges the same amendment twice.
+func (s *TurnAdmissionService) ClaimTurnAmendments(
+	ctx context.Context,
+	actorID string,
+	agentID string,
+	conversationID string,
+	turnID string,
+) ([]*model.ExecuteTurnRequest, error) {
+	actorID = strings.TrimSpace(actorID)
+	agentID = strings.TrimSpace(agentID)
+	conversationID = strings.TrimSpace(conversationID)
+	turnID = strings.TrimSpace(turnID)
+	if actorID == "" || agentID == "" || conversationID == "" || turnID == "" {
+		return nil, errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"actor, agent_id, conversation_id and turn_id are required",
+			nil,
+		)
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	requests := make([]*model.ExecuteTurnRequest, 0)
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		conversation, lockErr := lockAdmissionConversation(tx, actorID, conversationID, agentID)
+		if lockErr != nil {
+			return lockErr
+		}
+		var turn persistence.AgentTurn
+		if findErr := tx.
+			Where("id = ? AND conversation_id = ?", turnID, conversation.ID).
+			First(&turn).Error; findErr != nil {
+			if errors.Is(findErr, gorm.ErrRecordNotFound) {
+				return errcode.New(
+					errcode.AgentInvalidSourceState,
+					http.StatusConflict,
+					"turn not found for amendment claim",
+					findErr,
+				)
+			}
+			return admissionInternal("load turn for amendment claim", findErr)
+		}
+		if turn.DispatchFencedAt != nil {
+			return nil
+		}
+		result := tx.Model(&persistence.AgentTurn{}).
+			Where("id = ? AND dispatch_fenced_at IS NULL", turnID).
+			Update("dispatch_fenced_at", s.now())
+		if result.Error != nil {
+			return admissionInternal("cross turn dispatch fence", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return nil
+		}
+		var rows []persistence.AgentTurnAmendment
+		if findErr := tx.
+			Where("turn_id = ?", turnID).
+			Order("seq ASC").
+			Find(&rows).Error; findErr != nil {
+			return admissionInternal("load claimed turn amendments", findErr)
+		}
+		for _, row := range rows {
+			var request model.ExecuteTurnRequest
+			if unmarshalErr := proto.Unmarshal(row.RequestPayload, &request); unmarshalErr != nil {
+				return admissionInternal("decode claimed turn amendment", unmarshalErr)
+			}
+			requests = append(requests, &request)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return requests, nil
 }
 
 func (s *TurnAdmissionService) getDB(ctx context.Context) (*gorm.DB, error) {

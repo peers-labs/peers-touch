@@ -26,6 +26,10 @@ const (
 	AgentAttachmentRejected               Code = "CONTEXT_ATTACHMENT_REJECTED"
 	AgentRuntimeUnavailable               Code = "RUNTIME_UNAVAILABLE"
 	AgentRuntimeResumeUnavailable         Code = "RUNTIME_RESUME_UNAVAILABLE"
+	// AgentRuntimeBindingStale marks a conversation whose bound provider/model
+	// no longer exists in the actor catalog. It is recoverable through an
+	// explicit runtime rebind, unlike a config/capability version conflict.
+	AgentRuntimeBindingStale Code = "RUNTIME_BINDING_STALE"
 	AgentRuntimeIncompatibleCapability    Code = "RUNTIME_INCOMPATIBLE_CAPABILITY"
 	AgentCapabilityManifestNotFound       Code = "CAPABILITY_MANIFEST_NOT_FOUND"
 	AgentCapabilityManifestVersionStale   Code = "CAPABILITY_MANIFEST_VERSION_STALE"
@@ -40,30 +44,36 @@ const (
 	AgentClientLeaseExpired               Code = "CLIENT_LEASE_EXPIRED"
 	AgentClientPermissionDenied           Code = "CLIENT_PERMISSION_DENIED"
 	AgentToolBudgetExhausted              Code = "TOOL_LOOP_BUDGET_EXHAUSTED"
-	AgentContextOverflow                  Code = "CONTEXT_OVERFLOW"
-	AgentContextInvalidReference          Code = "CONTEXT_INVALID_REFERENCE"
-	AgentLifecycleCancelled               Code = "LIFECYCLE_CANCELLED"
-	AgentLifecycleInterrupted             Code = "LIFECYCLE_INTERRUPTED"
-	AgentLifecycleStaleVersion            Code = "LIFECYCLE_STALE_VERSION"
-	AgentLifecycleTerminalMutation        Code = "LIFECYCLE_TERMINAL_MUTATION"
-	AgentProviderCredentialMissing        Code = "PROVIDER_CREDENTIAL_MISSING"
-	AgentProviderRateLimit                Code = "PROVIDER_RATE_LIMIT"
-	AgentProviderModelUnavailable         Code = "PROVIDER_MODEL_UNAVAILABLE"
-	AgentProviderTimeout                  Code = "PROVIDER_TIMEOUT"
-	AgentConnectorOAuthExpired            Code = "CONNECTOR_OAUTH_EXPIRED"
-	AgentConnectorScopeDenied             Code = "CONNECTOR_SCOPE_DENIED"
-	AgentConnectorResourceRemoved         Code = "CONNECTOR_RESOURCE_REMOVED"
-	AgentConnectorManifestStale           Code = "CONNECTOR_MANIFEST_STALE"
-	AgentConnectorDisconnected            Code = "CONNECTOR_DISCONNECTED"
-	AgentConnectorProviderRevoked         Code = "CONNECTOR_PROVIDER_REVOKED"
-	AgentConnectorRevocationUnconfirmed   Code = "CONNECTOR_REVOCATION_UNCONFIRMED"
-	AgentProviderFailed                   Code = "AGENT_5001"
-	AgentCompressionFailed                Code = "AGENT_5002"
-	AgentDelegationFailed                 Code = "AGENT_5003"
-	AgentCredentialFailed                 Code = "AGENT_5004"
-	AgentProviderDisabled                 Code = "AGENT_5005"
-	AgentSecurityViolation                Code = "AGENT_4003"
-	AgentInternal                         Code = "AGENT_5000"
+	// WE-S1: Station workspace sandbox execution targets.
+	AgentSandboxUnavailable              Code = "SANDBOX_UNAVAILABLE"
+	AgentSandboxNotReady                 Code = "SANDBOX_NOT_READY"
+	AgentSandboxPermissionDenied         Code = "SANDBOX_PERMISSION_DENIED"
+	AgentSandboxExecutionTargetForbidden Code = "SANDBOX_EXECUTION_TARGET_FORBIDDEN"
+	AgentSandboxInvalidArgs              Code = "SANDBOX_INVALID_TOOL_ARGS"
+	AgentContextOverflow                 Code = "CONTEXT_OVERFLOW"
+	AgentContextInvalidReference         Code = "CONTEXT_INVALID_REFERENCE"
+	AgentLifecycleCancelled              Code = "LIFECYCLE_CANCELLED"
+	AgentLifecycleInterrupted            Code = "LIFECYCLE_INTERRUPTED"
+	AgentLifecycleStaleVersion           Code = "LIFECYCLE_STALE_VERSION"
+	AgentLifecycleTerminalMutation       Code = "LIFECYCLE_TERMINAL_MUTATION"
+	AgentProviderCredentialMissing       Code = "PROVIDER_CREDENTIAL_MISSING"
+	AgentProviderRateLimit               Code = "PROVIDER_RATE_LIMIT"
+	AgentProviderModelUnavailable        Code = "PROVIDER_MODEL_UNAVAILABLE"
+	AgentProviderTimeout                 Code = "PROVIDER_TIMEOUT"
+	AgentConnectorOAuthExpired           Code = "CONNECTOR_OAUTH_EXPIRED"
+	AgentConnectorScopeDenied            Code = "CONNECTOR_SCOPE_DENIED"
+	AgentConnectorResourceRemoved        Code = "CONNECTOR_RESOURCE_REMOVED"
+	AgentConnectorManifestStale          Code = "CONNECTOR_MANIFEST_STALE"
+	AgentConnectorDisconnected           Code = "CONNECTOR_DISCONNECTED"
+	AgentConnectorProviderRevoked        Code = "CONNECTOR_PROVIDER_REVOKED"
+	AgentConnectorRevocationUnconfirmed  Code = "CONNECTOR_REVOCATION_UNCONFIRMED"
+	AgentProviderFailed                  Code = "AGENT_5001"
+	AgentCompressionFailed               Code = "AGENT_5002"
+	AgentDelegationFailed                Code = "AGENT_5003"
+	AgentCredentialFailed                Code = "AGENT_5004"
+	AgentProviderDisabled                Code = "AGENT_5005"
+	AgentSecurityViolation               Code = "AGENT_4003"
+	AgentInternal                        Code = "AGENT_5000"
 
 	AgentAdmissionDuplicateConflict Code = "ADMISSION_DUPLICATE_CONFLICT"
 	AgentCanvasSingleAgentNotReady  Code = "AGENT_CANVAS_SINGLE_AGENT_NOT_READY"
@@ -77,6 +87,7 @@ const (
 	AgentAttachmentRejectedLocaleKey               = "agent.errors.attachmentRejected"
 	AgentRuntimeUnavailableLocaleKey               = "agent.errors.runtimeUnavailable"
 	AgentRuntimeResumeUnavailableLocaleKey         = "agent.errors.resumeUnavailable"
+	AgentRuntimeBindingStaleLocaleKey              = "agent.errors.runtimeBindingStale"
 	AgentRuntimeIncompatibleCapabilityLocaleKey    = "agent.errors.incompatibleCapability"
 	AgentCapabilityManifestNotFoundLocaleKey       = "agent.errors.capabilityManifestNotFound"
 	AgentCapabilityManifestVersionStaleLocaleKey   = "agent.errors.capabilityManifestVersionStale"
@@ -90,7 +101,12 @@ const (
 	AgentClientExecutorUnavailableLocaleKey        = "agent.errors.executorUnavailable"
 	AgentClientLeaseExpiredLocaleKey               = "agent.errors.clientLeaseExpired"
 	AgentClientPermissionDeniedLocaleKey           = "agent.errors.clientPermissionDenied"
-	AgentToolBudgetExhaustedLocaleKey              = "agent.errors.toolLoopBudgetExhausted"
+	AgentToolBudgetExhaustedLocaleKey              = "agent.errors.toolLoopBudgetExhaust"
+	AgentSandboxUnavailableLocaleKey               = "agent.errors.sandboxUnavailable"
+	AgentSandboxNotReadyLocaleKey                  = "agent.errors.sandboxNotReady"
+	AgentSandboxPermissionDeniedLocaleKey          = "agent.errors.sandboxPermissionDenied"
+	AgentSandboxExecutionTargetForbiddenLocaleKey  = "agent.errors.sandboxExecutionTargetForbidden"
+	AgentSandboxInvalidArgsLocaleKey               = "agent.errors.sandboxInvalidArgs"
 	AgentContextOverflowLocaleKey                  = "agent.errors.contextOverflow"
 	AgentContextInvalidReferenceLocaleKey          = "agent.errors.contextInvalidReference"
 	AgentLifecycleCancelledLocaleKey               = "agent.errors.lifecycleCancelled"
@@ -134,6 +150,20 @@ func (e *BizError) Error() string {
 }
 
 func (e *BizError) Unwrap() error { return e.Cause }
+
+// WithDetail attaches an audit detail key/value to the payload and returns the
+// same error (chainable). Used by services that construct a typed error
+// inline before they know context details.
+func (e *BizError) WithDetail(key, value string) *BizError {
+	if e.Payload == nil {
+		e.Payload = &model.ErrorPayload{ErrorType: string(e.Code)}
+	}
+	if e.Payload.Details == nil {
+		e.Payload.Details = map[string]string{}
+	}
+	e.Payload.Details[key] = value
+	return e
+}
 
 func New(code Code, httpStatus int, message string, cause error) *BizError {
 	return &BizError{Code: code, HTTPStatus: httpStatus, Message: message, Cause: cause}
@@ -263,6 +293,28 @@ func NewRuntimeResumeUnavailable(runtimeProfileID, reasonCode string) *BizError 
 			Details: map[string]string{
 				"runtime_profile_id": runtimeProfileID,
 				"reason_code":        reasonCode,
+			},
+		},
+	}
+}
+
+// NewRuntimeBindingStale marks a conversation bound to a provider/model the
+// actor catalog no longer contains. It stays terminal for the current turn but
+// retryable after the client performs an explicit conversation runtime rebind.
+func NewRuntimeBindingStale(providerID, modelID string) *BizError {
+	return &BizError{
+		Code:       AgentRuntimeBindingStale,
+		HTTPStatus: http.StatusConflict,
+		Message:    AgentRuntimeBindingStaleLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentRuntimeBindingStaleLocaleKey,
+			ErrorType: string(AgentRuntimeBindingStale),
+			LocaleKey: AgentRuntimeBindingStaleLocaleKey,
+			Retryable: true,
+			Terminal:  true,
+			Details: map[string]string{
+				"provider_id": providerID,
+				"model_id":    modelID,
 			},
 		},
 	}

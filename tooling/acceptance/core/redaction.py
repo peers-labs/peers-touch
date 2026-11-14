@@ -15,6 +15,11 @@ _SAFE_REFERENCE_SUFFIXES = (
     "_reference",
     "_references",
 )
+# A digest is a non-reversible hash by construction, never a raw credential.
+# Keys such as storage_key_digest or password_digest contain a sensitive token
+# only by name; their values cannot be reversed into the secret and are safe to
+# retain in evidence, matching the host_key_sha256 / idempotency_key_hash rules.
+_SAFE_DIGEST_SUFFIXES = ("_digest",)
 _SAFE_EXACT_KEYS = frozenset(
     {
         "cache_tokens",
@@ -129,7 +134,40 @@ _SENSITIVE_FIELD_PATTERN = "|".join(
     _field_pattern(name)
     for name in sorted(_SENSITIVE_ASSIGNMENT_FIELDS, key=len, reverse=True)
 )
+# Assignment redaction splits sensitive field names into two classes so the
+# generic text pattern cannot flag non-secret framework attributes in DOM
+# evidence:
+#  * compound names (api_key, client_secret, ...) are enumerated phrases and
+#    matched across their full . _ - space spelling, so api-key / api.key stay
+#    sensitive even when embedded in a larger token;
+#  * bare single-word fields (key, token, secret, ...) match only as standalone
+#    fields. A bare token that merely tails a larger hyphen/dot identifier
+#    (data-group-key, rc-util-key, config.token) is a framework or data
+#    attribute carrying an opaque UI identifier, not a credential.
+_SENSITIVE_COMPOUND_FIELD_PATTERN = "|".join(
+    _field_pattern(name)
+    for name in sorted(
+        (name for name in _SENSITIVE_ASSIGNMENT_FIELDS if "_" in name),
+        key=len,
+        reverse=True,
+    )
+)
+_SENSITIVE_BARE_FIELD_PATTERN = "|".join(
+    _field_pattern(name)
+    for name in sorted(
+        (name for name in _SENSITIVE_ASSIGNMENT_FIELDS if "_" not in name),
+        key=len,
+        reverse=True,
+    )
+)
 _REDACTED_VALUE_PATTERN = re.escape(REDACTED)
+# A bare "key" URL query parameter is the object-storage object identifier by
+# convention (S3/OSS/GCS: GET /file?key=YYYY/MM/DD/<id><ext>), i.e. a resource
+# path rather than a credential; object access is authorized separately via a
+# signature or auth header. Keep it out of URL query redaction while compound
+# names such as api_key/access_key and every other sensitive parameter remain
+# covered.
+_SAFE_URL_QUERY_FIELDS = frozenset({"key"})
 _URL_QUERY_FIELD_PATTERN = "|".join(
     _field_pattern(name)
     for name in sorted(
@@ -142,14 +180,20 @@ _URL_QUERY_FIELD_PATTERN = "|".join(
             "x_amz_credential",
             "x_amz_security_token",
             "x_amz_signature",
-        },
+        }
+        - _SAFE_URL_QUERY_FIELDS,
         key=len,
         reverse=True,
     )
 )
 _SENSITIVE_ASSIGNMENT = re.compile(
-    rf"(?i)(?P<prefix>(?<![\w])[\"']?(?:{_SENSITIVE_FIELD_PATTERN})"
-    rf"[\"']?\s*[:=]\s*)"
+    rf"(?i)(?P<prefix>"
+    rf"(?<![\w])[\"']?(?:{_SENSITIVE_COMPOUND_FIELD_PATTERN})[\"']?\s*[:=]\s*"
+    # Bare fields never own URL query/fragment parameters: ? &# introduce a
+    # query string that _URL_QUERY_SECRET handles, so assignment matching must
+    # not re-flag an exempt object-storage key there.
+    rf"|(?<![\w.?&#-])[\"']?(?:{_SENSITIVE_BARE_FIELD_PATTERN})[\"']?\s*[:=]\s*"
+    rf")"
     rf"(?P<value>{_REDACTED_VALUE_PATTERN}|"
     r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s}\]]+)"
 )
@@ -158,8 +202,41 @@ _SENSITIVE_COMMAND_FLAG = re.compile(
     rf"(?P<value>{_REDACTED_VALUE_PATTERN}|"
     r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s}\]]+)"
 )
+# Whitespace-separated line assignments (netrc/shell "name value" with no
+# separator) are only safe for unambiguous credential keepers. Bare dictionary
+# words such as auth/key/token/secret/cookie/bearer legitimately begin prose and
+# CSS comment lines (e.g. "auth card. Only a failure card ..."), so they are
+# excluded from this loose line form. Their structured forms remain fully
+# covered: "key=..."/"token: ..." by _SENSITIVE_ASSIGNMENT, query parameters by
+# _URL_QUERY_SECRET, and authorization/cookie/bearer headers by their dedicated
+# header patterns.
+_LINE_ASSIGNMENT_PROSE_PRONE_TOKENS = frozenset(
+    {
+        "auth",
+        "bearer",
+        "cookie",
+        "cookies",
+        "key",
+        "keys",
+        "secret",
+        "secrets",
+        "token",
+        "tokens",
+    }
+)
+_LINE_ASSIGNMENT_FIELDS = tuple(
+    sorted(
+        set(_SENSITIVE_KEY_PHRASES)
+        | (_SENSITIVE_KEY_TOKENS - _LINE_ASSIGNMENT_PROSE_PRONE_TOKENS),
+        key=len,
+        reverse=True,
+    )
+)
+_SENSITIVE_LINE_FIELD_PATTERN = "|".join(
+    _field_pattern(name) for name in _LINE_ASSIGNMENT_FIELDS
+)
 _SENSITIVE_LINE_ASSIGNMENT = re.compile(
-    rf"(?im)(?P<prefix>^\s*(?:{_SENSITIVE_FIELD_PATTERN})\s+)"
+    rf"(?im)(?P<prefix>^\s*(?:{_SENSITIVE_LINE_FIELD_PATTERN})\s+)"
     rf"(?P<value>{_REDACTED_VALUE_PATTERN}|"
     r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\r\n]+)"
 )
@@ -213,6 +290,8 @@ def is_sensitive_key(key: object) -> bool:
     if normalized in _SAFE_EXACT_KEYS:
         return False
     if normalized.endswith(_SAFE_REFERENCE_SUFFIXES):
+        return False
+    if normalized.endswith(_SAFE_DIGEST_SUFFIXES):
         return False
     tokens = frozenset(filter(None, normalized.split("_")))
     if tokens & _SENSITIVE_KEY_TOKENS:

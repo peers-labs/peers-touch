@@ -19,7 +19,10 @@ from tooling.acceptance.core import (
     call_async_harness,
     load_runtime_manifest,
     require_runtime_client_service,
+    source_identity,
 )
+from tooling.acceptance.core.attestation import source_proto_digest
+from tooling.acceptance.core.runtime_cell import runtime_source_matches
 from tooling.acceptance.drivers.native.runtime import (
     LocalMacOSRuntimeBinding,
     NativeLaunchOptions,
@@ -31,6 +34,7 @@ from tooling.acceptance.gates.chat.native_support import (
     async_harness,
     commits_match,
     is_native_tauri_url,
+    native_runtime_source_identity,
     read_station_version,
     verify_runtime_fixture_ready,
 )
@@ -53,6 +57,8 @@ SOCIAL_CROSS_STATION_MIXED_GATE_ID = (
 SOCIAL_CROSS_STATION_MIXED_ENVIRONMENT_ID = (
     "social-cross-station-mobile-desktop"
 )
+SOCIAL_SEARCH_GATE_ID = "social-content-search-mobile-native-e2e"
+SOCIAL_SEARCH_ENVIRONMENT_ID = "chat-mobile-search-simulator"
 DESKTOP_RUNTIME = "native-tauri"
 MOBILE_RUNTIME = "tauri-ios-simulator"
 POLL_INTERVAL_SECONDS = 0.25
@@ -110,6 +116,7 @@ def load_mixed_runtime_manifest(
         SOCIAL_CROSS_STATION_MIXED_ENVIRONMENT_ID: (
             "social-cross-station-mobile-desktop-actor-manifest"
         ),
+        SOCIAL_SEARCH_ENVIRONMENT_ID: "chat-mobile-search-actor-manifest",
     }.get(environment_id, "chat-mixed-native-actor-manifest")
     if actor_manifest.get("artifactKind") != actor_manifest_kind:
         raise GateError("Mixed Chat actor manifest has an invalid artifact kind")
@@ -144,6 +151,8 @@ def _environment_id_for_gate(gate_id: str) -> str:
         return FEDERATION_LIFECYCLE_ENVIRONMENT_ID
     if gate_id == SOCIAL_CROSS_STATION_MIXED_GATE_ID:
         return SOCIAL_CROSS_STATION_MIXED_ENVIRONMENT_ID
+    if gate_id == SOCIAL_SEARCH_GATE_ID:
+        return SOCIAL_SEARCH_ENVIRONMENT_ID
     return ENVIRONMENT_ID
 
 
@@ -170,21 +179,7 @@ class MixedNativeRuntime:
             for client in manifest.get("clients", [])
             if isinstance(client, Mapping)
         }
-        has_mobile_client = any(
-            client.get("runtime") == MOBILE_RUNTIME
-            for client in self.client_specs.values()
-        )
-        self.mobile_binding = (
-            mobile_binding
-            if mobile_binding is not None
-            else (
-                MobileSimulatorRuntimeBinding.from_environment(
-                    gate_id=gate_id
-                )
-                if has_mobile_client
-                else None
-            )
-        )
+        self.mobile_binding = mobile_binding
         self.desktop_sessions: dict[str, TauriSession] = {}
         self.desktop_instances: list[TauriSession] = []
         self.desktop_lifecycles = NativeClientLifecycleLedger()
@@ -194,7 +189,12 @@ class MixedNativeRuntime:
 
     def _required_mobile_binding(self) -> MobileSimulatorRuntimeBinding:
         if self.mobile_binding is None:
-            raise GateError("Mixed runtime has no Mobile client binding")
+            if not any(client.get("runtime") == MOBILE_RUNTIME
+                       for client in self.client_specs.values()):
+                raise GateError("Mixed runtime has no Mobile client binding")
+            self.mobile_binding = MobileSimulatorRuntimeBinding.from_environment(
+                gate_id=self.gate_id,
+            )
         return self.mobile_binding
 
     @classmethod
@@ -422,12 +422,13 @@ class MixedNativeRuntime:
         if not isinstance(source, Mapping):
             raise GateError("Mixed runtime source identity is missing")
         source_commit = str(source.get("commit") or "")
-        if not source_commit or source.get("workspaceDigest") != "clean":
-            raise GateError("Mixed runtime source must be a clean commit")
+        if not runtime_source_matches(dict(source), source_identity(REPO_ROOT)):
+            raise GateError("Mixed runtime source does not match the current exact snapshot")
         services = self.manifest.get("services")
         if not isinstance(services, Mapping) or not services:
             raise GateError("Mixed runtime service attestations are missing")
         station_live: dict[str, Any] = {}
+        protocol_digest = source_proto_digest(REPO_ROOT)
         for service_id, service in services.items():
             if not isinstance(service, Mapping):
                 raise GateError(
@@ -438,6 +439,7 @@ class MixedNativeRuntime:
             if (
                 service.get("kind") != "station"
                 or service.get("workspaceDigest") != "clean"
+                or service.get("protocolDigest") != protocol_digest
                 or not commits_match(
                     str(service.get("liveCommit") or ""),
                     source_commit,
@@ -453,12 +455,18 @@ class MixedNativeRuntime:
             station_live[str(service_id)] = live
         binary = self.desktop_binding.binary_identity()
         runtime_cell = self.desktop_binding.runtime_identity()
-        if (
-            binary.get("sourceCommit") != source_commit
-            or runtime_cell.get("gateId") != self.gate_id
-            or runtime_cell.get("cellId") != "desktop-macos-native"
-        ):
-            raise GateError("Mixed runtime Desktop binary identity mismatch")
+        desktop_client = next((client_id for client_id in self.desktop_sessions), None)
+        if desktop_client is None:
+            raise GateError("Mixed runtime source proof requires a started Desktop client")
+        desktop_service_id, _ = require_runtime_client_service(
+            self.manifest, desktop_client, "station",
+        )
+        native_runtime_source_identity(
+            gate_id=self.gate_id, manifest=self.manifest,
+            runtime_binding=self.desktop_binding,
+            station_live=station_live[desktop_service_id],
+            client_id=desktop_client,
+        )
         return {
             "orchestrator": dict(source),
             "stations": {
@@ -469,7 +477,7 @@ class MixedNativeRuntime:
             "stationLive": station_live,
             "desktopRuntimeCell": runtime_cell,
             "desktopBinary": binary,
-            "mobileRuntimeCell": "ios-simulator",
+            "mobileRuntimeCell": "ios-simulator" if self.mobile_binding is not None else None,
         }
 
     def reconnect_client(

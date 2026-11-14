@@ -20,8 +20,9 @@ import (
 // columns on write, and unmarshals them on read into the appropriate proto
 // `oneof` content variant.
 type Post struct {
-	ID         uint64
-	AuthorPTID string
+	ID            uint64
+	AuthorPTID    string
+	PublicFeedRef string
 
 	// Type matches `model.PostType` (TEXT / IMAGE / VIDEO / LINK / POLL /
 	// REPOST / LOCATION). Stored as the proto enum's String() form on the

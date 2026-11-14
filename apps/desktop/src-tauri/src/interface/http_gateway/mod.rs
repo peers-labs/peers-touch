@@ -35,6 +35,9 @@ use crate::application::agent_turn as app_agent_turn;
 use crate::application::agents as app_agents;
 use crate::application::applet_store as app_applet_store;
 use crate::application::applets as app_applets;
+use crate::application::agent_logical_artifact as app_logical_artifact;
+use crate::application::agent_browser_session as app_browser_session;
+use crate::application::agent_terminal_session as app_terminal_session_rpc;
 use crate::application::auth::service as app_auth;
 use crate::application::capability_authority as app_capability_authority;
 use crate::application::channels as app_channels;
@@ -947,9 +950,13 @@ fn bind_gateway_session(
             None,
         )));
     }
+    // A fresh headless login is authoritative for the actor: bind exclusively
+    // so a stale window session restored at app launch (e.g. its JWT died with
+    // the Station it was minted by) can never win supervisor reconciliation
+    // and pin the capability worker to a revoked token.
     state
         .sessions
-        .bind(crate::domain::identity::ActiveSession::new(
+        .bind_exclusive(crate::domain::identity::ActiveSession::new(
             HTTP_GATEWAY_SESSION_LABEL,
             account_id,
             crate::domain::identity::ActorRef::new_person(actor_ptid),
@@ -1192,6 +1199,18 @@ fn to_json<T: serde::Serialize>(r: AppResult<T>) -> Value {
     serde_json::to_value(r).unwrap_or(json!({"ok": false, "error": {"code": "INTERNAL_ERROR", "message": "serialization failed"}}))
 }
 
+/// Serializes an AppResult carrying prost response bytes as
+/// `{ ok, data: { proto_b64 }, error }`. The headless acceptance harness
+/// decodes the base64 wire message; proto stays the single contract and no
+/// parallel JSON DTO is introduced in product code.
+fn to_json_proto(result: AppResult<Vec<u8>>) -> Value {
+    json!({
+        "ok": result.ok,
+        "data": result.data.map(|bytes| json!({ "proto_b64": B64.encode(bytes) })),
+        "error": result.error,
+    })
+}
+
 /// Deserialize args into T, returning a JSON error Value on failure.
 fn parse_args<T: serde::de::DeserializeOwned>(args: Value) -> Result<T, Value> {
     serde_json::from_value(args).map_err(|e| {
@@ -1266,6 +1285,22 @@ fn http_gateway_bearer_token(state: &AppState) -> Option<String> {
 
 fn unauthorized_error() -> AppResult<StubPayload> {
     AppResult::fail(ErrorCode::Unauthorized, "authentication required", None)
+}
+
+/// Maps a device browser worker error onto the gateway JSON envelope with the
+/// same code classification as the Tauri browser commands.
+fn browser_app_failure(error: &crate::application::browser::BrowserError) -> Value {
+    let code = match error.code {
+        "BROWSER_INVALID_ARGUMENT" => ErrorCode::InvalidArgument,
+        "BROWSER_HOST_UNAVAILABLE" => ErrorCode::Unavailable,
+        "BROWSER_HUMAN_TAKEOVER_HELD" | "BROWSER_SNAPSHOT_REF_STALE" => ErrorCode::Conflict,
+        _ => ErrorCode::InternalError,
+    };
+    to_json(AppResult::<serde_json::Value>::fail(
+        code,
+        error.message.clone(),
+        Some(json!({ "code": error.code })),
+    ))
 }
 
 fn dispatch_channel_operation(
@@ -1554,6 +1589,124 @@ fn dispatch_evaluation(
         &token,
         operation,
     ))
+}
+
+// Headless gateway inputs for device-held terminal sessions. Snake_case so
+// the acceptance harness speaks the same wire shape as the Station proxies;
+// the Tauri webview layer keeps its camelCase inputs.
+#[derive(Debug, serde::Deserialize)]
+struct GwTerminalCreateInput {
+    command: String,
+    #[serde(default)]
+    args: Vec<String>,
+    cwd: Option<String>,
+    workspace_root: String,
+    #[serde(default)]
+    allowed_roots: Vec<String>,
+    cols: Option<u16>,
+    rows: Option<u16>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GwTerminalWriteInput {
+    session_id: String,
+    data_b64: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GwTerminalResizeInput {
+    session_id: String,
+    cols: u16,
+    rows: u16,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GwTerminalSessionInput {
+    session_id: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GwTerminalReadInput {
+    session_id: String,
+    #[serde(default)]
+    cursor: u64,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GwTerminalWorkspaceInput {
+    device_id: String,
+}
+
+// ── Headless browser bridge inputs (TW-D6) ──────────────────────────────
+#[derive(Debug, serde::Deserialize)]
+struct GwBrowserSessionInput {
+    session_id: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GwBrowserTabOpenInput {
+    session_id: String,
+    url: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GwBrowserNavigateInput {
+    session_id: String,
+    tab_id: String,
+    url: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GwBrowserTabRefInput {
+    session_id: String,
+    tab_id: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GwBrowserElementInput {
+    session_id: String,
+    tab_id: String,
+    element_ref: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GwBrowserFillInput {
+    session_id: String,
+    tab_id: String,
+    element_ref: String,
+    value: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GwBrowserStationCreateInput {
+    session_id: String,
+    conversation_id: String,
+    #[serde(default)]
+    turn_id: String,
+    device_id: String,
+    engine: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GwBrowserTabInput {
+    tab_id: String,
+    generation: u64,
+    url: String,
+    title: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GwBrowserStationUpdateInput {
+    session_id: String,
+    status: i32,
+    lease: i32,
+    #[serde(default)]
+    tabs: Vec<GwBrowserTabInput>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GwBrowserStationListInput {
+    conversation_id: String,
 }
 
 /// Dispatch a command by name, returning the result as a JSON Value.
@@ -2103,6 +2256,19 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(t) => t,
                 Err(e) => return e,
             };
+            let input = match parse_args::<Option<SocialCircleListInput>>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let mut query = Vec::new();
+            if let Some(input) = input {
+                if let Some(cursor) = input.cursor {
+                    query.push(("cursor", cursor));
+                }
+                if let Some(limit) = input.limit {
+                    query.push(("limit", limit.to_string()));
+                }
+            }
             let resp = match state
                 .station
                 .client()
@@ -2110,13 +2276,45 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     Method::GET,
                     "/api/v1/social/circles",
                     &token,
-                    None,
+                    Some(&query),
                     None::<&()>,
                 ) {
                 Ok(r) => r,
                 Err(e) => return to_json(e.into_app_result::<Vec<u8>>("list circles failed")),
             };
             to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_circle_list_members" => {
+            let input = match parse_args::<SocialCircleListMembersInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let circle_id = match input.circle_id.parse::<u64>() {
+                Ok(value) if value > 0 && value.to_string() == input.circle_id => value,
+                _ => return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument, "circle_id must be canonical uint64", None,
+                )),
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let mut query = Vec::new();
+            if let Some(cursor) = input.cursor {
+                query.push(("cursor", cursor));
+            }
+            if let Some(limit) = input.limit {
+                query.push(("limit", limit.to_string()));
+            }
+            let path = format!("/api/v1/social/circles/{circle_id}/members");
+            let response = match state.station.client()
+                .request_proto::<(), model::social::ListCircleMembersResponse>(
+                    Method::GET, &path, &token, Some(&query), None::<&()>,
+                ) {
+                Ok(response) => response,
+                Err(error) => return to_json(error.into_app_result::<Vec<u8>>("list circle members failed")),
+            };
+            to_json(AppResult::success(response.encode_to_vec()))
         }
         "social_get_my_stats" => {
             let token = match token_from_state(state) {
@@ -2163,6 +2361,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             let req = model::social::ReactToPostRequest {
                 post_id: input.post_id.clone(),
+                comment_id: String::new(),
                 kind: input.kind,
                 command_id: String::new(),
                 actor_signing_key_id: String::new(),
@@ -2197,6 +2396,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             let req = model::social::UnreactToPostRequest {
                 post_id: input.post_id.clone(),
+                comment_id: String::new(),
                 kind: input.kind,
                 command_id: String::new(),
                 actor_signing_key_id: String::new(),
@@ -3236,6 +3436,90 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None,
             ))
         }
+        // Headless bridge: provider credential vault. provider_update never
+        // overwrites secrets, so credential set/status/delete are separate
+        // authenticated calls to Station.
+        "provider_set_credential" => {
+            #[derive(serde::Deserialize)]
+            struct Input {
+                id: String,
+                api_key: String,
+            }
+            let input = match parse_args::<Input>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            match app_provider::station_api::set_credential(
+                state.station.client(),
+                &token,
+                &input.id,
+                &input.api_key,
+            ) {
+                Ok(status) => to_json(AppResult::success(json!({ "status": status }))),
+                Err(error) => to_json(AppResult::<serde_json::Value>::fail(
+                    ErrorCode::InternalError,
+                    format!("{error:?}"),
+                    None,
+                )),
+            }
+        }
+        "provider_credential_status" => {
+            let input = match parse_args::<ProviderIdInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            match app_provider::station_api::credential_status(
+                state.station.client(),
+                &token,
+                &input.id,
+            ) {
+                Ok(status) => to_json(AppResult::success(json!({ "status": status }))),
+                Err(error) => to_json(AppResult::<serde_json::Value>::fail(
+                    ErrorCode::InternalError,
+                    format!("{error:?}"),
+                    None,
+                )),
+            }
+        }
+        // Station-side credential revocation for headless provider-switch /
+        // restore-deep-link verification. Optimistic-concurrency version comes
+        // from provider_get; the surface never touches the plaintext secret.
+        "provider_credential_delete" => {
+            #[derive(serde::Deserialize)]
+            struct Input {
+                id: String,
+                version: i64,
+            }
+            let input = match parse_args::<Input>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            match app_provider::station_api::delete_credential(
+                state.station.client(),
+                &token,
+                &input.id,
+                input.version,
+            ) {
+                Ok(()) => to_json(AppResult::success(json!({ "deleted": true }))),
+                Err(error) => to_json(AppResult::<serde_json::Value>::fail(
+                    ErrorCode::InternalError,
+                    format!("{error:?}"),
+                    None,
+                )),
+            }
+        }
         "provider_list_available_models" => {
             let scope = match resolve_scope(state) {
                 Ok(s) => s,
@@ -3613,6 +3897,21 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None => return to_json(unauthorized_error()),
             };
             to_json(app_agent_turn::agent_conversation_runtime_reset(
+                state.station.client(),
+                input,
+                &token,
+            ))
+        }
+        "agent_conversation_runtime_rebind" => {
+            let input = match parse_args::<AgentConversationRuntimeRebindInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_conversation_runtime_rebind(
                 state.station.client(),
                 input,
                 &token,
@@ -4032,6 +4331,30 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 ),
             )
         }
+        // Headless-only device bootstrap: the GUI login flow activates the
+        // actor-device messaging engine as part of post-login onboarding. The
+        // password login used by the E2E HTTP gateway only binds a JWT, so a
+        // headless harness must run the SAME existing activation (identity
+        // continuity + device signing identity + engine worker) before the
+        // capability supervisor can register. This calls the production
+        // application function; it adds no parallel device protocol or bypass.
+        "agent_device_engine_activate" => {
+            let (account_id, actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            match app_auth::activate_messaging_profile(state, &account_id, &actor_ptid, &token) {
+                Ok(()) => to_json(AppResult::success(json!({
+                    "activated": true,
+                    "account_id": account_id,
+                }))),
+                Err(error) => to_json(AppResult::<serde_json::Value>::fail(
+                    ErrorCode::InternalError,
+                    format!("device engine activation failed: {error}"),
+                    None,
+                )),
+            }
+        }
         "agent_client_executor_supervisor_stop" => {
             if http_gateway_bearer_token(state).is_none() {
                 return to_json(unauthorized_error());
@@ -4047,6 +4370,161 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 app_runtime_evidence::set_client_executor_supervisor_available(
                     supervisor.inner(),
                     false,
+                ),
+            )
+        }
+        "agent_workspace_list" => {
+            let (_, actor_ptid, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let app = match runtime.app_handle("agent_workspace_list") {
+                Ok(app) => app,
+                Err(error) => return error,
+            };
+            let supervisor = app.state::<
+                Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
+            >();
+            to_json(
+                crate::interface::tauri_commands::agent_workspace::list_workspaces(
+                    supervisor.inner(),
+                    &actor_ptid,
+                ),
+            )
+        }
+        "agent_workspace_add_directory" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::agent_workspace::WorkspaceDirectoryInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let (_, actor_ptid, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let app = match runtime.app_handle("agent_workspace_add_directory") {
+                Ok(app) => app,
+                Err(error) => return error,
+            };
+            let supervisor = app.state::<
+                Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
+            >();
+            to_json(
+                crate::interface::tauri_commands::agent_workspace::add_workspace_directory(
+                    supervisor.inner(),
+                    &actor_ptid,
+                    input.path.trim(),
+                ),
+            )
+        }
+        "agent_workspace_create_worktree" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::agent_workspace::WorkspaceWorktreeInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let (_, actor_ptid, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let app = match runtime.app_handle("agent_workspace_create_worktree") {
+                Ok(app) => app,
+                Err(error) => return error,
+            };
+            let supervisor = app.state::<
+                Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
+            >();
+            to_json(
+                crate::interface::tauri_commands::agent_workspace::create_workspace_worktree(
+                    supervisor.inner(),
+                    &actor_ptid,
+                    input.base.trim(),
+                    input.name.trim(),
+                ),
+            )
+        }
+        "agent_workspace_remove" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::agent_workspace::WorkspaceLocatorInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let (_, actor_ptid, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let app = match runtime.app_handle("agent_workspace_remove") {
+                Ok(app) => app,
+                Err(error) => return error,
+            };
+            let supervisor = app.state::<
+                Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
+            >();
+            to_json(
+                crate::interface::tauri_commands::agent_workspace::remove_workspace(
+                    supervisor.inner(),
+                    &actor_ptid,
+                    input.locator.unwrap_or_default().trim(),
+                ),
+            )
+        }
+        "agent_workspace_activate" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::agent_workspace::WorkspaceLocatorInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let (_, actor_ptid, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let app = match runtime.app_handle("agent_workspace_activate") {
+                Ok(app) => app,
+                Err(error) => return error,
+            };
+            let supervisor = app.state::<
+                Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
+            >();
+            to_json(
+                crate::interface::tauri_commands::agent_workspace::activate_workspace(
+                    supervisor.inner(),
+                    &actor_ptid,
+                    input.locator,
+                ),
+            )
+        }
+        "agent_workspace_set_shell_access" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::agent_workspace::WorkspaceShellAccessInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let (_, actor_ptid, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let app = match runtime.app_handle("agent_workspace_set_shell_access") {
+                Ok(app) => app,
+                Err(error) => return error,
+            };
+            let supervisor = app.state::<
+                Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
+            >();
+            to_json(
+                crate::interface::tauri_commands::agent_workspace::set_workspace_shell_access(
+                    supervisor.inner(),
+                    &actor_ptid,
+                    input.full_access,
                 ),
             )
         }
@@ -6187,6 +6665,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     command: "account_unlock".to_string(),
                     status: "authenticated".to_string(),
                     actor_ptid: Some(session.actor_ptid),
+                    session_activation_id: None,
                     session_token: Some(token),
                     name: p_name,
                     email: p_email,
@@ -6249,6 +6728,41 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             to_json(app_memory::memory_list(
+                state.station.client(),
+                input,
+                &token,
+            ))
+        }
+        // Headless bridge: agent-scoped memory candidates + review gate.
+        // Distinct from the generic memory_* arms; these carry agent_id and
+        // the candidate status filter used by the O08 confirmation dock.
+        "agent_memory_list" => {
+            let input =
+                match parse_args::<app_agent_growth::AgentMemoryListInput>(args) {
+                    Ok(v) => v,
+                    Err(e) => return e,
+                };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_growth::agent_memory_list(
+                state.station.client(),
+                input,
+                &token,
+            ))
+        }
+        "agent_memory_review" => {
+            let input =
+                match parse_args::<app_agent_growth::AgentMemoryReviewInput>(args) {
+                    Ok(v) => v,
+                    Err(e) => return e,
+                };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_growth::agent_memory_review(
                 state.station.client(),
                 input,
                 &token,
@@ -7995,6 +8509,861 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
             }
         }
+        // =================================================================
+        // Headless acceptance bridge: device-held terminal sessions (TW-D5).
+        // These return ordinary JSON; the PTY/process and bounded output ring
+        // stay in this worker exactly as for the Tauri webview path.
+        // =================================================================
+        "terminal_session_create" => {
+            let input = match parse_args::<GwTerminalCreateInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let app = match runtime.app_handle("terminal_session_create") {
+                Ok(app) => app,
+                Err(e) => return e,
+            };
+            match crate::application::terminal::create_session(
+                app,
+                crate::application::terminal::CreateTerminal {
+                    command: input.command,
+                    args: input.args,
+                    cwd: input.cwd,
+                    workspace_root: input.workspace_root,
+                    allowed_roots: input.allowed_roots,
+                    cols: input.cols,
+                    rows: input.rows,
+                },
+            ) {
+                Ok(meta) => to_json(AppResult::success(meta)),
+                Err(error) => to_json(AppResult::<serde_json::Value>::fail(
+                    ErrorCode::InvalidArgument,
+                    error.message,
+                    Some(json!({ "code": error.code })),
+                )),
+            }
+        }
+        "terminal_session_write" => {
+            let input = match parse_args::<GwTerminalWriteInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let data = match B64.decode(&input.data_b64) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    return to_json(AppResult::<bool>::fail(
+                        ErrorCode::InvalidArgument,
+                        format!("invalid terminal data encoding: {error}"),
+                        None,
+                    ))
+                }
+            };
+            match crate::application::terminal::write_input(&input.session_id, &data) {
+                Ok(()) => to_json(AppResult::success(true)),
+                Err(error) => to_json(AppResult::<bool>::fail(
+                    ErrorCode::InternalError,
+                    error.message,
+                    Some(json!({ "code": error.code })),
+                )),
+            }
+        }
+        "terminal_session_resize" => {
+            let input = match parse_args::<GwTerminalResizeInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match crate::application::terminal::resize(&input.session_id, input.cols, input.rows) {
+                Ok(()) => to_json(AppResult::success(true)),
+                Err(error) => to_json(AppResult::<bool>::fail(
+                    ErrorCode::InternalError,
+                    error.message,
+                    Some(json!({ "code": error.code })),
+                )),
+            }
+        }
+        "terminal_session_kill" => {
+            let input = match parse_args::<GwTerminalSessionInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match crate::application::terminal::kill_session(&input.session_id) {
+                Ok(meta) => to_json(AppResult::success(meta)),
+                Err(error) => to_json(AppResult::<serde_json::Value>::fail(
+                    ErrorCode::InvalidArgument,
+                    error.message,
+                    Some(json!({ "code": error.code })),
+                )),
+            }
+        }
+        "terminal_session_remove" => {
+            let input = match parse_args::<GwTerminalSessionInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match crate::application::terminal::remove_session(&input.session_id) {
+                Ok(()) => to_json(AppResult::success(true)),
+                Err(error) => to_json(AppResult::<bool>::fail(
+                    ErrorCode::InvalidArgument,
+                    error.message,
+                    Some(json!({ "code": error.code })),
+                )),
+            }
+        }
+        "terminal_session_list" => {
+            to_json(AppResult::success(crate::application::terminal::list_sessions()))
+        }
+        "terminal_session_read" => {
+            let input = match parse_args::<GwTerminalReadInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match crate::application::terminal::read_session(&input.session_id, input.cursor) {
+                Ok(read) => to_json(AppResult::success(read)),
+                Err(error) => to_json(AppResult::<serde_json::Value>::fail(
+                    ErrorCode::NotFound,
+                    error.message,
+                    Some(json!({ "code": error.code })),
+                )),
+            }
+        }
+        "terminal_default_workspace" => {
+            let input = match parse_args::<GwTerminalWorkspaceInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let (_, actor_ptid, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let app = match runtime.app_handle("terminal_default_workspace") {
+                Ok(app) => app,
+                Err(error) => return error,
+            };
+            let supervisor = app.state::<
+                Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
+            >();
+            let device_id = input.device_id.trim();
+            // Same precedence as the Tauri surface: an activated project wins,
+            // otherwise the actor's private sandbox is provisioned.
+            let active_root = supervisor
+                .active_workspace(&actor_ptid, device_id)
+                .unwrap_or(None);
+            match crate::application::desktop_executor_worker::workspace_grants::resolve_terminal_workspace(
+                active_root,
+                &actor_ptid,
+                device_id,
+            ) {
+                Ok(resolved) => to_json(AppResult::success(json!({
+                    "workspaceRoot": resolved.root.to_string_lossy(),
+                    "kind": resolved.kind.as_str(),
+                    "shell": crate::application::desktop_executor_worker::workspace_grants::default_shell(),
+                }))),
+                Err(error) => to_json(AppResult::<serde_json::Value>::fail(
+                    ErrorCode::InternalError,
+                    format!("provision terminal workspace: {error}"),
+                    None,
+                )),
+            }
+        }
+        // =================================================================
+        // Headless acceptance bridge: device-held browser sessions (TW-D6).
+        // The worker drives the real managed Chrome through CDP exactly as
+        // for the Tauri webview; the gateway adds no alternate control path.
+        // Worker functions are async; gateway workers are plain std threads,
+        // so driving them on the Tauri runtime here cannot nest a runtime.
+        // =================================================================
+        "browser_host_info" => {
+            to_json(AppResult::success(crate::application::browser::host_info()))
+        }
+        "browser_session_create" => {
+            let input = match parse_args::<GwBrowserSessionInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let app = match runtime.app_handle("browser_session_create") {
+                Ok(app) => app,
+                Err(e) => return e,
+            };
+            match tauri::async_runtime::block_on(
+                crate::application::browser::create_session(app, input.session_id),
+            ) {
+                Ok(meta) => to_json(AppResult::success(meta)),
+                Err(error) => browser_app_failure(&error),
+            }
+        }
+        "browser_session_list" => {
+            to_json(AppResult::success(crate::application::browser::list_sessions()))
+        }
+        "browser_navigate" => {
+            let input = match parse_args::<GwBrowserNavigateInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let app = match runtime.app_handle("browser_navigate") {
+                Ok(app) => app,
+                Err(e) => return e,
+            };
+            match tauri::async_runtime::block_on(
+                crate::application::browser::navigate(app, &input.session_id, input.tab_id, input.url),
+            ) {
+                Ok(meta) => to_json(AppResult::success(meta)),
+                Err(error) => browser_app_failure(&error),
+            }
+        }
+        "browser_inspect" => {
+            let input = match parse_args::<GwBrowserSessionInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match tauri::async_runtime::block_on(
+                crate::application::browser::inspect(&input.session_id),
+            ) {
+                Ok(meta) => to_json(AppResult::success(meta)),
+                Err(error) => browser_app_failure(&error),
+            }
+        }
+        "browser_snapshot" => {
+            let input = match parse_args::<GwBrowserTabRefInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match tauri::async_runtime::block_on(
+                crate::application::browser::snapshot(&input.session_id, input.tab_id),
+            ) {
+                Ok(snapshot) => to_json(AppResult::success(snapshot)),
+                Err(error) => browser_app_failure(&error),
+            }
+        }
+        "browser_fill" => {
+            let input = match parse_args::<GwBrowserFillInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let app = match runtime.app_handle("browser_fill") {
+                Ok(app) => app,
+                Err(e) => return e,
+            };
+            match tauri::async_runtime::block_on(
+                crate::application::browser::fill(
+                    app,
+                    &input.session_id,
+                    input.tab_id,
+                    input.element_ref,
+                    input.value,
+                ),
+            ) {
+                Ok(meta) => to_json(AppResult::success(meta)),
+                Err(error) => browser_app_failure(&error),
+            }
+        }
+        "browser_submit" => {
+            let input = match parse_args::<GwBrowserElementInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let app = match runtime.app_handle("browser_submit") {
+                Ok(app) => app,
+                Err(e) => return e,
+            };
+            match tauri::async_runtime::block_on(
+                crate::application::browser::submit(
+                    app,
+                    &input.session_id,
+                    input.tab_id,
+                    input.element_ref,
+                ),
+            ) {
+                Ok(meta) => to_json(AppResult::success(meta)),
+                Err(error) => browser_app_failure(&error),
+            }
+        }
+        "browser_screenshot" => {
+            let input = match parse_args::<GwBrowserTabRefInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match tauri::async_runtime::block_on(
+                crate::application::browser::screenshot(&input.session_id, input.tab_id),
+            ) {
+                Ok(bytes) => to_json(AppResult::success(json!({
+                    "mime": "image/png",
+                    "data_b64": B64.encode(bytes),
+                }))),
+                Err(error) => browser_app_failure(&error),
+            }
+        }
+        "browser_remove" => {
+            let input = match parse_args::<GwBrowserSessionInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let app = match runtime.app_handle("browser_remove") {
+                Ok(app) => app,
+                Err(e) => return e,
+            };
+            match tauri::async_runtime::block_on(
+                crate::application::browser::remove_session(app, &input.session_id),
+            ) {
+                Ok(()) => to_json(AppResult::success(true)),
+                Err(error) => browser_app_failure(&error),
+            }
+        }
+        // Station browser-session metadata proxies (proto, bearer auth).
+        "agent_browser_session_create" => {
+            let input = match parse_args::<GwBrowserStationCreateInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json_proto(app_browser_session::create(
+                state.station.client(),
+                &token,
+                &model::agent::v1::CreateBrowserSessionRequest {
+                    session_id: input.session_id,
+                    conversation_id: input.conversation_id,
+                    turn_id: input.turn_id,
+                    device_id: input.device_id,
+                    engine: input.engine,
+                },
+            ))
+        }
+        "agent_browser_session_update" => {
+            let input = match parse_args::<GwBrowserStationUpdateInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            let tabs = input.tabs
+                .into_iter()
+                .map(|tab| model::agent::v1::BrowserTab {
+                    tab_id: tab.tab_id,
+                    generation: tab.generation,
+                    url: tab.url,
+                    title: tab.title,
+                })
+                .collect();
+            to_json_proto(app_browser_session::update(
+                state.station.client(),
+                &token,
+                &model::agent::v1::UpdateBrowserSessionRequest {
+                    session_id: input.session_id,
+                    status: input.status,
+                    lease: input.lease,
+                    tabs,
+                },
+            ))
+        }
+        "agent_browser_session_list" => {
+            let input = match parse_args::<GwBrowserStationListInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json_proto(app_browser_session::list(
+                state.station.client(),
+                &token,
+                &model::agent::v1::ListBrowserSessionsRequest {
+                    conversation_id: input.conversation_id,
+                },
+            ))
+        }
+        "agent_browser_session_remove" => {
+            let input = match parse_args::<GwBrowserSessionInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json_proto(app_browser_session::remove(
+                state.station.client(),
+                &token,
+                &model::agent::v1::RemoveBrowserSessionRequest {
+                    session_id: input.session_id,
+                },
+            ))
+        }
+
+        // =================================================================
+        // Headless bridge: Station terminal metadata + sandbox PTY (TW-D5/S6).
+        // Proto stays the contract; responses come back as { proto_b64 }.
+        // =================================================================
+        "agent_terminal_session_create" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::terminal::AgentTerminalCreateInput,
+            >(args)
+            {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            let request = model::agent::CreateTerminalSessionRequest {
+                session_id: input.session_id,
+                conversation_id: input.conversation_id,
+                turn_id: input.turn_id,
+                device_id: input.device_id,
+                cwd: input.cwd,
+                command: input.command,
+                args: input.args,
+                pid: input.pid,
+                execution_target: input.execution_target,
+                sandbox_ref: input.sandbox_ref,
+            };
+            to_json_proto(app_terminal_session_rpc::create(state.station.client(), &token, &request))
+        }
+        "agent_terminal_session_update" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::terminal::AgentTerminalUpdateInput,
+            >(args)
+            {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            let status = model::agent::TerminalSessionStatus::from_str_name(&input.status)
+                .unwrap_or(model::agent::TerminalSessionStatus::Unspecified) as i32;
+            let request = model::agent::UpdateTerminalSessionRequest {
+                session_id: input.session_id,
+                status,
+                exit_code: input.exit_code,
+                output_bytes: input.output_bytes,
+            };
+            to_json_proto(app_terminal_session_rpc::update(state.station.client(), &token, &request))
+        }
+        "agent_terminal_session_list" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::terminal::AgentTerminalListInput,
+            >(args)
+            {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            let request = model::agent::ListTerminalSessionsRequest {
+                conversation_id: input.conversation_id,
+            };
+            to_json_proto(app_terminal_session_rpc::list(state.station.client(), &token, &request))
+        }
+        "agent_terminal_session_reconcile" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::terminal::AgentTerminalReconcileInput,
+            >(args)
+            {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            let request = model::agent::ReconcileTerminalSessionsRequest {
+                device_id: input.device_id,
+                live_session_ids: input.live_session_ids,
+                execution_target: input.execution_target,
+                sandbox_ref: input.sandbox_ref,
+            };
+            to_json_proto(app_terminal_session_rpc::reconcile(state.station.client(), &token, &request))
+        }
+        "agent_terminal_session_remove" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::terminal::AgentTerminalSessionInput,
+            >(args)
+            {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            let request = model::agent::RemoveTerminalSessionRequest {
+                session_id: input.session_id,
+            };
+            to_json_proto(app_terminal_session_rpc::remove(state.station.client(), &token, &request))
+        }
+        "agent_sandbox_resolve_active" => {
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            let request = model::agent::ResolveActiveSandboxesRequest {};
+            to_json_proto(app_terminal_session_rpc::resolve_active_sandboxes(
+                state.station.client(),
+                &token,
+                &request,
+            ))
+        }
+        "agent_sandbox_pty_write" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::terminal::AgentSandboxPtyWriteInput,
+            >(args)
+            {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            let data = match B64.decode(&input.data_b64) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    return to_json(AppResult::<Vec<u8>>::fail(
+                        ErrorCode::InvalidArgument,
+                        format!("invalid terminal data encoding: {error}"),
+                        None,
+                    ))
+                }
+            };
+            let request = model::agent::SandboxPtyWriteRequest {
+                session_id: input.session_id,
+                data,
+            };
+            to_json_proto(app_terminal_session_rpc::sandbox_pty_write(
+                state.station.client(),
+                &token,
+                &request,
+            ))
+        }
+        "agent_sandbox_pty_read" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::terminal::AgentSandboxPtyReadInput,
+            >(args)
+            {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            let request = model::agent::SandboxPtyReadRequest {
+                session_id: input.session_id,
+                cursor: input.cursor,
+                max_bytes: input.max_bytes,
+            };
+            to_json_proto(app_terminal_session_rpc::sandbox_pty_read(
+                state.station.client(),
+                &token,
+                &request,
+            ))
+        }
+        "agent_sandbox_pty_resize" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::terminal::AgentSandboxPtyResizeInput,
+            >(args)
+            {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            let request = model::agent::SandboxPtyResizeRequest {
+                session_id: input.session_id,
+                cols: input.cols,
+                rows: input.rows,
+            };
+            to_json_proto(app_terminal_session_rpc::sandbox_pty_resize(
+                state.station.client(),
+                &token,
+                &request,
+            ))
+        }
+        "agent_sandbox_pty_signal" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::terminal::AgentSandboxPtySignalInput,
+            >(args)
+            {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            let request = model::agent::SandboxPtySignalRequest {
+                session_id: input.session_id,
+                signal: input.signal,
+            };
+            to_json_proto(app_terminal_session_rpc::sandbox_pty_signal(
+                state.station.client(),
+                &token,
+                &request,
+            ))
+        }
+
+        // =================================================================
+        // Headless bridge: logical artifact versions (TW-D3 / O04). Proto in,
+        // { proto_b64 } out; no parallel JSON DTO.
+        // =================================================================
+        "agent_task_artifact_claim_version" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::agent_logical_artifact::ClaimVersionInput,
+            >(args)
+            {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            let request = model::agent::ClaimArtifactVersionRequest {
+                conversation_id: input.conversation_id,
+                artifact_id: input.artifact_id,
+                kind: model::agent::LogicalArtifactKind::from_str_name(&input.kind)
+                    .unwrap_or(model::agent::LogicalArtifactKind::Unspecified) as i32,
+                name: input.name,
+                expected_base_version_id: input.expected_base_version_id,
+                origin: model::agent::ArtifactVersionOrigin::from_str_name(&input.origin)
+                    .unwrap_or(model::agent::ArtifactVersionOrigin::Unspecified) as i32,
+                source_turn_id: input.source_turn_id,
+                source_message_id: input.source_message_id,
+                body: input.body,
+                content_type: input.content_type,
+                summary: input.summary,
+                feedback_id: input.feedback_id,
+                adopted_attachment_refs: input.adopted_attachment_refs,
+                client_idempotency_key: input.client_idempotency_key,
+                source_tool_call_id: input.source_tool_call_id,
+            };
+            to_json_proto(app_logical_artifact::claim_version(
+                state.station.client(),
+                &token,
+                &request,
+            ))
+        }
+        "agent_task_artifact_list" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::agent_logical_artifact::ConversationInput,
+            >(args)
+            {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            let request = model::agent::ListTaskArtifactsRequest {
+                conversation_id: input.conversation_id,
+            };
+            to_json_proto(app_logical_artifact::list_task_artifacts(
+                state.station.client(),
+                &token,
+                &request,
+            ))
+        }
+        "agent_task_artifact_versions" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::agent_logical_artifact::ArtifactInput,
+            >(args)
+            {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            let request = model::agent::ListArtifactVersionsRequest {
+                artifact_id: input.artifact_id,
+            };
+            to_json_proto(app_logical_artifact::list_versions(
+                state.station.client(),
+                &token,
+                &request,
+            ))
+        }
+        "agent_task_artifact_body_get" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::agent_logical_artifact::VersionInput,
+            >(args)
+            {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            let request = model::agent::GetArtifactVersionBodyRequest {
+                version_id: input.version_id,
+            };
+            to_json_proto(app_logical_artifact::get_body(
+                state.station.client(),
+                &token,
+                &request,
+            ))
+        }
+        "agent_task_artifact_feedback_submit" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::agent_logical_artifact::FeedbackInput,
+            >(args)
+            {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            let request = model::agent::SubmitArtifactFeedbackRequest {
+                artifact_id: input.artifact_id,
+                base_version_id: input.base_version_id,
+                kind: model::agent::ArtifactFeedbackKind::from_str_name(&input.kind)
+                    .unwrap_or(model::agent::ArtifactFeedbackKind::Unspecified) as i32,
+                anchor_text: input.anchor_text,
+                instruction: input.instruction,
+                client_idempotency_key: input.client_idempotency_key,
+            };
+            to_json_proto(app_logical_artifact::submit_feedback(
+                state.station.client(),
+                &token,
+                &request,
+            ))
+        }
+        "agent_task_artifact_feedback_list" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::agent_logical_artifact::ArtifactInput,
+            >(args)
+            {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            let request = model::agent::ListArtifactFeedbackRequest {
+                artifact_id: input.artifact_id,
+            };
+            to_json_proto(app_logical_artifact::list_feedback(
+                state.station.client(),
+                &token,
+                &request,
+            ))
+        }
+        "agent_task_artifact_check_record" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::agent_logical_artifact::RecordCheckInput,
+            >(args)
+            {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            let request = model::agent::RecordArtifactCheckRequest {
+                artifact_id: input.artifact_id,
+                version_id: input.version_id,
+                check_type: model::agent::ArtifactCheckType::from_str_name(&input.check_type)
+                    .unwrap_or(model::agent::ArtifactCheckType::Unspecified) as i32,
+                result: model::agent::ArtifactCheckResult::from_str_name(&input.result)
+                    .unwrap_or(model::agent::ArtifactCheckResult::Unspecified) as i32,
+                detail: input.detail,
+                environment: input.environment,
+                client_idempotency_key: input.client_idempotency_key,
+                source_tool_call_id: input.source_tool_call_id,
+                command_exit_code: input.command_exit_code,
+                command_output_sha256: input.command_output_sha256,
+                command: input.command,
+            };
+            to_json_proto(app_logical_artifact::record_check(
+                state.station.client(),
+                &token,
+                &request,
+            ))
+        }
+        "agent_task_artifact_check_list" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::agent_logical_artifact::ArtifactInput,
+            >(args)
+            {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            let request = model::agent::ListArtifactChecksRequest {
+                artifact_id: input.artifact_id,
+            };
+            to_json_proto(app_logical_artifact::list_checks(
+                state.station.client(),
+                &token,
+                &request,
+            ))
+        }
+        "agent_task_artifact_accept" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::agent_logical_artifact::AcceptInput,
+            >(args)
+            {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            let request = model::agent::AcceptArtifactVersionRequest {
+                artifact_id: input.artifact_id,
+                version_id: input.version_id,
+                client_idempotency_key: input.client_idempotency_key,
+            };
+            to_json_proto(app_logical_artifact::accept_version(
+                state.station.client(),
+                &token,
+                &request,
+            ))
+        }
+        "agent_task_artifact_acceptance_list" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::agent_logical_artifact::ArtifactInput,
+            >(args)
+            {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            let request = model::agent::ListArtifactAcceptancesRequest {
+                artifact_id: input.artifact_id,
+            };
+            to_json_proto(app_logical_artifact::list_acceptances(
+                state.station.client(),
+                &token,
+                &request,
+            ))
+        }
+
         // =================================================================
         // Unknown command
         // =================================================================

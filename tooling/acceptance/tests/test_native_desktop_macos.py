@@ -37,8 +37,8 @@ from tooling.acceptance.drivers.native.base import (
     NativeWindowStack,
 )
 from tooling.acceptance.drivers.native.macos import (
-    MacOSNativeDesktopAdapter, _ACTIVATION_PROBE, _NATIVE_OBSERVATION_BODY,
-    _NATIVE_OBSERVATION_PROBE, _pixel_buffer_has_visible_alpha,
+    MacOSNativeDesktopAdapter, _ACTIVATION_PROBE,
+    _NATIVE_AX_SUPPORT, _NATIVE_OBSERVATION_PROBE, _pixel_buffer_has_visible_alpha,
 )
 from tooling.acceptance.provisioners import get_runtime_cell_lifecycle
 from tooling.acceptance.provisioners.native_desktop_macos import (
@@ -47,21 +47,6 @@ from tooling.acceptance.provisioners.native_desktop_macos import (
     NativeDesktopMacOSProvisioner,
     _WINDOW_BOUNDS_PROBE,
 )
-
-
-def observation_probe(controls: list[dict[str, object]]) -> dict[str, object]:
-    """Execute the actual child algorithm with only native reads substituted."""
-    clock = Mock(spec=["monotonic", "sleep"])
-    clock.monotonic.return_value = 0.0
-    namespace = {
-        "time": clock,
-        "frontmost_pid": Mock(return_value=41),
-        "read_control": Mock(side_effect=controls),
-        "pointer_location": Mock(return_value={"x": 100.0, "y": 200.0}),
-        "panel_presence": Mock(return_value={"processId": 42, "present": True}),
-    }
-    exec(_NATIVE_OBSERVATION_BODY, namespace)
-    return namespace
 
 
 class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
@@ -403,7 +388,7 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
             "semantic-action"
         )
         adapter = Mock(spec=MacOSNativeDesktopAdapter)
-        adapter.observe_operator.side_effect = lambda: NativeOperatorObservation(adapter)
+        adapter.observe_operator.side_effect = lambda **kwargs: NativeOperatorObservation(adapter)
         session.stop.return_value = []
         lifecycle = NativeDesktopMacOSProvisioner()
         operator_state = {
@@ -658,133 +643,26 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         actions.assert_not_called()
         session.save_screenshot.assert_not_called()
 
-    def test_keyboard_focus_identity_excludes_mutable_control_state(
-        self,
-    ) -> None:
-        baseline = NativeControlSnapshot(
-            kind="text-input",
-            title="Composer",
-            value="before",
-            window_count=1,
-            dialog_count=0,
-            frontmost=True,
-            main_window=True,
-            focused_window=True,
-            actual_frontmost_pid=41,
-            platform_role="AXTextArea",
-            platform_subrole="",
-        )
-        mutable_state_changed = NativeControlSnapshot(
-            kind="text-input",
-            title="Composer",
-            value="after",
-            window_count=2,
-            dialog_count=1,
-            frontmost=True,
-            main_window=True,
-            focused_window=True,
-            actual_frontmost_pid=41,
-            platform_role="AXTextArea",
-            platform_subrole="",
-        )
-        focus_changed = NativeControlSnapshot(
-            kind="button",
-            title="Send",
-            frontmost=True,
-            main_window=True,
-            focused_window=True,
-            actual_frontmost_pid=41,
-            platform_role="AXButton",
-            platform_subrole="",
-        )
-
-        self.assertEqual(
-            MacOSNativeDesktopAdapter.keyboard_focus_identity(
-                baseline
-            ),
-            MacOSNativeDesktopAdapter.keyboard_focus_identity(
-                mutable_state_changed
-            ),
-        )
-        self.assertNotEqual(
-            MacOSNativeDesktopAdapter.keyboard_focus_identity(
-                baseline
-            ),
-            MacOSNativeDesktopAdapter.keyboard_focus_identity(
-                focus_changed
-            ),
-        )
-
-    def test_operator_focus_waits_for_two_stable_ax_samples(self) -> None:
-        transient = {"actualFrontmostPid": 41, "role": "", "subrole": ""}
-        stable = {**transient, "role": "AXWebArea"}
-        probe = observation_probe([transient, stable, stable])
-        result = probe["observe_native"]("operator-panel", 42, 1.0, 0.05)
-        self.assertEqual(result["operator"]["control"]["role"], "AXWebArea")
-        self.assertEqual(result["panel"], {"processId": 42, "present": True})
-        self.assertEqual(probe["read_control"].call_count, 3)
-        self.assertEqual(probe["time"].sleep.call_count, 2)
-        probe["panel_presence"].assert_called_once_with(42)
-
-    def test_operator_focus_accepts_stable_absence_of_focused_control(
-        self,
-    ) -> None:
-        control = {"actualFrontmostPid": 41, "role": "", "subrole": ""}
-        probe = observation_probe([control, control])
-        result = probe["observe_native"]("operator", 0, 1.0, 0.05)
-        self.assertEqual(result["operator"]["control"], control)
-        self.assertEqual(probe["read_control"].call_count, 2)
-        probe["panel_presence"].assert_not_called()
-
-    def test_operator_focus_rejects_stale_frontmost_pid_immediately(
-        self,
-    ) -> None:
-        probe = observation_probe([{"actualFrontmostPid": 42}])
-        with self.assertRaises(probe["ObservationFailure"]) as caught:
-            probe["observe_native"]("operator", 41, 1.0, 0.05)
-        self.assertIn("frontmost process changed", caught.exception.details["reason"])
-        probe["read_control"].assert_called_once_with(41, deadline=1.0)
-        probe["panel_presence"].assert_not_called()
-
-    def test_operator_focus_rejects_unstable_ax_samples(self) -> None:
-        first = {"actualFrontmostPid": 41, "role": "", "subrole": ""}
-        second = {**first, "role": "AXTextArea"}
-        for controls, times in (
-            ([first, second], [0.0, 2.0]),
-            ([first, first], [0.0, 2.0]),
-        ):
-            with self.subTest(controls=controls):
-                probe = observation_probe(controls)
-                probe["time"].monotonic.side_effect = times
-                with self.assertRaises(probe["ObservationFailure"]) as caught:
-                    probe["observe_native"]("operator", 41, 1.0, 0.05)
-                self.assertIn("did not stabilize", caught.exception.details["reason"])
-                probe["pointer_location"].assert_not_called()
-
-    def test_combined_operator_and_panel_uses_one_bounded_current_probe(self) -> None:
+    def test_combined_operator_requires_an_explicit_scope(self) -> None:
         adapter = MacOSNativeDesktopAdapter()
-        response = {
-            "operator": {
-                "processId": 41, "pointer": {"x": 100.0, "y": 200.0},
-                "control": {"actualFrontmostPid": 41},
-            },
-            "panel": {"processId": 42, "present": True},
-        }
-        with patch(
-            "tooling.acceptance.drivers.native.macos.subprocess.run",
-            return_value=SimpleNamespace(stdout=json.dumps(response)),
-        ) as run:
-            first = adapter.snapshot_operator_and_file_chooser(42)
-            response["panel"]["present"] = False
-            run.return_value.stdout = json.dumps(response)
-            second = adapter.snapshot_operator_and_file_chooser(42)
-        self.assertTrue(first.file_chooser.present)
-        self.assertFalse(second.file_chooser.present)
-        self.assertEqual(run.call_count, 2)
-        for invocation in run.call_args_list:
-            self.assertEqual(invocation.args[0][3:5], ("operator-panel", "42"))
-            self.assertEqual(invocation.kwargs["timeout"], 3)
-        self.assertEqual(first.operator_state["frontmostPid"], 41)
+        with self.assertRaisesRegex(DriverError, "active operator scope"):
+            adapter.snapshot_operator_and_file_chooser(42)
+
+    def test_scope_support_defers_native_reads_until_a_deadline_bound_request(self) -> None:
+        library = Mock()
+        namespace = {}
+        with patch("ctypes.CDLL", return_value=library), patch.object(
+            sys, "argv", ["probe", "observation-scope"],
+        ):
+            exec(_NATIVE_AX_SUPPORT, namespace)
+        library.AXUIElementCreateSystemWide.assert_not_called()
+        self.assertIsNone(namespace["reads"])
+        reads = Mock()
+        namespace["reads"] = reads
+        namespace["create_string"]("AXWindows")
+        namespace["perform_action"](12, "AXPress")
+        reads.string.assert_called_once_with("AXWindows")
+        reads.perform_action.assert_called_once_with(12, "AXPress")
 
     def test_complete_native_probe_initializes_with_mode_and_pid_arguments(self) -> None:
         library = Mock()
@@ -817,7 +695,7 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         appkit = SimpleNamespace(NSWorkspace=SimpleNamespace(
             sharedWorkspace=lambda: workspace,
         ))
-        for mode, process_id in (("operator", 0), ("control", 42), ("pointer", 0)):
+        for mode, process_id in (("control", 42), ("pointer", 0)):
             with self.subTest(mode=mode):
                 output = io.StringIO()
                 with patch("ctypes.CDLL", return_value=library), patch.dict(
@@ -828,10 +706,7 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
                     exec(_NATIVE_OBSERVATION_PROBE, {})
                 result = json.loads(output.getvalue())
                 self.assertNotIn("error", result)
-                if mode == "operator":
-                    self.assertEqual(result["operator"]["processId"], 41)
-                    self.assertEqual(result["operator"]["pointer"], {"x": 100.0, "y": 200.0})
-                elif mode == "control":
+                if mode == "control":
                     self.assertEqual(result["control"]["actualFrontmostPid"], 41)
                 else:
                     self.assertEqual(result["pointer"], {"x": 100.0, "y": 200.0})
@@ -867,6 +742,112 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
             )
 
         adapter.window_state.assert_called_once_with(42)
+
+    def _qualification_lifecycle(self) -> NativeDesktopMacOSProvisioner:
+        with tempfile.TemporaryDirectory() as directory:
+            return NativeDesktopMacOSProvisioner(state_root=Path(directory))
+
+    def test_semantic_qualification_preserves_first_operator_failure(
+        self,
+    ) -> None:
+        lifecycle = self._qualification_lifecycle()
+        boundary = BlockedError(
+            "macOS scoped native observation failed",
+            resource="runtime-cell-operator-focus",
+        )
+        adapter = Mock(spec=CellAdapterIdentity)
+        with patch(
+            "tooling.acceptance.provisioners.native_desktop_macos."
+            "admit_local_native_input_mode",
+            return_value=NativeInputMode.SEMANTIC_NON_INTRUSIVE,
+        ), patch(
+            "tooling.acceptance.provisioners.native_desktop_macos.time.sleep"
+        ) as sleep, patch.object(
+            lifecycle,
+            "_probe_native_adapter",
+            side_effect=(boundary, (adapter, 45123)),
+        ) as probe:
+            with self.assertRaises(BlockedError) as raised:
+                lifecycle._qualified_native_adapter(Mock(), "run-1")
+
+        self.assertIs(raised.exception, boundary)
+        probe.assert_called_once()
+        sleep.assert_not_called()
+
+    def test_semantic_qualification_does_not_retry_other_blocked_resources(
+        self,
+    ) -> None:
+        lifecycle = self._qualification_lifecycle()
+        non_environmental = BlockedError(
+            "no connected display",
+            resource="runtime-cell-display",
+        )
+        with patch(
+            "tooling.acceptance.provisioners.native_desktop_macos."
+            "admit_local_native_input_mode",
+            return_value=NativeInputMode.SEMANTIC_NON_INTRUSIVE,
+        ), patch(
+            "tooling.acceptance.provisioners.native_desktop_macos.time.sleep"
+        ) as sleep, patch.object(
+            lifecycle,
+            "_probe_native_adapter",
+            side_effect=non_environmental,
+        ) as probe:
+            with self.assertRaises(BlockedError):
+                lifecycle._qualified_native_adapter(Mock(), "run-1")
+
+        probe.assert_called_once()
+        sleep.assert_not_called()
+
+    def test_semantic_qualification_preserves_cleanup_failure(
+        self,
+    ) -> None:
+        lifecycle = self._qualification_lifecycle()
+        boundary = BlockedError(
+            "macOS scoped native observation cleanup failed",
+            resource="runtime-cell-semantic-adapter",
+        )
+        with patch(
+            "tooling.acceptance.provisioners.native_desktop_macos."
+            "admit_local_native_input_mode",
+            return_value=NativeInputMode.SEMANTIC_NON_INTRUSIVE,
+        ), patch(
+            "tooling.acceptance.provisioners.native_desktop_macos.time.sleep"
+        ), patch.object(
+            lifecycle,
+            "_probe_native_adapter",
+            side_effect=boundary,
+        ) as probe:
+            with self.assertRaisesRegex(BlockedError, "cleanup failed") as raised:
+                lifecycle._qualified_native_adapter(Mock(), "run-1")
+
+        self.assertIs(raised.exception, boundary)
+        probe.assert_called_once()
+
+    def test_exclusive_qualification_never_retries_environment_boundary(
+        self,
+    ) -> None:
+        lifecycle = self._qualification_lifecycle()
+        boundary = BlockedError(
+            "macOS scoped native observation failed",
+            resource="runtime-cell-operator-focus",
+        )
+        with patch(
+            "tooling.acceptance.provisioners.native_desktop_macos."
+            "admit_local_native_input_mode",
+            return_value=NativeInputMode.EXCLUSIVE_NATIVE_INPUT,
+        ), patch(
+            "tooling.acceptance.provisioners.native_desktop_macos.time.sleep"
+        ) as sleep, patch.object(
+            lifecycle,
+            "_probe_native_adapter",
+            side_effect=boundary,
+        ) as probe:
+            with self.assertRaises(BlockedError):
+                lifecycle._qualified_native_adapter(Mock(), "run-1")
+
+        probe.assert_called_once()
+        sleep.assert_not_called()
 
     def test_window_bounds_wait_uses_native_startup_budget(self) -> None:
         default = inspect.signature(

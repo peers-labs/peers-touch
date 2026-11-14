@@ -764,6 +764,9 @@ type Post struct {
 	// prefer `typed_mentions` which carries offset/length so highlighting
 	// works without re-parsing the text.
 	TypedMentions []*Mention `protobuf:"bytes,52,rep,name=typed_mentions,json=typedMentions,proto3" json:"typed_mentions,omitempty"`
+	// Discovery hint only. Clients bind it to independently verified Feed events
+	// before displaying public content or using it as a signed mutation target.
+	PublicFeedRef string `protobuf:"bytes,53,opt,name=public_feed_ref,json=publicFeedRef,proto3" json:"public_feed_ref,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -957,6 +960,13 @@ func (x *Post) GetTypedMentions() []*Mention {
 		return x.TypedMentions
 	}
 	return nil
+}
+
+func (x *Post) GetPublicFeedRef() string {
+	if x != nil {
+		return x.PublicFeedRef
+	}
+	return ""
 }
 
 type isPost_Content interface {
@@ -1506,9 +1516,10 @@ func (x *LinkPost) GetMentions() []string {
 type PollPost struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Text          string                 `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
-	Poll          *Poll                  `protobuf:"bytes,2,opt,name=poll,proto3" json:"poll,omitempty"`
+	Poll          *FeedPollDefinition    `protobuf:"bytes,2,opt,name=poll,proto3" json:"poll,omitempty"`
 	Hashtags      []string               `protobuf:"bytes,3,rep,name=hashtags,proto3" json:"hashtags,omitempty"`
 	Mentions      []string               `protobuf:"bytes,4,rep,name=mentions,proto3" json:"mentions,omitempty"`
+	Result        *PollResult            `protobuf:"bytes,5,opt,name=result,proto3" json:"result,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1550,7 +1561,7 @@ func (x *PollPost) GetText() string {
 	return ""
 }
 
-func (x *PollPost) GetPoll() *Poll {
+func (x *PollPost) GetPoll() *FeedPollDefinition {
 	if x != nil {
 		return x.Poll
 	}
@@ -1567,6 +1578,13 @@ func (x *PollPost) GetHashtags() []string {
 func (x *PollPost) GetMentions() []string {
 	if x != nil {
 		return x.Mentions
+	}
+	return nil
+}
+
+func (x *PollPost) GetResult() *PollResult {
+	if x != nil {
+		return x.Result
 	}
 	return nil
 }
@@ -2580,8 +2598,12 @@ type CreatePollPostRequest struct {
 	Options        []string               `protobuf:"bytes,3,rep,name=options,proto3" json:"options,omitempty"`
 	DurationHours  int32                  `protobuf:"varint,4,opt,name=duration_hours,json=durationHours,proto3" json:"duration_hours,omitempty"`
 	MultipleChoice bool                   `protobuf:"varint,5,opt,name=multiple_choice,json=multipleChoice,proto3" json:"multiple_choice,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	MinChoices     uint32                 `protobuf:"varint,6,opt,name=min_choices,json=minChoices,proto3" json:"min_choices,omitempty"`
+	MaxChoices     uint32                 `protobuf:"varint,7,opt,name=max_choices,json=maxChoices,proto3" json:"max_choices,omitempty"`
+	// Exactly one explicit deadline or duration measured from signed creation.
+	ExpiresAtUnixMs int64 `protobuf:"varint,8,opt,name=expires_at_unix_ms,json=expiresAtUnixMs,proto3" json:"expires_at_unix_ms,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *CreatePollPostRequest) Reset() {
@@ -2647,6 +2669,27 @@ func (x *CreatePollPostRequest) GetMultipleChoice() bool {
 		return x.MultipleChoice
 	}
 	return false
+}
+
+func (x *CreatePollPostRequest) GetMinChoices() uint32 {
+	if x != nil {
+		return x.MinChoices
+	}
+	return 0
+}
+
+func (x *CreatePollPostRequest) GetMaxChoices() uint32 {
+	if x != nil {
+		return x.MaxChoices
+	}
+	return 0
+}
+
+func (x *CreatePollPostRequest) GetExpiresAtUnixMs() int64 {
+	if x != nil {
+		return x.ExpiresAtUnixMs
+	}
+	return 0
 }
 
 type CreateRepostRequest struct {
@@ -5011,8 +5054,10 @@ type ReactToPostRequest struct {
 	CommandId            string                 `protobuf:"bytes,3,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
 	ActorSigningKeyId    string                 `protobuf:"bytes,4,opt,name=actor_signing_key_id,json=actorSigningKeyId,proto3" json:"actor_signing_key_id,omitempty"`
 	ActorDeviceSignature []byte                 `protobuf:"bytes,5,opt,name=actor_device_signature,json=actorDeviceSignature,proto3" json:"actor_device_signature,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// Optional private comment ID; post_id remains the permission anchor.
+	CommentId     string `protobuf:"bytes,6,opt,name=comment_id,json=commentId,proto3" json:"comment_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ReactToPostRequest) Reset() {
@@ -5080,6 +5125,13 @@ func (x *ReactToPostRequest) GetActorDeviceSignature() []byte {
 	return nil
 }
 
+func (x *ReactToPostRequest) GetCommentId() string {
+	if x != nil {
+		return x.CommentId
+	}
+	return ""
+}
+
 type ReactToPostResponse struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Success bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
@@ -5089,6 +5141,7 @@ type ReactToPostResponse struct {
 	CommandId          string             `protobuf:"bytes,3,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
 	ExactReplay        bool               `protobuf:"varint,4,opt,name=exact_replay,json=exactReplay,proto3" json:"exact_replay,omitempty"`
 	ProjectionRevision uint64             `protobuf:"varint,5,opt,name=projection_revision,json=projectionRevision,proto3" json:"projection_revision,omitempty"`
+	CommentId          string             `protobuf:"bytes,6,opt,name=comment_id,json=commentId,proto3" json:"comment_id,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -5158,6 +5211,13 @@ func (x *ReactToPostResponse) GetProjectionRevision() uint64 {
 	return 0
 }
 
+func (x *ReactToPostResponse) GetCommentId() string {
+	if x != nil {
+		return x.CommentId
+	}
+	return ""
+}
+
 type UnreactToPostRequest struct {
 	state                protoimpl.MessageState `protogen:"open.v1"`
 	PostId               string                 `protobuf:"bytes,1,opt,name=post_id,json=postId,proto3" json:"post_id,omitempty"`
@@ -5165,6 +5225,7 @@ type UnreactToPostRequest struct {
 	CommandId            string                 `protobuf:"bytes,3,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
 	ActorSigningKeyId    string                 `protobuf:"bytes,4,opt,name=actor_signing_key_id,json=actorSigningKeyId,proto3" json:"actor_signing_key_id,omitempty"`
 	ActorDeviceSignature []byte                 `protobuf:"bytes,5,opt,name=actor_device_signature,json=actorDeviceSignature,proto3" json:"actor_device_signature,omitempty"`
+	CommentId            string                 `protobuf:"bytes,6,opt,name=comment_id,json=commentId,proto3" json:"comment_id,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -5234,6 +5295,13 @@ func (x *UnreactToPostRequest) GetActorDeviceSignature() []byte {
 	return nil
 }
 
+func (x *UnreactToPostRequest) GetCommentId() string {
+	if x != nil {
+		return x.CommentId
+	}
+	return ""
+}
+
 type UnreactToPostResponse struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	Success            bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
@@ -5241,6 +5309,7 @@ type UnreactToPostResponse struct {
 	CommandId          string                 `protobuf:"bytes,3,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
 	ExactReplay        bool                   `protobuf:"varint,4,opt,name=exact_replay,json=exactReplay,proto3" json:"exact_replay,omitempty"`
 	ProjectionRevision uint64                 `protobuf:"varint,5,opt,name=projection_revision,json=projectionRevision,proto3" json:"projection_revision,omitempty"`
+	CommentId          string                 `protobuf:"bytes,6,opt,name=comment_id,json=commentId,proto3" json:"comment_id,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -5308,6 +5377,13 @@ func (x *UnreactToPostResponse) GetProjectionRevision() uint64 {
 		return x.ProjectionRevision
 	}
 	return 0
+}
+
+func (x *UnreactToPostResponse) GetCommentId() string {
+	if x != nil {
+		return x.CommentId
+	}
+	return ""
 }
 
 type ListReactionsRequest struct {
@@ -5503,7 +5579,7 @@ var File_domain_social_post_proto protoreflect.FileDescriptor
 
 const file_domain_social_post_proto_rawDesc = "" +
 	"\n" +
-	"\x18domain/social/post.proto\x12\x1bpeers_touch.model.social.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1edomain/activity/activity.proto\x1a\x1adomain/common/common.proto\"\x85\n" +
+	"\x18domain/social/post.proto\x12\x1bpeers_touch.model.social.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1edomain/activity/activity.proto\x1a\x1adomain/common/common.proto\x1a\x1cdomain/social/feed_log.proto\x1a\x18domain/social/poll.proto\"\xad\n" +
 	"\n" +
 	"\x04Post\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
@@ -5533,7 +5609,8 @@ const file_domain_social_post_proto_rawDesc = "" +
 	"\x10reply_to_post_id\x18( \x01(\tR\rreplyToPostId\x12A\n" +
 	"\baudience\x182 \x01(\v2%.peers_touch.model.social.v1.AudienceR\baudience\x12J\n" +
 	"\treactions\x183 \x03(\v2,.peers_touch.model.social.v1.ReactionSummaryR\treactions\x12K\n" +
-	"\x0etyped_mentions\x184 \x03(\v2$.peers_touch.model.social.v1.MentionR\rtypedMentionsB\t\n" +
+	"\x0etyped_mentions\x184 \x03(\v2$.peers_touch.model.social.v1.MentionR\rtypedMentions\x12&\n" +
+	"\x0fpublic_feed_ref\x185 \x01(\tR\rpublicFeedRefB\t\n" +
 	"\acontentJ\x04\b\x04\x10\x05R\tauthor_idR\n" +
 	"visibility\"\x99\x01\n" +
 	"\tPostStats\x12\x1f\n" +
@@ -5576,12 +5653,13 @@ const file_domain_social_post_proto_rawDesc = "" +
 	"\x04text\x18\x01 \x01(\tR\x04text\x12<\n" +
 	"\x04link\x18\x02 \x01(\v2(.peers_touch.model.social.v1.LinkPreviewR\x04link\x12\x1a\n" +
 	"\bhashtags\x18\x03 \x03(\tR\bhashtags\x12\x1a\n" +
-	"\bmentions\x18\x04 \x03(\tR\bmentions\"\x8f\x01\n" +
+	"\bmentions\x18\x04 \x03(\tR\bmentions\"\xe1\x01\n" +
 	"\bPollPost\x12\x12\n" +
-	"\x04text\x18\x01 \x01(\tR\x04text\x127\n" +
-	"\x04poll\x18\x02 \x01(\v2#.peers_touch.model.activity.v1.PollR\x04poll\x12\x1a\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text\x12H\n" +
+	"\x04poll\x18\x02 \x01(\v24.peers_touch.model.social.feed.v1.FeedPollDefinitionR\x04poll\x12\x1a\n" +
 	"\bhashtags\x18\x03 \x03(\tR\bhashtags\x12\x1a\n" +
-	"\bmentions\x18\x04 \x03(\tR\bmentions\"\x98\x01\n" +
+	"\bmentions\x18\x04 \x03(\tR\bmentions\x12?\n" +
+	"\x06result\x18\x05 \x01(\v2'.peers_touch.model.social.v1.PollResultR\x06result\"\x98\x01\n" +
 	"\n" +
 	"RepostPost\x12\x18\n" +
 	"\acomment\x18\x01 \x01(\tR\acomment\x12(\n" +
@@ -5663,13 +5741,18 @@ const file_domain_social_post_proto_rawDesc = "" +
 	"\bvideo_id\x18\x02 \x01(\tR\avideoId\"=\n" +
 	"\x15CreateLinkPostRequest\x12\x12\n" +
 	"\x04text\x18\x01 \x01(\tR\x04text\x12\x10\n" +
-	"\x03url\x18\x02 \x01(\tR\x03url\"\xb1\x01\n" +
+	"\x03url\x18\x02 \x01(\tR\x03url\"\xa0\x02\n" +
 	"\x15CreatePollPostRequest\x12\x12\n" +
 	"\x04text\x18\x01 \x01(\tR\x04text\x12\x1a\n" +
 	"\bquestion\x18\x02 \x01(\tR\bquestion\x12\x18\n" +
 	"\aoptions\x18\x03 \x03(\tR\aoptions\x12%\n" +
 	"\x0eduration_hours\x18\x04 \x01(\x05R\rdurationHours\x12'\n" +
-	"\x0fmultiple_choice\x18\x05 \x01(\bR\x0emultipleChoice\"Y\n" +
+	"\x0fmultiple_choice\x18\x05 \x01(\bR\x0emultipleChoice\x12\x1f\n" +
+	"\vmin_choices\x18\x06 \x01(\rR\n" +
+	"minChoices\x12\x1f\n" +
+	"\vmax_choices\x18\a \x01(\rR\n" +
+	"maxChoices\x12+\n" +
+	"\x12expires_at_unix_ms\x18\b \x01(\x03R\x0fexpiresAtUnixMs\"Y\n" +
 	"\x13CreateRepostRequest\x12(\n" +
 	"\x10original_post_id\x18\x01 \x01(\tR\x0eoriginalPostId\x12\x18\n" +
 	"\acomment\x18\x02 \x01(\tR\acomment\"\x8f\x01\n" +
@@ -5884,35 +5967,43 @@ const file_domain_social_post_proto_rawDesc = "" +
 	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12\x16\n" +
 	"\x06offset\x18\x02 \x01(\x05R\x06offset\x12\x16\n" +
 	"\x06length\x18\x03 \x01(\x05R\x06length\x12\x18\n" +
-	"\adisplay\x18\x04 \x01(\tR\adisplay\"\xf2\x01\n" +
+	"\adisplay\x18\x04 \x01(\tR\adisplay\"\x91\x02\n" +
 	"\x12ReactToPostRequest\x12\x17\n" +
 	"\apost_id\x18\x01 \x01(\tR\x06postId\x12=\n" +
 	"\x04kind\x18\x02 \x01(\x0e2).peers_touch.model.social.v1.ReactionKindR\x04kind\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x03 \x01(\tR\tcommandId\x12/\n" +
 	"\x14actor_signing_key_id\x18\x04 \x01(\tR\x11actorSigningKeyId\x124\n" +
-	"\x16actor_device_signature\x18\x05 \x01(\fR\x14actorDeviceSignature\"\xee\x01\n" +
+	"\x16actor_device_signature\x18\x05 \x01(\fR\x14actorDeviceSignature\x12\x1d\n" +
+	"\n" +
+	"comment_id\x18\x06 \x01(\tR\tcommentId\"\x8d\x02\n" +
 	"\x13ReactToPostResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12J\n" +
 	"\treactions\x18\x02 \x03(\v2,.peers_touch.model.social.v1.ReactionSummaryR\treactions\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x03 \x01(\tR\tcommandId\x12!\n" +
 	"\fexact_replay\x18\x04 \x01(\bR\vexactReplay\x12/\n" +
-	"\x13projection_revision\x18\x05 \x01(\x04R\x12projectionRevision\"\xf4\x01\n" +
+	"\x13projection_revision\x18\x05 \x01(\x04R\x12projectionRevision\x12\x1d\n" +
+	"\n" +
+	"comment_id\x18\x06 \x01(\tR\tcommentId\"\x93\x02\n" +
 	"\x14UnreactToPostRequest\x12\x17\n" +
 	"\apost_id\x18\x01 \x01(\tR\x06postId\x12=\n" +
 	"\x04kind\x18\x02 \x01(\x0e2).peers_touch.model.social.v1.ReactionKindR\x04kind\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x03 \x01(\tR\tcommandId\x12/\n" +
 	"\x14actor_signing_key_id\x18\x04 \x01(\tR\x11actorSigningKeyId\x124\n" +
-	"\x16actor_device_signature\x18\x05 \x01(\fR\x14actorDeviceSignature\"\xf0\x01\n" +
+	"\x16actor_device_signature\x18\x05 \x01(\fR\x14actorDeviceSignature\x12\x1d\n" +
+	"\n" +
+	"comment_id\x18\x06 \x01(\tR\tcommentId\"\x8f\x02\n" +
 	"\x15UnreactToPostResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12J\n" +
 	"\treactions\x18\x02 \x03(\v2,.peers_touch.model.social.v1.ReactionSummaryR\treactions\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x03 \x01(\tR\tcommandId\x12!\n" +
 	"\fexact_replay\x18\x04 \x01(\bR\vexactReplay\x12/\n" +
-	"\x13projection_revision\x18\x05 \x01(\x04R\x12projectionRevision\"\x9c\x01\n" +
+	"\x13projection_revision\x18\x05 \x01(\x04R\x12projectionRevision\x12\x1d\n" +
+	"\n" +
+	"comment_id\x18\x06 \x01(\tR\tcommentId\"\x9c\x01\n" +
 	"\x14ListReactionsRequest\x12\x17\n" +
 	"\apost_id\x18\x01 \x01(\tR\x06postId\x12=\n" +
 	"\x04kind\x18\x02 \x01(\x0e2).peers_touch.model.social.v1.ReactionKindR\x04kind\x12\x16\n" +
@@ -6076,8 +6167,9 @@ var file_domain_social_post_proto_goTypes = []any{
 	(*ListReactionsResponse)(nil),                 // 76: peers_touch.model.social.v1.ListReactionsResponse
 	(*ListReactionsResponse_Entry)(nil),           // 77: peers_touch.model.social.v1.ListReactionsResponse.Entry
 	(*timestamppb.Timestamp)(nil),                 // 78: google.protobuf.Timestamp
-	(*Poll)(nil),                                  // 79: peers_touch.model.activity.v1.Poll
-	(*types.EncryptedMediaDescriptor)(nil),        // 80: peers_touch.model.common.v1.EncryptedMediaDescriptor
+	(*FeedPollDefinition)(nil),                    // 79: peers_touch.model.social.feed.v1.FeedPollDefinition
+	(*PollResult)(nil),                            // 80: peers_touch.model.social.v1.PollResult
+	(*types.EncryptedMediaDescriptor)(nil),        // 81: peers_touch.model.common.v1.EncryptedMediaDescriptor
 }
 var file_domain_social_post_proto_depIdxs = []int32{
 	0,  // 0: peers_touch.model.social.v1.Post.type:type_name -> peers_touch.model.social.v1.PostType
@@ -6099,80 +6191,81 @@ var file_domain_social_post_proto_depIdxs = []int32{
 	23, // 16: peers_touch.model.social.v1.ImagePost.images:type_name -> peers_touch.model.social.v1.ImageAttachment
 	24, // 17: peers_touch.model.social.v1.VideoPost.video:type_name -> peers_touch.model.social.v1.VideoAttachment
 	26, // 18: peers_touch.model.social.v1.LinkPost.link:type_name -> peers_touch.model.social.v1.LinkPreview
-	79, // 19: peers_touch.model.social.v1.PollPost.poll:type_name -> peers_touch.model.activity.v1.Poll
-	12, // 20: peers_touch.model.social.v1.RepostPost.original_post:type_name -> peers_touch.model.social.v1.Post
-	27, // 21: peers_touch.model.social.v1.LocationPost.location:type_name -> peers_touch.model.social.v1.Location
-	23, // 22: peers_touch.model.social.v1.LocationPost.images:type_name -> peers_touch.model.social.v1.ImageAttachment
-	80, // 23: peers_touch.model.social.v1.ImageAttachment.media_encryption:type_name -> peers_touch.model.common.v1.EncryptedMediaDescriptor
-	1,  // 24: peers_touch.model.social.v1.VideoAttachment.quality:type_name -> peers_touch.model.social.v1.VideoQuality
-	25, // 25: peers_touch.model.social.v1.VideoAttachment.variants:type_name -> peers_touch.model.social.v1.VideoVariant
-	80, // 26: peers_touch.model.social.v1.VideoAttachment.media_encryption:type_name -> peers_touch.model.common.v1.EncryptedMediaDescriptor
-	0,  // 27: peers_touch.model.social.v1.CreatePostRequest.type:type_name -> peers_touch.model.social.v1.PostType
-	68, // 28: peers_touch.model.social.v1.CreatePostRequest.audience:type_name -> peers_touch.model.social.v1.Audience
-	29, // 29: peers_touch.model.social.v1.CreatePostRequest.text:type_name -> peers_touch.model.social.v1.CreateTextPostRequest
-	30, // 30: peers_touch.model.social.v1.CreatePostRequest.image:type_name -> peers_touch.model.social.v1.CreateImagePostRequest
-	31, // 31: peers_touch.model.social.v1.CreatePostRequest.video:type_name -> peers_touch.model.social.v1.CreateVideoPostRequest
-	32, // 32: peers_touch.model.social.v1.CreatePostRequest.link:type_name -> peers_touch.model.social.v1.CreateLinkPostRequest
-	33, // 33: peers_touch.model.social.v1.CreatePostRequest.poll:type_name -> peers_touch.model.social.v1.CreatePollPostRequest
-	34, // 34: peers_touch.model.social.v1.CreatePostRequest.repost:type_name -> peers_touch.model.social.v1.CreateRepostRequest
-	35, // 35: peers_touch.model.social.v1.CreatePostRequest.location:type_name -> peers_touch.model.social.v1.CreateLocationPostRequest
-	23, // 36: peers_touch.model.social.v1.CreateImagePostRequest.images:type_name -> peers_touch.model.social.v1.ImageAttachment
-	27, // 37: peers_touch.model.social.v1.CreateLocationPostRequest.location:type_name -> peers_touch.model.social.v1.Location
-	12, // 38: peers_touch.model.social.v1.CreatePostResponse.post:type_name -> peers_touch.model.social.v1.Post
-	12, // 39: peers_touch.model.social.v1.UpdatePostResponse.post:type_name -> peers_touch.model.social.v1.Post
-	12, // 40: peers_touch.model.social.v1.GetPostResponse.post:type_name -> peers_touch.model.social.v1.Post
-	49, // 41: peers_touch.model.social.v1.GetPostResponse.explanation:type_name -> peers_touch.model.social.v1.FeedObjectExplanation
-	2,  // 42: peers_touch.model.social.v1.GetPostResponse.outcome:type_name -> peers_touch.model.social.v1.PostDetailOutcome
-	45, // 43: peers_touch.model.social.v1.ListPostsRequest.filter:type_name -> peers_touch.model.social.v1.PostFilter
-	12, // 44: peers_touch.model.social.v1.ListPostsResponse.posts:type_name -> peers_touch.model.social.v1.Post
-	49, // 45: peers_touch.model.social.v1.ListPostsResponse.explanations:type_name -> peers_touch.model.social.v1.FeedObjectExplanation
-	4,  // 46: peers_touch.model.social.v1.GetTimelineRequest.type:type_name -> peers_touch.model.social.v1.TimelineType
-	5,  // 47: peers_touch.model.social.v1.GetTimelineRequest.sort:type_name -> peers_touch.model.social.v1.TimelineSort
-	12, // 48: peers_touch.model.social.v1.GetTimelineResponse.posts:type_name -> peers_touch.model.social.v1.Post
-	49, // 49: peers_touch.model.social.v1.GetTimelineResponse.explanations:type_name -> peers_touch.model.social.v1.FeedObjectExplanation
-	3,  // 50: peers_touch.model.social.v1.GetTimelineResponse.outcome:type_name -> peers_touch.model.social.v1.TimelinePageOutcome
-	48, // 51: peers_touch.model.social.v1.GetTimelineResponse.policy_summary:type_name -> peers_touch.model.social.v1.TimelinePolicySummary
-	50, // 52: peers_touch.model.social.v1.FeedObjectExplanation.source:type_name -> peers_touch.model.social.v1.ActivitySource
-	51, // 53: peers_touch.model.social.v1.FeedObjectExplanation.relationship_reason:type_name -> peers_touch.model.social.v1.RelationshipReason
-	52, // 54: peers_touch.model.social.v1.FeedObjectExplanation.audience_explanation:type_name -> peers_touch.model.social.v1.AudienceExplanation
-	53, // 55: peers_touch.model.social.v1.FeedObjectExplanation.block_explanation:type_name -> peers_touch.model.social.v1.BlockExplanation
-	7,  // 56: peers_touch.model.social.v1.ActivitySource.kind:type_name -> peers_touch.model.social.v1.ActivitySource.Kind
-	8,  // 57: peers_touch.model.social.v1.RelationshipReason.kind:type_name -> peers_touch.model.social.v1.RelationshipReason.Kind
-	11, // 58: peers_touch.model.social.v1.AudienceExplanation.kind:type_name -> peers_touch.model.social.v1.Audience.Kind
-	9,  // 59: peers_touch.model.social.v1.BlockExplanation.kind:type_name -> peers_touch.model.social.v1.BlockExplanation.Kind
-	10, // 60: peers_touch.model.social.v1.StationModerationPolicy.kind:type_name -> peers_touch.model.social.v1.StationModerationPolicy.Kind
-	78, // 61: peers_touch.model.social.v1.StationModerationPolicy.created_at:type_name -> google.protobuf.Timestamp
-	78, // 62: peers_touch.model.social.v1.StationModerationPolicy.updated_at:type_name -> google.protobuf.Timestamp
-	54, // 63: peers_touch.model.social.v1.UpsertStationModerationPolicyRequest.policy:type_name -> peers_touch.model.social.v1.StationModerationPolicy
-	54, // 64: peers_touch.model.social.v1.UpsertStationModerationPolicyResponse.policy:type_name -> peers_touch.model.social.v1.StationModerationPolicy
-	10, // 65: peers_touch.model.social.v1.DeleteStationModerationPolicyRequest.kind:type_name -> peers_touch.model.social.v1.StationModerationPolicy.Kind
-	10, // 66: peers_touch.model.social.v1.ListStationModerationPoliciesRequest.kind:type_name -> peers_touch.model.social.v1.StationModerationPolicy.Kind
-	54, // 67: peers_touch.model.social.v1.ListStationModerationPoliciesResponse.policies:type_name -> peers_touch.model.social.v1.StationModerationPolicy
-	11, // 68: peers_touch.model.social.v1.MomentDelivery.audience_kind:type_name -> peers_touch.model.social.v1.Audience.Kind
-	78, // 69: peers_touch.model.social.v1.MomentDelivery.delivered_at:type_name -> google.protobuf.Timestamp
-	78, // 70: peers_touch.model.social.v1.MomentDelivery.revoked_at:type_name -> google.protobuf.Timestamp
-	5,  // 71: peers_touch.model.social.v1.SyncMomentsProjectionRequest.public_sort:type_name -> peers_touch.model.social.v1.TimelineSort
-	47, // 72: peers_touch.model.social.v1.SyncMomentsProjectionResponse.home_timeline:type_name -> peers_touch.model.social.v1.GetTimelineResponse
-	47, // 73: peers_touch.model.social.v1.SyncMomentsProjectionResponse.public_timeline:type_name -> peers_touch.model.social.v1.GetTimelineResponse
-	78, // 74: peers_touch.model.social.v1.SyncMomentsProjectionResponse.synced_at:type_name -> google.protobuf.Timestamp
-	12, // 75: peers_touch.model.social.v1.RepostResponse.repost:type_name -> peers_touch.model.social.v1.Post
-	11, // 76: peers_touch.model.social.v1.Audience.kind:type_name -> peers_touch.model.social.v1.Audience.Kind
-	11, // 77: peers_touch.model.social.v1.Audience.base_kind:type_name -> peers_touch.model.social.v1.Audience.Kind
-	6,  // 78: peers_touch.model.social.v1.ReactionSummary.kind:type_name -> peers_touch.model.social.v1.ReactionKind
-	6,  // 79: peers_touch.model.social.v1.ReactToPostRequest.kind:type_name -> peers_touch.model.social.v1.ReactionKind
-	69, // 80: peers_touch.model.social.v1.ReactToPostResponse.reactions:type_name -> peers_touch.model.social.v1.ReactionSummary
-	6,  // 81: peers_touch.model.social.v1.UnreactToPostRequest.kind:type_name -> peers_touch.model.social.v1.ReactionKind
-	69, // 82: peers_touch.model.social.v1.UnreactToPostResponse.reactions:type_name -> peers_touch.model.social.v1.ReactionSummary
-	6,  // 83: peers_touch.model.social.v1.ListReactionsRequest.kind:type_name -> peers_touch.model.social.v1.ReactionKind
-	77, // 84: peers_touch.model.social.v1.ListReactionsResponse.entries:type_name -> peers_touch.model.social.v1.ListReactionsResponse.Entry
-	14, // 85: peers_touch.model.social.v1.ListReactionsResponse.Entry.reactor:type_name -> peers_touch.model.social.v1.PostAuthor
-	6,  // 86: peers_touch.model.social.v1.ListReactionsResponse.Entry.kind:type_name -> peers_touch.model.social.v1.ReactionKind
-	78, // 87: peers_touch.model.social.v1.ListReactionsResponse.Entry.reacted_at:type_name -> google.protobuf.Timestamp
-	88, // [88:88] is the sub-list for method output_type
-	88, // [88:88] is the sub-list for method input_type
-	88, // [88:88] is the sub-list for extension type_name
-	88, // [88:88] is the sub-list for extension extendee
-	0,  // [0:88] is the sub-list for field type_name
+	79, // 19: peers_touch.model.social.v1.PollPost.poll:type_name -> peers_touch.model.social.feed.v1.FeedPollDefinition
+	80, // 20: peers_touch.model.social.v1.PollPost.result:type_name -> peers_touch.model.social.v1.PollResult
+	12, // 21: peers_touch.model.social.v1.RepostPost.original_post:type_name -> peers_touch.model.social.v1.Post
+	27, // 22: peers_touch.model.social.v1.LocationPost.location:type_name -> peers_touch.model.social.v1.Location
+	23, // 23: peers_touch.model.social.v1.LocationPost.images:type_name -> peers_touch.model.social.v1.ImageAttachment
+	81, // 24: peers_touch.model.social.v1.ImageAttachment.media_encryption:type_name -> peers_touch.model.common.v1.EncryptedMediaDescriptor
+	1,  // 25: peers_touch.model.social.v1.VideoAttachment.quality:type_name -> peers_touch.model.social.v1.VideoQuality
+	25, // 26: peers_touch.model.social.v1.VideoAttachment.variants:type_name -> peers_touch.model.social.v1.VideoVariant
+	81, // 27: peers_touch.model.social.v1.VideoAttachment.media_encryption:type_name -> peers_touch.model.common.v1.EncryptedMediaDescriptor
+	0,  // 28: peers_touch.model.social.v1.CreatePostRequest.type:type_name -> peers_touch.model.social.v1.PostType
+	68, // 29: peers_touch.model.social.v1.CreatePostRequest.audience:type_name -> peers_touch.model.social.v1.Audience
+	29, // 30: peers_touch.model.social.v1.CreatePostRequest.text:type_name -> peers_touch.model.social.v1.CreateTextPostRequest
+	30, // 31: peers_touch.model.social.v1.CreatePostRequest.image:type_name -> peers_touch.model.social.v1.CreateImagePostRequest
+	31, // 32: peers_touch.model.social.v1.CreatePostRequest.video:type_name -> peers_touch.model.social.v1.CreateVideoPostRequest
+	32, // 33: peers_touch.model.social.v1.CreatePostRequest.link:type_name -> peers_touch.model.social.v1.CreateLinkPostRequest
+	33, // 34: peers_touch.model.social.v1.CreatePostRequest.poll:type_name -> peers_touch.model.social.v1.CreatePollPostRequest
+	34, // 35: peers_touch.model.social.v1.CreatePostRequest.repost:type_name -> peers_touch.model.social.v1.CreateRepostRequest
+	35, // 36: peers_touch.model.social.v1.CreatePostRequest.location:type_name -> peers_touch.model.social.v1.CreateLocationPostRequest
+	23, // 37: peers_touch.model.social.v1.CreateImagePostRequest.images:type_name -> peers_touch.model.social.v1.ImageAttachment
+	27, // 38: peers_touch.model.social.v1.CreateLocationPostRequest.location:type_name -> peers_touch.model.social.v1.Location
+	12, // 39: peers_touch.model.social.v1.CreatePostResponse.post:type_name -> peers_touch.model.social.v1.Post
+	12, // 40: peers_touch.model.social.v1.UpdatePostResponse.post:type_name -> peers_touch.model.social.v1.Post
+	12, // 41: peers_touch.model.social.v1.GetPostResponse.post:type_name -> peers_touch.model.social.v1.Post
+	49, // 42: peers_touch.model.social.v1.GetPostResponse.explanation:type_name -> peers_touch.model.social.v1.FeedObjectExplanation
+	2,  // 43: peers_touch.model.social.v1.GetPostResponse.outcome:type_name -> peers_touch.model.social.v1.PostDetailOutcome
+	45, // 44: peers_touch.model.social.v1.ListPostsRequest.filter:type_name -> peers_touch.model.social.v1.PostFilter
+	12, // 45: peers_touch.model.social.v1.ListPostsResponse.posts:type_name -> peers_touch.model.social.v1.Post
+	49, // 46: peers_touch.model.social.v1.ListPostsResponse.explanations:type_name -> peers_touch.model.social.v1.FeedObjectExplanation
+	4,  // 47: peers_touch.model.social.v1.GetTimelineRequest.type:type_name -> peers_touch.model.social.v1.TimelineType
+	5,  // 48: peers_touch.model.social.v1.GetTimelineRequest.sort:type_name -> peers_touch.model.social.v1.TimelineSort
+	12, // 49: peers_touch.model.social.v1.GetTimelineResponse.posts:type_name -> peers_touch.model.social.v1.Post
+	49, // 50: peers_touch.model.social.v1.GetTimelineResponse.explanations:type_name -> peers_touch.model.social.v1.FeedObjectExplanation
+	3,  // 51: peers_touch.model.social.v1.GetTimelineResponse.outcome:type_name -> peers_touch.model.social.v1.TimelinePageOutcome
+	48, // 52: peers_touch.model.social.v1.GetTimelineResponse.policy_summary:type_name -> peers_touch.model.social.v1.TimelinePolicySummary
+	50, // 53: peers_touch.model.social.v1.FeedObjectExplanation.source:type_name -> peers_touch.model.social.v1.ActivitySource
+	51, // 54: peers_touch.model.social.v1.FeedObjectExplanation.relationship_reason:type_name -> peers_touch.model.social.v1.RelationshipReason
+	52, // 55: peers_touch.model.social.v1.FeedObjectExplanation.audience_explanation:type_name -> peers_touch.model.social.v1.AudienceExplanation
+	53, // 56: peers_touch.model.social.v1.FeedObjectExplanation.block_explanation:type_name -> peers_touch.model.social.v1.BlockExplanation
+	7,  // 57: peers_touch.model.social.v1.ActivitySource.kind:type_name -> peers_touch.model.social.v1.ActivitySource.Kind
+	8,  // 58: peers_touch.model.social.v1.RelationshipReason.kind:type_name -> peers_touch.model.social.v1.RelationshipReason.Kind
+	11, // 59: peers_touch.model.social.v1.AudienceExplanation.kind:type_name -> peers_touch.model.social.v1.Audience.Kind
+	9,  // 60: peers_touch.model.social.v1.BlockExplanation.kind:type_name -> peers_touch.model.social.v1.BlockExplanation.Kind
+	10, // 61: peers_touch.model.social.v1.StationModerationPolicy.kind:type_name -> peers_touch.model.social.v1.StationModerationPolicy.Kind
+	78, // 62: peers_touch.model.social.v1.StationModerationPolicy.created_at:type_name -> google.protobuf.Timestamp
+	78, // 63: peers_touch.model.social.v1.StationModerationPolicy.updated_at:type_name -> google.protobuf.Timestamp
+	54, // 64: peers_touch.model.social.v1.UpsertStationModerationPolicyRequest.policy:type_name -> peers_touch.model.social.v1.StationModerationPolicy
+	54, // 65: peers_touch.model.social.v1.UpsertStationModerationPolicyResponse.policy:type_name -> peers_touch.model.social.v1.StationModerationPolicy
+	10, // 66: peers_touch.model.social.v1.DeleteStationModerationPolicyRequest.kind:type_name -> peers_touch.model.social.v1.StationModerationPolicy.Kind
+	10, // 67: peers_touch.model.social.v1.ListStationModerationPoliciesRequest.kind:type_name -> peers_touch.model.social.v1.StationModerationPolicy.Kind
+	54, // 68: peers_touch.model.social.v1.ListStationModerationPoliciesResponse.policies:type_name -> peers_touch.model.social.v1.StationModerationPolicy
+	11, // 69: peers_touch.model.social.v1.MomentDelivery.audience_kind:type_name -> peers_touch.model.social.v1.Audience.Kind
+	78, // 70: peers_touch.model.social.v1.MomentDelivery.delivered_at:type_name -> google.protobuf.Timestamp
+	78, // 71: peers_touch.model.social.v1.MomentDelivery.revoked_at:type_name -> google.protobuf.Timestamp
+	5,  // 72: peers_touch.model.social.v1.SyncMomentsProjectionRequest.public_sort:type_name -> peers_touch.model.social.v1.TimelineSort
+	47, // 73: peers_touch.model.social.v1.SyncMomentsProjectionResponse.home_timeline:type_name -> peers_touch.model.social.v1.GetTimelineResponse
+	47, // 74: peers_touch.model.social.v1.SyncMomentsProjectionResponse.public_timeline:type_name -> peers_touch.model.social.v1.GetTimelineResponse
+	78, // 75: peers_touch.model.social.v1.SyncMomentsProjectionResponse.synced_at:type_name -> google.protobuf.Timestamp
+	12, // 76: peers_touch.model.social.v1.RepostResponse.repost:type_name -> peers_touch.model.social.v1.Post
+	11, // 77: peers_touch.model.social.v1.Audience.kind:type_name -> peers_touch.model.social.v1.Audience.Kind
+	11, // 78: peers_touch.model.social.v1.Audience.base_kind:type_name -> peers_touch.model.social.v1.Audience.Kind
+	6,  // 79: peers_touch.model.social.v1.ReactionSummary.kind:type_name -> peers_touch.model.social.v1.ReactionKind
+	6,  // 80: peers_touch.model.social.v1.ReactToPostRequest.kind:type_name -> peers_touch.model.social.v1.ReactionKind
+	69, // 81: peers_touch.model.social.v1.ReactToPostResponse.reactions:type_name -> peers_touch.model.social.v1.ReactionSummary
+	6,  // 82: peers_touch.model.social.v1.UnreactToPostRequest.kind:type_name -> peers_touch.model.social.v1.ReactionKind
+	69, // 83: peers_touch.model.social.v1.UnreactToPostResponse.reactions:type_name -> peers_touch.model.social.v1.ReactionSummary
+	6,  // 84: peers_touch.model.social.v1.ListReactionsRequest.kind:type_name -> peers_touch.model.social.v1.ReactionKind
+	77, // 85: peers_touch.model.social.v1.ListReactionsResponse.entries:type_name -> peers_touch.model.social.v1.ListReactionsResponse.Entry
+	14, // 86: peers_touch.model.social.v1.ListReactionsResponse.Entry.reactor:type_name -> peers_touch.model.social.v1.PostAuthor
+	6,  // 87: peers_touch.model.social.v1.ListReactionsResponse.Entry.kind:type_name -> peers_touch.model.social.v1.ReactionKind
+	78, // 88: peers_touch.model.social.v1.ListReactionsResponse.Entry.reacted_at:type_name -> google.protobuf.Timestamp
+	89, // [89:89] is the sub-list for method output_type
+	89, // [89:89] is the sub-list for method input_type
+	89, // [89:89] is the sub-list for extension type_name
+	89, // [89:89] is the sub-list for extension extendee
+	0,  // [0:89] is the sub-list for field type_name
 }
 
 func init() { file_domain_social_post_proto_init() }
@@ -6181,6 +6274,8 @@ func file_domain_social_post_proto_init() {
 		return
 	}
 	file_domain_activity_activity_proto_init()
+	file_domain_social_feed_log_proto_init()
+	file_domain_social_poll_proto_init()
 	file_domain_social_post_proto_msgTypes[0].OneofWrappers = []any{
 		(*Post_TextPost)(nil),
 		(*Post_ImagePost)(nil),

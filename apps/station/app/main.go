@@ -20,6 +20,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/events"
 	frontendtelemetry "github.com/peers-labs/peers-touch/station/app/subserver/frontend_telemetry"
 	keyexchange "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange"
+	loginapproval "github.com/peers-labs/peers-touch/station/app/subserver/login_approval"
 	notifsubserver "github.com/peers-labs/peers-touch/station/app/subserver/notification"
 	"github.com/peers-labs/peers-touch/station/app/subserver/oauth"
 	officialapplets "github.com/peers-labs/peers-touch/station/app/subserver/official_applets"
@@ -55,6 +56,10 @@ func main() {
 		role.WithContext(context.Background(), processRole),
 	)
 	defer cancel()
+
+	// Wire the app-owned enrollment counter into the frame DEVICE_APPROVAL gate
+	// seam. The gate stays disabled until an operator rollout enables it.
+	loginapproval.ConfigureFrameGate()
 
 	opts := []option.Option{
 		node.WithPrivateKey("private.pem"),
@@ -96,6 +101,8 @@ func stationApplicationSubservers() []option.Option {
 		server.WithSubServer("conversation", convsub.NewConversationSubServer),
 		server.WithSubServer("device_link", devicelink.NewDeviceLinkSubServer),
 		server.WithClusterReadinessProbe("device_link", clusterreadiness.SharedPostgres("device_link")),
+		server.WithSubServer("login_approval", loginapproval.NewLoginApprovalSubServer),
+		server.WithClusterReadinessProbe("login_approval", clusterreadiness.SharedPostgres("login_approval")),
 		server.WithSubServer("presence", presence.NewPresenceSubServer),
 		server.WithClusterReadinessProbe(
 			"presence",

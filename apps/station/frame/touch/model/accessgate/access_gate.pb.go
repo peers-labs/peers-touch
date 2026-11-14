@@ -36,7 +36,10 @@ const (
 	AccessGateType_ACCESS_GATE_TYPE_MAINTENANCE          AccessGateType = 7
 	AccessGateType_ACCESS_GATE_TYPE_TERMS_ACCEPTANCE     AccessGateType = 8
 	AccessGateType_ACCESS_GATE_TYPE_AUTH_OAUTH           AccessGateType = 9
-	AccessGateType_ACCESS_GATE_TYPE_CUSTOM               AccessGateType = 100
+	// Claimant-first device approval: after credentials pass, a new
+	// installation waits for an already-enrolled device of the same Actor.
+	AccessGateType_ACCESS_GATE_TYPE_DEVICE_APPROVAL AccessGateType = 10
+	AccessGateType_ACCESS_GATE_TYPE_CUSTOM          AccessGateType = 100
 )
 
 // Enum value maps for AccessGateType.
@@ -52,6 +55,7 @@ var (
 		7:   "ACCESS_GATE_TYPE_MAINTENANCE",
 		8:   "ACCESS_GATE_TYPE_TERMS_ACCEPTANCE",
 		9:   "ACCESS_GATE_TYPE_AUTH_OAUTH",
+		10:  "ACCESS_GATE_TYPE_DEVICE_APPROVAL",
 		100: "ACCESS_GATE_TYPE_CUSTOM",
 	}
 	AccessGateType_value = map[string]int32{
@@ -65,6 +69,7 @@ var (
 		"ACCESS_GATE_TYPE_MAINTENANCE":          7,
 		"ACCESS_GATE_TYPE_TERMS_ACCEPTANCE":     8,
 		"ACCESS_GATE_TYPE_AUTH_OAUTH":           9,
+		"ACCESS_GATE_TYPE_DEVICE_APPROVAL":      10,
 		"ACCESS_GATE_TYPE_CUSTOM":               100,
 	}
 )
@@ -1501,8 +1506,14 @@ type AccessPolicy struct {
 	// When true the Station offers self-service invite-code redemption as a gate
 	// (invite.code) in addition to administrator-managed allowlist entries.
 	SelfServiceInvite bool `protobuf:"varint,8,opt,name=self_service_invite,json=selfServiceInvite,proto3" json:"self_service_invite,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Operator rollout switch for claimant-first device approval. Defaults to
+	// false so existing authorization behavior is unchanged until enabled.
+	DeviceApprovalEnabled bool `protobuf:"varint,9,opt,name=device_approval_enabled,json=deviceApprovalEnabled,proto3" json:"device_approval_enabled,omitempty"`
+	// Optional explicit per-Actor enrolled-device ceiling; 0 means no limit and
+	// the gate relies only on the first-device bypass.
+	DeviceApprovalMaxDevices uint32 `protobuf:"varint,10,opt,name=device_approval_max_devices,json=deviceApprovalMaxDevices,proto3" json:"device_approval_max_devices,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
 }
 
 func (x *AccessPolicy) Reset() {
@@ -1589,6 +1600,20 @@ func (x *AccessPolicy) GetSelfServiceInvite() bool {
 		return x.SelfServiceInvite
 	}
 	return false
+}
+
+func (x *AccessPolicy) GetDeviceApprovalEnabled() bool {
+	if x != nil {
+		return x.DeviceApprovalEnabled
+	}
+	return false
+}
+
+func (x *AccessPolicy) GetDeviceApprovalMaxDevices() uint32 {
+	if x != nil {
+		return x.DeviceApprovalMaxDevices
+	}
+	return 0
 }
 
 type UpdateAccessPolicyRequest struct {
@@ -2196,7 +2221,7 @@ const file_domain_access_gate_access_gate_proto_rawDesc = "" +
 	"\tdevice_id\x18\x03 \x01(\tR\bdeviceId\x121\n" +
 	"\x14lifecycle_generation\x18\x04 \x01(\x04R\x13lifecycleGeneration\";\n" +
 	"\x1bCancelAccessAttemptResponse\x12\x1c\n" +
-	"\tcancelled\x18\x01 \x01(\bR\tcancelled\"\xbb\x03\n" +
+	"\tcancelled\x18\x01 \x01(\bR\tcancelled\"\xb2\x04\n" +
 	"\fAccessPolicy\x12F\n" +
 	"\x04mode\x18\x01 \x01(\x0e22.peers_touch.model.access_gate.v1.AccessPolicyModeR\x04mode\x12%\n" +
 	"\x0eallowed_emails\x18\x02 \x03(\tR\rallowedEmails\x12+\n" +
@@ -2207,7 +2232,10 @@ const file_domain_access_gate_access_gate_proto_rawDesc = "" +
 	"\n" +
 	"updated_by\x18\x06 \x01(\tR\tupdatedBy\x12U\n" +
 	"\renabled_gates\x18\a \x03(\x0e20.peers_touch.model.access_gate.v1.AccessGateTypeR\fenabledGates\x12.\n" +
-	"\x13self_service_invite\x18\b \x01(\bR\x11selfServiceInvite\"c\n" +
+	"\x13self_service_invite\x18\b \x01(\bR\x11selfServiceInvite\x126\n" +
+	"\x17device_approval_enabled\x18\t \x01(\bR\x15deviceApprovalEnabled\x12=\n" +
+	"\x1bdevice_approval_max_devices\x18\n" +
+	" \x01(\rR\x18deviceApprovalMaxDevices\"c\n" +
 	"\x19UpdateAccessPolicyRequest\x12F\n" +
 	"\x06policy\x18\x01 \x01(\v2..peers_touch.model.access_gate.v1.AccessPolicyR\x06policy\"d\n" +
 	"\x1aUpdateAccessPolicyResponse\x12F\n" +
@@ -2247,7 +2275,7 @@ const file_domain_access_gate_access_gate_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"i\n" +
 	"\x18RevokeInviteCodeResponse\x12M\n" +
 	"\vinvite_code\x18\x01 \x01(\v2,.peers_touch.model.access_gate.v1.InviteCodeR\n" +
-	"inviteCode*\x9a\x03\n" +
+	"inviteCode*\xc0\x03\n" +
 	"\x0eAccessGateType\x12 \n" +
 	"\x1cACCESS_GATE_TYPE_UNSPECIFIED\x10\x00\x12'\n" +
 	"#ACCESS_GATE_TYPE_STATION_CAPABILITY\x10\x01\x12\x1f\n" +
@@ -2258,7 +2286,9 @@ const file_domain_access_gate_access_gate_proto_rawDesc = "" +
 	"\x1dACCESS_GATE_TYPE_DEVICE_TRUST\x10\x06\x12 \n" +
 	"\x1cACCESS_GATE_TYPE_MAINTENANCE\x10\a\x12%\n" +
 	"!ACCESS_GATE_TYPE_TERMS_ACCEPTANCE\x10\b\x12\x1f\n" +
-	"\x1bACCESS_GATE_TYPE_AUTH_OAUTH\x10\t\x12\x1b\n" +
+	"\x1bACCESS_GATE_TYPE_AUTH_OAUTH\x10\t\x12$\n" +
+	" ACCESS_GATE_TYPE_DEVICE_APPROVAL\x10\n" +
+	"\x12\x1b\n" +
 	"\x17ACCESS_GATE_TYPE_CUSTOM\x10d*\xf4\x01\n" +
 	"\x0fAccessGateState\x12!\n" +
 	"\x1dACCESS_GATE_STATE_UNSPECIFIED\x10\x00\x12\x1d\n" +

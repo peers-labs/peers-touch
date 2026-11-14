@@ -42,31 +42,42 @@ export function workspaceContext(workspaceFile) {
   if (!Array.isArray(parsed?.folders) || parsed.folders.length === 0) {
     throw new Error('TRAE_WORKSPACE_DESCRIPTOR_INVALID');
   }
-  let workspaceRoots;
-  try {
-    workspaceRoots = parsed.folders.map((folder) => {
-      const value =
-        typeof folder === 'string'
-          ? folder
-          : folder !== null && typeof folder === 'object'
-            ? folder.path
-            : null;
-      if (typeof value !== 'string' || !value.trim()) {
-        throw new Error('invalid workspace folder');
-      }
+  // Resilient to stale worktree entries: a single missing folder must not
+  // invalidate the whole multi-root descriptor (a removed sibling worktree
+  // otherwise silently disables every hook). Missing/non-directory entries are
+  // skipped and reported; only zero resolvable roots is a hard failure.
+  const workspaceRoots = [];
+  const skippedFolders = [];
+  for (const folder of parsed.folders) {
+    const value =
+      typeof folder === 'string'
+        ? folder
+        : folder !== null && typeof folder === 'object'
+          ? folder.path
+          : null;
+    if (typeof value !== 'string' || !value.trim()) {
+      skippedFolders.push({ value, reason: 'invalid-folder-entry' });
+      continue;
+    }
+    try {
       const candidate = realpathSync(
         path.resolve(path.dirname(descriptor), value),
       );
       if (!lstatSync(candidate).isDirectory()) {
-        throw new Error('workspace folder is not a directory');
+        skippedFolders.push({ value, reason: 'not-a-directory' });
+        continue;
       }
-      return candidate;
-    });
-  } catch {
+      workspaceRoots.push(candidate);
+    } catch {
+      skippedFolders.push({ value, reason: 'unresolved' });
+    }
+  }
+  if (workspaceRoots.length === 0) {
     throw new Error('TRAE_WORKSPACE_DESCRIPTOR_INVALID');
   }
   return {
     workspaceRoots: [...new Set(workspaceRoots)],
+    skippedFolders,
   };
 }
 
@@ -95,6 +106,13 @@ function localDevModuleUrl(name) {
       name,
     ),
   );
+}
+
+// Lazily import the real recorder so hook startup stays unchanged and the
+// dependency remains optional to module load.
+async function defaultRecordSkill(record) {
+  const store = await import(localDevModuleUrl('skill-invocation-store.mjs'));
+  return store.recordSkillEvent(record);
 }
 
 function installationRoot() {
@@ -136,6 +154,7 @@ export async function runHook({
   argv = process.argv.slice(2),
   input = process.stdin,
   report,
+  recordSkill = defaultRecordSkill,
 } = {}) {
   const options = parseArguments(argv);
   const payload = await readInput(input);
@@ -159,6 +178,26 @@ export async function runHook({
     worktreeStateRoot,
   });
   await reportHookObservation(normalized, result.executionRoot, { report });
+  // Best-effort skill/tool trace. It must never change the advisory hook
+  // decision: a write failure degrades to a diagnostic and the allow/context
+  // response is still returned.
+  if (normalized.valid
+    && (normalized.event === 'PRE_TOOL_USE' || normalized.event === 'POST_TOOL_USE')
+    && normalized.toolName
+    && result.executionRoot) {
+    try {
+      await recordSkill({
+        host: normalized.host,
+        event: normalized.event,
+        toolName: normalized.toolName,
+        at: new Date(),
+        workspaceRoot: result.executionRoot,
+      });
+    } catch (error) {
+      // Non-fatal: observability must not block the tool or the workflow.
+      process.stderr.write(`skill event trace unavailable: ${error?.code ?? String(error)}\n`);
+    }
+  }
   const response = adapters.renderHostResponse(options.host, result, normalized);
   return response;
 }

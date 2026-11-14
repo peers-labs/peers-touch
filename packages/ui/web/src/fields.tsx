@@ -39,6 +39,9 @@ export interface TextFieldProps extends Omit<InputHTMLAttributes<HTMLInputElemen
   reveal?: boolean;
   availability?: Availability; clearable?: boolean; onClear?: () => void;
   clearLabel?: string;
+  /** Class applied to the wrapping FieldFrame (layout), distinct from
+      `className`, which lands on the inner <input>. */
+  frameClassName?: string;
   // Semantic value channel, parallel to NumberField/Select/Slider. FormField
   // binds through it; it is destructured here so it never reaches the DOM
   // (React rejects unknown on* props on native elements).
@@ -48,11 +51,11 @@ export interface TextFieldProps extends Omit<InputHTMLAttributes<HTMLInputElemen
 export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(function TextField({
   leading, trailing, density = 'normal', appearance = 'field', reveal = false,
   availability, clearable, clearLabel = 'Clear', onClear, onEnter, onKeyDown,
-  onChange, onValueChange, className = '', style, ...props
+  onChange, onValueChange, className = '', frameClassName = '', style, ...props
 }, ref) {
   const inputFocus = useInputFocusPolicy();
   const reason = disabledReason(availability), disabled = props.disabled || availability?.kind === 'disabled';
-  return <FieldFrame disabled={disabled} invalid={!!props['aria-invalid']} style={style}
+  return <FieldFrame disabled={disabled} invalid={!!props['aria-invalid']} style={style} className={frameClassName}
     data-appearance={appearance} data-density={density} data-reveal={reveal || undefined}>
     {leading}<input {...props} autoFocus={inputFocus === 'automatic' && props.autoFocus} ref={ref} className={`pt-input ${className}`} disabled={disabled}
       title={reason ?? props.title} data-density={density}
@@ -77,12 +80,15 @@ export interface TextAreaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
       single action never becomes a standalone control floating in empty
       space below the field. */
   leadingAccessory?: ReactNode;
+  /** Class applied to the wrapping FieldFrame (layout), distinct from
+      `className`, which lands on the inner <textarea>. */
+  frameClassName?: string;
   // Semantic value channel; destructured so FormField's binding never leaks
   // onto the native textarea.
   onValueChange?: (value: string) => void;
 }
 export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(function TextArea({
-  className = '', style, minimumRows, maximumRows, onEnter, onKeyDown, characterCount, framing = 'field',
+  className = '', frameClassName = '', style, minimumRows, maximumRows, onEnter, onKeyDown, characterCount, framing = 'field',
   autoGrow = false, density = 'normal',
   leadingAccessory, onChange, onValueChange, ...props
 }, ref) {
@@ -124,7 +130,7 @@ export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(function 
     observer.observe(element);
     return () => observer.disconnect();
   }, [autoGrow, grow, props.value, density]);
-  return <FieldFrame invalid={!!props['aria-invalid']} disabled={props.disabled} style={style} data-framing={framing} data-multiline="true" data-density={density}>
+  return <FieldFrame invalid={!!props['aria-invalid']} disabled={props.disabled} style={style} className={frameClassName} data-framing={framing} data-multiline="true" data-density={density}>
     <textarea {...props} autoFocus={inputFocus === 'automatic' && props.autoFocus} ref={bindRef} className={`pt-textarea ${className}`} rows={props.rows ?? minimumRows ?? 3} data-density={density}
       style={!autoGrow && maximumRows ? { maxHeight: `${maximumRows * 1.5 + 1}em` } : undefined}
       onChange={event => { onChange?.(event); onValueChange?.(event.target.value); grow(); }}

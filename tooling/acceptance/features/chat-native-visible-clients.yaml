@@ -29,6 +29,7 @@
     "apps/desktop/src/runtimes/federationRuntime.ts",
     "apps/desktop/src/components/settings/RecoverySettings.tsx",
     "apps/desktop/src/pages/login/StationSetupPanel.tsx",
+    "apps/desktop/src/pages/login/useStationRegistry.ts",
     "apps/desktop/src/pages/login/views/**",
     "apps/station/app/conf/actor.yml",
     "apps/station/frame/touch/actor/seed.go",

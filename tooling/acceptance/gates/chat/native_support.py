@@ -436,9 +436,10 @@ def native_runtime_source_identity(
     manifest: dict[str, Any],
     runtime_binding: NativeDesktopRuntimeBinding,
     station_live: dict[str, Any],
+    client_id: str = "alice",
 ) -> dict[str, Any]:
     source = manifest.get("source")
-    station = runtime_station_service(manifest, "alice")
+    station = runtime_station_service(manifest, client_id)
     runtime_cell = runtime_binding.runtime_identity()
     binary = runtime_binding.binary_identity()
     cell_source = (

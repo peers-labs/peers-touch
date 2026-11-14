@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { create } from '@bufbuild/protobuf';
 
 import {
   PrivateCommentsNativeError,
@@ -8,8 +9,12 @@ import {
 } from '../services/privateCommentsNative';
 import { usePrivateCommentsStore } from './privateComments';
 import { useMomentsNavigationStore } from './momentsNavigation';
+import { usePrivateMomentsStore } from './privateMoments';
+import { ReactionKind, ReactionSummarySchema } from '../gen/proto/domain/social/post_pb';
+import type { PrivateReactionMutationResult } from '../services/privateMomentsNative';
 
-vi.mock('../services/privateMomentsNative', () => ({
+vi.mock('../services/privateMomentsNative', async importOriginal => ({
+  ...await importOriginal<typeof import('../services/privateMomentsNative')>(),
   resolvePrivateMomentsPlatform: () => 'native',
 }));
 vi.mock('../utils/logger', () => ({
@@ -42,6 +47,9 @@ function page(commentId: string, nextCursor = ''): PrivateCommentPage {
       text: commentId,
       mentions: [],
       reactionsCount: 0,
+      reactions: [],
+      reactionRevision: '0',
+      isLiked: false,
       repliesCount: 0,
     }],
   };
@@ -129,6 +137,80 @@ describe('private Comment read completion and projection isolation', () => {
     expect(second).toBeDefined();
     expect(list).toHaveBeenCalledTimes(1);
     expect(thread().comments[0].commentId).toBe('reentrant-comment');
+  });
+
+  it('completes the first authorized empty page instead of retaining its loading state', async () => {
+    const native = deferred<PrivateCommentPage>();
+    vi.spyOn(privateCommentsNative, 'list').mockReturnValue(native.promise);
+    const read = store().loadComments('post-1');
+    expect(thread()).toMatchObject({ loading: true, loaded: false, comments: [] });
+
+    native.resolve({ ...page('unused'), comments: [] });
+    await read;
+
+    expect(thread()).toMatchObject({
+      loading: false, loaded: true, comments: [], nextCursor: '', hasMore: false,
+    });
+  });
+
+  it('retains an acquired empty thread during an unchanged background refresh', async () => {
+    const native = deferred<PrivateCommentPage>();
+    const emptyPage = { ...page('unused'), comments: [] };
+    vi.spyOn(privateCommentsNative, 'list')
+      .mockResolvedValueOnce(emptyPage).mockReturnValueOnce(native.promise);
+    await store().loadComments('post-1');
+    const acquired = thread();
+    expect(acquired).toMatchObject({ loading: false, loaded: true });
+
+    const refresh = store().loadComments('post-1', true);
+    expect(thread()).toBe(acquired);
+    native.resolve(emptyPage);
+    await refresh;
+
+    expect(thread()).toBe(acquired);
+    expect(thread().comments).toBe(acquired.comments);
+  });
+
+  it('clears a list failure when its retry returns an authorized empty page', async () => {
+    const error = new PrivateCommentsNativeError({
+      code: 'SOCIAL_PRIVATE_DEPENDENCY_FAILURE', state: 'COMMENT_FAILED',
+    });
+    vi.spyOn(privateCommentsNative, 'list')
+      .mockRejectedValueOnce(error)
+      .mockResolvedValueOnce({ ...page('unused'), comments: [] });
+    await expect(store().loadComments('post-1')).rejects.toBe(error);
+    expect(thread()).toMatchObject({ loading: false, state: 'COMMENT_FAILED' });
+
+    await store().loadComments('post-1', true);
+
+    expect(thread()).toMatchObject({ loading: false, loaded: true, comments: [] });
+    expect(thread().state).toBeUndefined();
+    expect(thread().errorCode).toBeUndefined();
+  });
+
+  it('completes unchanged viewport reacquisition while retaining the acquired comment rows', async () => {
+    vi.spyOn(privateCommentsNative, 'list').mockResolvedValue(page('original-comment'));
+    await store().loadComments('post-1');
+    const acquired = thread();
+
+    const read = store().loadComments('post-1');
+    expect(thread().loading).toBe(true);
+    await read;
+
+    expect(thread()).toMatchObject({ loading: false, loaded: true });
+    expect(thread().comments).toBe(acquired.comments);
+    expect(thread().comments[0]).toBe(acquired.comments[0]);
+  });
+
+  it('keeps a healthy unchanged background thread and its rows on the same references', async () => {
+    vi.spyOn(privateCommentsNative, 'list').mockResolvedValue(page('original-comment'));
+    await store().loadComments('post-1');
+    const acquired = thread();
+
+    await store().loadComments('post-1', true);
+
+    expect(thread()).toBe(acquired);
+    expect(thread().comments).toBe(acquired.comments);
   });
 
   it('rejects both readers with the original error and permits an independent retry', async () => {
@@ -290,5 +372,93 @@ describe('private Comment read completion and projection isolation', () => {
     expect(list).toHaveBeenCalledTimes(1);
     expect(store().scope.nativeSessionGeneration).toBe('1');
     expect(thread().comments[0].commentId).toBe('current-session');
+  });
+
+  it('merges content and reaction revisions independently across refresh and bootstrap', async () => {
+    const initial = page('comment-1');
+    initial.comments[0] = {
+      ...initial.comments[0],
+      reactions: [create(ReactionSummarySchema, { kind: ReactionKind.REACTION_LIKE, count: 2n, reactedByViewer: true })],
+      reactionsCount: 2, reactionRevision: '9', isLiked: true,
+    };
+    const edited = page('comment-1');
+    edited.comments[0] = { ...edited.comments[0], generation: '2', text: 'edited' };
+    vi.spyOn(privateCommentsNative, 'list')
+      .mockResolvedValueOnce(initial).mockResolvedValueOnce(edited);
+    await store().loadComments('post-1', true);
+    await store().loadComments('post-1', true);
+    expect(thread().comments[0]).toMatchObject({
+      text: 'edited', generation: '2', reactionsCount: 2, reactionRevision: '9', isLiked: true,
+    });
+    const oldContent = page('comment-1').comments[0];
+    vi.mocked(privateCommentsNative.bootstrap).mockResolvedValueOnce({
+      ...snapshot('1'),
+      comments: [{
+        ...oldContent, reactions: [], reactionsCount: 0, reactionRevision: '10', isLiked: false,
+      }],
+    });
+    await store().bootstrap(1);
+    expect(thread().comments[0]).toMatchObject({
+      text: 'edited', generation: '2', reactionsCount: 0, reactionRevision: '10', isLiked: false,
+    });
+  });
+
+  it('applies a delayed reaction to current content without resurrecting removed comments', async () => {
+    const reaction = deferred<PrivateReactionMutationResult>();
+    const list = vi.spyOn(privateCommentsNative, 'list').mockResolvedValue(page('comment-1'));
+    vi.spyOn(usePrivateMomentsStore.getState(), 'setReaction').mockReturnValue(reaction.promise);
+    await store().loadComments('post-1', true);
+    const operation = store().setCommentLike('post-1', 'comment-1', true);
+    const edited = page('comment-1');
+    edited.comments[0] = { ...edited.comments[0], text: 'new text', generation: '2' };
+    list.mockResolvedValueOnce(edited);
+    await store().loadComments('post-1', true);
+    const result = {
+      command: {
+        commandId: 'reaction-1', postId: 'post-1', commentId: 'comment-1',
+        kind: ReactionKind.REACTION_LIKE, operation: 'REACT', state: 'REACTION_COMMITTED',
+        attemptCount: 1, projectionRevision: '5',
+      },
+      reactions: [create(ReactionSummarySchema, { kind: ReactionKind.REACTION_LIKE, count: 1n, reactedByViewer: true })],
+      projectionRevision: '5', exactReplay: false,
+    } satisfies PrivateReactionMutationResult;
+    reaction.resolve(result);
+    await operation;
+    expect(thread().comments[0]).toMatchObject({
+      text: 'new text', generation: '2', reactionsCount: 1, isLiked: true,
+    });
+
+    const next = deferred<PrivateReactionMutationResult>();
+    vi.mocked(usePrivateMomentsStore.getState().setReaction).mockReturnValueOnce(next.promise);
+    const removalRace = store().setCommentLike('post-1', 'comment-1', true);
+    list.mockResolvedValueOnce({ ...page('comment-1'), comments: [] });
+    await store().loadComments('post-1', true);
+    next.resolve(result);
+    await removalRace;
+    expect(thread().comments).toEqual([]);
+  });
+
+  it('drops a reaction from a previous activation even when all scope field values match', async () => {
+    const reaction = deferred<PrivateReactionMutationResult>();
+    vi.spyOn(usePrivateMomentsStore.getState(), 'setReaction').mockReturnValue(reaction.promise);
+    vi.spyOn(privateCommentsNative, 'list').mockResolvedValue(page('comment-1'));
+    await store().loadComments('post-1', true);
+    const operation = store().setCommentLike('post-1', 'comment-1', true);
+    store().activateActor('alice', 1);
+    await store().bootstrap(1);
+    await store().loadComments('post-1', true);
+    reaction.resolve({
+      command: {
+        commandId: 'old-reaction', postId: 'post-1', commentId: 'comment-1',
+        kind: ReactionKind.REACTION_LIKE, operation: 'REACT', state: 'REACTION_COMMITTED',
+        attemptCount: 1, projectionRevision: '5',
+      },
+      reactions: [create(ReactionSummarySchema, {
+        kind: ReactionKind.REACTION_LIKE, count: 1n, reactedByViewer: true,
+      })],
+      projectionRevision: '5', exactReplay: false,
+    });
+    await operation;
+    expect(thread().comments[0]).toMatchObject({ reactionsCount: 0, isLiked: false });
   });
 });

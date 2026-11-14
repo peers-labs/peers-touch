@@ -20,6 +20,10 @@ type AgentTurn struct {
 	TerminalReason            string     `gorm:"not null;type:varchar(100);default:''"`
 	StartedAt                 time.Time  `gorm:"not null;autoCreateTime"`
 	EndedAt                   *time.Time `gorm:"type:timestamp"`
+	// TW-D2: NULL while the Turn has not issued an irreversible provider or
+	// tool request. Admissions in this window may amend the Turn; after the
+	// fence every subsequent admission queues FIFO as a new Turn.
+	DispatchFencedAt *time.Time `gorm:"type:timestamp;index:idx_turns_dispatch_fence"`
 
 	// Relations
 	Conversation Conversation `gorm:"foreignKey:ConversationID;references:ID"`

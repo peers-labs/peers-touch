@@ -64,12 +64,24 @@ pub enum PrivateReadContent {
         url: String,
         title: String,
     },
+    #[serde(rename_all = "camelCase")]
     Poll {
         text: String,
         question: String,
         options: Vec<String>,
+        #[serde(default)]
+        #[serde(alias = "opaque_option_ids")]
+        opaque_option_ids: Vec<String>,
+        #[serde(default)]
+        #[serde(alias = "option_set_sha256")]
+        option_set_sha256: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        result: Option<PrivatePollResultProjection>,
+        #[serde(alias = "min_choices")]
         min_choices: u32,
+        #[serde(alias = "max_choices")]
         max_choices: u32,
+        #[serde(alias = "expires_at_seconds")]
         expires_at_seconds: i64,
     },
     Repost {
@@ -138,6 +150,17 @@ pub struct PrivateReactionSummaryProjection {
     pub kind: i32,
     pub count: String,
     pub reacted_by_viewer: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivatePollResultProjection {
+    pub vote_counts: Vec<String>,
+    pub selected_options: Vec<u32>,
+    pub voter_count: String,
+    pub projection_revision: String,
+    pub command_id: String,
+    pub vote_actor_ptid: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -232,6 +255,33 @@ pub(crate) fn source_reaction_summaries(
             true,
         )
     })
+}
+
+pub(crate) fn merge_reaction_fields(
+    current_revision: &mut String,
+    current_reactions: &mut Vec<PrivateReactionSummaryProjection>,
+    current_hydrated: &mut bool,
+    reactions: &[PrivateReactionSummaryProjection],
+    revision: u64,
+    hydrated: bool,
+) -> Result<(), String> {
+    let current = current_revision
+        .parse::<u64>()
+        .map_err(|_| "private Reaction projection revision is invalid".to_string())?;
+    if !hydrated {
+        return Ok(());
+    }
+    if revision == 0 {
+        return Err("private Reaction hydrated revision is invalid".to_string());
+    }
+    if revision > current || (revision == current && !*current_hydrated) {
+        *current_revision = revision.to_string();
+        *current_reactions = reactions.to_vec();
+        *current_hydrated = true;
+    } else if revision == current && current_reactions != reactions {
+        return Err("private Reaction response conflicts at the same revision".to_string());
+    }
+    Ok(())
 }
 
 fn zero_revision() -> String {
@@ -680,6 +730,14 @@ fn decrypt_text_with_content_key(
         return Err(PrivateReadError::integrity());
     }
     let mentions = verified_private_mentions(&decoded, parts.private)?;
+    if parts
+        .private
+        .poll
+        .as_ref()
+        .is_some_and(|poll| poll.post_id != metadata.post_id)
+    {
+        return Err(PrivateReadError::integrity());
+    }
     let content = project_plaintext(&decoded, parts.private, kind)?;
     let (reactions, reaction_revision, reactions_hydrated) =
         source_reaction_summaries(response, &metadata.post_id).map_err(PrivateReadError::from)?;
@@ -1131,7 +1189,7 @@ fn project_plaintext(
             {
                 return Err("private poll Moment authority mismatch".to_string());
             }
-            Ok(PrivateReadContent::Poll {
+            let mut content = PrivateReadContent::Poll {
                 text: body.text.clone(),
                 question: body.question.clone(),
                 options: body
@@ -1139,6 +1197,13 @@ fn project_plaintext(
                     .iter()
                     .map(|option| option.label.clone())
                     .collect(),
+                opaque_option_ids: body
+                    .options
+                    .iter()
+                    .map(|option| hex::encode(&option.opaque_option_id))
+                    .collect(),
+                option_set_sha256: hex::encode(&body.option_set_sha256),
+                result: None,
                 min_choices: body.min_choices,
                 max_choices: body.max_choices,
                 expires_at_seconds: body
@@ -1146,7 +1211,15 @@ fn project_plaintext(
                     .as_ref()
                     .map(|timestamp| timestamp.seconds)
                     .ok_or_else(|| "private poll Moment expiry is unavailable".to_string())?,
-            })
+            };
+            if let Some(poll) = private.poll.as_ref() {
+                let projected =
+                    crate::social::private_poll::project_result(&content, poll, &poll.post_id)?;
+                if let PrivateReadContent::Poll { result, .. } = &mut content {
+                    *result = Some(projected);
+                }
+            }
+            Ok(content)
         }
         Some(social::private_moment_content::Body::Repost(body)) => {
             let authority = match private
@@ -2000,7 +2073,9 @@ pub(crate) fn object_descriptor_set_hash(
     Ok(Sha256::digest(encoder.finish()).into())
 }
 
-fn private_poll_option_set_hash(opaque_option_ids: &[Vec<u8>]) -> Result<[u8; 32], String> {
+pub(crate) fn private_poll_option_set_hash(
+    opaque_option_ids: &[Vec<u8>],
+) -> Result<[u8; 32], String> {
     let mut encoder = CanonicalMessageEncoder::new();
     for option_id in opaque_option_ids {
         encoder

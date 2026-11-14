@@ -10,8 +10,13 @@ import {
   type PrivateCommentsNativeSnapshot,
   type PrivateCommentState,
 } from '../services/privateCommentsNative';
-import { resolvePrivateMomentsPlatform } from '../services/privateMomentsNative';
+import {
+  resolvePrivateMomentsPlatform, PrivateMomentsNativeError,
+} from '../services/privateMomentsNative';
+import { ReactionKind } from '../gen/proto/domain/social/post_pb';
+import { usePrivateMomentsStore } from './privateMoments';
 import { log } from '../utils/logger';
+import { structuralEqual } from '../utils/structuralEqual';
 
 const TAG = 'private-comments-store';
 let fallbackDraftSequence = 0;
@@ -63,6 +68,7 @@ interface PrivateCommentsState {
     mentions?: PrivateCommentMention[],
   ) => Promise<void>;
   retryComment: (postId: string) => Promise<void>;
+  setCommentLike: (postId: string, commentId: string, liked: boolean) => Promise<void>;
   markParentUnavailable: (postId: string, errorCode?: string) => void;
   clearPost: (postId: string) => void;
   reset: () => void;
@@ -114,9 +120,20 @@ function newerComment(
   current: PrivateCommentProjection,
   incoming: PrivateCommentProjection,
 ): PrivateCommentProjection {
-  return compareGeneration(incoming.generation, current.generation) >= 0
-    ? incoming
-    : current;
+  const content = compareGeneration(incoming.generation, current.generation) < 0
+    ? current : incoming;
+  const reaction = compareGeneration(incoming.reactionRevision, current.reactionRevision) < 0
+    ? current : incoming;
+  const merged = {
+    ...content,
+    reactions: reaction.reactions,
+    reactionsCount: reaction.reactionsCount,
+    reactionRevision: reaction.reactionRevision,
+    isLiked: reaction.isLiked,
+  };
+  // A periodic read that carries no real change must keep the existing
+  // reference so memoized comment rows do not repaint (no 90s-style refresh).
+  return structuralEqual(current, merged) ? current : merged;
 }
 
 function createDraftId(): string {
@@ -355,21 +372,33 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
           const index = indexById.get(comment.commentId);
           if (index === undefined) {
             indexById.set(comment.commentId, comments.length);
-            comments.push(comment);
+            const retained = current.comments.find(item => item.commentId === comment.commentId);
+            comments.push(retained ? newerComment(retained, comment) : comment);
           } else {
             comments[index] = newerComment(comments[index]!, comment);
           }
         }
+        // Reuse an unchanged thread only after acquisition has completed.
+        // An empty or identical page must still settle loading and clear errors.
+        const commentsUnchanged = comments.length === current.comments.length
+          && comments.every((comment, index) => comment === current.comments[index]);
+        const thread = commentsUnchanged
+          && page.nextCursor === current.nextCursor
+          && page.hasMore === current.hasMore
+          && current.loaded && !current.loading
+          && current.state === undefined && current.errorCode === undefined
+          ? current
+          : {
+            comments: commentsUnchanged ? current.comments : comments,
+            nextCursor: page.nextCursor,
+            hasMore: page.hasMore,
+            loading: false,
+            loaded: true,
+          };
         return {
           threadsByPost: {
             ...state.threadsByPost,
-            [page.postId]: {
-              comments,
-              nextCursor: page.nextCursor,
-              hasMore: page.hasMore,
-              loading: false,
-              loaded: true,
-            },
+            [page.postId]: thread,
           },
         };
       });
@@ -513,10 +542,10 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
               mutatedPostIds,
             );
           return {
-            scope: {
+            scope: replacesSession ? {
               ...state.scope,
               nativeSessionGeneration: snapshot.sessionGeneration,
-            },
+            } : state.scope,
             ...draftState,
             threadsByPost,
           };
@@ -613,7 +642,6 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
             if (!isCurrentRead(trimmedPostId, read)) return;
             const nativeError = error instanceof PrivateCommentsNativeError ? error : undefined;
             log.warn(TAG, 'private Comment list failed', {
-              postId: trimmedPostId,
               state: nativeError?.state ?? 'COMMENT_FAILED',
               errorCode: nativeError?.code ?? 'COMMENT_FAILED',
             });
@@ -648,18 +676,59 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
           scope, cursor, refresh: replace, anchorCommentId: anchor, completion,
         };
         commentReads.set(trimmedPostId, read);
-        set((state) => ({
-          threadsByPost: {
-            ...state.threadsByPost,
-            [trimmedPostId]: {
-              ...(state.threadsByPost[trimmedPostId] ?? emptyThread()),
-              loading: true,
-              state: undefined,
-              errorCode: undefined,
+        set((state) => {
+          const existing = state.threadsByPost[trimmedPostId];
+          // A background refresh/anchor replace of a healthy, already-loaded
+          // thread keeps its exact reference and does not flash a loading
+          // state; applyPage reuses the reference when nothing changed,
+          // eliminating the periodic repaint/flicker. Pagination (append,
+          // replace=false) and first load still flip loading=true.
+          if (replace && existing?.loaded && existing.state === undefined) {
+            return state;
+          }
+          return {
+            threadsByPost: {
+              ...state.threadsByPost,
+              [trimmedPostId]: {
+                ...(existing ?? emptyThread()),
+                loading: true,
+                state: undefined,
+                errorCode: undefined,
+              },
             },
-          },
-        }));
+          };
+        });
         return completion;
+      },
+
+      setCommentLike: async (postId, commentId, liked) => {
+        const scope = get().scope;
+        const thread = get().threadsByPost[postId];
+        if (!scope.actorPtid || !thread?.comments.some(comment => comment.commentId === commentId)
+          || thread.state === 'COMMENT_PARENT_UNAVAILABLE') {
+          throw new PrivateMomentsNativeError({ code: 'REACTION_PRIVATE_COMMENT_REQUIRED', state: 'REACTION_REJECTED' });
+        }
+        const result = await usePrivateMomentsStore.getState().setReaction(
+          postId, ReactionKind.REACTION_LIKE, liked ? 'REACT' : 'UNREACT', commentId,
+        );
+        if (get().scope !== scope) return;
+        const currentThread = get().threadsByPost[postId];
+        const target = currentThread?.comments.find(comment => comment.commentId === commentId);
+        if (!target || currentThread.state === 'COMMENT_PARENT_UNAVAILABLE') return;
+        if (result.command.state !== 'REACTION_COMMITTED') {
+          throw new PrivateMomentsNativeError({
+            code: result.command.errorCode ?? 'REACTION_RESULT_UNKNOWN',
+            state: result.command.state,
+          });
+        }
+        const like = result.reactions.find(summary => summary.kind === ReactionKind.REACTION_LIKE);
+        applyComment({
+          ...target,
+          reactions: result.reactions,
+          reactionRevision: result.projectionRevision,
+          reactionsCount: Number(result.reactions.reduce((total, summary) => total + summary.count, 0n)),
+          isLiked: like?.reactedByViewer ?? false,
+        }, scope.actorPtid, scope.rendererGeneration);
       },
 
       submitComment: async (postId, text, replyToCommentId, mentions = []) => {

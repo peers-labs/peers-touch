@@ -110,6 +110,23 @@ CHAT_TABLES = (
     "social_friend_requests",
     "social_relationship_projections",
 )
+# This fixture resets Actor continuity roots and devices. Their signed Social
+# history cannot survive that reset under the same preset PTIDs. Production
+# root continuity is never reset through this disposable Profile operation.
+SIGNED_SOCIAL_TABLES = (
+    "social_feed_chains",
+    "social_feed_events",
+    "social_feed_fanout",
+    "social_feed_subscriptions",
+    "social_feed_interactions",
+    "social_feed_objects",
+    "social_feed_reaction_versions",
+    "social_feed_interaction_fanout",
+    "social_feed_thread_heads",
+    "social_feed_thread_entries",
+    "social_feed_quarantines",
+    "social_public_posts",
+)
 # Per-actor Agent workspace runtime state. Pinned conversation runtime
 # authority references provider configuration versions, so reusing stale
 # agent rows across disposable resets wedges the first new turn; reset
@@ -2977,7 +2994,9 @@ def reset_station_chat_state(environment_name: str) -> None:
     verify_disposable_station_runtime(environment)
     container = environment["PT_ACCEPTANCE_POSTGRES_CONTAINER"]
     canonical_table_names = ", ".join(
-        _sql_literal(table) for table in (*CHAT_TABLES, *AGENT_RUNTIME_TABLES)
+        _sql_literal(table) for table in (
+            *CHAT_TABLES, *AGENT_RUNTIME_TABLES, *SIGNED_SOCIAL_TABLES,
+        )
     )
     retired_table_names = ", ".join(RETIRED_CHAT_TABLES)
     sql = f"""
@@ -2986,7 +3005,18 @@ DROP TABLE IF EXISTS {retired_table_names} CASCADE;
 DO $acceptance_reset$
 DECLARE
   existing_tables text;
+  projection_table text;
 BEGIN
+  FOREACH projection_table IN ARRAY ARRAY['social_comments', 'social_reactions']
+  LOOP
+    IF to_regclass(format('%I.%I', current_schema(), projection_table)) IS NOT NULL THEN
+      EXECUTE format(
+        'DELETE FROM %I.%I WHERE post_class = %L',
+        current_schema(), projection_table, 'public'
+      );
+    END IF;
+  END LOOP;
+
   SELECT string_agg(
     format('%I.%I', schemaname, tablename),
     ', ' ORDER BY tablename

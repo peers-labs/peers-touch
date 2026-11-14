@@ -33,6 +33,7 @@ import (
 	providercli "github.com/peers-labs/peers-touch/station/app/subserver/agent/service/cli"
 	managedcli "github.com/peers-labs/peers-touch/station/app/subserver/agent/service/cli/managed"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/externalruntime"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/sandbox"
 	ossservice "github.com/peers-labs/peers-touch/station/app/subserver/oss/service"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	hertzadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/hertz"
@@ -445,11 +446,22 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	turnSvc.SetTurnAdmissionService(turnAdmissionSvc)
 	turnAdmissionSvc.SetRequestPreflight(turnSvc.PreflightTurn)
 	turnQueueHandlers := handler.NewTurnQueueHandlers(turnAdmissionSvc)
+	logicalArtifactSvc := service.NewLogicalArtifactService()
+	logicalArtifactHandlers := handler.NewLogicalArtifactHandlers(logicalArtifactSvc)
+	terminalSessionSvc := service.NewTerminalSessionService()
+	// WE-S6: proxy interactive terminals into provisioner sandboxes.
+	terminalSessionSvc.SetSandboxPtyBridge(sandbox.NewStationTerminalBridgeFromEnv(s.agentDB))
+	// WE-S6: read-only allocation view for the terminal placement picker.
+	terminalSessionSvc.SetSandboxResolver(sandbox.NewStationResolverFromEnv(s.agentDB))
+	terminalSessionHandlers := handler.NewTerminalSessionHandlers(terminalSessionSvc)
+	browserSessionSvc := service.NewBrowserSessionService()
+	browserSessionHandlers := handler.NewBrowserSessionHandlers(browserSessionSvc)
 	convHandlers := handler.NewConversationHandlers(
 		convSvc,
 		turnSvc,
 		externalRuntimeSvc,
 	)
+	convHandlers.SetChatTaskIdentityResolver(chatTaskSvc.TaskIDsForConversations)
 	revisionHandlers := handler.NewRevisionHandlers(service.NewRevisionService(convSvc, turnSvc))
 	threadHandlers := handler.NewThreadHandlers(service.NewThreadService())
 	memoryHandlers := handler.NewMemoryHandlers(memorySvc)
@@ -570,6 +582,10 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	turnSvc.SetToolDispatch(toolDispatchSvc)
 	turnSvc.SetCapabilityReadiness(capabilityReadinessSvc)
 	turnSvc.SetChatTaskService(chatTaskSvc)
+	// WE-20261104: Station-side executor for WORKSPACE_SANDBOX-bound local-*
+	// tools. Station itself never runs the command; it dispatches to the
+	// independent provisioner and fails closed without a desktop fallback.
+	turnSvc.SetSandboxLocalToolRunner(sandbox.NewStationToolRunnerFromEnv(s.agentDB))
 	evaluationSvc := service.NewEvaluationService(
 		s.agentDB,
 		admissionResolver,
@@ -672,6 +688,31 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-turn-artifact-upload-prepare", "/agent/turn/artifact/upload/prepare", server.POST, workspaceOSSHandlers.HandlePrepareArtifactUpload, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-turn-artifact-upload-complete", "/agent/turn/artifact/upload/complete", server.POST, workspaceOSSHandlers.HandleCompleteArtifactUpload, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-turn-artifact-download", "/agent/turn/artifact/download", server.POST, workspaceOSSHandlers.HandleGetArtifactDownload, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-task-artifact-claim-version", "/agent/task/artifact/claim-version", server.POST, logicalArtifactHandlers.HandleClaimVersion, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-task-artifact-list", "/agent/task/artifact/list", server.POST, logicalArtifactHandlers.HandleListTaskArtifacts, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-task-artifact-versions", "/agent/task/artifact/versions", server.POST, logicalArtifactHandlers.HandleListArtifactVersions, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-task-artifact-body-get", "/agent/task/artifact/body/get", server.POST, logicalArtifactHandlers.HandleGetArtifactVersionBody, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-task-artifact-feedback-submit", "/agent/task/artifact/feedback/submit", server.POST, logicalArtifactHandlers.HandleSubmitArtifactFeedback, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-task-artifact-feedback-list", "/agent/task/artifact/feedback/list", server.POST, logicalArtifactHandlers.HandleListArtifactFeedback, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-task-artifact-check-record", "/agent/task/artifact/check/record", server.POST, logicalArtifactHandlers.HandleRecordArtifactCheck, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-task-artifact-check-list", "/agent/task/artifact/check/list", server.POST, logicalArtifactHandlers.HandleListArtifactChecks, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-task-artifact-accept", "/agent/task/artifact/accept", server.POST, logicalArtifactHandlers.HandleAcceptArtifactVersion, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-task-artifact-acceptance-list", "/agent/task/artifact/acceptance/list", server.POST, logicalArtifactHandlers.HandleListArtifactAcceptances, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-terminal-session-create", "/agent/terminal-session/create", server.POST, terminalSessionHandlers.HandleCreateTerminalSession, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-terminal-session-update", "/agent/terminal-session/update", server.POST, terminalSessionHandlers.HandleUpdateTerminalSession, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-terminal-session-list", "/agent/terminal-session/list", server.POST, terminalSessionHandlers.HandleListTerminalSessions, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-terminal-session-reconcile", "/agent/terminal-session/reconcile", server.POST, terminalSessionHandlers.HandleReconcileTerminalSessions, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-terminal-session-remove", "/agent/terminal-session/remove", server.POST, terminalSessionHandlers.HandleRemoveTerminalSession, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-sandbox-resolve-active", "/agent/sandboxes/active", server.POST, terminalSessionHandlers.HandleResolveActiveSandboxes, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-sandbox-pty-write", "/agent/sandbox-pty/write", server.POST, terminalSessionHandlers.HandleSandboxPtyWrite, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-sandbox-pty-read", "/agent/sandbox-pty/read", server.POST, terminalSessionHandlers.HandleSandboxPtyRead, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-sandbox-pty-resize", "/agent/sandbox-pty/resize", server.POST, terminalSessionHandlers.HandleSandboxPtyResize, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-sandbox-pty-signal", "/agent/sandbox-pty/signal", server.POST, terminalSessionHandlers.HandleSandboxPtySignal, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-browser-session-create", "/agent/browser-session/create", server.POST, browserSessionHandlers.HandleCreateBrowserSession, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-browser-session-update", "/agent/browser-session/update", server.POST, browserSessionHandlers.HandleUpdateBrowserSession, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-browser-session-list", "/agent/browser-session/list", server.POST, browserSessionHandlers.HandleListBrowserSessions, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-browser-session-reconcile", "/agent/browser-session/reconcile", server.POST, browserSessionHandlers.HandleReconcileBrowserSessions, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-browser-session-remove", "/agent/browser-session/remove", server.POST, browserSessionHandlers.HandleRemoveBrowserSession, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-turn-diagnostics-export", "/agent/turn/diagnostics/export", server.POST, turnHandlers.HandleExportTurnDiagnostics, logIDWrapper, jwtWrapper),
 
 		server.NewHTTPHandler("agent-conversation-list", "/agent/conversation/list", server.POST, convHandlers.HandleListConversations, logIDWrapper, jwtWrapper),
@@ -682,6 +723,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewHTTPHandler("agent-conversation-delete-batch", "/agent/conversation/delete-batch", server.POST, convHandlers.HandleDeleteConversations, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-conversation-restore", "/agent/conversation/restore", server.POST, convHandlers.HandleRestoreConversation, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-conversation-runtime-reset", "/agent/conversation/runtime/reset", server.POST, convHandlers.HandleResetConversationRuntime, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-conversation-runtime-rebind", "/agent/conversation/runtime/rebind", server.POST, convHandlers.HandleRebindConversationRuntime, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-conversation-messages", "/agent/conversation/messages", server.POST, convHandlers.HandleListMessages, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-message-translate", "/agent/conversation/message/translate", server.POST, convHandlers.HandleSetMessageTranslation, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-conversation-events", "/agent/conversation/events", server.POST, convHandlers.HandleStreamConversationEvents, logIDWrapper, jwtWrapper),
@@ -779,6 +821,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-memory-embedding-status", "/agent/memory/embedding-status", server.POST, memoryHandlers.HandleEmbeddingStatus, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-memory-reembed", "/agent/memory/reembed", server.POST, memoryHandlers.HandleReEmbed, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-memory-feedback", "/agent/memory/feedback", server.POST, memoryHandlers.HandleFeedback, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-memory-review", "/agent/memory/review", server.POST, memoryHandlers.HandleReviewMemory, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-memory-snapshot", "/agent/memory/snapshot", server.GET, memoryHandlers.HandleGetSnapshot, logIDWrapper, jwtWrapper),
 
 		// Compatibility aliases for the Agent resource management surface.

@@ -1,6 +1,7 @@
 use libp2p_identity::{KeyType, PublicKey};
 pub mod bootstrap;
 pub mod transport_identity;
+pub mod feed_log;
 use multiaddr::Multiaddr;
 use prost::Message;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};

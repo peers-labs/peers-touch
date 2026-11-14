@@ -1,5 +1,5 @@
-import { Button } from '@lobehub/ui';
-import { Image, Spin, Typography, theme } from 'antd';
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import { Button, Image, Lightbox, Spin, VideoPlayer, type ResourceView } from '@peers-touch/ui';
 import {
   ImageIcon,
   LockKeyhole,
@@ -13,14 +13,11 @@ import type {
   PrivateMomentMediaProjection,
 } from '../../services/privateMomentsNative';
 
-import { useEffect, useSyncExternalStore } from 'react';
 import {
   getPrivateMediaLocalPreviews,
   releasePrivateMediaLocalPreviews,
   subscribePrivateMediaLocalPreviews,
 } from '../../services/privateMediaLocalPreview';
-
-const { Text } = Typography;
 
 interface PrivateMediaGridProps {
   media: PrivateMomentMediaProjection[];
@@ -74,22 +71,20 @@ function mediaStateLabel(item: PrivateMomentMediaProjection): string {
 }
 
 function MediaStateIcon({ state }: { state: PrivateMediaState }) {
-  const { token } = theme.useToken();
   if (isBusy(state)) return <Spin size="small" />;
   if (state === 'MEDIA_INTEGRITY_FAILURE') {
-    return <ShieldAlert size={20} color={token.colorError} />;
+    return <ShieldAlert size={20} color="var(--pt-danger)" />;
   }
   if (state === 'MEDIA_ACCESS_DENIED') {
-    return <LockKeyhole size={20} color={token.colorWarning} />;
+    return <LockKeyhole size={20} color="var(--pt-warning)" />;
   }
   if (state === 'MEDIA_OFFLINE_RETRYABLE') {
-    return <WifiOff size={20} color={token.colorWarning} />;
+    return <WifiOff size={20} color="var(--pt-warning)" />;
   }
-  return <ImageIcon size={20} color={token.colorTextTertiary} />;
+  return <ImageIcon size={20} color="var(--pt-muted)" />;
 }
 
 export function PrivateMediaGrid({ media, postId, onOpen }: PrivateMediaGridProps) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('moments');
   // Publisher-owned local files shown during the publish -> grant gap. Ordered
   // to match the projected media array (intent file order).
@@ -107,10 +102,27 @@ export function PrivateMediaGrid({ media, postId, onOpen }: PrivateMediaGridProp
   useEffect(() => {
     if (allSettled) releasePrivateMediaLocalPreviews(postId);
   }, [allSettled, postId]);
+  const [selected, setSelected] = useState<string | null>(null);
+  const resource = (item: PrivateMomentMediaProjection): ResourceView => ({
+    // The lightbox only consumes authorized native render handles. A revoke
+    // closes it; publisher-owned picked files remain transient tile previews.
+    resourceId: `${item.objectId}:${item.renderUrl}`,
+    source: item.renderUrl,
+    name: item.altText || t('moments.private.media.ready.alt'),
+    state: 'available',
+    failureReason: t('moments.lightbox.unavailable'),
+  });
+  const images = media.filter(item => item.state === 'MEDIA_READY' && item.renderUrl
+    && !item.mimeType?.startsWith('video/')).map(resource);
+  const selectedIndex = images.findIndex(image => image.resourceId === selected);
+  useEffect(() => {
+    if (selected !== null && selectedIndex < 0) setSelected(null);
+  }, [selected, selectedIndex]);
   if (media.length === 0) return null;
 
   const single = media.length === 1;
   return (
+    <>
     <div
       data-private-media-grid
       style={{
@@ -139,28 +151,25 @@ export function PrivateMediaGrid({ media, postId, onOpen }: PrivateMediaGridProp
             minHeight: single ? 180 : 108,
             aspectRatio: single ? 'auto' : '1 / 1',
             overflow: 'hidden',
-            borderRadius: token.borderRadius,
-            background: token.colorFillSecondary,
+            borderRadius: 'var(--pt-radius-md)',
+            background: 'var(--pt-subtle)',
           }}
         >
           {localPreview?.isVideo ? (
-            <video
-              src={localPreview.src}
-              controls
-              playsInline
-              style={{
-                display: 'block',
-                width: '100%',
-                height: '100%',
-                minHeight: single ? 180 : 108,
-                objectFit: 'cover',
-              }}
-            />
+            <VideoPlayer resource={{
+              resourceId: `local:${postId}:${item.objectId}:${localPreview.src}`,
+              source: localPreview.src,
+              name: item.altText || t('moments.private.media.ready.alt'),
+              state: 'available',
+            }} />
           ) : localPreview ? (
             <Image
-              src={localPreview.src}
-              alt={item.altText || t('moments.private.media.ready.alt')}
-              preview={{ mask: false }}
+              resource={{
+                resourceId: `local:${postId}:${item.objectId}:${localPreview.src}`,
+                source: localPreview.src,
+                name: item.altText || t('moments.private.media.ready.alt'),
+                state: 'available',
+              }}
               style={{
                 display: 'block',
                 width: '100%',
@@ -172,23 +181,12 @@ export function PrivateMediaGrid({ media, postId, onOpen }: PrivateMediaGridProp
           ) : item.state === 'MEDIA_READY'
           && item.renderUrl
           && item.mimeType?.startsWith('video/') ? (
-            <video
-              src={item.renderUrl}
-              controls
-              playsInline
-              style={{
-                display: 'block',
-                width: '100%',
-                height: '100%',
-                minHeight: single ? 180 : 108,
-                objectFit: 'cover',
-              }}
-            />
+            <VideoPlayer resource={resource(item)} />
           ) : item.state === 'MEDIA_READY' && item.renderUrl ? (
-            <Image
-              src={item.renderUrl}
-              alt={item.altText || t('moments.private.media.ready.alt')}
-              preview={{ mask: false }}
+            <Button actionId={`private-media.preview.${item.objectId}`} emphasis="quiet"
+              aria-label={t('moments.lightbox.openImage', { index: 1, total: images.length })}
+              onActivate={() => setSelected(resource(item).resourceId)}>
+            <Image resource={resource(item)}
               style={{
                 display: 'block',
                 width: '100%',
@@ -197,6 +195,7 @@ export function PrivateMediaGrid({ media, postId, onOpen }: PrivateMediaGridProp
                 objectFit: 'cover',
               }}
             />
+            </Button>
           ) : (
             <div
               style={{
@@ -212,15 +211,16 @@ export function PrivateMediaGrid({ media, postId, onOpen }: PrivateMediaGridProp
               }}
             >
               <MediaStateIcon state={item.state} />
-              <Text type="secondary" style={{ fontSize: 12 }}>
+              <span style={{ color: 'var(--pt-secondary)' }}>
                 {t(mediaStateLabel(item))}
-              </Text>
+              </span>
               {canOpen(item) && (
                 <Button
-                  size="small"
-                  type="text"
-                  icon={<RefreshCcw size={12} />}
-                  onClick={() => onOpen(item.objectId)}
+                  actionId={`private-media.open.${item.objectId}`}
+                  density="compact"
+                  emphasis="quiet"
+                  leading={<RefreshCcw size={12} />}
+                  onActivate={() => onOpen(item.objectId)}
                 >
                   {item.state === 'MEDIA_PLACEHOLDER'
                     ? t('moments.private.media.open')
@@ -243,7 +243,7 @@ export function PrivateMediaGrid({ media, postId, onOpen }: PrivateMediaGridProp
                 width: 20,
                 height: 20,
                 borderRadius: '50%',
-                color: token.colorWhite,
+                color: 'var(--pt-on-primary)',
                 background: 'rgba(0,0,0,0.45)',
               }}
             >
@@ -254,5 +254,12 @@ export function PrivateMediaGrid({ media, postId, onOpen }: PrivateMediaGridProp
         );
       })}
     </div>
+    <Lightbox images={images} index={selectedIndex < 0 ? null : selectedIndex}
+      onIndexChange={index => setSelected(images[index].resourceId)} onDismiss={() => setSelected(null)}
+      copy={{ title: t('moments.lightbox.title'), close: t('moments.lightbox.close'),
+        previous: t('moments.lightbox.previous'), next: t('moments.lightbox.next'),
+        singleImage: t('moments.lightbox.singleImage'),
+        openImage: (index, total) => t('moments.lightbox.openImage', { index, total }) }} />
+    </>
   );
 }

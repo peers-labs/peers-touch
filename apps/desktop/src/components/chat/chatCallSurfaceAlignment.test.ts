@@ -30,6 +30,8 @@ describe('1:1 call HUD grammar (north-star .sk-call-hud parity)', () => {
     const buttonRule = ruleFor('.sc-call__btn');
     expect(buttonRule).toContain('border: 0');
     expect(buttonRule).toContain('background: var(--pt-subtle)');
+    // UI identity: icon tiles are rounded squares (r8), never pure circles.
+    expect(buttonRule).toContain('border-radius: 8px');
     const hoverRule = ruleFor('.sc-call__btn:hover');
     expect(hoverRule).toContain(
       'background: color-mix(in srgb, var(--pt-primary) 14%, var(--pt-subtle))',

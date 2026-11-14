@@ -860,6 +860,9 @@ message VotePrivatePollRequest {
   string post_id = 1;
   repeated bytes opaque_option_ids = 2;
   string command_id = 3;
+  bytes option_set_sha256 = 4;
+  string actor_signing_key_id = 5;
+  bytes actor_device_signature = 6;
 }
 
 message PrivateMomentDomainBinding {
@@ -920,6 +923,8 @@ message VotePrivatePollHashInput {
   string command_id = 2;
   string post_id = 3;
   repeated bytes opaque_option_ids = 4;
+  bytes option_set_sha256 = 5;
+  string actor_signing_key_id = 6;
 }
 ```
 
@@ -991,6 +996,11 @@ message PostResource {
 message PrivatePollProjection {
   repeated PrivatePollOptionResult options = 1;
   uint64 voter_count = 2;
+  string post_id = 3;
+  bytes option_set_sha256 = 4;
+  uint64 projection_revision = 5;
+  string command_id = 6;
+  string vote_actor_ptid = 7;
 }
 
 message PrivateContentVerification {
@@ -1158,6 +1168,11 @@ message VotePrivatePollResponse {
   repeated PrivatePollOptionResult options = 1;
   uint64 voter_count = 2;
   bool exact_replay = 3;
+  string command_id = 4;
+  string post_id = 5;
+  bytes option_set_sha256 = 6;
+  uint64 projection_revision = 7;
+  google.protobuf.Timestamp admitted_at = 8;
 }
 ```
 
@@ -1183,6 +1198,59 @@ decrypted mention commitments before publishing the local plaintext projection.
 opaque option IDs must exactly match the committed `PrivatePollAuthority`;
 counts and `selected_by_viewer` are viewer-scoped Social facts, while option
 labels remain exclusively inside `EncryptedPayload`.
+
+Private ballots use operation `VOTE_POLL = 5` in the original federated private
+interaction journal. The device signs its complete canonical request under the
+existing interaction signing domain. The parent Home Station samples admission
+time after acquiring the original parent lock, checks the committed definition
+and current viewer policy, and replaces that Actor's entire choice set in the
+same transaction. Exact journal replay preserves the original admission/result
+and cannot overwrite a newer projection or bypass revoked parent access.
+
+`social_remote_private_commands` remains the signed command/result authority.
+The original `GORMPrivateContentStore` owns four derived poll tables:
+`social_private_poll_ballots` stores one current command per parent generation
+and Actor; `social_private_poll_choices` stores its selected opaque IDs;
+`social_private_poll_states` stores the parent-serialized revision, last command,
+voter and source admission time; `social_private_poll_projections` stores one
+canonical result per source/parent generation/viewer. Counts use bounded grouped
+queries; no option labels or content keys enter these rows. Source deletion,
+remote revocation and the original exact-scope schema reset clear their owned
+rows. The private interaction UOW rolls execution back before journaling a
+rejection, including failures after mutation during projection or fanout.
+
+The existing private resource delivery carries `POLL_PROJECTION = 4` in its
+typed metadata. Delivery identity and ordering bind parent generation, recipient,
+command and projection revision. The receiver rechecks the encrypted parent's
+active Federation, viewer and block/revoke policy before importing a result;
+equal revisions require equal canonical bytes, and older revisions never replace
+newer ones. Original point reads return the current viewer-bound
+`PrivateContentAccess.poll`; typed `MomentEvent.UPDATED` only triggers that
+authorized read and does not carry plaintext choices.
+
+Desktop keeps ballots in its existing SQLCipher
+`secure_content_reaction_commands` journal; Mobile uses its original
+`mobile_private_social_reaction_commands` journal. `operation` explicitly distinguishes
+React (3), Unreact (4), and VotePoll (5); only VotePoll accepts kind zero and an
+empty comment target. The migration qualifies original canonical requests and
+their hashes, preserves request/result bytes and fences, and removes the old
+boolean column atomically. No live consumer dispatches from that boolean.
+The decrypted poll projection retains label-to-opaque-ID order and its original
+option-set hash. An older label-only projection is concealed at the existing
+snapshot/Search boundary and reacquired by the original reconciliation owner;
+it cannot authorize a vote. Native verifies response command, parent, choice set, admission
+cutoff, revision and realizable viewer counts before committing the durable result
+and projection in one transaction. Original root commit and point-read projection
+updates preserve newer poll revisions and reject equal-revision drift. Renderer
+ballot intentions and exact retries stay in the existing private Moments owner;
+the shared poll component retains only unsubmitted selection.
+Mobile's original Native commands register vote and exact retry in both host
+invocation lists. They serialize the strict Station/Actor/activation scope and
+the full ballot intent. The original private Runtime and Social facade own
+single-flight intent sharing, confirmed projection revisions, and identity
+replacement; no public write admission is added on Mobile. Poll IPC fields use
+camelCase. Older SQLCipher poll rows can be decoded for source reacquisition,
+but their missing opaque definition keeps rendering and mutation closed.
 
 For reposts, Native requires `PrivateRepostContent.original_source`,
 the selected rendered snapshot's `source`, and
@@ -1887,6 +1955,11 @@ The manifest's table/predicate pairs are exactly:
 | `social_reactions` | `DELETE_WHERE_POST_CLASS_PRIVATE` |
 | `social_moment_deliveries` | `CLEAR_TABLE` |
 | `social_remote_private_commands` | `CLEAR_TABLE` |
+| `social_private_reaction_projections` | `CLEAR_TABLE` |
+| `social_private_poll_choices` | `CLEAR_TABLE` |
+| `social_private_poll_ballots` | `CLEAR_TABLE` |
+| `social_private_poll_states` | `CLEAR_TABLE` |
+| `social_private_poll_projections` | `CLEAR_TABLE` |
 | `social_remote_private_envelopes` | `CLEAR_TABLE` |
 | `social_remote_private_resources` | `CLEAR_TABLE` |
 | `social_remote_private_tombstones` | `CLEAR_TABLE` |

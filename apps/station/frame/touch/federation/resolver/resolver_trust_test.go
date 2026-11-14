@@ -15,6 +15,7 @@ import (
 	locatorpb "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation/locator/pb"
 	fedcache "github.com/peers-labs/peers-touch/station/frame/touch/federation/cache"
 	fedprofile "github.com/peers-labs/peers-touch/station/frame/touch/federation/profile"
+	profilepb "github.com/peers-labs/peers-touch/station/frame/touch/federation/profile/pb"
 	modelpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	modeldb "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"google.golang.org/protobuf/proto"
@@ -142,38 +143,54 @@ func TestResolveByHandleInFederationRequiresContextAndReader(t *testing.T) {
 	}
 }
 
-func TestCachedToProtosPreservesCanonicalActorIdentity(t *testing.T) {
-	envelope, locator := cachedToProtos(
-		&fedcache.Cached{
-			Actor: &modeldb.Actor{
-				PTID:              "ptid:bob",
-				Kind:              "p",
-				Name:              "Bob",
-				FederatedHandle:   "bob@remote.invalid",
-				HomeStationPeerID: "station-remote",
-				HomeStationDomain: "remote.invalid",
-				Visibility:        int16(modelpb.ActorVisibility_ACTOR_VISIBILITY_BY_HANDLE),
-				LocatorSeq:        7,
-			},
-			CachedUntilUTC: time.Unix(1_700_000_000, 0).UTC(),
+func TestCachedProfileRetainsHomeProofAndRejectsProjectionOrKeySubstitution(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	key, err := authfed.MintLocalKey(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope, _, err := fedprofile.Sign(fedprofile.SignInput{
+		Handle: "bob@remote.invalid", HomeStationPeerID: "station-remote",
+		HomeStationDomain: "remote.invalid", Now: now, LocalKey: key,
+		Profile: &modelpb.ActorProfile{PeersTouch: &modelpb.PeersTouchInfo{NetworkId: "ptid:bob"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cached := &fedcache.Cached{Envelope: envelope, Actor: &modeldb.Actor{
+		PTID: "ptid:bob", CachedUntilUnixMs: envelope.ExpiresAtUnixMs,
+	}}
+	record := &locatorpb.ActorLocatorRecord{
+		HomeStationPeerId: "station-remote", HomeStationDomain: "remote.invalid",
+		SigningKeyPem: key.PubPEM,
+	}
+	original, _ := proto.MarshalOptions{Deterministic: true}.Marshal(envelope)
+	if err := verifyCachedProfile(cached, "bob@remote.invalid", record, now); err != nil {
+		t.Fatal(err)
+	}
+	retained, _ := proto.MarshalOptions{Deterministic: true}.Marshal(cached.Envelope)
+	if string(original) != string(retained) {
+		t.Fatal("cache verification changed Home-signed bytes")
+	}
+	for name, change := range map[string]func(*fedcache.Cached, *locatorpb.ActorLocatorRecord){
+		"unsigned-projection": func(c *fedcache.Cached, _ *locatorpb.ActorLocatorRecord) { c.Envelope.Signature = nil },
+		"changed-body": func(c *fedcache.Cached, _ *locatorpb.ActorLocatorRecord) {
+			c.Envelope.Profile.DisplayName = "substituted"
 		},
-		"bob@remote.invalid",
-	)
-
-	if envelope == nil || locator == nil || envelope.GetProfile() == nil {
-		t.Fatal("cached projection is incomplete")
-	}
-	profile := envelope.GetProfile()
-	if profile.GetRef().GetPtid() != "ptid:bob" ||
-		profile.GetRef().GetAcct() != "bob@remote.invalid" ||
-		profile.GetRef().GetKind() != modelpb.ActorKind_ACTOR_KIND_PERSON {
-		t.Fatalf("cached Actor ref = %+v", profile.GetRef())
-	}
-	if profile.GetFederatedHandle() != "bob@remote.invalid" ||
-		profile.GetHomeStationPeerId() != "station-remote" ||
-		profile.GetHomeStationDomain() != "remote.invalid" ||
-		profile.GetDiscoverability() != modelpb.ActorVisibility_ACTOR_VISIBILITY_BY_HANDLE {
-		t.Fatalf("cached federation identity = %+v", profile)
+		"changed-actor":  func(c *fedcache.Cached, _ *locatorpb.ActorLocatorRecord) { c.Actor.PTID = "ptid:other" },
+		"changed-home":   func(_ *fedcache.Cached, r *locatorpb.ActorLocatorRecord) { r.HomeStationPeerId = "station-other" },
+		"changed-expiry": func(c *fedcache.Cached, _ *locatorpb.ActorLocatorRecord) { c.Actor.CachedUntilUnixMs++ },
+		"changed-key":    func(_ *fedcache.Cached, r *locatorpb.ActorLocatorRecord) { r.SigningKeyPem = "untrusted" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			row := *cached.Actor
+			candidate := &fedcache.Cached{Actor: &row, Envelope: proto.Clone(envelope).(*profilepb.ActorProfileEnvelope)}
+			locator := proto.Clone(record).(*locatorpb.ActorLocatorRecord)
+			change(candidate, locator)
+			if verifyCachedProfile(candidate, "bob@remote.invalid", locator, now) == nil {
+				t.Fatal("invalid cached proof was accepted")
+			}
+		})
 	}
 }
 

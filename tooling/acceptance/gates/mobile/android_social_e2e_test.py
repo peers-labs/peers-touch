@@ -86,7 +86,7 @@ class AndroidSocialGateTests(unittest.TestCase):
             SCENARIO_IDS.index("rc02-circles-publish"),
         )
         self.assertEqual(source.count('"social-reaction-open"'), 1)
-        self.assertIn('state.get("publicPostId")', source)
+        self.assertIn('state.get("privatePostId")', source)
         self.assertIn('"moments.comment"', source)
         self.assertIn("data-reaction-picker-item", source)
         self.assertNotIn("moments.private.comment.submit", source)

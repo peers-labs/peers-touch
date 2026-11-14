@@ -6,6 +6,12 @@ fn main() {
     let mut config = prost_build::Config::new();
     config.extern_path(".peers_touch.model.peer.v1", "::station_trust::proto");
     config
-        .compile_protos(&[root.join("domain/schema/schema.proto")], &[root])
+        .compile_protos(
+            &[
+                root.join("domain/schema/schema.proto"),
+                root.join("domain/auth/login_approval.proto"),
+            ],
+            &[root],
+        )
         .expect("failed to compile Schema contracts");
 }

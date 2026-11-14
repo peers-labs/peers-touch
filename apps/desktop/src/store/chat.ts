@@ -6,6 +6,7 @@ import i18n, { resolveI18nValue } from '../i18n/index';
 import {
   api,
   type AgentConversation,
+  type AgentConversationRuntimeRebindResult,
   type AgentConversationRuntimeResetResult,
   type Session,
   type StreamEvent,
@@ -41,6 +42,11 @@ import {
   isAgentDraftKey,
 } from './agentDraft';
 import { getDesktopAgentChatCache } from '../storage/desktopAgentChatCache';
+import { deleteAgentAttachment } from '../services/agentAttachments';
+import {
+  readAgentComposerDraftsSync,
+  writeAgentComposerDraftsSync,
+} from '../storage/desktopAgentComposerDrafts';
 import { toolRuntime } from '../runtimes/toolRuntime';
 import { resolvePinnedClientCapabilitySessionId } from '../runtimes/agentCapabilityRuntime';
 import type { CachedAgentConversation, CachedAgentMessage } from '@peers-touch/client-chat-core';
@@ -216,6 +222,12 @@ export interface ChatMessage {
   replacementOf?: string;
   replacedBy?: string;
   turnId?: string;
+  // Persisted id of the assistant leg that supplied the projected content.
+  // A Turn persists one assistant row per LLM leg: tool-call legs have empty
+  // content while the final leg carries the answer. The folded bubble keeps
+  // the first leg's id, so byte-provenance consumers (artifact version
+  // claiming) must use this id, never the bubble id when they differ.
+  contentMessageId?: string;
   // Client-generated correlation key for the owning send. It exists from the
   // optimistic row onward and keeps one turn projected as one message even
   // before the first turn-id-bearing event arrives.
@@ -225,6 +237,9 @@ export interface ChatMessage {
   queuePosition?: number;
   budgetNotice?: BudgetNotice;
   turnAttribution?: TurnAttributionProjection;
+  // TW-D2: this user input produced no new Turn; Station merged it into the
+  // still-pre-dispatch Turn identified by turnId.
+  deliveryStatus?: 'amended';
 }
 
 // #region debug-point A-B:foundation-approval-receiver
@@ -454,6 +469,14 @@ export function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMes
       // Malformed persisted tool-call payload; render message without tool calls.
     }
   }
+  // A completed assistant row that still carries tool calls is an
+  // intermediate LLM leg of a multi-leg Turn: its row status means the leg
+  // stream finished, not that the Turn terminated. The Turn only becomes
+  // terminal with the final content leg (or a turn-level lifecycle event).
+  // Failed/cancelled legs remain terminal regardless of tool calls.
+  if (chatMessage.terminalStatus === 'completed' && chatMessage.toolCalls?.length) {
+    chatMessage.terminalStatus = undefined;
+  }
   // Restore user-facing assistant projections persisted in message metadata.
   if (message.metadataJson) {
     try {
@@ -545,7 +568,11 @@ function mergeAssistantTurnLegs(
       ...leg.toolCalls.filter((toolCall) => !seen.has(toolCall.id)),
     ];
   }
-  if (leg.content) target.content = leg.content;
+  if (leg.content) {
+    target.content = leg.content;
+    // Record which persisted leg owns these bytes for provenance.
+    target.contentMessageId = leg.id;
+  }
   if (leg.thinking) target.thinking = leg.thinking;
   if (leg.thinkingDone != null) {
     target.thinkingDone = target.thinkingDone || leg.thinkingDone;
@@ -568,7 +595,13 @@ function mergeAssistantTurnLegs(
     target.errorDetail = leg.errorDetail ?? target.errorDetail;
     target.resolution = leg.resolution ?? target.resolution;
     target.error = leg.error ?? target.error;
-  } else if (leg.loading && !target.terminalStatus) {
+  } else if (leg.loading) {
+    // A later LLM leg of the same Turn is still streaming. An earlier
+    // leg's persisted "completed" row only means that leg finished — the
+    // Turn is not terminal until the final leg settles. Clear the early
+    // leg's terminal marker so the bubble and its actions stay gated.
+    target.terminalStatus = undefined;
+    target.cancelled = false;
     target.loading = true;
   }
   if (leg.typedError && !target.typedError) {
@@ -606,12 +639,20 @@ export function foldToolMessages(messages: ChatMessage[]): ChatMessage[] {
       }
     }
     if (message.role === 'assistant' && message.turnId) {
+      // Defense in depth: a completed tool-call leg cannot establish Turn
+      // terminality even when a list bypasses the persisted-row mapping.
+      if (message.terminalStatus === 'completed' && message.toolCalls?.length) {
+        message.terminalStatus = undefined;
+      }
       const existing = assistantByTurnId.get(message.turnId);
       if (existing) {
         mergeAssistantTurnLegs(existing, message);
         continue;
       }
       assistantByTurnId.set(message.turnId, message);
+      if (message.content && !message.contentMessageId) {
+        message.contentMessageId = message.id;
+      }
     }
     folded.push(message);
   }
@@ -1057,6 +1098,11 @@ interface ChatState {
   memoryDisabledSessions: Record<string, boolean>;
   draftPromotions: Record<string, string>;
   composerDrafts: Record<string, string>;
+  // TW-D2: Station-owned attachment references staged for an unsent Turn,
+  // keyed by session key alongside composerDrafts. The binaries live in
+  // Station OSS; this map only keeps the refs so staged material survives
+  // task switches and reloads until sent or explicitly abandoned.
+  composerAttachments: Record<string, AgentAttachmentRefInput[]>;
   readinessErrorKey: string | null;
   revisionCommandFailure: AgentRevisionCommandFailure | null;
   revisionReloadingConversationId: string | null;
@@ -1077,6 +1123,7 @@ interface ChatState {
   mergeSessions: (sessions: Session[]) => void;
   selectSession: (key: string, sessionOverride?: Session) => Promise<void>;
   setComposerDraft: (sessionKey: string, value: string) => void;
+  setComposerAttachments: (sessionKey: string, refs: AgentAttachmentRefInput[]) => void;
   bootstrapSession: () => Promise<void>;
   newSession: () => void;
   deleteSession: (key: string) => Promise<void>;
@@ -1120,6 +1167,9 @@ interface ChatState {
   resetExternalRuntime: (
     conversationId?: string,
   ) => Promise<AgentConversationRuntimeResetResult>;
+  rebindConversationRuntime: (
+    conversationId?: string,
+  ) => Promise<AgentConversationRuntimeRebindResult>;
   reconcileClientLease: (
     conversationId: string,
     messageId: string,
@@ -1156,6 +1206,34 @@ let messageCounter = 0;
 let composerReferenceRemovalCounter = 0;
 let composerResourceSelectionCounter = 0;
 const pendingMessageRetries = new Map<string, Promise<void>>();
+
+// D1: one user submission gesture owns exactly one Station Turn. A double
+// Enter/click in the pre-admission window must not create two Turns — the
+// second gesture is suppressed locally while Station admission for the first
+// is still in flight, and both gestures would otherwise carry different
+// idempotency keys. The entry is released once Station admits (non-error
+// stream event), errors before admission (so retry works), or the stream
+// closes. Server-side payload-hash conflict remains the cross-client backstop.
+const inFlightSubmissions = new Map<string, string>();
+
+function submissionGuardKey(
+  sessionKey: string,
+  content: string,
+  attachments: ChatComposerAttachment[],
+): string {
+  const attachmentKey = attachments
+    .map((attachment) => attachment.cid || '')
+    .filter(Boolean)
+    .sort()
+    .join(',');
+  return `${sessionKey}\u0000${content}\u0000${attachmentKey}`;
+}
+
+function releaseInFlightSubmission(guardKey: string, idempotencyKey: string): void {
+  if (inFlightSubmissions.get(guardKey) === idempotencyKey) {
+    inFlightSubmissions.delete(guardKey);
+  }
+}
 
 function tempId() {
   return `temp-${Date.now()}-${messageCounter++}`;
@@ -1258,6 +1336,7 @@ function reconcileRevisionSession(
     key: conversation.conversation_id,
     agent_name: conversation.agent_id,
     title: resolveI18nValue(conversation.title) || '',
+    ...(conversation.task_id ? { task_id: conversation.task_id } : {}),
     message_count: existing?.message_count ?? 0,
     version: conversation.version,
     model_override: conversation.model_name,
@@ -1860,6 +1939,35 @@ async function loadSessionMessages(
   }
 }
 
+/**
+ * TW-D2: best-effort reclamation for Station OSS attachment refs that drop
+ * out of the durable composer-draft map because the draft was abandoned
+ * (session purged or agent draft replaced). Sent and still-drafted refs are
+ * never passed here: the Turn owns sent refs, the draft document keeps
+ * switched-away refs and Station OSS TTL sweep is the final backstop.
+ */
+function releaseAbandonedAttachmentRefs(
+  before: Record<string, AgentAttachmentRefInput[]>,
+  after: Record<string, AgentAttachmentRefInput[]>,
+): void {
+  for (const [sessionKey, refs] of Object.entries(before)) {
+    if (after[sessionKey]) continue;
+    for (const ref of refs) {
+      deleteAgentAttachment(ref).catch((error: unknown) => {
+        log.warn('chat', 'abandoned composer attachment cleanup failed', {
+          sessionKey,
+          attachmentId: ref.attachment_id,
+          error: String(error),
+        });
+      });
+    }
+  }
+}
+
+// Hydrate task-level composer drafts once, before the store is created, so
+// the first render already seeds the composer text and staged attachments.
+const durableComposerDrafts = readAgentComposerDraftsSync();
+
 export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => ({
   sessions: [],
   currentSessionKey: 'main',
@@ -1872,7 +1980,8 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
   abortController: null,
   memoryDisabledSessions: {},
   draftPromotions: {},
-  composerDrafts: {},
+  composerDrafts: durableComposerDrafts.texts,
+  composerAttachments: durableComposerDrafts.attachments,
   readinessErrorKey: null,
   revisionCommandFailure: null,
   revisionReloadingConversationId: null,
@@ -1886,6 +1995,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
   composerFocusNonce: 0,
 
   reset: () => {
+    inFlightSubmissions.clear();
     for (const operation of Object.values(get().operations)) {
       if (!operation.abortController.signal.aborted) {
         operation.abortController.abort();
@@ -1904,6 +2014,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       memoryDisabledSessions: {},
       draftPromotions: {},
       composerDrafts: {},
+      composerAttachments: {},
       readinessErrorKey: null,
       revisionCommandFailure: null,
       revisionReloadingConversationId: null,
@@ -1955,6 +2066,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
   selectSession: async (key: string, sessionOverride?: Session) => {
     log.info('chat', 'Selecting session', { key });
     if (sessionOverride) {
+      const previousAttachments = get().composerAttachments;
       set((state) => {
         const draftAgentId = agentIdFromDraftKey(key);
         const retained = state.sessions.filter((session) => (
@@ -1964,21 +2076,27 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
             || agentIdFromDraftKey(session.key) !== draftAgentId
           )
         ));
+        const filterSameAgentDraft = ([sessionKey]: readonly [string, unknown]) => (
+          sessionKey === key
+          || agentIdFromDraftKey(sessionKey) !== draftAgentId
+        );
         const composerDrafts = draftAgentId === null
           ? state.composerDrafts
           : Object.fromEntries(
-            Object.entries(state.composerDrafts).filter(
-              ([sessionKey]) => (
-                sessionKey === key
-                || agentIdFromDraftKey(sessionKey) !== draftAgentId
-              ),
-            ),
+            Object.entries(state.composerDrafts).filter(filterSameAgentDraft),
+          );
+        const composerAttachments = draftAgentId === null
+          ? state.composerAttachments
+          : Object.fromEntries(
+            Object.entries(state.composerAttachments).filter(filterSameAgentDraft),
           );
         return {
           sessions: [sessionOverride, ...retained],
           composerDrafts,
+          composerAttachments,
         };
       });
+      releaseAbandonedAttachmentRefs(previousAttachments, get().composerAttachments);
     }
     if (key === get().currentSessionKey) return;
     const liveOp = get().operations[key];
@@ -2014,6 +2132,25 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     });
   },
 
+  // TW-D2: mirror of composerDrafts for Station-owned staged attachment
+  // refs. The identity guard makes hook rehydration/notify cycles no-ops.
+  setComposerAttachments: (sessionKey, refs) => {
+    if (!sessionKey) return;
+    const current = get().composerAttachments[sessionKey] ?? [];
+    const unchanged = current.length === refs.length
+      && current.every((ref, index) => (
+        ref.attachment_id === refs[index]?.attachment_id
+        && ref.object_ref === refs[index]?.object_ref
+      ));
+    if (unchanged) return;
+    set((state) => {
+      const composerAttachments = { ...state.composerAttachments };
+      if (refs.length > 0) composerAttachments[sessionKey] = refs;
+      else delete composerAttachments[sessionKey];
+      return { composerAttachments };
+    });
+  },
+
   bootstrapSession: async () => {
     const key = get().currentSessionKey;
     log.info('chat', 'Bootstrapping current session history', { key });
@@ -2045,6 +2182,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       updated_at: now,
     };
     log.info('chat', 'New draft session created', { key, agentName });
+    const previousAttachments = get().composerAttachments;
     set((state) => ({
       currentSessionKey: key,
       messages: [],
@@ -2060,7 +2198,15 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
           ([sessionKey]) => agentIdFromDraftKey(sessionKey) !== agent.id,
         ),
       ),
+      // Starting a fresh draft abandons every older draft of this Agent,
+      // including staged attachments that were never sent.
+      composerAttachments: Object.fromEntries(
+        Object.entries(state.composerAttachments).filter(
+          ([sessionKey]) => agentIdFromDraftKey(sessionKey) !== agent.id,
+        ),
+      ),
     }));
+    releaseAbandonedAttachmentRefs(previousAttachments, get().composerAttachments);
   },
 
   deleteSession: async (key: string) => {
@@ -2077,6 +2223,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     const retain = <T,>(records: Record<string, T>) => Object.fromEntries(
       Object.entries(records).filter(([key]) => !removed.has(key)),
     );
+    const previousAttachments = get().composerAttachments;
     set((state) => {
       const currentDeleted = removed.has(state.currentSessionKey);
       return {
@@ -2085,6 +2232,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         turnQueues: retain(state.turnQueues),
         memoryDisabledSessions: retain(state.memoryDisabledSessions),
         composerDrafts: retain(state.composerDrafts),
+        composerAttachments: retain(state.composerAttachments),
         draftPromotions: Object.fromEntries(Object.entries(state.draftPromotions)
           .filter(([key, promoted]) => !removed.has(key) && !removed.has(promoted))),
         operations: Object.fromEntries(Object.entries(state.operations)
@@ -2106,6 +2254,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         } : {}),
       };
     });
+    releaseAbandonedAttachmentRefs(previousAttachments, get().composerAttachments);
     await Promise.all(keys.filter((key) => !isAgentDraftKey(key)).map(async (key) => {
       try {
         await agentChatCache.clearConversation(key);
@@ -2476,6 +2625,30 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     return result;
   },
 
+  // Explicit recovery for RUNTIME_BINDING_STALE: release the conversation-level
+  // runtime pointer (provider/model retired from the catalog) so the next turn
+  // re-admits against the current default runtime. Historical turns keep their
+  // immutable per-turn snapshots; only the conversation version advances.
+  rebindConversationRuntime: async (conversationId) => {
+    const key = conversationId || get().currentSessionKey;
+    if (isAgentDraftKey(key)) {
+      throw new Error('agent.errors.runtimeBindingStale');
+    }
+    const conversation = await api.getAgentConversation(key);
+    const result = await api.rebindAgentConversationRuntime({
+      conversation_id: key,
+      expected_conversation_version: conversation.version,
+    });
+
+    set((state) => ({
+      sessions: reconcileRevisionSession(
+        state.sessions,
+        result.conversation,
+      ),
+    }));
+    return result;
+  },
+
   reconcileClientLease: async (
     conversationId,
     messageId,
@@ -2727,10 +2900,22 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     }
     set({ readinessErrorKey: null });
 
+    // Suppress a duplicate submission gesture (double Enter/click) before
+    // Station admits the first one: two in-flight submissions of the same
+    // draft would each mint a different idempotency key and create two Turns.
+    const guardKey = submissionGuardKey(effectiveConvId, content, attachments);
+    if (inFlightSubmissions.has(guardKey)) {
+      log.info('chat', 'Suppressed duplicate in-flight submission', {
+        sessionKey: effectiveConvId,
+        contentLength: content.length,
+      });
+      return false;
+    }
     // One send owns one correlation key from the optimistic rows through the
     // Station admission; snapshot merges join on it so a turn never projects
     // as two assistant messages during the pre-identity connect window.
     const clientIdempotencyKey = lifecycle?.clientIdempotencyKey || tempId();
+    inFlightSubmissions.set(guardKey, clientIdempotencyKey);
 
     const userMsg: ChatMessage = {
       id: tempId(),
@@ -2786,7 +2971,12 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         currentSessionKey,
       ),
       (event: StreamEvent) => {
-        if (event.event !== 'error') notifyAccepted();
+        if (event.event !== 'error') {
+          notifyAccepted();
+          // Station now owns the intent (started or queued); an intentional
+          // identical resend after this point is a new submission.
+          releaseInFlightSubmission(guardKey, clientIdempotencyKey);
+        }
         if (event.event === 'conversation_created' && typeof event.data?.conversation_id === 'string' && isDraft) {
           const realConvId = event.data.conversation_id.trim();
           const topicDraft = useAgentTopicStore.getState()
@@ -2836,6 +3026,14 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
             const composerDraft = nextComposerDrafts[currentSessionKey];
             delete nextComposerDrafts[currentSessionKey];
             if (composerDraft) nextComposerDrafts[realConvId] = composerDraft;
+            // TW-D2: staged attachment refs follow the draft when it is
+            // promoted to its canonical conversation; no OSS reclamation.
+            const nextComposerAttachments = { ...state.composerAttachments };
+            const promotedAttachments = nextComposerAttachments[currentSessionKey];
+            delete nextComposerAttachments[currentSessionKey];
+            if (promotedAttachments?.length) {
+              nextComposerAttachments[realConvId] = promotedAttachments;
+            }
             const isCurrent = state.currentSessionKey === currentSessionKey;
             return {
               currentSessionKey: isCurrent ? realConvId : state.currentSessionKey,
@@ -2843,6 +3041,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
               operations: nextOps,
               sessionBuffers: nextBuffers,
               composerDrafts: nextComposerDrafts,
+              composerAttachments: nextComposerAttachments,
               draftPromotions: {
                 ...state.draftPromotions,
                 [currentSessionKey]: realConvId,
@@ -2862,6 +3061,41 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
               .promoteDraftTopic(agentId, currentSessionKey, promotedSession);
           }
         }
+        if (event.event === 'amended') {
+          // TW-D2: the input merged into the still-pre-dispatch Turn. Bind
+          // its user message to that Turn, mark the delivery, and settle
+          // this send's optimistic assistant placeholder (no new Turn was
+          // created). The running Turn's own stream continues independently.
+          const admissionPayload = event.data && typeof event.data.admission === 'object'
+            ? event.data.admission as Record<string, unknown>
+            : {};
+          const amendedTurnId = String(
+            admissionPayload.turnId ?? admissionPayload.turn_id ?? '',
+          );
+          set((state) => {
+            const isCurrent = state.currentSessionKey === resolvedSessionKey;
+            const applyAmendment = (list: ChatMessage[]): ChatMessage[] => list
+              .map((message) => (
+                message.id === userMsg.id
+                  ? {
+                      ...message,
+                      turnId: amendedTurnId || message.turnId,
+                      deliveryStatus: 'amended' as const,
+                    }
+                  : message
+              ))
+              .filter((message) => message.id !== assistantId);
+            return {
+              operations: completeOperationAtKey(state.operations, sendOperationKey),
+              ...(isCurrent ? { messages: applyAmendment(state.messages) } : {}),
+              sessionBuffers: setBuffer(
+                state.sessionBuffers,
+                resolvedSessionKey,
+                applyAmendment,
+              ),
+            };
+          });
+        } else {
         set((state) => {
           const selectedOperationKey = operationKeyForStreamEvent(
             state.operations,
@@ -2927,9 +3161,11 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         if (event.event === 'tool_result' && !isAgentDraftKey(resolvedSessionKey)) {
           void useChatArtifactStore.getState().load(resolvedSessionKey).catch(() => []);
         }
+        }
       },
       () => {
         notifyAccepted();
+        releaseInFlightSubmission(guardKey, clientIdempotencyKey);
         log.info('chat', 'Stream complete');
         set((state) => {
           const isCurrent = state.currentSessionKey === resolvedSessionKey;
@@ -2966,6 +3202,10 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         reconcileTopicsAfterTurn(resolvedSessionKey);
       },
       (err: AgentTurnStreamError) => {
+        // Release regardless of admission state: post-admission errors are
+        // terminal Turn facts from Station (the gesture itself succeeded),
+        // and pre-admission errors must allow an immediate retry.
+        releaseInFlightSubmission(guardKey, clientIdempotencyKey);
         const attachmentRejected =
           err.typedError?.error_type === 'CONTEXT_ATTACHMENT_REJECTED';
         if (attachmentDiagnostic && attachmentRejected) {
@@ -3702,3 +3942,26 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     }
   },
 }));
+
+// TW-D2: mirror the task-level composer draft tables into the durable
+// actor-scoped client-storage owner. Text and staged attachment refs are
+// persisted together as one document; an empty document removes the key.
+let lastDurableComposerSignature = '';
+useChatStore.subscribe((state, previousState) => {
+  if (
+    state.composerDrafts === previousState.composerDrafts
+    && state.composerAttachments === previousState.composerAttachments
+  ) {
+    return;
+  }
+  const signature = JSON.stringify({
+    texts: state.composerDrafts,
+    attachments: state.composerAttachments,
+  });
+  if (signature === lastDurableComposerSignature) return;
+  lastDurableComposerSignature = signature;
+  writeAgentComposerDraftsSync({
+    texts: state.composerDrafts,
+    attachments: state.composerAttachments,
+  });
+});

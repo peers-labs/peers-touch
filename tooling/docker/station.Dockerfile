@@ -65,8 +65,14 @@ WORKDIR /src/station/app
 ARG BUILD_COMMIT=unknown
 ARG BUILD_LABEL=dev
 ARG BUILD_TIME=unknown
+ARG SOCIAL_ACCEPTANCE=0
 RUN --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 go build -trimpath \
+    case "$SOCIAL_ACCEPTANCE" in \
+      0) build_tags="" ;; \
+      1) build_tags="social_acceptance" ;; \
+      *) exit 1 ;; \
+    esac && \
+    CGO_ENABLED=0 go build -trimpath -tags="$build_tags" \
     -ldflags="-s -w \
       -X github.com/peers-labs/peers-touch/station/app/subserver/app_meta.BuildCommit=${BUILD_COMMIT} \
       -X github.com/peers-labs/peers-touch/station/app/subserver/app_meta.BuildLabel=${BUILD_LABEL} \
@@ -142,6 +148,8 @@ CMD ["./peers-touch-station", "--config", "./conf/peers.yml"]
 ARG BUILD_COMMIT=unknown
 ARG BUILD_LABEL=dev
 ARG BUILD_TIME=unknown
+ARG SOCIAL_ACCEPTANCE=0
 LABEL org.opencontainers.image.revision="${BUILD_COMMIT}" \
       org.opencontainers.image.version="${BUILD_LABEL}" \
-      org.opencontainers.image.created="${BUILD_TIME}"
+      org.opencontainers.image.created="${BUILD_TIME}" \
+      io.peers-touch.social-acceptance="${SOCIAL_ACCEPTANCE}"

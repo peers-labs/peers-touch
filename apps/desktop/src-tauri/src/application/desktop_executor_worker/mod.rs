@@ -9,6 +9,7 @@ pub(crate) mod recovery_signer;
 pub(crate) mod resource_registry;
 pub(crate) mod station_transport;
 pub(crate) mod supervisor;
+pub(crate) mod workspace_choices;
 pub(crate) mod workspace_grants;
 
 pub(crate) use resource_registry::LocalArtifact;

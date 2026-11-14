@@ -33,6 +33,29 @@
 - Direct and Circuit route candidates retain transport-independent Station scope.
 - Relay A and Relay B state remain independent.
 
+Public Social composes its existing two-Station Suite with one reviewed Relay.
+The parent prepares the signed-route observer once, using the canonical
+`peer.VerifyStationRouteAttestation` implementation. At capture start and end,
+it independently verifies both public Circuit routes, Node identities,
+generations, destination SPKI and addresses. The operator-protected Relay stats
+projection exposes only libp2p connection IDs, authenticated Node IDs and local/
+remote multiaddresses. The Relay still has no business route or payload parser.
+
+The source-bound `social-relay-opaque` capability owns a unique capture process
+and directory in the prepared Relay network namespace. Its BPF filter matches
+the actual four-tuples of both authenticated TCP legs, including distinct
+source ports behind a shared NAT. Immediate packet delivery and complete
+snapshots avoid an empty kernel-buffer readback. Time and file-size limits,
+Linux parent-death signaling, exact PID/start-time checks, SIGINT flush, zero
+kernel drops and child extinction are required; forced, partial, empty or
+single-leg capture cannot pass. Capture artifacts retain the original bytes.
+
+The original Public Suite publishes namespaced content and confirms a
+bilateral comment through real UI. Verified author head, painted receiver
+content, unchanged route/connection identity, positive traffic in both
+directions on both legs and absent exact plaintext markers are one assertion.
+Transport-only qualification and source checks cannot replace that Journey.
+
 ## 3. Replaced Boundaries
 
 The target state removes these limitations rather than preserving parallel owners:
@@ -148,6 +171,42 @@ The canonical `station-dashboard` prototype is replaced in place:
 - production Dashboard component stack and shared UI Identity.
 
 ## 9. Verification
+
+Relay runtime preparation uses the shared
+`tooling/acceptance/provisioners/relay_attachment.py` owner. The original Relay,
+Mobile and public Social provisioners compose it directly and register cleanup
+in their own Suite lifetime. Preparation occurs under already retained service/source
+leases; exact-source equipment still completes before those leases.
+
+The public Social parent selects the declared optional `relay` service through
+its reviewed `fedlab-a` Profile. `SocialRelayFixture` invokes the canonical
+deployment pipeline before the original Station preparation retains leases.
+It then retains the Relay deployment/source leases through the original parent,
+rechecks exact source, protocol and executable identity, and attaches the two
+already prepared Stations. Each Station's container and peer identity is checked
+around attachment preparation. The original joined route generation and public
+dial metadata are retained in an immutable preparation inventory. Private
+Social and Federation lifecycle consumers retain their original Station-only
+preparation. This inventory is equipment evidence; it cannot establish actual
+Social traffic, receiver convergence or Relay opacity.
+
+CA additions use unique run-scoped paths, exclusive partial writes and atomic
+no-clobber publication. Cleanup is registered before writing, admits empty
+partial writes, verifies file type/mode/owner and final certificate digest, and
+rejects a replaced Compose container before mutation. It removes only its own
+paths and restarts that same container to retire cached trust.
+
+Existing active attachments with the exact Relay origin are reused without
+cleanup ownership. Existing recovering, disabled-but-live or foreign-origin
+attachments remain untouched and prevent replacement. Newly issued invitations
+and imported attachments acquire cleanup before their respective API calls,
+including unknown outcomes. Cleanup verifies the Station identity and unique
+invitation label/origin, detaches through the original Controller, and closes
+unused invitations through the original Relay API with readback. Consumed
+one-use invitations carry no remaining enrollment authority.
+
+These preparation checks do not prove a deployed Circuit journey or Relay
+payload opacity; those remain required product observations.
 
 Source checks:
 

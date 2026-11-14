@@ -262,10 +262,24 @@ macOS WKWebView | Linux WebKitGTK | Windows WebView2
 - Business Gate 只调用稳定的 DOM 与 native action interface；不得导入 AppKit、
   Quartz、X11 或 Win32 API。
 - 本机 shared user session 只允许 `semantic-nonintrusive`。系统 file panel、
-  permission sheet、physical hover/drag 和 native-focus claim 必须绑定隔离 cell，
-  缺失时保持 `BLOCKED/UNPROVEN`。
+  permission sheet、physical hover/drag 和 native-focus claim 按 D-22 分别取得资格；
+  已由 parent 真实证明的 exact-PID AX chooser 可使用 semantic mode，其余全局输入
+  必须绑定隔离 cell，缺失时保持 `BLOCKED/UNPROVEN`。
 - Embedded WebDriver 仅绑定 cell 内 `127.0.0.1`；远端访问必须经过 run-scoped SSH
   tunnel，禁止开放到局域网。
+
+macOS 操作者观察由原 Native Driver 持有一个 scope 子进程。Core 冻结原四字段
+baseline 并拥有 phase 比较与 sticky failure；Driver 每次请求执行两次新 AX
+读取，以 CFEqual 验证真实控件和窗口对象，标题与输入内容不定义身份。
+引用只在同一 scope 内保留，摘要绑定 scope ID、原身份字段和对象相等结果；
+两个独立 scope 的摘要不能互相供应基线。默认诊断 scope 不超过30秒，生产
+qualification 与 picker 使用 owning operation/Cell lease 的实际剩余时间。
+请求携带独立的 focus 与 observation deadline：焦点稳定的原一秒期限包含
+首次初始化，完整读取保留原三秒期限。面板读取使用剩余 observation 时间和
+原 AX read cap；不能续期焦点或 scope。
+parent 从 prelaunch 持有到 owned-stop，picker 从 staging 持有到 selection；
+两者在所有异常/取消路径关闭并 reap。显式 close 不进行新的 AX 观察。
+它没有网络端点、资格持久化、后台轮询、焦点恢复或第二个 Runner。
 
 ### 2.2 Ephemeral Gate Launch Context 拓扑
 
@@ -302,6 +316,12 @@ Orchestrator quiesces channel -> closes descriptors -> joins broker
 该拓扑不允许Gate获得broker对象、raw device identifier、provider subject或HMAC key。
 Gate只持有一次性channel capability；具体业务Provisioner注册哪些操作属于业务注入，
 Core只拥有channel、framing、binding、timeout、cancel和cleanup语义。
+
+每个 Provisioner cleanup 回调重新借用该 Owner 仍然存活的 SSH source
+connection。释放 source lease 后，后续普通运行态恢复必须使用新的连接；
+不能继承已关闭的 ControlMaster 描述。cleanup 失败仍使整体结果
+`FAILED/UNPROVEN`，Runner 在 `primaryFailure` 中保留此前失败的阶段、类型、
+资源和原始结构化诊断，使资源清理错误与最初的拒绝分别可追溯。
 
 ---
 
@@ -840,6 +860,10 @@ class EphemeralCapabilityHandler:
   或越权请求fail closed。
 - frame有固定byte上限；每次请求有deadline；同一`requestId + requestDigest`
   可返回缓存结果，不同digest复用requestId是protocol conflict。
+- 完成身份握手后，channel可在产品Journey中空闲；首个frame byte才启动既有
+  frame接收预算。剩余length prefix与body共享同一个deadline，残缺prefix同样
+  有界。handshake、client invoke/close及handler请求deadline仍独立有界，
+  parent不得延长child已签入request digest的absolute monotonic deadline。
 - raw-handle-bound操作必须完全在parent handler内执行。Gate只能获得opaque session
   reference、脱敏structured result或ArtifactRef，不能获得UDID、serial、provider
   subject、token或correlation key。

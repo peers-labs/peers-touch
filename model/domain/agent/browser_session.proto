@@ -1,0 +1,104 @@
+syntax = "proto3";
+
+package peers_touch.model.agent.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model;model";
+
+// TW-D6: a device-held real browser session. The browser process and its
+// tabs are owned by the Desktop Rust worker through a controlled CDP host.
+// Station persists metadata and authorization bindings only; page content,
+// cookies and credentials never leave the device through this contract.
+enum BrowserSessionStatus {
+  BROWSER_SESSION_STATUS_UNSPECIFIED = 0;
+  BROWSER_SESSION_STATUS_ACTIVE = 1;
+  BROWSER_SESSION_STATUS_CLOSED = 2;
+  // Worker cannot currently prove the browser (worker/app restarted).
+  BROWSER_SESSION_STATUS_UNKNOWN = 3;
+}
+
+// Who currently holds the control lease for the session. Agent and human
+// never operate the same account at the same time.
+enum BrowserControlLease {
+  BROWSER_CONTROL_LEASE_UNSPECIFIED = 0;
+  BROWSER_CONTROL_LEASE_AGENT = 1;
+  BROWSER_CONTROL_LEASE_HUMAN = 2;
+}
+
+message BrowserTab {
+  string tab_id = 1;
+  // Observation generation. Every navigation/reload/back/forward and every
+  // lease release bumps it; element snapshot refs embed the generation they
+  // were observed at, so stale refs can never drive an action.
+  uint64 generation = 2;
+  string url = 3;
+  string title = 4;
+}
+
+message BrowserSession {
+  string session_id = 1;
+  string conversation_id = 2;
+  string turn_id = 3;
+  string device_id = 4;
+  // Host engine identity the worker proved, e.g. "chrome/156.0.8078.79".
+  // Never an MCP config string: configuration is not readiness.
+  string engine = 5;
+  BrowserSessionStatus status = 6;
+  BrowserControlLease lease = 7;
+  repeated BrowserTab tabs = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp ended_at = 10;
+}
+
+message CreateBrowserSessionRequest {
+  // Worker-generated resource id ("brows-<ULID>"); global identity across
+  // worker and Station. Station never mints its own id.
+  string session_id = 1;
+  string conversation_id = 2;
+  string turn_id = 3;
+  string device_id = 4;
+  string engine = 5;
+}
+
+message CreateBrowserSessionResponse {
+  BrowserSession session = 1;
+}
+
+message UpdateBrowserSessionRequest {
+  string session_id = 1;
+  BrowserSessionStatus status = 2;
+  BrowserControlLease lease = 3;
+  repeated BrowserTab tabs = 4;
+}
+
+message UpdateBrowserSessionResponse {
+  BrowserSession session = 1;
+}
+
+message ListBrowserSessionsRequest {
+  string conversation_id = 1;
+}
+
+message ListBrowserSessionsResponse {
+  repeated BrowserSession sessions = 1;
+}
+
+message ReconcileBrowserSessionsRequest {
+  string device_id = 1;
+  // Sessions the worker currently proves alive. Every other ACTIVE row for
+  // this device is downgraded to UNKNOWN (no browser host survived restart).
+  repeated string live_session_ids = 2;
+}
+
+message ReconcileBrowserSessionsResponse {
+  repeated BrowserSession sessions = 1;
+}
+
+message RemoveBrowserSessionRequest {
+  string session_id = 1;
+}
+
+message RemoveBrowserSessionResponse {
+  bool removed = 1;
+}

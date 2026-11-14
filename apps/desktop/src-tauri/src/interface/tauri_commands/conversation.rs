@@ -159,7 +159,10 @@ pub fn device_revoke(
         &input.device_id,
     ) {
         Ok(resp) => {
-            if let Err(error) = state.secure_content.teardown_actor(&context.actor_ptid) {
+            if let Err(error) = state
+                .secure_content
+                .teardown_actor_with_source(&context.actor_ptid, "device-revoke")
+            {
                 return AppResult::fail(
                     ErrorCode::InternalError,
                     format!("device revoked but Secure Content teardown failed: {error}"),

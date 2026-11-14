@@ -1,8 +1,13 @@
 """Social-owned Search injection contract; native proof remains separate."""
 from __future__ import annotations
 
+import ast
 import json
 from tooling.acceptance.core import AcceptanceGate, REPO_ROOT
+from tooling.acceptance.gates.chat.mobile_device_search import (
+    MobileDeviceSearchGate, SCENARIOS,
+)
+from tooling.acceptance.provisioners.mobile_search import MobileSearchSimulatorProvisioner
 
 
 def read(path: str) -> str:
@@ -11,6 +16,20 @@ def read(path: str) -> str:
 
 def document(path: str) -> dict:
     return json.loads(read(f"tooling/acceptance/{path}"))
+
+
+def class_literal(path: str, class_name: str, field: str) -> object:
+    """A source contract observes the original Gate without importing its executor."""
+    classes = [node for node in ast.parse(read(path)).body
+               if isinstance(node, ast.ClassDef) and node.name == class_name]
+    if len(classes) != 1:
+        raise ValueError("Search Suite class declaration is ambiguous")
+    values = [node.value for node in classes[0].body
+              if isinstance(node, ast.Assign)
+              and any(isinstance(target, ast.Name) and target.id == field for target in node.targets)]
+    if len(values) != 1:
+        raise ValueError("Search Suite budget declaration is ambiguous")
+    return ast.literal_eval(values[0])
 
 
 class SocialContentSearchContractGate(AcceptanceGate):
@@ -34,6 +53,28 @@ class SocialContentSearchContractGate(AcceptanceGate):
                               == "chat-storage-native"
                               and catalog["social-content-search-mobile-native-e2e"]["provisioner"]
                               == "chat-mobile-search-simulator")
+        mobile_gate = catalog["social-content-search-mobile-native-e2e"]
+        self.assert_condition("signed_author_runtime_cell",
+                              mobile_gate.get("requiredRuntimeCells") == ["desktop-macos-native"]
+                              and mobile_gate.get("runtimeCellArtifact") == "acceptance-binary"
+                              and bool(mobile_gate.get("e2e", {}).get("implementations")))
+        environment = document("environments/chat-mobile-search-simulator.yaml")
+        clients = {client["id"]: client for client in environment["clients"]}
+        selected = environment["gate_client_ids"]["social-content-search-mobile-native-e2e"]
+        self.assert_condition("independent_prepared_author",
+                              set(selected) == {"desktop-author", "sim-ios", "sim-android"}
+                              and clients["desktop-author"]["runtime"] == "native-tauri"
+                              and len({clients[key]["actor"] for key in selected}) == 3
+                              and environment["default_client_ids"] == ["sim-ios", "sim-android"])
+        self.assert_condition("existing_suite_owners",
+                              MobileDeviceSearchGate.max_client_launches == 2
+                              and class_literal(
+                                  "tooling/acceptance/gates/social/content_search_mobile.py",
+                                  "SocialContentSearchMobileGate", "max_client_launches",
+                              ) == 3
+                              and SCENARIOS == ("ios-search", "android-search", "ios-account", "android-account")
+                              and MobileSearchSimulatorProvisioner.cross_station_friendship_roles
+                              == ("alice", "bob"))
         service = read("apps/station/app/subserver/social/application/public_search_hydration.go")
         policy = read("apps/station/app/subserver/social/application/private_read_policy.go")
         self.assert_condition("original_read_owner", "NewPublicReadPort" in service

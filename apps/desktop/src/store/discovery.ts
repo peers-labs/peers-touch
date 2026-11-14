@@ -28,6 +28,8 @@ export interface DiscoveryUser {
   actorPtid?: string;
   avatar?: string;
   homeStationDomain?: string;
+  bio?: string;
+  postCount?: number;
 }
 
 export interface MeProfile {
@@ -148,6 +150,9 @@ export const useDiscoveryStore = createDesktopStore<DiscoveryState>('discovery',
         username: profile.username,
         displayName: profile.display_name || profile.username,
         avatar: profile.avatar || undefined,
+        bio: profile.note,
+        postCount: profile.statuses_count,
+        homeStationDomain: profile.home_station_domain,
       };
       set((state) => ({
         usersById: { ...state.usersById, [id]: user },

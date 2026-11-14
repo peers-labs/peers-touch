@@ -21,6 +21,53 @@ export function clampQuery(query: string): string {
 }
 
 /**
+ * Preserve qualified rows when a scheduled re-read transiently loses a
+ * source. Background reconciliation can observe one coverage source as
+ * non-ready (Station/policy read momentarily unavailable while another
+ * flight aborts); search-core then fuses the frame without that source's
+ * items. The viewer never lost authority, so rows already qualified from the
+ * prior READY frame are retained in the previous row order — current next
+ * items replace them in place, genuinely new next items append. Source
+ * revision/scope changes are handled elsewhere (concealment) and must never
+ * reach this function. Returns `next` unchanged when no source degraded.
+ */
+export function retainTransientlyUnavailableSources(
+  previous: SearchResponse,
+  next: SearchResponse,
+  rowKey: (item: ResultItem) => string,
+): SearchResponse {
+  const lostSourceIds = next.coverage
+    .filter(coverage => coverage.state !== SourceState.READY)
+    .map(coverage => coverage.sourceId)
+    .filter(sourceId => {
+      const prior = previous.coverage.find(item => item.sourceId === sourceId);
+      return prior?.state === SourceState.READY
+        && previous.items.some(item => item.sourceId === sourceId)
+        && !next.items.some(item => item.sourceId === sourceId);
+    });
+  if (lostSourceIds.length === 0) return next;
+  const lost = new Set(lostSourceIds);
+  const nextByKey = new Map(next.items.map(item => [rowKey(item), item]));
+  const merged: ResultItem[] = [];
+  const usedKeys = new Set<string>();
+  for (const previousItem of previous.items) {
+    const key = rowKey(previousItem);
+    const replacement = nextByKey.get(key);
+    if (replacement) {
+      merged.push(replacement);
+      usedKeys.add(key);
+    } else if (lost.has(previousItem.sourceId)) {
+      merged.push(previousItem);
+      usedKeys.add(key);
+    }
+  }
+  for (const item of next.items) {
+    if (!usedKeys.has(rowKey(item))) merged.push(item);
+  }
+  return { ...next, items: merged };
+}
+
+/**
  * Merge one progressive source frame into the accumulated first-page
  * observation. Each source owns exactly one frame per request, so its items
  * replace that source's previous progressive items. Ordering follows the

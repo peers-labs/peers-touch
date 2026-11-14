@@ -264,7 +264,7 @@ describe('Mobile Acceptance social actions', () => {
     expect(intents.readPublicComments).toHaveBeenCalledWith('post-1', '', 50);
   });
 
-  it('does not route a private audience through the unified publish action', async () => {
+  it('rejects incomplete private audience input before either publication owner runs', async () => {
     const publishMoment = vi.fn();
     projectionMocks.readCurrentActiveMomentsRuntime.mockReturnValue({
       intents: { publishMoment },
@@ -274,7 +274,7 @@ describe('Mobile Acceptance social actions', () => {
     await expect(mobileAcceptanceActions['moments.publish']({
       text: 'private',
       audienceKind: 2,
-    })).rejects.toThrow('acceptance.mobile.privateMomentRequiresNativeAction');
+    })).rejects.toThrow('acceptance.mobile.invalidInput:moments.private.audience');
 
     expect(publishMoment).not.toHaveBeenCalled();
   });

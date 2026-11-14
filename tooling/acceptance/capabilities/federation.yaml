@@ -141,6 +141,7 @@
       ],
       "synthetic_paths": [
         "apps/desktop/src/pages/login/StationSetupPanel.tsx",
+        "apps/desktop/src/pages/login/useStationRegistry.ts",
         "apps/desktop/src/components/chat/FindPeopleModal.tsx",
         "apps/desktop/src-tauri/src/application/federation/mod.rs"
       ],

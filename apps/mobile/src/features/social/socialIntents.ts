@@ -54,6 +54,10 @@ export interface SocialIntentPort {
     limit?: number,
   ): Promise<CommandOutcome<CommentsPage>>;
   react(postId: string, reactionKind: number): Promise<boolean>;
+  reactComment(postId: string, commentId: string): Promise<boolean>;
+  retryCommentReaction(postId: string, commentId: string): Promise<boolean>;
+  votePoll(postId: string, options: readonly number[]): Promise<boolean>;
+  retryPoll(postId: string): Promise<boolean>;
   comment(
     postId: string,
     content: string,

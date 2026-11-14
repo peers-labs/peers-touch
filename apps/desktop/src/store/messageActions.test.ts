@@ -136,4 +136,40 @@ describe('message action registry', () => {
     copyAction?.onClick();
     expect(onCopy).toHaveBeenCalledTimes(1);
   });
+
+  it('splices artifact entries into the assistant more menu with probes intact', () => {
+    const onSaveArtifact = vi.fn();
+    const artifactActions = [
+      {
+        key: 'saveArtifact',
+        label: 'chat.artifact.saveAs',
+        icon: () => null,
+        probe: { 'pt-artifact-save-new': '' },
+        onClick: onSaveArtifact,
+      },
+      {
+        key: 'saveArtifactVersion-art-1',
+        label: 'chat.artifact.saveAsVersion',
+        icon: () => null,
+        probe: { 'pt-artifact-save-version': 'art-1' },
+        onClick: vi.fn(),
+      },
+    ];
+    const ctx = createContext({ artifactActions });
+    const { menu } = buildMessageActions(ctx);
+    const keys = menu.map((a) => a.key);
+    const exportIndex = keys.indexOf('export');
+    const saveIndex = keys.indexOf('saveArtifact');
+    const forwardIndex = keys.indexOf('forward');
+    // Artifact entries live between Export and Forward inside the more menu.
+    expect(exportIndex).toBeGreaterThanOrEqual(0);
+    expect(saveIndex).toBeGreaterThan(exportIndex);
+    expect(forwardIndex).toBeGreaterThan(saveIndex);
+    const saveAction = menu.find((a) => a.key === 'saveArtifact');
+    expect(saveAction?.probe).toEqual({ 'pt-artifact-save-new': '' });
+    saveAction?.onClick();
+    expect(onSaveArtifact).toHaveBeenCalledTimes(1);
+    const versionAction = menu.find((a) => a.key === 'saveArtifactVersion-art-1');
+    expect(versionAction?.probe).toEqual({ 'pt-artifact-save-version': 'art-1' });
+  });
 });

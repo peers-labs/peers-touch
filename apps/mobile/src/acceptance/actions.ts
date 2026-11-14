@@ -92,6 +92,8 @@ import {
   readPrivateTextMoment,
   recoverPrivateMoment,
   reconcilePrivateMoments,
+  retryPrivateMomentReaction,
+  setPrivateMomentReaction,
   submitPrivateComment,
 } from '../runtimes/privateMomentsRuntime';
 import { collectMobileDebugSnapshot } from './debug/collectMobileDebugSnapshot';
@@ -1429,6 +1431,122 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     sanitizePrivateMomentSnapshot(readPrivateMomentsSnapshot())
   ),
 
+  'moments.private.interaction.replay': async (input) => {
+    const postId = requireString(input?.postId, 'moments.private.interaction.replay.postId');
+    const commentId = input?.commentId?.trim() || '';
+    const initial = readPrivateMomentsSnapshot();
+    const identity = () => {
+      const value = readPrivateMomentsSnapshot();
+      return JSON.stringify([value.active, value.stationPeerId, value.actorPtid,
+        value.deviceId, value.lifecycleGeneration, value.activationGeneration]);
+    };
+    if (!initial.active || !initial.actorPtid || !initial.activationGeneration) {
+      throw new Error('acceptance.mobile.privateInteractionScopeMissing');
+    }
+    const scope = identity();
+    const command = initial.reactionCommands.find(candidate =>
+      candidate.postId === postId && (candidate.commentId || '') === commentId
+      && (commentId
+        ? candidate.operation === 'REACT' && candidate.kind === ReactionKind.REACTION_LIKE
+        : candidate.operation === 'VOTE_POLL'));
+    if (!command || command.state !== 'REACTION_COMMITTED') {
+      throw new Error('acceptance.mobile.committedPrivateInteractionMissing');
+    }
+    const replays = [];
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      if (identity() !== scope) throw new Error('acceptance.mobile.privateInteractionScopeReplaced');
+      const result = await retryPrivateMomentReaction(command.commandId);
+      if (identity() !== scope
+        || result.command.commandId !== command.commandId
+        || result.command.postId !== postId
+        || (result.command.commentId || '') !== commentId
+        || result.command.kind !== command.kind
+        || result.command.operation !== command.operation
+        || result.command.state !== 'REACTION_COMMITTED'
+        || result.command.attemptCount !== command.attemptCount
+        || JSON.stringify(result.command.selectedOpaqueOptionIds ?? [])
+          !== JSON.stringify(command.selectedOpaqueOptionIds ?? [])
+        || (!commentId && !result.poll)) {
+        throw new Error('acceptance.mobile.privateInteractionReplayMismatch');
+      }
+      replays.push({
+        projectionRevision: result.command.projectionRevision,
+        exactReplay: result.exactReplay,
+        ...(result.poll ? {
+          voteCounts: result.poll.voteCounts,
+          voterCount: result.poll.voterCount,
+          selectedOptionsSha256: await digestText(JSON.stringify(result.poll.selectedOptions)),
+          pollProjectionRevision: result.poll.projectionRevision,
+        } : {
+          reactionsSha256: await digestText(JSON.stringify(result.reactions)),
+        }),
+      });
+    }
+    if (JSON.stringify(replays[0]) !== JSON.stringify(replays[1])) {
+      throw new Error('acceptance.mobile.privateInteractionReplayMismatch');
+    }
+    const commandIdSha256 = await digestText(command.commandId);
+    const postIdSha256 = await digestText(postId);
+    const commentIdSha256 = await digestText(JSON.stringify(commentId));
+    if (!commandIdSha256 || !postIdSha256 || !commentIdSha256) {
+      throw new Error('acceptance.mobile.privateInteractionIdentityMissing');
+    }
+    return {
+      commandIdSha256,
+      postIdSha256,
+      commentIdSha256,
+      state: command.state,
+      operation: command.operation,
+      attemptCount: command.attemptCount,
+      nativeRetryCount: replays.length,
+      replays,
+    };
+  },
+
+  'moments.private.interaction.observe': async (input) => {
+    const selector = requireString(input?.selector, 'moments.private.interaction.observe.selector');
+    if (selector.length > 2048 || !selector.startsWith('[data-post-id="')) {
+      throw new Error('acceptance.mobile.privateInteractionSelectorInvalid');
+    }
+    const element = document.querySelector<HTMLElement>(selector);
+    if (!element) return { visible: false, paintFrames: 0, tagName: '' };
+    element.scrollIntoView({ block: 'center', inline: 'nearest' });
+    const painted = await new Promise<boolean>(resolve => {
+      let finished = false;
+      const finish = (value: boolean) => {
+        if (!finished) { finished = true; resolve(value); }
+      };
+      const timeout = setTimeout(() => finish(false), 2500);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        clearTimeout(timeout); finish(true);
+      }));
+    });
+    const rect = element.getBoundingClientRect();
+    let visible = painted && document.querySelector(selector) === element && element.isConnected
+      && rect.width > 0 && rect.height > 0
+      && rect.left >= 0 && rect.top >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight;
+    for (let node: HTMLElement | null = element; node; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      visible &&= style.display !== 'none' && style.visibility === 'visible'
+        && Number(style.opacity) >= 0.99
+        && !node.getAnimations().some(animation => animation.pending || animation.playState === 'running');
+      if (node !== element) {
+        const box = node.getBoundingClientRect();
+        if (['auto', 'scroll', 'hidden', 'clip'].includes(style.overflowY)) {
+          visible &&= rect.top >= box.top && rect.bottom <= box.bottom;
+        }
+        if (['auto', 'scroll', 'hidden', 'clip'].includes(style.overflowX)) {
+          visible &&= rect.left >= box.left && rect.right <= box.right;
+        }
+      }
+    }
+    for (const [x, y] of [[0.5, 0.5], [0.2, 0.2], [0.8, 0.2], [0.2, 0.8], [0.8, 0.8]]) {
+      const hit = document.elementFromPoint(rect.left + rect.width * x, rect.top + rect.height * y);
+      visible &&= Boolean(hit && (hit === element || element.contains(hit)));
+    }
+    return { visible, paintFrames: painted ? 2 : 0, tagName: element.tagName.toLowerCase() };
+  },
+
   'moments.feed.read': async () => {
     const runtime = requireMomentsRuntime();
     if (!await runtime.intents.refreshPublicFeed()) {
@@ -1448,7 +1566,16 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     const text = requireString(input?.text, 'moments.publish.text');
     const audienceKind = requireAudienceKind(input?.audienceKind);
     if (audienceKind !== Audience_Kind.PUBLIC) {
-      throw new Error('acceptance.mobile.privateMomentRequiresNativeAction');
+      const published = await publishPrivateTextMoment({
+        draftId: globalThis.crypto.randomUUID(),
+        draftRevision: 1,
+        text,
+        audience: requirePrivateSocialAudience(input?.audience),
+      });
+      if (published.state !== 'PUBLISHED' || !published.postId) {
+        throw new Error(`acceptance.mobile.privateMomentPublishFailed:${published.errorCode ?? published.state}`);
+      }
+      return { postId: published.postId, text, deleted: false, reactions: [], authorPtid: runtime.scope.actorPtid };
     }
     const result = await runtime.intents.publishMoment({
       draftId: globalThis.crypto.randomUUID(),
@@ -1461,6 +1588,9 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     });
     if (result.route !== 'PUBLIC') {
       throw new Error('acceptance.mobile.momentsPublishRouteMismatch');
+    }
+    if (!result.outcome.ok && result.outcome.error.code === 'FEED_SIGNED_WRITE_REQUIRED') {
+      return { rejected: true, code: result.outcome.error.code, text };
     }
     const created = requireAcceptanceOutcome(
       result.outcome,
@@ -1476,6 +1606,14 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     const runtime = requireMomentsRuntime();
     const postId = requireString(input?.postId, 'moments.react.postId');
     const reactionKind = requireReactionKind(input?.reactionKind);
+    const post = runtime.state().home.posts.find(candidate => candidate.id === postId);
+    if (post?.audience && post.audience.kind !== Audience_Kind.PUBLIC) {
+      const result = await setPrivateMomentReaction(postId, reactionKind, Boolean(input?.active));
+      if (result.command.state !== 'REACTION_COMMITTED') {
+        throw new Error('acceptance.mobile.privateReactionFailed');
+      }
+      return result.reactions;
+    }
     const result = await runtime.intents.setPublicReaction(
       postId,
       reactionKind,
@@ -1494,6 +1632,21 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
 
   'moments.comment': async (input) => {
     const runtime = requireMomentsRuntime();
+    const postId = requireString(input?.postId, 'moments.comment.postId');
+    const post = runtime.state().home.posts.find(candidate => candidate.id === postId);
+    if (post?.audience && post.audience.kind !== Audience_Kind.PUBLIC) {
+      const result = await runtime.intents.submitPrivateComment({
+        draftId: globalThis.crypto.randomUUID(), draftRevision: 1, postId,
+        text: requireString(input?.content, 'moments.comment.content'),
+        replyToCommentId: input?.replyToCommentId?.trim() || undefined,
+        mentions: [],
+      });
+      if (result.comment?.state !== 'COMMENT_POSTED') {
+        throw new Error('acceptance.mobile.privateCommentFailed');
+      }
+      return { commentId: result.comment.commentId, postId, authorPtid: result.comment.authorPtid,
+        content: result.comment.text ?? '', replyToCommentId: result.comment.replyToCommentId, deleted: false };
+    }
     const result = await runtime.intents.createPublicComment(
       requireString(input?.postId, 'moments.comment.postId'),
       requireString(input?.content, 'moments.comment.content'),
@@ -1511,6 +1664,13 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
 
   'moments.comments.read': async (input) => {
     const runtime = requireMomentsRuntime();
+    const postId = requireString(input?.postId, 'moments.comments.read.postId');
+    const post = runtime.state().home.posts.find(candidate => candidate.id === postId);
+    if (post?.audience && post.audience.kind !== Audience_Kind.PUBLIC) {
+      return (await runtime.intents.readPrivateComments(postId, '', 50)).comments
+        .map(comment => ({ commentId: comment.commentId, postId, content: comment.text ?? '',
+          authorPtid: comment.authorPtid, replyToCommentId: comment.replyToCommentId, deleted: false }));
+    }
     const result = await runtime.intents.readPublicComments(
       requireString(input?.postId, 'moments.comments.read.postId'),
       '',

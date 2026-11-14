@@ -5,12 +5,13 @@ import { Alert, Button, toast } from '@lobehub/ui';
 import { Typography, theme } from 'antd';
 import type { ModelRef } from '../services/desktop_api';
 import { ModelSelect } from './ModelSelect';
-import { SettingsContainer } from './settings/SettingsLayout';
+import { SettingsContainer, SettingsSection } from './settings/SettingsLayout';
+import { Brain } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAgentStore } from '../store/agent';
 import { useActiveProviderSlice } from './settings/useActiveSettingsStores';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 const SLOT_KEYS = ['default'] as const;
 
@@ -43,14 +44,8 @@ export function ModelServiceTab() {
   const noModels = models.length === 0;
 
   return (
-    <SettingsContainer fullHeight tier="standard">
-      <Flexbox gap={0}>
-        <Title level={5} style={{ margin: '0 0 4px' }}>{t('provider.modelService.title')}</Title>
-        <Text type="secondary" style={{ fontSize: 13, marginBottom: 20 }}>
-          {t('provider.modelService.desc')}
-        </Text>
-      </Flexbox>
-
+    <SettingsContainer tier="standard">
+      <SettingsSection icon={<Brain size={15} />} title={t('provider.modelService.title')} subtitle={t('provider.modelService.desc')}>
       {defaultStatus === 'error' && <Flexbox gap={8} style={{ marginBottom: token.margin }}>
         <Text role="alert" type="secondary">{t('provider.modelService.defaultLoadFailed')}</Text>
         <Button onClick={() => void loadRuntimeDefault()}>{t('provider.menu.retry')}</Button>
@@ -67,7 +62,6 @@ export function ModelServiceTab() {
         />
       )}
 
-      <Flexbox gap={0}>
         {SLOT_KEYS.map((slotKey, i) => {
           const ref = config[slotKey];
           const isInvalid = ref?.model && !models.some(
@@ -119,7 +113,7 @@ export function ModelServiceTab() {
             </Flexbox>
           );
         })}
-      </Flexbox>
+      </SettingsSection>
     </SettingsContainer>
   );
 }

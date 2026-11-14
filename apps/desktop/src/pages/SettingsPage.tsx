@@ -413,12 +413,8 @@ export function SettingsPage({ activeTab, highlightId, onNavConsumed }: Settings
 
         {/* SectionHost owns Settings section mount/cache policy. */}
         <div
-          style={{
-            flex: 1,
-            overflowY: 'auto',
-            overflowX: 'hidden',
-            scrollBehavior: 'smooth',
-          }}
+          className="sc-settings__scroll"
+          data-settings-content
         >
           <SectionHost
             activeSectionId={activeSection}
@@ -856,7 +852,7 @@ export function StatisticsTab() {
   ];
 
   return (
-    <SettingsContainer fullHeight tier="standard">
+    <SettingsContainer tier="standard">
       <Flexbox gap={4}>
         <Flexbox horizontal align="center" gap={8}>
           <span style={{ fontSize: 16, fontWeight: 600 }}

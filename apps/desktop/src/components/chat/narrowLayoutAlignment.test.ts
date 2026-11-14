@@ -88,22 +88,44 @@ describe('conversation header back control', () => {
 });
 
 describe('rail width ownership', () => {
-  it('keeps the 300px catalog width in CSS, never in inline styles', () => {
+  it('keeps the catalog width in CSS via a custom property with a 300px fallback', () => {
+    // The rail itself never carries an inline width; the page only sets the
+    // --pt-chat-rail-width custom property, and CSS keeps the 300px default.
     expect(railSource).not.toContain('CHAT_RAIL_WIDTH');
     expect(railSource).not.toMatch(/style=\{\{[^}]*width/);
-    expect(stylesheet).toMatch(/\.sc-sessions\s*\{[^}]*width: 300px/);
+    expect(stylesheet).toMatch(
+      /\.sc-sessions\s*\{[^}]*width: var\(--pt-chat-rail-width, 300px\)/,
+    );
+    expect(stylesheet).toContain(
+      '.sc-chat[data-narrow=\'true\'] .sc-chat-rail-resizer { display: none; }',
+    );
+  });
+
+  it('keeps the resize handle as an overlay, never a layout column', () => {
+    // A flex-sized transparent handle exposes the canvas background as a
+    // visible grey band; it must be absolutely positioned over the hairline.
+    const resizerRule = stylesheet.match(
+      /\.sc-chat-rail-resizer\s*\{[^}]*\}/,
+    )?.[0] ?? '';
+    expect(resizerRule).toContain('position: absolute');
+    expect(resizerRule).not.toMatch(/flex\s*:/);
   });
 });
 
-describe('720px single-pane swap stylesheet contract', () => {
-  it('hides one pane at a time and swaps via data-narrow-open', () => {
+describe('720px single-pane slide stylesheet contract', () => {
+  it('mounts both panes and drives a WeChat push via data-narrow-open', () => {
     expect(stylesheet).toContain('@media (max-width: 720px)');
     expect(stylesheet).toContain('.sc-chat-head__back { display: none; }');
-    expect(stylesheet).toContain(
+    // The catalog is never display:none — it stays mounted as the base layer
+    // so sliding back reveals it instead of re-mounting a fresh list.
+    expect(stylesheet).not.toContain(
       ".sc-chat[data-narrow='true'][data-narrow-open='true'] .sc-sessions { display: none; }",
     );
-    expect(stylesheet).toMatch(
-      /\[data-narrow-open='true'\] \.sc-conversation \{[^}]*display: flex/,
+    // The conversation is a persistent absolute overlay covering the stage,
+    // not a display:none→flex flip.
+    const narrow = mediaBlockBodies(720, stylesheet);
+    expect(narrow).toMatch(
+      /\[data-narrow='true'\] \.sc-conversation\s*\{[^}]*position: absolute/,
     );
     // Side panels become full-stage overlays rather than squeezed columns.
     expect(stylesheet).toMatch(
@@ -111,18 +133,27 @@ describe('720px single-pane swap stylesheet contract', () => {
     );
   });
 
-  it('swaps panes instantly without a full-pane slide (native, not H5 reload)', () => {
+  it('slides the conversation symmetrically with a transform transition, not a keyframe', () => {
     const narrow = mediaBlockBodies(720, stylesheet);
-    // The conversation pane must NOT carry an enter animation: a mounted
-    // keepAlive surface flips visibility, so a translateX sweep would read as
-    // a web full-page reload and jitter the header/scroll/composer.
+    // Parked off the right edge by default, translated to rest when open.
+    expect(narrow).toContain('translateX(100%)');
+    expect(narrow).toMatch(
+      /\[data-narrow-open='true'\] \.sc-conversation\s*\{[^}]*transform: translateX\(0\)/,
+    );
+    // A transition (not an enter-only keyframe) drives both directions, which
+    // is what makes back a real slide-out instead of a hard cut.
+    expect(narrow).toMatch(
+      /\[data-narrow='true'\] \.sc-conversation\s*\{[^}]*transition:/,
+    );
     expect(stylesheet).not.toContain('sc-conversation-slide-in');
     expect(narrow).not.toMatch(
       /data-narrow-open='true'\] \.sc-conversation\s*\{[^}]*animation:/,
     );
     expect(stylesheet).not.toMatch(/@keyframes sc-conversation-slide-in/);
-    // No full-pane horizontal travel anywhere in the narrow swap block.
-    expect(narrow).not.toContain('translateX(100%)');
+    // Parked pane is removed from input/assistive tech until it slides in.
+    expect(narrow).toMatch(
+      /\[data-narrow='true'\] \.sc-conversation\s*\{[^}]*visibility: hidden/,
+    );
   });
 
   it('keeps in-rail search reveal to a pure fade, never a geometric shift', () => {

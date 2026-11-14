@@ -10,15 +10,16 @@
  */
 import { useState } from 'react';
 import {
-  Globe, Lock, MessageCircle, MessagesSquare, Smile, Trash2, UserCheck,
+  Globe, Lock, MessagesSquare, Pencil, Trash2, UserCheck,
   UserRoundX, Users, UsersRound,
 } from 'lucide-react';
 import {
-  Avatar, Button, Dialog, IconButton, Menu, Popover, TextField,
+  Avatar, Button, Dialog, IconButton, ImageGrid, MomentAuthor, MomentCard as PeerMomentCard,
+  MomentCommentRow, MomentCommentComposer, MomentReactionBar, MomentTrustMeta, MomentPoll, TextArea, TextField,
 } from '@peers-touch/ui';
 import { AuthorTrigger } from './AuthorCard';
 import {
-  REACTION_CATALOG, REACTION_BY_KIND, VIEWER_NAME, reactionLabel,
+  REACTION_CATALOG, VIEWER_NAME, reactionLabel,
   type AudienceKind, type Moment, type MomentComment, type Person, type ReactionKind, type TrustReason,
 } from './moments-data';
 
@@ -29,7 +30,6 @@ interface AuthorTriggerProps {
   onToggleBlock: (id: string) => void;
 }
 
-const EXPAND_THRESHOLD = 320;
 /** Top-level comments per page (proto GetComments cursor pagination). */
 const COMMENT_PAGE = 5;
 
@@ -78,15 +78,10 @@ function TrustMeta({ post }: { post: Moment }) {
     audienceLabel(post),
   ].filter((segment): segment is string => Boolean(segment));
   return (
-    <div className="sk-trust" data-acceptance-id="social-trust-meta">
-      {segments.map((segment, index) => (
-        <span className="sk-trust-seg" key={segment}>
-          {index === segments.length - 1 && <TrustIcon audience={post.audience} />}
-          {segment}
-          {index < segments.length - 1 && <span className="sk-trust-dot" aria-hidden="true">·</span>}
-        </span>
-      ))}
-    </div>
+    <MomentTrustMeta segments={segments.map((label, index) => ({
+      id: String(index), label,
+      icon: index === segments.length - 1 ? <TrustIcon audience={post.audience} /> : undefined,
+    }))} />
   );
 }
 
@@ -96,118 +91,17 @@ function ReactionBar({ post, commentsOpen, onToggleComments, onToggleReaction }:
   onToggleComments: () => void;
   onToggleReaction: (id: string, kind: ReactionKind) => void;
 }) {
-  const [pickerOpen, setPickerOpen] = useState(false);
   const countComments = (comments: Moment['comments']): number =>
     comments.reduce((sum, c) => sum + 1 + countComments(c.replies ?? []), 0);
   const commentCount = countComments(post.comments);
-  const chosen = new Set(post.viewerReactions ?? []);
-  const totals = (Object.entries(post.reactions) as [ReactionKind, number][])
-    .filter(([, count]) => count > 0)
-    .sort((a, b) => b[1] - a[1]);
-  const total = totals.reduce((sum, [, count]) => sum + count, 0);
-
-  // Multi-select reactions:
-  // - each kind with a count shows its own chip (emoji + count);
-  // - a chip the viewer chose is accented, and tapping it again unchecks;
-  // - the smile tile opens the 16-kind picker, which stays open so several
-  //   reactions can be chosen in one pass; outside press dismisses it.
-  const picker = (
-    <div className="sk-react-picker" role="group" aria-label="选择反应">
-      {REACTION_CATALOG.map(meta => (
-        <Button key={meta.kind} actionId={`moment.react.${meta.kind}`} emphasis="quiet"
-          density="compact" aria-label={reactionLabel(meta.kind)}
-          aria-pressed={chosen.has(meta.kind)}
-          data-reaction-kind={meta.kind}
-          className={chosen.has(meta.kind) ? 'is-liked' : undefined}
-          onActivate={() => onToggleReaction(post.id, meta.kind)}>
-          <span aria-hidden="true">{meta.emoji}</span>
-        </Button>
-      ))}
-    </div>
-  );
-
-  return (
-    <div className="sk-post-actions">
-      <span className="sk-react-summary" data-reaction-summary>
-        {totals.map(([kind, count]) => {
-          const meta = REACTION_BY_KIND.get(kind);
-          if (!meta) return null;
-          const selected = chosen.has(kind);
-          return (
-            <Button key={kind} actionId={`moment.reaction-chip.${post.id}.${kind}`}
-              emphasis="quiet" density="compact"
-              className={selected ? 'sk-react-chip is-liked' : 'sk-react-chip'}
-              aria-label={`${reactionLabel(meta.kind)} ${count}${selected ? '，点击取消' : ''}`}
-              aria-pressed={selected}
-              data-reaction-kind={kind}
-              data-reaction-count={count}
-              onActivate={() => onToggleReaction(post.id, kind)}>
-              <span className="sk-react-emoji" aria-hidden="true">{meta.emoji}</span>
-              <span className="sk-react-count">{count}</span>
-            </Button>
-          );
-        })}
-      </span>
-      {/* Chips own their own wrapping row; the action tiles stay a stable
-          second row so a long multi-reaction selection never strands the
-          smile/comment controls between chip lines. */}
-      <span className="sk-post-action-buttons">
-        <Popover open={pickerOpen} onOpenChange={setPickerOpen} content={picker}
-          placement="bottom" label="选择反应" className="sk-react-popover">
-          <Button actionId={`moment.reaction.${post.id}`} emphasis="quiet" density="compact"
-            leading={<Smile size={14} />}
-            aria-label="添加反应" aria-haspopup="dialog" aria-expanded={pickerOpen}
-            data-reaction-total={total} />
-        </Popover>
-        <Button actionId={`moment.comments.${post.id}`} emphasis="quiet" density="compact"
-          leading={<MessageCircle size={14} />} label={String(commentCount)}
-          aria-label={`${commentCount} 条评论`} aria-expanded={commentsOpen}
-          onActivate={onToggleComments} />
-      </span>
-    </div>
-  );
-}
-
-function ImageGrid({ images }: { images: string[] }) {
-  const [lightbox, setLightbox] = useState<number | null>(null);
-  const count = images.length;
-  const close = () => setLightbox(null);
-  const shift = (delta: number) => setLightbox(index => {
-    if (index === null) return index;
-    return (index + delta + count) % count;
-  });
-  return (
-    <>
-      <div className={`sk-post-images sk-grid-${Math.min(count, 9)}`} data-count={count}>
-        {images.map((src, index) => (
-          <button type="button" key={src} className="sk-img-tile"
-            aria-label={`查看图片 ${index + 1}/${count}`}
-            onClick={event => { event.stopPropagation(); setLightbox(index); }}>
-            <img src={src} alt="" loading="lazy" />
-          </button>
-        ))}
-      </div>
-      <Dialog open={lightbox !== null} onDismiss={close} title="图片" width={620}
-        closeLabel="关闭"
-        footer={
-          <>
-            <Button actionId="lightbox.prev" emphasis="secondary" label="上一张"
-              availability={count <= 1 ? { kind: 'disabled', reason: 'Only one image' } : undefined}
-              onActivate={() => shift(-1)} />
-            <Button actionId="lightbox.next" emphasis="secondary" label="下一张"
-              availability={count <= 1 ? { kind: 'disabled', reason: 'Only one image' } : undefined}
-              onActivate={() => shift(1)} />
-          </>
-        }>
-        {lightbox !== null && (
-          <div className="sk-lightbox">
-            <img src={images[lightbox]} alt={`图片 ${lightbox + 1}`} />
-            <span className="sk-lightbox-count">{lightbox + 1} / {count}</span>
-          </div>
-        )}
-      </Dialog>
-    </>
-  );
+  return <MomentReactionBar postId={post.id} commentCount={commentCount} commentsOpen={commentsOpen}
+    reactions={REACTION_CATALOG.map(meta => ({
+      kind: meta.kind, emoji: meta.emoji, label: reactionLabel(meta.kind),
+      selected: (post.viewerReactions ?? []).includes(meta.kind), count: post.reactions[meta.kind] ?? 0,
+    }))} copy={{
+      picker: '选择反应', add: '添加反应', comments: count => `${count} 条评论`, selected: '，点击取消',
+    }} onToggleComments={onToggleComments}
+    onToggleReaction={kind => onToggleReaction(post.id, kind as ReactionKind)} />;
 }
 
 interface CommentItemProps extends AuthorTriggerProps {
@@ -240,8 +134,10 @@ function CommentItem({ comment, depth = 0, rootId, postId, onAuthor, resolvePers
   };
 
   return (
-    <li className="sk-comment-item" data-comment-id={comment.id} data-own-comment={mine ? 'true' : 'false'}
-      data-depth={depth}>
+    <MomentCommentRow commentId={comment.id} own={mine} depth={depth} content={comment.text}
+      reaction={{ count: likeCount, liked, label: likeCount > 0 ? `赞 ${likeCount}` : '赞',
+        onActivate: () => onLikeComment(postId, comment.id) }}
+      time={<time>{comment.at}</time>} avatar={
       <AuthorTrigger name={comment.author} person={resolvePerson(comment.author)}
         onOpenProfile={onAuthor} onToggleFollow={onToggleFollow} onToggleBlock={onToggleBlock}>
         <Button actionId={`comment.author-card-avatar.${comment.id}`} emphasis="quiet"
@@ -250,23 +146,12 @@ function CommentItem({ comment, depth = 0, rootId, postId, onAuthor, resolvePers
           <Avatar name={comment.author} background={comment.tone} size={30}
             style={{ borderRadius: 9 }} aria-hidden="true" />
         </Button>
-      </AuthorTrigger>
-      <span className="sk-comment-body">
-        <span className="sk-comment-line">
+      </AuthorTrigger>} author={
           <AuthorTrigger name={comment.author} person={resolvePerson(comment.author)}
             onOpenProfile={onAuthor} onToggleFollow={onToggleFollow} onToggleBlock={onToggleBlock}>
             <button type="button" className="sk-comment-author"
               aria-label={`查看 ${comment.author} 的名片`}>{comment.author}</button>
-          </AuthorTrigger>
-          <span className="sk-comment-text">{comment.text}</span>
-        </span>
-        <div className="sk-comment-meta">
-          <time>{comment.at}</time>
-          <Button actionId={`comment.like.${comment.id}`} emphasis="quiet" density="compact"
-            className={`sk-comment-action${liked ? ' is-liked' : ''}`}
-            data-comment-like={liked ? 'on' : 'off'}
-            label={likeCount > 0 ? `赞 ${likeCount}` : '赞'}
-            onActivate={() => onLikeComment(postId, comment.id)} />
+          </AuthorTrigger>} actions={<>
           <Button actionId={`comment.reply.${comment.id}`} emphasis="quiet" density="compact"
             className="sk-comment-action" data-comment-reply label="回复"
             onActivate={() => setReplying(value => !value)} />
@@ -275,10 +160,7 @@ function CommentItem({ comment, depth = 0, rootId, postId, onAuthor, resolvePers
               className="sk-comment-action is-danger" data-comment-delete label="删除"
               tone="danger" onActivate={() => onRequestDelete(comment)} />
           )}
-        </div>
-
-        {replies.length > 0 && (
-          <ul className="sk-reply-list">
+        </>} replies={replies.length > 0 ? <>
             {replies.map(reply => (
               <CommentItem key={reply.id} comment={reply} depth={1} rootId={rootId} postId={postId}
                 onAuthor={onAuthor} resolvePerson={resolvePerson}
@@ -286,11 +168,8 @@ function CommentItem({ comment, depth = 0, rootId, postId, onAuthor, resolvePers
                 onLikeComment={onLikeComment}
                 onReplyComment={onReplyComment} onRequestDelete={onRequestDelete} />
             ))}
-          </ul>
-        )}
-
-        {replying && (
-          <span className="sk-inline-composer sk-reply-composer" data-reply-to={comment.author}>
+          </> : undefined} composer={replying ? (
+          <MomentCommentComposer className="sk-reply-composer" data-reply-to={comment.author}>
             <TextField aria-label={`回复 ${comment.author}`}
               placeholder={`回复 ${comment.author}……`} value={draft}
               data-reply-value={draft}
@@ -300,10 +179,8 @@ function CommentItem({ comment, depth = 0, rootId, postId, onAuthor, resolvePers
               actionId={`reply.send.${comment.id}`} emphasis="primary" density="compact"
               availability={draft.trim() ? { kind: 'enabled' } : { kind: 'disabled', reason: '请输入回复' }}
               onActivate={submit} />
-          </span>
-        )}
-      </span>
-    </li>
+          </MomentCommentComposer>
+        ) : undefined} />
   );
 }
 
@@ -317,20 +194,18 @@ export interface MomentCardProps extends AuthorTriggerProps {
   onReplyComment: (postId: string, rootCommentId: string, text: string) => void;
   onDeleteComment: (postId: string, commentId: string) => void;
   onDeletePost: (postId: string) => void;
+  onEditPost: (postId: string, text: string) => void;
+  onVotePoll: (postId: string, choices: number[]) => void;
 }
 
 export function MomentCard({ post, onAuthor, resolvePerson, onToggleFollow, onToggleBlock,
   onToggleReaction, onComment, onLikeComment,
-  onReplyComment, onDeleteComment, onDeletePost }: MomentCardProps) {
-  const [expanded, setExpanded] = useState(false);
+  onReplyComment, onDeleteComment, onDeletePost, onEditPost, onVotePoll }: MomentCardProps) {
   const [commentsOpen, setCommentsOpen] = useState(true);
   const [commentPage, setCommentPage] = useState(1);
   const [draft, setDraft] = useState('');
   const [confirmTarget, setConfirmTarget] = useState<'post' | MomentComment | null>(null);
-  const longBody = post.text.length > EXPAND_THRESHOLD;
-  const visibleBody = expanded || !longBody
-    ? post.text
-    : `${post.text.slice(0, EXPAND_THRESHOLD)}…`;
+  const [editDraft, setEditDraft] = useState<string | null>(null);
 
   // Communicative equality: comments have one order — newest first by time.
   // Like counts are expression only and never reorder anyone's voice.
@@ -356,58 +231,50 @@ export function MomentCard({ post, onAuthor, resolvePerson, onToggleFollow, onTo
   };
 
   return (
-    <article className="sk-post" data-post-id={post.id} data-acceptance-id="social-moment-card">
-      <header className="sk-post-head">
+    <PeerMomentCard postId={post.id} text={post.text}
+      copy={{ more: '更多', expand: '展开全文', collapse: '收起' }}
+      author={
         <AuthorTrigger name={post.author} person={resolvePerson(post.author)}
           station={post.station}
           onOpenProfile={onAuthor} onToggleFollow={onToggleFollow} onToggleBlock={onToggleBlock}>
-          <button type="button" className="sk-post-author"
-            aria-label={`查看 ${post.author} 的名片`}>
-            <Avatar name={post.author} background={post.tone} size={48}
-              style={{ borderRadius: 13 }} aria-hidden="true" />
-            <span className="sk-post-idcol">
-              <strong className="sk-post-name">{post.author}</strong>
-              <span className="sk-post-time">{post.at}</span>
-            </span>
-          </button>
+          <MomentAuthor name={post.author} time={post.at} label={`查看 ${post.author} 的名片`}
+            avatar={<Avatar name={post.author} background={post.tone} size={48}
+              style={{ borderRadius: 13 }} aria-hidden="true" />} />
         </AuthorTrigger>
-        {ownPost && (
-          <span className="sk-post-menu">
-            <Menu placement="bottom" label="动态操作"
-              actions={[{
+      }
+      menuActions={ownPost ? [
+                ...(post.audience === 'public' ? [{
+                  id: `moment.edit.${post.id}`, label: '编辑正文',
+                  leading: <Pencil size={14} />,
+                  onActivate: () => setEditDraft(post.text),
+                }] : []), {
                 id: `moment.delete.${post.id}`, label: '删除动态',
                 leading: <Trash2 size={14} />, tone: 'danger',
                 onActivate: () => setConfirmTarget('post'),
-              }]}>
-              <IconButton actionId={`moment.menu.${post.id}`} iconId="more-horizontal" iconSize={16}
-                label="更多" emphasis="quiet" density="compact" />
-            </Menu>
-          </span>
-        )}
-      </header>
-
-      <div className="sk-post-meta"><TrustMeta post={post} /></div>
-
-      <div className="sk-post-body">
-        <p>{visibleBody}</p>
-        {longBody && (
-          <button type="button" className="sk-post-expand"
-            onClick={() => setExpanded(value => !value)}>
-            {expanded ? '收起' : '展开全文'}
-          </button>
-        )}
-        {post.images && post.images.length > 0 && <ImageGrid images={post.images} />}
-      </div>
-
-      {/* Feedback bar sits directly under the body, above the comments tile,
-          so reaction/comment counts are visible without scrolling past a
-          long default-expanded comment list. */}
-      <ReactionBar post={post} commentsOpen={commentsOpen}
+      }] : []}
+      trust={<TrustMeta post={post} />}
+      content={post.poll && <MomentPoll postId={post.id} question={post.poll.question}
+        options={post.poll.options.map((text, index) => ({ text,
+          votes: post.poll!.baseCounts[index] + Number(post.poll!.choices.includes(index)) }))}
+        minChoices={post.poll.minChoices} maxChoices={post.poll.maxChoices}
+        closed={post.poll.closed} confirmedChoices={post.poll.choices}
+        totalVotes={post.poll.baseVoters + Number(post.poll.choices.length > 0)}
+        onSubmit={choices => onVotePoll(post.id, choices)}
+        copy={{ submit: '投票', replace: '更新选票', cancel: '取消选择', retry: '确认结果', closed: '投票已截止',
+          choices: (min, max) => `请选择 ${min}–${max} 个选项`, total: count => `${count} 人已投票` }} />}
+      attachments={post.images && post.images.length > 0 && <ImageGrid
+          images={post.images.map((source, index) => ({
+            resourceId: source, source, state: 'available', name: `图片 ${index + 1}`,
+          }))}
+          copy={{
+            title: '图片', close: '关闭', previous: '上一张', next: '下一张',
+            singleImage: '只有一张图片', openImage: (index, total) => `查看图片 ${index}/${total}`,
+          }} />}
+      actions={<ReactionBar post={post} commentsOpen={commentsOpen}
         onToggleComments={() => setCommentsOpen(value => !value)}
-        onToggleReaction={onToggleReaction} />
-
-      {commentsOpen && (
-        <div className="sk-comments" data-comments-open="true">
+        onToggleReaction={onToggleReaction} />}
+      commentsOpen={commentsOpen}
+      comments={<>
           {post.comments.length > 0 && (
             <>
               <ul className="sk-comment-list">
@@ -428,7 +295,7 @@ export function MomentCard({ post, onAuthor, resolvePerson, onToggleFollow, onTo
               )}
             </>
           )}
-          <span className="sk-inline-composer" data-card-composer>
+          <MomentCommentComposer data-card-composer>
             <TextField aria-label="写评论" placeholder="写评论……"
               value={draft} data-comment-value={draft}
               onValueChange={setDraft}
@@ -437,14 +304,32 @@ export function MomentCard({ post, onAuthor, resolvePerson, onToggleFollow, onTo
               actionId={`comment.send.${post.id}`} emphasis="primary"
               availability={draft.trim() ? { kind: 'enabled' } : { kind: 'disabled', reason: '请输入评论' }}
               onActivate={submitComment} />
-          </span>
-        </div>
+          </MomentCommentComposer>
+      </>}
+      dialogs={<>{editDraft !== null && (
+        <Dialog open title="编辑动态" onDismiss={() => setEditDraft(null)} closeLabel="取消"
+          description="仅修改公开正文，保留原动态、附件和受众。编辑后追加签名更新，已取得的副本可能保留旧版本。"
+          footer={<>
+            <Button actionId={`moment.edit.cancel.${post.id}`} label="取消" emphasis="quiet"
+              onActivate={() => setEditDraft(null)} />
+            <Button actionId={`moment.edit.save.${post.id}`} label="保存" emphasis="primary"
+              data-acceptance-id="social-edit-save"
+              availability={editDraft.trim() && editDraft !== post.text ? undefined
+                : { kind: 'disabled', reason: '请修改正文后再保存' }}
+              onActivate={() => { onEditPost(post.id, editDraft); setEditDraft(null); }} />
+          </>}>
+          <TextArea value={editDraft} onValueChange={setEditDraft} minimumRows={5}
+            maximumRows={12} autoFocus aria-label="编辑动态"
+            data-acceptance-id="social-edit-input" />
+        </Dialog>
       )}
 
       <Dialog open={confirmTarget !== null} onDismiss={() => setConfirmTarget(null)}
         title={confirmTarget === 'post' ? '删除这条动态？' : '删除这条评论？'} width={380}
         closeLabel="取消"
-        description="删除仅作用于本地原型视图。"
+        description={post.audience === 'public'
+          ? '删除追加不可撤销的删除标记。已取得公开内容的设备仍可能保留副本。原型只模拟当前视图。'
+          : '删除仅作用于本地原型视图。'}
         footer={
           <>
             <Button actionId="comment.delete-cancel" emphasis="quiet" label="取消"
@@ -454,7 +339,7 @@ export function MomentCard({ post, onAuthor, resolvePerson, onToggleFollow, onTo
           </>
         }>
         <span data-delete-confirm={confirmTarget === 'post' ? 'post' : 'comment'} />
-      </Dialog>
-    </article>
+      </Dialog></>}
+    />
   );
 }

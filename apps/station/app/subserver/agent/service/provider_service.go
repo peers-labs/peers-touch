@@ -2332,13 +2332,23 @@ func applyOpenAIAttachments(
 				"type":      "image_url",
 				"image_url": map[string]any{"url": dataURI},
 			})
-		case "application/pdf", "text/plain":
+		case "application/pdf":
 			blocks = append(blocks, map[string]any{
 				"type": "file",
 				"file": map[string]any{
 					"filename":  attachment.Ref.GetFilename(),
 					"file_data": dataURI,
 				},
+			})
+		case "text/plain":
+			// Chat Completions has no file-data block for plain text;
+			// inline the bytes as an additional text part so
+			// OpenAI-compatible endpoints (e.g. Ollama) actually receive
+			// the material instead of a 400 "invalid message format".
+			blocks = append(blocks, map[string]any{
+				"type": "text",
+				"text": "File " + attachment.Ref.GetFilename() + ":\n" +
+					string(attachment.Body),
 			})
 		default:
 			return fmt.Errorf(

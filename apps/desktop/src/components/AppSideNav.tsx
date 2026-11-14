@@ -44,10 +44,11 @@ export function AppSideNav({ page, navigation }: AppSideNavProps) {
   const chatUnreadTotal = useNavigationBadgeStore((state) => state.chatUnreadTotal);
   const momentsEnabled = getDesktopHostPolicy().nativeSocialEnabled;
 
+  // Atelier stays hidden: no top-level rail surface until a coherent product
+  // entry and ownership model is re-established (task-workbench branch).
   const isAgentActive = page === 'agent'
     || page === 'agent-profile'
-    || page === 'agent-orchestration'
-    || page === 'applet:peers.atelier';
+    || page === 'agent-orchestration';
 
   const navigatePrimary = useCallback((pageId: Page) => {
     markInteractionStarted('shell', `primary-nav:${pageId}`, { pageId });

@@ -211,12 +211,46 @@ func (p memoryProcessor) process(in *promptBuildInput) ([]ContextSegment, error)
 	return []ContextSegment{{
 		Type:                  model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_MEMORY,
 		Content:               content,
-		SourceRefs:            []string{fmt.Sprintf("memory:agent=%s", in.agentID)},
+		SourceRefs:            memoryAdoptionRefs(snapshot),
 		ContentHash:           sha256Hex(content),
 		EstimatedTokens:       estimateTokens(content),
 		Decision:              model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED,
 		IncludeInSystemPrompt: true,
 	}}, nil
+}
+
+// memoryAdoptionRefs freezes one reviewable reference per confirmed memory
+// actually adopted into this Turn. The snapshot is confirmed-only by
+// construction, so every RelevantItem is a consumed memory. The version is a
+// short content hash so later correction/deletion is detectable in
+// TurnAttribution. When no memory was adopted we keep the aggregate agent ref
+// so an included-but-empty memory section stays explainable rather than being
+// dropped as "no refs".
+func memoryAdoptionRefs(snapshot *domain.MemorySnapshot) []string {
+	if snapshot == nil {
+		return nil
+	}
+	refs := make([]string, 0, len(snapshot.RelevantItems)+1)
+	seen := make(map[string]struct{}, len(snapshot.RelevantItems))
+	for _, item := range snapshot.RelevantItems {
+		id := strings.TrimSpace(item.MemoryID)
+		if id == "" {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		version := sha256Hex(item.Content)
+		if len(version) > 12 {
+			version = version[:12]
+		}
+		refs = append(refs, fmt.Sprintf("memory:%s:version=%s", id, version))
+	}
+	if len(refs) == 0 {
+		refs = append(refs, fmt.Sprintf("memory:agent=%s", snapshot.AgentID))
+	}
+	return refs
 }
 
 // skillsProcessor emits L4 Skills Index.

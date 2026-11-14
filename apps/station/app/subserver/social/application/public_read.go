@@ -78,30 +78,16 @@ func (p *PublicReadPort) authorize(
 	for ptid := range ptidSet {
 		ptids = append(ptids, ptid)
 	}
-	authors, err := p.repos.Identity.ActorsByPTIDs(ctx, ptids)
+	authors, blocked, readable, err := p.readableActors(ctx, viewerPTID, ptids)
 	if err != nil {
 		return nil, err
 	}
-	blocked, err := blockedActorPTIDs(ctx, p.repos, viewerPTID, ptids)
-	if err != nil {
-		return nil, err
-	}
-	domains, peers := make([]string, 0, len(authors)), make([]string, 0, len(authors))
 	knownPTIDs := make([]string, 0, len(authors))
-	for ptid, author := range authors {
-		domains = append(domains, author.HomeStationDomain)
-		peers = append(peers, author.HomeStationPeerID)
+	for ptid := range authors {
 		knownPTIDs = append(knownPTIDs, ptid)
 	}
-	blockedDomains, blockedPeers, err := p.repos.Moderation.BlockedStations(ctx, domains, peers)
-	if err != nil {
-		return nil, err
-	}
 	actorReadable := func(ptid string) bool {
-		a := authors[ptid]
-		return a != nil && !blocked[ptid] &&
-			!blockedDomains[strings.TrimSpace(a.HomeStationDomain)] &&
-			!blockedPeers[strings.TrimSpace(a.HomeStationPeerID)]
+		return readable[ptid]
 	}
 	viewer := domain.Viewer{ActorPTID: viewerPTID, BlockedActors: make(map[string]struct{})}
 	for ptid, denied := range blocked {
@@ -157,4 +143,49 @@ func (p *PublicReadPort) authorize(
 		}
 	}
 	return out, nil
+}
+
+func (p *PublicReadPort) readableActors(ctx context.Context, viewer string, ptids []string) (
+	map[string]*db.Actor, map[string]bool, map[string]bool, error,
+) {
+	authors, err := p.repos.Identity.ActorsByPTIDs(ctx, ptids)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	blocked, err := blockedActorPTIDs(ctx, p.repos, viewer, ptids)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	domains, peers := make([]string, 0, len(authors)), make([]string, 0, len(authors))
+	for _, author := range authors {
+		domains = append(domains, author.HomeStationDomain)
+		peers = append(peers, author.HomeStationPeerID)
+	}
+	blockedDomains, blockedPeers, err := p.repos.Moderation.BlockedStations(ctx, domains, peers)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	readable := make(map[string]bool, len(authors))
+	for ptid, author := range authors {
+		readable[ptid] = author != nil && !blocked[ptid] &&
+			!blockedDomains[strings.TrimSpace(author.HomeStationDomain)] &&
+			!blockedPeers[strings.TrimSpace(author.HomeStationPeerID)]
+	}
+	return authors, blocked, readable, nil
+}
+
+// Actor-based authorization keeps tombstones readable for clearing old views
+// even when no live post remains. It never manufactures a follow subscription.
+func (p *PublicReadPort) AuthorizeFeed(ctx context.Context, viewer, author string) error {
+	if viewer == "" || author == "" {
+		return domain.ErrFeedWriter
+	}
+	_, _, readable, err := p.readableActors(ctx, viewer, []string{author, viewer})
+	if err != nil {
+		return err
+	}
+	if !readable[author] || !readable[viewer] {
+		return domain.ErrFeedWriter
+	}
+	return nil
 }

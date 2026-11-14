@@ -8,7 +8,7 @@ import {
 
 function parseArguments(argv) {
   const options = {};
-  const allowed = new Set(['workspace-root', 'home', 'host', 'event']);
+  const allowed = new Set(['workspace-root', 'host', 'event']);
   for (let index = 0; index < argv.length; index += 2) {
     const token = argv[index];
     if (!token?.startsWith('--') || !allowed.has(token.slice(2))) {
@@ -28,7 +28,6 @@ function parseArguments(argv) {
   }
   return {
     workspaceRoot: options['workspace-root'],
-    home: options.home,
     host: options.host,
     event: options.event,
   };

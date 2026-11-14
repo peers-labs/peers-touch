@@ -1,5 +1,4 @@
-import { Button } from '@lobehub/ui';
-import { Alert, Space, Spin, Typography, theme } from 'antd';
+import { Alert, Button, Spin } from '@peers-touch/ui';
 import {
   CircleAlert,
   KeyRound,
@@ -14,8 +13,6 @@ import type {
   PrivateReadState,
 } from '../../../services/privateMomentsNative';
 import type { PrivateResourceRevocationReason } from '../../../kernel/events/types';
-
-const { Text } = Typography;
 
 type SocialPrivateStateValue =
   | PrivateDeliveryNoticeState
@@ -64,18 +61,17 @@ const WARNING_STATES = new Set<SocialPrivateStateValue>([
 ]);
 
 function StateIcon({ state }: { state: SocialPrivateStateValue }) {
-  const { token } = theme.useToken();
   if (PROGRESS_STATES.has(state)) return <Spin size="small" />;
   if (state === 'RECOVERY_REQUIRED' || state === 'RECOVERY_KEY_UNAVAILABLE') {
-    return <KeyRound size={16} color={token.colorWarning} />;
+    return <KeyRound size={16} color="var(--pt-warning)" />;
   }
   if (state === 'INTEGRITY_FAILURE') {
-    return <ShieldAlert size={16} color={token.colorError} />;
+    return <ShieldAlert size={16} color="var(--pt-danger)" />;
   }
   if (WARNING_STATES.has(state)) {
-    return <CircleAlert size={16} color={token.colorWarning} />;
+    return <CircleAlert size={16} color="var(--pt-warning)" />;
   }
-  return <LockKeyhole size={16} color={token.colorPrimary} />;
+  return <LockKeyhole size={16} color="var(--pt-primary)" />;
 }
 
 function canRetry(state: SocialPrivateStateValue): boolean {
@@ -99,29 +95,29 @@ export function SocialPrivateState({
   onRecover,
 }: SocialPrivateStateProps) {
   const { t } = useTranslation('moments');
-  const { token } = theme.useToken();
   if (state === 'IDLE' || state === 'CONTENT_READY' || state === 'PUBLISHED') {
     return null;
   }
 
-  const type = ERROR_STATES.has(state)
-    ? 'error'
+  const tone = ERROR_STATES.has(state)
+    ? 'danger'
     : WARNING_STATES.has(state)
       ? 'warning'
       : 'info';
   const action = state === 'RECOVERY_REQUIRED' && onRecover
     ? (
-        <Button size="small" onClick={onRecover}>
+        <Button actionId="moments.private.recover" density="compact" onActivate={onRecover}>
           {t('moments.private.action.recover')}
         </Button>
       )
     : canRetry(state) && onRetry
       ? (
           <Button
-            size="small"
-            type="text"
-            icon={<RefreshCcw size={13} />}
-            onClick={onRetry}
+            actionId="moments.private.retry"
+            density="compact"
+            emphasis="quiet"
+            leading={<RefreshCcw size={13} />}
+            onActivate={onRetry}
           >
             {t('moments.private.action.retry')}
           </Button>
@@ -134,28 +130,13 @@ export function SocialPrivateState({
   return (
     <Alert
       data-private-moment-state={state}
-      type={type}
-      showIcon={false}
+      tone={tone}
+      variant="inline"
+      icon={<StateIcon state={state} />}
       action={action}
-      style={{
-        marginTop: compact ? 8 : 10,
-        borderRadius: token.borderRadiusLG,
-        padding: compact ? '7px 10px' : '10px 12px',
-      }}
-      message={(
-        <Space size={8} align="start">
-          <StateIcon state={state} />
-          <span>
-            <Text strong style={{ fontSize: 13 }}>
-              {t(`${localePrefix}.title`)}
-            </Text>
-            <br />
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              {t(`${localePrefix}.description`)}
-            </Text>
-          </span>
-        </Space>
-      )}
+      style={{ marginTop: compact ? 8 : 10 }}
+      title={t(`${localePrefix}.title`)}
+      description={t(`${localePrefix}.description`)}
     />
   );
 }

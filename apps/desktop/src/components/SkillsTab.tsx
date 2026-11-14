@@ -139,7 +139,7 @@ export function SkillsTab() {
   }, [builtins, query]);
 
   return (
-    <SettingsContainer fullHeight tier="standard">
+    <SettingsContainer tier="standard">
       <Flex direction="row" justify="space-between" align="center">
         <Text strong style={{ fontSize: 15 }}>{t('provider.skills.title')}</Text>
         <Flex direction="row" gap={8}>

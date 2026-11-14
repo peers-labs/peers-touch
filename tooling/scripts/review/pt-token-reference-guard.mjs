@@ -26,7 +26,13 @@ const TOKENS_DIR = `${ROOT}/packages/ui/tokens/src`;
 const SCAN_DIR = `${ROOT}/apps/desktop/src`;
 
 // Host-overridable extension points with an always-present explicit fallback.
-const ALLOWED_EXTENSION_VARS = new Set(['--pt-auth-card-width', '--pt-z-overlay']);
+const ALLOWED_EXTENSION_VARS = new Set([
+  '--pt-auth-card-width',
+  '--pt-z-overlay',
+  // Injected at runtime by SocialChatPage from the manual ChatRailResizer
+  // drag; every chat.css reference keeps the 300px default fallback.
+  '--pt-chat-rail-width',
+]);
 
 function walk(dir, acc = []) {
   if (!existsSync(dir)) return acc;

@@ -59,15 +59,32 @@ input, textarea, [contenteditable="true"] {
   to { transform: rotate(360deg); }
 }
 
+/* One quiet scrollbar language across the whole shell: a transparent track so
+   no grey gutter box is ever painted, and a thin low-alpha rounded thumb.
+   Layout reservation is owned by `scrollbar-gutter` on each scroll container
+   (see .sc-settings-* / .sc-provider-detail), not by this visual skin, so the
+   content right edge stays constant whether or not a thumb is shown. */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(0,0,0,0.1);
-  border-radius: 3px;
+  background: rgba(23, 26, 28, 0.14);
+  border-radius: 999px;
+  /* Inset the thumb from both edges so it never sits flush on the 2px shell
+     frame or reads as a solid content border. */
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0,0,0,0.2);
+  background: rgba(23, 26, 28, 0.26);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .settings-tabs .ant-tabs-content {
@@ -259,6 +276,13 @@ input, textarea, [contenteditable="true"] {
 
 /* Back control pinned to the top of the gear-opened Station setup card. */
 .pt-station-panel__back {
+  align-self: flex-start;
+  margin-bottom: 4px;
+}
+
+/* First-run "continue to sign in" shares the top-left slot; it is a quiet
+   text action whose disabled state communicates that a Station is required. */
+.pt-station-panel__proceed {
   align-self: flex-start;
   margin-bottom: 4px;
 }

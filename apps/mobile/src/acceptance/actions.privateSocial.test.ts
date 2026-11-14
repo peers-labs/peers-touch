@@ -9,6 +9,7 @@ const privateMomentMocks = vi.hoisted(() => ({
   readComments: vi.fn(),
   recoverMoment: vi.fn(),
   snapshot: vi.fn(),
+  retryReaction: vi.fn(),
 }));
 
 vi.mock('../runtimes/privateMomentsRuntime', () => ({
@@ -22,6 +23,7 @@ vi.mock('../runtimes/privateMomentsRuntime', () => ({
   readPrivateTextMoment: vi.fn(),
   reconcilePrivateMoments: vi.fn(),
   submitPrivateComment: privateMomentMocks.submitComment,
+  retryPrivateMomentReaction: privateMomentMocks.retryReaction,
 }));
 
 import { mobileAcceptanceActions } from './actions';
@@ -281,6 +283,69 @@ describe('Mobile Acceptance private Social audience', () => {
       }],
     });
     expect(JSON.stringify(result)).not.toContain('private-reaction-command');
+  });
+
+  it.each(['', 'root-comment'])('replays the retained Native interaction twice for target %s', async (commentId) => {
+    const command = {
+      commandId: 'retained-command', postId: 'post-1', commentId,
+      kind: commentId ? 1 : 0, operation: commentId ? 'REACT' : 'VOTE_POLL',
+      state: 'REACTION_COMMITTED', attemptCount: 1, projectionRevision: '4',
+      selectedOpaqueOptionIds: commentId ? [] : ['opaque-option'],
+    };
+    const snapshot = { ...privateMomentMocks.snapshot(), activationGeneration: 3, reactionCommands: [command] };
+    privateMomentMocks.snapshot.mockReturnValue(snapshot);
+    privateMomentMocks.retryReaction.mockResolvedValue({
+      command, reactions: [{ kind: 1, count: '2', reactedByViewer: true }],
+      projectionRevision: '4', exactReplay: false,
+      ...(commentId ? {} : { poll: {
+        postId: 'post-1', commandId: 'newer-peer-command', voteActorPtid: 'peer',
+        voteCounts: ['0', '2'], selectedOptions: [1], voterCount: '2', projectionRevision: '5',
+      } }),
+    });
+    const result = await mobileAcceptanceActions['moments.private.interaction.replay']({
+      postId: 'post-1', commentId,
+    });
+    expect(privateMomentMocks.retryReaction.mock.calls).toEqual([['retained-command'], ['retained-command']]);
+    expect(result).toMatchObject({ nativeRetryCount: 2, state: 'REACTION_COMMITTED', attemptCount: 1 });
+    expect(result.replays[0]).toEqual(result.replays[1]);
+    expect(JSON.stringify(result)).not.toMatch(/retained-command|opaque-option|newer-peer-command/);
+  });
+
+  it('rejects a substituted command before claiming an exact replay', async () => {
+    const command = {
+      commandId: 'retained-command', postId: 'post-1', commentId: '',
+      kind: 0, operation: 'VOTE_POLL', state: 'REACTION_COMMITTED',
+      attemptCount: 1, projectionRevision: '4', selectedOpaqueOptionIds: ['opaque-option'],
+    };
+    privateMomentMocks.snapshot.mockReturnValue({
+      ...privateMomentMocks.snapshot(), activationGeneration: 3, reactionCommands: [command],
+    });
+    privateMomentMocks.retryReaction.mockResolvedValue({
+      command: { ...command, selectedOpaqueOptionIds: ['substituted-option'] },
+      poll: {}, reactions: [], exactReplay: false,
+    });
+    await expect(mobileAcceptanceActions['moments.private.interaction.replay']({
+      postId: 'post-1',
+    })).rejects.toThrow('privateInteractionReplayMismatch');
+    expect(privateMomentMocks.retryReaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a replay completion after Native activation replacement', async () => {
+    const command = {
+      commandId: 'retained-command', postId: 'post-1', commentId: 'root-comment',
+      kind: 1, operation: 'REACT', state: 'REACTION_COMMITTED',
+      attemptCount: 1, projectionRevision: '4',
+    };
+    const snapshot = { ...privateMomentMocks.snapshot(), activationGeneration: 3, reactionCommands: [command] };
+    privateMomentMocks.snapshot.mockReturnValue(snapshot);
+    privateMomentMocks.retryReaction.mockImplementation(async () => {
+      privateMomentMocks.snapshot.mockReturnValue({ ...snapshot, activationGeneration: 4 });
+      return { command, reactions: [], exactReplay: false };
+    });
+    await expect(mobileAcceptanceActions['moments.private.interaction.replay']({
+      postId: 'post-1', commentId: 'root-comment',
+    })).rejects.toThrow('privateInteractionReplayMismatch');
+    expect(privateMomentMocks.retryReaction).toHaveBeenCalledTimes(1);
   });
 
   it('exposes bounded generic subtype, media, and Comment actions without plaintext', async () => {

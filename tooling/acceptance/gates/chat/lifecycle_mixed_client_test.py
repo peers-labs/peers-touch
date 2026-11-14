@@ -124,6 +124,99 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
                     else:
                         value = gate.progressing_media("call-1", kind)
                         self.assertEqual(value["after"]["sim-ios"], mobile_after)
+    def search_runtime(self) -> MixedNativeRuntime:
+        binding = MagicMock()
+        binding.finalize_cleanup.return_value = {
+            "portsReleased": True, "processesReleased": True,
+            "storageReleased": True, "logsReleased": True, "cleanupErrors": [],
+        }
+        manifest = {
+            "environmentId": "chat-mobile-search-simulator",
+            "clients": [
+                {"id": "desktop-author", "runtime": "native-tauri", "actor": "eve",
+                 "required_service_roles": ["station"],
+                 "service_bindings": {"station": {"service_id": "station", "required_kind": "station"}}},
+                {"id": "sim-ios", "runtime": "tauri-ios-simulator", "actor": "alice",
+                 "required_service_roles": ["station"],
+                 "service_bindings": {"station": {"service_id": "station", "required_kind": "station"}}},
+            ],
+        }
+        return MixedNativeRuntime(
+            gate_id="social-content-search-mobile-native-e2e",
+            manifest=manifest, actor_manifest={}, desktop_binding=binding,
+        )
+
+    def test_desktop_only_consumer_does_not_acquire_declared_mobile_sessions(self) -> None:
+        with patch(
+            "tooling.acceptance.gates.chat.mixed_native_runtime."
+            "MobileSimulatorRuntimeBinding.from_environment",
+        ) as factory:
+            runtime = self.search_runtime()
+            result = runtime.cleanup()
+        factory.assert_not_called()
+        self.assertIsNone(runtime.mobile_binding)
+        self.assertEqual([], result["cleanupErrors"])
+
+    def test_mobile_binding_is_acquired_once_when_first_used(self) -> None:
+        with patch(
+            "tooling.acceptance.gates.chat.mixed_native_runtime."
+            "MobileSimulatorRuntimeBinding.from_environment",
+        ) as factory:
+            runtime = self.search_runtime()
+            self.assertIs(factory.return_value, runtime._required_mobile_binding())
+            self.assertIs(factory.return_value, runtime._required_mobile_binding())
+        factory.assert_called_once_with(gate_id="social-content-search-mobile-native-e2e")
+
+    def test_search_source_uses_exact_snapshot_and_original_native_verifier(self) -> None:
+        runtime = self.search_runtime()
+        source = {"commit": "a" * 40, "workspaceDigest": "sha256:" + "b" * 64}
+        runtime.manifest["source"] = dict(source)
+        runtime.manifest["services"] = {"station": {
+            "kind": "station", "endpoint": "http://station.invalid",
+            "workspaceDigest": "clean", "liveCommit": source["commit"],
+            "protocolDigest": "d" * 64,
+        }}
+        runtime.desktop_sessions["desktop-author"] = object()
+        cell = {
+            "artifactKind": "acceptance-runtime-cell-manifest",
+            "gateId": runtime.gate_id, "cellId": "desktop-macos-native",
+            "runId": "source-bound-cell", "state": "LEASED",
+            "source": {**source, "binarySha256": "c" * 64},
+        }
+        runtime.desktop_binding.cell_id = "desktop-macos-native"
+        runtime.desktop_binding.runtime_identity.return_value = cell
+        runtime.desktop_binding.binary_identity.return_value = {
+            "sourceCommit": source["commit"], "workspaceDigest": source["workspaceDigest"],
+            "sha256": "c" * 64,
+        }
+        with (
+            patch("tooling.acceptance.gates.chat.mixed_native_runtime.source_identity",
+                  return_value=source),
+            patch("tooling.acceptance.gates.chat.mixed_native_runtime.source_proto_digest",
+                  return_value="d" * 64),
+            patch("tooling.acceptance.gates.chat.mixed_native_runtime.read_station_version",
+                  return_value={"build_commit": source["commit"]}),
+            patch("tooling.acceptance.gates.chat.native_support.subprocess.run") as station_inputs,
+        ):
+            station_inputs.return_value.stdout = ""
+            identity = runtime.source_identity()
+            self.assertEqual(source, identity["orchestrator"])
+            self.assertIsNone(identity["mobileRuntimeCell"])
+            cell["source"]["workspaceDigest"] = "sha256:" + "e" * 64
+            with self.assertRaises(GateError):
+                runtime.source_identity()
+            cell["source"]["workspaceDigest"] = source["workspaceDigest"]
+            cell["source"]["binarySha256"] = "f" * 64
+            with self.assertRaises(GateError):
+                runtime.source_identity()
+            cell["source"]["binarySha256"] = "c" * 64
+            runtime.manifest["services"]["station"]["protocolDigest"] = "f" * 64
+            with self.assertRaises(GateError):
+                runtime.source_identity()
+            runtime.manifest["services"]["station"]["protocolDigest"] = "d" * 64
+            station_inputs.return_value.stdout = " M apps/station/build-input.go"
+            with self.assertRaisesRegex(GateError, "build inputs are not covered"):
+                runtime.source_identity()
 
     def test_environment_declares_desktop_mobile_topology(self) -> None:
         contract = EnvironmentContract.from_yaml(

@@ -88,9 +88,11 @@ type Comment struct {
 	// Position-aware mentions, reusing the Post Mention contract
 	// (UTF-16 offsets into `content`). Populated on readback from the
 	// existing social_comments.mentions_json column.
-	TypedMentions []*Mention `protobuf:"bytes,22,rep,name=typed_mentions,json=typedMentions,proto3" json:"typed_mentions,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	TypedMentions        []*Mention `protobuf:"bytes,22,rep,name=typed_mentions,json=typedMentions,proto3" json:"typed_mentions,omitempty"`
+	PublicFeedRef        string     `protobuf:"bytes,23,opt,name=public_feed_ref,json=publicFeedRef,proto3" json:"public_feed_ref,omitempty"`
+	ReplyToPublicFeedRef string     `protobuf:"bytes,24,opt,name=reply_to_public_feed_ref,json=replyToPublicFeedRef,proto3" json:"reply_to_public_feed_ref,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *Comment) Reset() {
@@ -212,6 +214,20 @@ func (x *Comment) GetTypedMentions() []*Mention {
 		return x.TypedMentions
 	}
 	return nil
+}
+
+func (x *Comment) GetPublicFeedRef() string {
+	if x != nil {
+		return x.PublicFeedRef
+	}
+	return ""
+}
+
+func (x *Comment) GetReplyToPublicFeedRef() string {
+	if x != nil {
+		return x.ReplyToPublicFeedRef
+	}
+	return ""
 }
 
 type CreateCommentRequest struct {
@@ -645,7 +661,7 @@ var File_domain_social_comment_proto protoreflect.FileDescriptor
 
 const file_domain_social_comment_proto_rawDesc = "" +
 	"\n" +
-	"\x1bdomain/social/comment.proto\x12\x1bpeers_touch.model.social.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x18domain/social/post.proto\"\xab\x04\n" +
+	"\x1bdomain/social/comment.proto\x12\x1bpeers_touch.model.social.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x18domain/social/post.proto\"\x8b\x05\n" +
 	"\aComment\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\apost_id\x18\x02 \x01(\tR\x06postId\x12\x1f\n" +
@@ -665,7 +681,9 @@ const file_domain_social_comment_proto_rawDesc = "" +
 	"\bis_liked\x18\f \x01(\bR\aisLiked\x12-\n" +
 	"\x13reply_to_comment_id\x18\x14 \x01(\tR\x10replyToCommentId\x12#\n" +
 	"\rreplies_count\x18\x15 \x01(\x03R\frepliesCount\x12K\n" +
-	"\x0etyped_mentions\x18\x16 \x03(\v2$.peers_touch.model.social.v1.MentionR\rtypedMentionsR\tauthor_id\"\xc5\x01\n" +
+	"\x0etyped_mentions\x18\x16 \x03(\v2$.peers_touch.model.social.v1.MentionR\rtypedMentions\x12&\n" +
+	"\x0fpublic_feed_ref\x18\x17 \x01(\tR\rpublicFeedRef\x126\n" +
+	"\x18reply_to_public_feed_ref\x18\x18 \x01(\tR\x14replyToPublicFeedRefR\tauthor_id\"\xc5\x01\n" +
 	"\x14CreateCommentRequest\x12\x17\n" +
 	"\apost_id\x18\x01 \x01(\tR\x06postId\x12\x18\n" +
 	"\acontent\x18\x02 \x01(\tR\acontent\x12-\n" +

@@ -16,6 +16,7 @@ export const geometry = {
   },
   typography: { body: 14, small: 12, heading2: 30, heading4: 20, strong: 600 },
   layer: { popup: 1000 },
+  social: { feedTopThreshold: 4, feedPillInset: 4, authorAvatar: 48, profileAvatar: 72 },
   motion: {
     instant: 0, fast: 100, surface: 140, searchReveal: 160, normal: 200, slow: 300,
     searchFocus: 'cubic-bezier(.22,1,.36,1)',

@@ -1607,9 +1607,42 @@ func validSha256Hex(s string) bool {
 }
 
 func detectMime(ext string) string {
-	mt := mime.TypeByExtension(ext)
-	if mt == "" {
-		return "application/octet-stream"
+	// The Windows executable family is canonicalized BEFORE consulting the host
+	// database. Vendor/host MIME tables disagree on its naming
+	// (application/x-msdownload vs application/x-ms-dos-executable vs
+	// application/x-dosexec), and an operator blocklist is written against the
+	// canonical name. Deferring to the host would let a PE upload be stamped a
+	// non-blocked variant and slip past the gate, so these dangerous extensions
+	// must always resolve to one stable MIME.
+	if canonical, ok := executableMimeCanonical[ext]; ok {
+		return canonical
 	}
-	return mt
+	if mt := mime.TypeByExtension(ext); mt != "" {
+		return mt
+	}
+	// Minimal containers (scratch/distroless) ship no shared-mime database, so
+	// stdlib cannot resolve benign text types and .txt uploads would be stamped
+	// application/octet-stream. Keep an explicit fallback; unknown types stay
+	// octet-stream.
+	if fallback, ok := detectMimeFallback[ext]; ok {
+		return fallback
+	}
+	return "application/octet-stream"
+}
+
+// executableMimeCanonical pins Windows executable extensions to the stable
+// MIME an operator blocklist targets, independent of the host MIME database.
+var executableMimeCanonical = map[string]string{
+	".exe": "application/x-msdownload",
+	".dll": "application/x-msdownload",
+	".com": "application/x-msdownload",
+	".scr": "application/x-msdownload",
+	".sys": "application/x-msdownload",
+	".drv": "application/x-msdownload",
+	".pif": "application/x-msdownload",
+	".msi": "application/x-msi",
+}
+
+var detectMimeFallback = map[string]string{
+	".txt": "text/plain; charset=utf-8",
 }

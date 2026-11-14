@@ -14,6 +14,7 @@ export class ChatService {
       key: conversation.conversation_id,
       agent_name: conversation.agent_id,
       title: conversation.title,
+      ...(conversation.task_id ? { task_id: conversation.task_id } : {}),
       message_count: 0,
       model_override: conversation.model_name,
       provider_override: conversation.provider_id,

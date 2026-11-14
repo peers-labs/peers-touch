@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   stationSetActive: vi.fn(),
   loginWithPassword: vi.fn(),
   completeCurrentSession: vi.fn(),
+  momentsBootstrap: vi.fn(),
   unlockWithPin: vi.fn(),
   createAcceptanceRevision: vi.fn(),
   currentEndpoint: vi.fn(),
@@ -43,6 +44,12 @@ vi.mock('../../kernel/identityRuntime', () => ({
     loginWithPassword: mocks.loginWithPassword,
     completeCurrentSession: mocks.completeCurrentSession,
     unlockWithPin: mocks.unlockWithPin,
+  },
+}));
+
+vi.mock('../../runtimes/momentsRuntime', () => ({
+  momentsRuntime: {
+    bootstrap: mocks.momentsBootstrap,
   },
 }));
 
@@ -116,6 +123,12 @@ describe('Secure Content fixture harness', () => {
       sessionState.authenticated = true;
     });
     mocks.completeCurrentSession.mockResolvedValue(undefined);
+    mocks.momentsBootstrap.mockImplementation(async () => {
+      privateState.scope = {
+        actorPtid: sessionState.currentUser?.actorPtid ?? null,
+        rendererGeneration: sessionState.sessionEpoch,
+      };
+    });
     mocks.invoke.mockResolvedValue({
       ok: true,
       data: {
@@ -202,6 +215,132 @@ describe('Secure Content fixture harness', () => {
     );
   });
 
+  it('waits for the original Moments owner to activate the switched account before native attestation', async () => {
+    let activate!: () => void;
+    mocks.momentsBootstrap.mockImplementation(() => new Promise<void>(resolve => {
+      activate = () => {
+        privateState.scope = { actorPtid: 'ptid:secondary', rendererGeneration: 2 };
+        resolve();
+      };
+    }));
+    mocks.unlockWithPin.mockImplementation(async () => {
+      sessionState.currentUser = { actorPtid: 'ptid:secondary' };
+      sessionState.sessionEpoch = 2;
+    });
+    mocks.accountGetActive.mockResolvedValue({
+      id: 'account-secondary', provider_user_id: 'ptid:secondary',
+    });
+    mocks.invoke.mockResolvedValue({
+      ok: true, data: { accountStorageIdentitySha256: 'b'.repeat(64) },
+    });
+    const switching = harness().switchPreparedAccount({
+      accountId: 'account-secondary', actorPtid: 'ptid:secondary',
+      storageIdentitySha256: 'b'.repeat(64), outgoingActorPtid: 'ptid:primary',
+      outgoingSessionEpoch: 1, pin: '135790',
+    });
+    await vi.waitFor(() => expect(mocks.momentsBootstrap).toHaveBeenCalledOnce());
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    activate();
+    await expect(switching).resolves.toMatchObject({
+      storageIdentitySha256: 'b'.repeat(64), beforeGeneration: 1, afterGeneration: 2,
+    });
+    expect(mocks.invoke).toHaveBeenCalledWith(
+      'social_private_moments_acceptance_runtime_identity',
+      { input: { actor_ptid: 'ptid:secondary', renderer_generation: 2 } },
+    );
+  });
+
+  it('restores the primary account when secondary native attestation fails and retains the typed refusal', async () => {
+    mocks.accountGetActive
+      .mockResolvedValueOnce({ id: 'account-primary', provider_user_id: 'ptid:primary' })
+      .mockResolvedValueOnce({ id: 'account-secondary', provider_user_id: 'ptid:secondary' });
+    mocks.loginWithPassword.mockImplementation(async () => {
+      sessionState.currentUser = { actorPtid: 'ptid:secondary' };
+      sessionState.sessionEpoch += 1;
+    });
+    mocks.unlockWithPin.mockImplementation(async () => {
+      sessionState.currentUser = { actorPtid: 'ptid:primary' };
+      sessionState.sessionEpoch += 1;
+    });
+    mocks.invoke
+      .mockResolvedValueOnce({ ok: true, data: { accountStorageIdentitySha256: 'a'.repeat(64) } })
+      .mockResolvedValueOnce({ ok: false, error: { details: { native_error_code: 'UNAUTHORIZED' } } })
+      .mockResolvedValueOnce({ ok: true, data: { accountStorageIdentitySha256: 'a'.repeat(64) } });
+    await expect(harness().prepareAccountSwitch({
+      secondaryAccount: 'secondary@p.t', password: TEST_CREDENTIAL, pin: '135790',
+    })).rejects.toThrow('secureContentFixture.accountStorageIdentityRejected:UNAUTHORIZED');
+    expect(mocks.unlockWithPin).toHaveBeenCalledWith('account-primary', '135790');
+    expect(sessionState.currentUser?.actorPtid).toBe('ptid:primary');
+    expect(privateState.scope).toEqual({ actorPtid: 'ptid:primary', rendererGeneration: 3 });
+    expect(mocks.accountSetPin).toHaveBeenCalledOnce();
+  });
+
+  it('retains both preparation and primary restoration failures', async () => {
+    mocks.accountGetActive
+      .mockResolvedValueOnce({ id: 'account-primary', provider_user_id: 'ptid:primary' })
+      .mockResolvedValueOnce({ id: 'account-secondary', provider_user_id: 'ptid:secondary' });
+    mocks.loginWithPassword.mockImplementation(async () => {
+      sessionState.currentUser = { actorPtid: 'ptid:secondary' };
+      sessionState.sessionEpoch += 1;
+    });
+    const restoreFailure = new Error('controlled PIN restoration failure');
+    mocks.unlockWithPin.mockRejectedValue(restoreFailure);
+    mocks.invoke
+      .mockResolvedValueOnce({ ok: true, data: { accountStorageIdentitySha256: 'a'.repeat(64) } })
+      .mockResolvedValueOnce({ ok: false, error: { details: { native_error_code: 'UNAUTHORIZED' } } });
+    const failure = await harness().prepareAccountSwitch({
+      secondaryAccount: 'secondary@p.t', password: TEST_CREDENTIAL, pin: '135790',
+    }).catch(error => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).toMatchObject({
+      message: 'secureContentFixture.accountPreparationAndRestoreFailed',
+      errors: [expect.objectContaining({
+        message: 'secureContentFixture.accountStorageIdentityRejected:UNAUTHORIZED',
+      }), restoreFailure],
+    });
+  });
+
+  it.each([
+    ['secure content supervisor is not active', 'AUTHENTICATION_REQUIRED', 'PRIVATE_RUNTIME_INACTIVE'],
+    ['secure content Station binding is not complete', 'INTEGRITY_FAILURE', 'STATION_BINDING_INCOMPLETE'],
+    ['secure content Station binding identity is inconsistent', 'INTEGRITY_FAILURE', 'STATION_BINDING_INCONSISTENT'],
+  ])('identifies the fixed native identity refusal %s', async (message, state, reason) => {
+    mocks.accountGetActive.mockResolvedValue({
+      id: 'account-primary', provider_user_id: 'ptid:primary',
+    });
+    mocks.invoke.mockResolvedValue({
+      ok: false,
+      error: { message, details: { native_error_code: 'PRIVATE_NATIVE_COMMAND_FAILED', state } },
+    });
+
+    await expect(harness().prepareAccountSwitch({
+      secondaryAccount: 'secondary@p.t', password: TEST_CREDENTIAL, pin: '135790',
+    })).rejects.toThrow(
+      `secureContentFixture.accountStorageIdentityRejected:PRIVATE_NATIVE_COMMAND_FAILED:${state}:${reason}`,
+    );
+    expect(mocks.loginWithPassword).not.toHaveBeenCalled();
+    expect(mocks.accountSetPin).not.toHaveBeenCalled();
+  });
+
+  it('does not expose unknown native identity errors or malformed state fields', async () => {
+    mocks.accountGetActive.mockResolvedValue({
+      id: 'account-primary', provider_user_id: 'ptid:primary',
+    });
+    mocks.invoke.mockResolvedValue({
+      ok: false,
+      error: {
+        message: `private path and credential ${TEST_CREDENTIAL}`,
+        details: { native_error_code: TEST_CREDENTIAL, state: TEST_CREDENTIAL },
+      },
+    });
+
+    await expect(harness().prepareAccountSwitch({
+      secondaryAccount: 'secondary@p.t', password: TEST_CREDENTIAL, pin: '135790',
+    })).rejects.toThrow(
+      /^secureContentFixture\.accountStorageIdentityRejected:NATIVE_IDENTITY_UNAVAILABLE$/,
+    );
+  });
+
   it('executes an account-switch round trip and proves stale projection removal', async () => {
     privateState.postsById = { stale: {} };
     mocks.unlockWithPin.mockImplementation(async (accountId: string) => {
@@ -243,6 +382,57 @@ describe('Secure Content fixture harness', () => {
     });
     expect(String((result as { primaryActorPtidSha256: string }).primaryActorPtidSha256))
       .toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('switches once to a prepared PIN account so the caller can inspect intermediate UI', async () => {
+    mocks.unlockWithPin.mockImplementation(async () => {
+      sessionState.currentUser = { actorPtid: 'ptid:secondary' };
+      sessionState.sessionEpoch += 1;
+    });
+    mocks.accountGetActive.mockResolvedValue({
+      id: 'account-secondary', provider_user_id: 'ptid:secondary',
+    });
+    mocks.invoke.mockResolvedValue({
+      ok: true, data: { accountStorageIdentitySha256: 'b'.repeat(64) },
+    });
+    const result = await harness().switchPreparedAccount({
+      accountId: 'account-secondary', actorPtid: 'ptid:secondary',
+      storageIdentitySha256: 'b'.repeat(64), outgoingActorPtid: 'ptid:primary',
+      outgoingSessionEpoch: 1, pin: '135790',
+    });
+    expect(result).toMatchObject({
+      beforeGeneration: 1, afterGeneration: 2, storageIdentitySha256: 'b'.repeat(64),
+    });
+    expect(mocks.unlockWithPin).toHaveBeenCalledExactlyOnceWith('account-secondary', '135790');
+    expect(mocks.loginWithPassword).not.toHaveBeenCalled();
+    expect(sessionState.currentUser?.actorPtid).toBe('ptid:secondary');
+  });
+
+  it('rejects a raced prepared switch before issuing a native account command', async () => {
+    await expect(harness().switchPreparedAccount({
+      accountId: 'account-secondary', actorPtid: 'ptid:secondary',
+      storageIdentitySha256: 'b'.repeat(64), outgoingActorPtid: 'ptid:primary',
+      outgoingSessionEpoch: 0, pin: '135790',
+    })).rejects.toThrow('secureContentFixture.accountSwitchScopeMismatch');
+    expect(mocks.unlockWithPin).not.toHaveBeenCalled();
+  });
+
+  it('rejects a prepared switch that lands in another account storage partition', async () => {
+    mocks.unlockWithPin.mockImplementation(async () => {
+      sessionState.currentUser = { actorPtid: 'ptid:secondary' };
+      sessionState.sessionEpoch += 1;
+    });
+    mocks.accountGetActive.mockResolvedValue({
+      id: 'account-secondary', provider_user_id: 'ptid:secondary',
+    });
+    mocks.invoke.mockResolvedValue({
+      ok: true, data: { accountStorageIdentitySha256: 'c'.repeat(64) },
+    });
+    await expect(harness().switchPreparedAccount({
+      accountId: 'account-secondary', actorPtid: 'ptid:secondary',
+      storageIdentitySha256: 'b'.repeat(64), outgoingActorPtid: 'ptid:primary',
+      outgoingSessionEpoch: 1, pin: '135790',
+    })).rejects.toThrow('secureContentFixture.preparedAccountSwitchFailed');
   });
 
   it('rejects an account fixture when the active account does not own the actor', async () => {
@@ -361,6 +551,32 @@ describe('Secure Content fixture harness', () => {
       'station-four-peer',
       'station-four-direct',
     );
+  });
+
+  it('maintains the current recovery epoch through the bundled renderer scope', async () => {
+    privateState.scope.rendererGeneration = 4;
+    const result = await harness().maintainCurrentRecoveryPreKeys({ expectedEpoch: 1 });
+    expect(result).toEqual({ recoveryEpoch: 1, recoveryPreKeyAvailable: 100 });
+    expect(mocks.createAcceptanceRevision).not.toHaveBeenCalled();
+    expect(mocks.invoke).toHaveBeenCalledWith(
+      'social_private_moments_acceptance_maintain_prekeys',
+      { input: { actor_ptid: 'ptid:primary', renderer_generation: 4 } },
+    );
+  });
+
+  it('rejects a different recovery epoch without creating another revision', async () => {
+    mocks.invoke.mockResolvedValue({
+      ok: true, data: { recoveryEpoch: 2, recoveryPreKeyAvailable: 100 },
+    });
+    await expect(harness().maintainCurrentRecoveryPreKeys({ expectedEpoch: 1 }))
+      .rejects.toThrow('secureContentFixture.recoveryPreKeyUnavailable');
+    expect(mocks.createAcceptanceRevision).not.toHaveBeenCalled();
+  });
+
+  it.each([0, -1, 1.5, NaN])('rejects invalid recovery epoch %s before Native maintenance', async (epoch) => {
+    await expect(harness().maintainCurrentRecoveryPreKeys({ expectedEpoch: epoch }))
+      .rejects.toThrow('secureContentFixture.recoveryEpochInvalid');
+    expect(mocks.invoke).not.toHaveBeenCalled();
   });
 
   it('prepares a recovery epoch and confirms its Recovery PreKey pool', async () => {

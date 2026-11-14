@@ -343,6 +343,20 @@ func loadDiagnosticToolCalls(
 	for index := range continuations {
 		continuationByBatch[continuations[index].ToolBatchID] = continuations[index].ID
 	}
+	// Attach the bounded device result envelope so renderers can hydrate
+	// auditable tool output even when a live/replayed event was missed.
+	var toolResults []persistence.ToolResult
+	resultByCall := make(map[string]string)
+	if err := db.WithContext(ctx).
+		Where("turn_id = ?", turnID).
+		Find(&toolResults).Error; err != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "load diagnostic tool results", err)
+	}
+	for index := range toolResults {
+		resultByCall[toolResults[index].ToolCallID] = truncateResult(
+			string(toolResults[index].BoundedResult),
+		)
+	}
 	facts := make([]*model.TurnDiagnosticToolFact, 0, len(records))
 	for index := range records {
 		record := &records[index]
@@ -405,6 +419,7 @@ func loadDiagnosticToolCalls(
 			ContinuationId:             continuationByBatch[record.ToolBatchID],
 			Approved:                   record.Approved,
 			TerminalReceiptPayloadHash: terminalReceiptPayloadHash,
+			Result:                     resultByCall[record.ToolCallID],
 		}
 		if record.DispatchCommittedAt != nil {
 			fact.DispatchCommittedAt = timestamppb.New(*record.DispatchCommittedAt)

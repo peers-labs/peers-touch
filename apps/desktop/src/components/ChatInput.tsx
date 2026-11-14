@@ -28,6 +28,7 @@ import {
 } from '../store/agentCapabilityReadiness';
 import { useMentionStore } from '../store/mentions';
 import { AttachmentStage } from './composer/AttachmentStage';
+import { ComposerAddMenu } from './composer/ComposerAddMenu';
 import {
   AGENT_ATTACHMENT_ACCEPT,
   useAgentAttachmentDrafts,
@@ -50,6 +51,7 @@ import { ProviderIcon } from './settings/ProviderIcon';
 import { selectAgentCapabilityWarning } from './composer/agentCapabilityWarning';
 import { removeRejectedInlineReferences } from './composer/invalidReferenceRecovery';
 import { SendControl } from './composer/SendControl';
+import { WorkspaceSelector } from './composer/WorkspaceSelector';
 import { log } from '../utils/logger';
 import type { AgentCapabilityBinding } from '../gen/proto/domain/agent/capability_pb';
 import { AgentCommandPalette } from './agent/AgentCommandPalette';
@@ -223,6 +225,14 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
     conversationId: currentSessionKey,
     disabled: false,
     fallbackName: t('chat.input.attachmentFallbackName'),
+    // TW-D2: rehydrate Station-owned staged attachments from the durable
+    // task draft and mirror ready refs back whenever staging changes.
+    hydrateReadyAttachments: () => (
+      useChatStore.getState().composerAttachments[currentSessionKey] ?? []
+    ),
+    onReadyAttachmentsChange: (refs) => {
+      useChatStore.getState().setComposerAttachments(currentSessionKey, refs);
+    },
   });
   const currentModelId = selectedModel || defaultModel;
   const currentProviderId = selectedProviderId || defaultProviderId;
@@ -713,6 +723,11 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
     >
       <AttachmentStage drafts={drafts} onRemove={removeDraft} onRetry={retryDraft} />
 
+      {/* Ready is the expected steady state — Trae-style composers stay
+          quiet instead of showing a permanent provider banner. The row only
+          exists for checking/degraded/unavailable states; hard blockers have
+          their own error strip below. */
+          readinessDisplayState !== 'ready' && (
       <Flexbox
         data-pt-agent-runtime-snapshot={
           composerReadiness.runtimeSnapshotId || 'unknown'
@@ -770,6 +785,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
           {t(`chat.input.runtimeSnapshot.state.${readinessDisplayState}`)}
         </Tag>
       </Flexbox>
+      )}
 
       {!readinessCanSend && (
         <Flexbox
@@ -872,6 +888,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
 
       <Flexbox horizontal align="center" gap={8}>
         <Flexbox horizontal align="center" gap={8}>
+          <ComposerAddMenu onPickAttachment={handlePickImages} />
           <div style={{ position: 'relative' }}>
             <button
               ref={commandTriggerRef}
@@ -883,20 +900,21 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
               title={t('chat.input.commands.title')}
               onClick={toggleCommandPalette}
               style={{
-                width: 28,
-                height: 28,
+                width: 30,
+                height: 30,
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 borderRadius: 8,
-                border: `1px solid ${COMPOSER_COLORS.borderSoft}`,
-                background: '#ffffff',
-                color: token.colorText,
-                boxShadow: COMPOSER_COLORS.toolButtonShadow,
+                border: 'none',
+                background: 'transparent',
+                color: token.colorTextSecondary,
                 cursor: 'pointer',
               }}
+              onMouseEnter={(event) => { event.currentTarget.style.background = token.colorFillTertiary; }}
+              onMouseLeave={(event) => { event.currentTarget.style.background = 'transparent'; }}
             >
-              <Slash size={13} />
+              <Slash size={15} />
             </button>
             <AgentCommandPalette
               agentName={
@@ -921,14 +939,17 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
             icon={ImageIcon}
             onClick={handlePickImages}
             title={t('chat.input.uploadFile')}
-            size={{ blockSize: 28, size: 13 }}
+            size={{ blockSize: 30, size: 15 }}
             style={{
               borderRadius: 8,
-              border: `1px solid ${COMPOSER_COLORS.borderSoft}`,
-              background: '#ffffff',
-              color: token.colorText,
-              boxShadow: COMPOSER_COLORS.toolButtonShadow,
+              border: 'none',
+              background: 'transparent',
+              color: token.colorTextSecondary,
             }}
+          />
+          <WorkspaceSelector
+            agentId={selectedAgentData?.id}
+            agentVersion={selectedAgentData?.version}
           />
         </Flexbox>
 

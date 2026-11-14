@@ -21,20 +21,17 @@ interface SettingsContainerProps {
    */
   tier?: PageWidthTier;
   style?: CSSProperties;
-  fullHeight?: boolean;
 }
 
 export function SettingsContainer({
   children,
   tier = 'narrow',
   style,
-  fullHeight,
 }: SettingsContainerProps) {
   return (
     <div
       className="sc-settings-column"
       data-pt-settings-column={tier}
-      data-full-height={fullHeight ? 'true' : 'false'}
       style={style}
     >
       {children}

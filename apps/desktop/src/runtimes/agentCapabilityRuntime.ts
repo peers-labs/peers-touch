@@ -27,10 +27,14 @@ import { log } from '../utils/logger';
 
 const CAPABILITY_RECONCILE_INTERVAL_MS = 60_000;
 const SESSION_WARMUP_INTERVAL_MS = 1_000;
+const SESSION_WARMUP_MAX_INTERVAL_MS = 10_000;
 // After a renderer reload the identity session is restored in tens of
 // milliseconds, but the capability worker re-registers its lease a few
-// seconds later. Warmup polls only through that registration gap so composer
-// readiness converges without waiting for the periodic reconciliation.
+// seconds later. Warmup polls only the session roster through that gap so
+// composer readiness converges without waiting for the periodic
+// reconciliation. In environments where the executor never registers
+// (identity activation unavailable) the poll backs off and MUST NOT reload
+// the full provider/agent/catalog projection.
 const SESSION_WARMUP_ATTEMPTS = 20;
 const AGENT_PROJECTION_CONCURRENCY = 2;
 const MAX_AUTHORITY_STREAMS = 4;
@@ -46,6 +50,8 @@ let runtimeGeneration = 0;
 let reconcileTimer: ReturnType<typeof setInterval> | null = null;
 let warmupTimer: ReturnType<typeof setTimeout> | null = null;
 let warmupAttempts = 0;
+let warmupIntervalMs = SESSION_WARMUP_INTERVAL_MS;
+let fullLoadInFlight: Promise<void> | null = null;
 let runtimeUnsubscribers: Array<() => void> = [];
 const authorityStreams = new Map<string, AbortController>();
 
@@ -120,25 +126,59 @@ function clearCapabilitySessionWarmup(): void {
     warmupTimer = null;
   }
   warmupAttempts = 0;
+  warmupIntervalMs = SESSION_WARMUP_INTERVAL_MS;
 }
 
-function scheduleCapabilitySessionWarmup(generation: number): void {
+// Polls only the capability session roster (one IPC). Warmup must never run
+// the full projection load: when identity activation stays unavailable the
+// old behaviour re-issued providers/models/agents/applets/connectors/MCP/
+// skills/tools every second for the whole session, flooding IPC and the
+// renderer event loop.
+async function pollCapabilitySessions(
+  generation: number,
+): Promise<CapabilitySession | undefined> {
+  const listed = await api.listAgentCapabilitySessions();
+  if (!installed || generation !== runtimeGeneration) return undefined;
+  useAgentCapabilityStore.getState().setCapabilitySessions(listed.sessions);
+  return selectActiveCapabilitySession(listed.sessions);
+}
+
+function armCapabilitySessionWarmup(generation: number): void {
   if (!installed || warmupTimer !== null) return;
   if (warmupAttempts >= SESSION_WARMUP_ATTEMPTS) {
+    // This arming window is exhausted. The periodic full load re-arms.
     warmupAttempts = 0;
+    warmupIntervalMs = SESSION_WARMUP_INTERVAL_MS;
     return;
   }
   warmupTimer = setTimeout(() => {
     warmupTimer = null;
     if (!installed || generation !== runtimeGeneration) return;
     warmupAttempts += 1;
-    void loadAgentCapabilities('capability-session-warmup').catch((error) => {
-      log.warn('agentCapabilityRuntime', 'capability session warmup failed', {
-        attempt: warmupAttempts,
-        error: String(error),
-      });
-    });
-  }, SESSION_WARMUP_INTERVAL_MS);
+    void (async () => {
+      try {
+        const activeSession = await pollCapabilitySessions(generation);
+        if (!installed || generation !== runtimeGeneration) return;
+        if (activeSession) {
+          // The executor just registered: one full projection load binds
+          // catalog/authority state to the live session.
+          clearCapabilitySessionWarmup();
+          await requestFullCapabilityLoad('capability-session-live');
+          return;
+        }
+      } catch (error) {
+        log.warn('agentCapabilityRuntime', 'capability session warmup poll failed', {
+          attempt: warmupAttempts,
+          error: String(error),
+        });
+      }
+      warmupIntervalMs = Math.min(
+        Math.round(warmupIntervalMs * 1.5),
+        SESSION_WARMUP_MAX_INTERVAL_MS,
+      );
+      armCapabilitySessionWarmup(generation);
+    })();
+  }, warmupIntervalMs);
 }
 
 export async function reconcileAgentCapabilityProjection(
@@ -206,9 +246,11 @@ export function selectAuthorityStreamAgentIds(
     .slice(0, MAX_AUTHORITY_STREAMS);
 }
 
-async function loadAgentCapabilities(reason: string): Promise<void> {
+async function runFullCapabilityLoad(
+  reason: string,
+  generation: number,
+): Promise<void> {
   if (!installed) return;
-  const generation = runtimeGeneration;
   log.info('agentCapabilityRuntime', 'loading agent capability projections', { reason });
   const [listedCapabilitySessions] = await Promise.all([
     api.listAgentCapabilitySessions(),
@@ -232,7 +274,7 @@ async function loadAgentCapabilities(reason: string): Promise<void> {
   if (activeSession) {
     clearCapabilitySessionWarmup();
   } else {
-    scheduleCapabilitySessionWarmup(generation);
+    armCapabilitySessionWarmup(generation);
   }
 
   const authorityStore = capabilityStore;
@@ -274,6 +316,31 @@ async function loadAgentCapabilities(reason: string): Promise<void> {
   );
 }
 
+// Full projection loads are identical work: overlapping triggers (periodic
+// timer, selection events, authority invalidation arriving during an ongoing
+// load) join the in-flight run instead of stacking duplicate IPC storms.
+function requestFullCapabilityLoad(reason: string): Promise<void> {
+  if (fullLoadInFlight) return fullLoadInFlight;
+  const generation = runtimeGeneration;
+  const inFlight = runFullCapabilityLoad(reason, generation);
+  const guard: Promise<void> = inFlight
+    .catch((error) => {
+      log.warn('agentCapabilityRuntime', 'capability projection load failed', {
+        reason,
+        error: String(error),
+      });
+    })
+    .then(() => undefined)
+    .finally(() => {
+      // A generation that reinstalled the runtime may own a newer load.
+      if (fullLoadInFlight === guard) fullLoadInFlight = null;
+    });
+  fullLoadInFlight = guard;
+  // The originating caller observes rejection; concurrent joiners share the
+  // guarded settlement.
+  return inFlight;
+}
+
 export function authorityEventAgentId(
   payload: AgentAuthorityStreamPayload,
 ): string {
@@ -300,7 +367,7 @@ function syncAuthorityStreams(agentIds: readonly string[]): void {
       (payload) => {
         const changedAgentId = authorityEventAgentId(payload);
         if (changedAgentId !== agentId || !installed) return;
-        void loadAgentCapabilities('authority-invalidated').catch((error) => {
+        void requestFullCapabilityLoad('authority-invalidated').catch((error) => {
           log.warn('agentCapabilityRuntime', 'authority event refresh failed', {
             agentId,
             error: String(error),
@@ -326,7 +393,7 @@ function clearAuthorityStreams(): void {
 function installReconcileTimer(): void {
   if (reconcileTimer !== null) return;
   reconcileTimer = setInterval(() => {
-    void loadAgentCapabilities('periodic').catch((error) => {
+    void requestFullCapabilityLoad('periodic').catch((error) => {
       log.warn('agentCapabilityRuntime', 'periodic reconciliation failed', {
         error: String(error),
       });
@@ -343,7 +410,7 @@ function clearReconcileTimer(): void {
 function installProjectionInvalidation(): void {
   if (runtimeUnsubscribers.length > 0) return;
   const reconcile = (reason: string) => {
-    void loadAgentCapabilities(reason).catch((error) => {
+    void requestFullCapabilityLoad(reason).catch((error) => {
       log.warn('agentCapabilityRuntime', 'event reconciliation failed', {
         reason,
         error: String(error),
@@ -431,6 +498,7 @@ export const agentCapabilityRuntime: RuntimeDescriptor = {
     clearCapabilitySessionWarmup();
     clearProjectionInvalidation();
     clearAuthorityStreams();
+    fullLoadInFlight = null;
     useAgentCapabilityStore.getState().reset();
     useAgentConnectorStore.getState().reset();
     useMCPStore.getState().reset();
@@ -438,9 +506,9 @@ export const agentCapabilityRuntime: RuntimeDescriptor = {
   },
   async bootstrap(actorId) {
     if (!actorId) return;
-    await loadAgentCapabilities('bootstrap');
+    await requestFullCapabilityLoad('bootstrap');
   },
   async reconcile(reason: string) {
-    await loadAgentCapabilities(reason);
+    await requestFullCapabilityLoad(reason);
   },
 };

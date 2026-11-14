@@ -164,7 +164,7 @@ export function CronJobsSettings() {
   const pausedCount = jobs.length - activeCount;
 
   return (
-    <SettingsContainer fullHeight tier="standard">
+    <SettingsContainer tier="standard">
       <SettingsPanelHeader
         title={t('cron.header.title')}
         icon={<Icon iconId="clock" size={20} />}

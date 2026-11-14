@@ -40,6 +40,7 @@ let teardownBridge: (() => void) | null = null;
 let socialReconcileTimer: number | null = null;
 let externalHostReconcileTimer: number | null = null;
 let bootstrappedActorPtid: string | null = null;
+let bootstrappedSessionKey: string | null = null;
 let bootstrapSequence = 0;
 let realtimeStreamScopeKey: string | null = null;
 let realtimeStreamTransition: Promise<void> = Promise.resolve();
@@ -150,7 +151,8 @@ export async function refreshSocialProjection(label: string, includeNotification
   if (!currentAuthenticatedActorPtid()) return;
   if (socialRefreshInFlight) return socialRefreshInFlight;
 
-  socialRefreshInFlight = (async () => {
+  const sequence = bootstrapSequence;
+  const refresh = (async () => {
     log.info('socialRealtime', 'social projection refresh started', { label });
 
     const chat = useSocialChatStore.getState();
@@ -158,9 +160,12 @@ export async function refreshSocialProjection(label: string, includeNotification
     await Promise.allSettled([
       chat.loadFriendRequests(),
       refreshFriendshipProjection(true),
+      useRelationshipsStore.getState().reconcileRelationships(),
+      useRelationshipsStore.getState().loadBlockedActors(),
       notifications.refreshUnreadCounts(),
       includeNotifications ? notifications.loadNotifications() : Promise.resolve(),
     ]);
+    if (sequence !== bootstrapSequence) return;
 
     const refreshed = useSocialChatStore.getState();
     const relationships = useRelationshipsStore.getState();
@@ -177,6 +182,7 @@ export async function refreshSocialProjection(label: string, includeNotification
       refreshed.loadCurrentUserProfile(),
       ...peerPtids.map((ptid) => refreshed.loadPeerProfile(ptid, true)),
     ]);
+    if (sequence !== bootstrapSequence) return;
     await Promise.allSettled([
       refreshFriendStationIdentities(),
       refreshPeerPresence(peerPtids),
@@ -184,10 +190,11 @@ export async function refreshSocialProjection(label: string, includeNotification
 
     log.info('socialRealtime', 'social projection refresh completed', { label });
   })().finally(() => {
-    socialRefreshInFlight = null;
+    if (socialRefreshInFlight === refresh) socialRefreshInFlight = null;
   });
 
-  return socialRefreshInFlight;
+  socialRefreshInFlight = refresh;
+  return refresh;
 }
 
 export function dispatchSocialRuntimeHostEvent(event: SocialHostEvent): void {
@@ -229,6 +236,7 @@ async function bootstrapSocialProjection(actorPtid: string, sequence: number): P
     chat.loadCurrentUserProfile(),
     chat.loadFriendRequests(),
     refreshFriendshipProjection(true),
+    useRelationshipsStore.getState().loadBlockedActors(),
     notifications.refreshUnreadCounts(),
   ]);
 
@@ -281,12 +289,18 @@ async function startRealtimeStreamSupervisor(actorPtid: string): Promise<void> {
 }
 
 function restartRealtimeStreamForStationChange(): void {
+  bootstrappedActorPtid = null;
+  bootstrappedSessionKey = null;
+  bootstrapSequence += 1;
+  socialRefreshInFlight = null;
+  useRelationshipsStore.getState().reset();
   realtimeStreamTransition = realtimeStreamTransition.then(async () => {
     await stopRealtimeStreamSupervisor();
     const actorPtid = currentAuthenticatedActorPtid();
     if (actorPtid) {
       await startRealtimeStreamSupervisor(actorPtid);
     }
+    reconcileAuthenticatedRuntime();
   }).catch((error) => {
     log.warn('socialRealtime', 'realtime stream Station restart failed', error);
   });
@@ -302,8 +316,10 @@ function reconcileAuthenticatedRuntime(): void {
     });
     if (bootstrappedActorPtid) {
       bootstrappedActorPtid = null;
+      bootstrappedSessionKey = null;
       bootstrapSequence += 1;
     }
+    socialRefreshInFlight = null;
     useRelationshipsStore.getState().reset();
     return;
   }
@@ -313,11 +329,15 @@ function reconcileAuthenticatedRuntime(): void {
   });
   startSocialReconcile();
 
-  if (bootstrappedActorPtid === actorPtid) return;
+  const session = useSessionStore.getState();
+  const sessionKey = `${actorPtid}\0${session.sessionEpoch}\0${session.stationPeerId ?? ''}`;
+  if (bootstrappedSessionKey === sessionKey) return;
+  socialRefreshInFlight = null;
   if (bootstrappedActorPtid) {
     useRelationshipsStore.getState().reset();
   }
   bootstrappedActorPtid = actorPtid;
+  bootstrappedSessionKey = sessionKey;
   const sequence = ++bootstrapSequence;
   // Synchronous first-frame seed: peer names and avatar identities come from
   // the actor's persistent last-good before any authenticated frame paints,
@@ -394,10 +414,14 @@ function onActorProfileChanged(payload: RealtimeActorProfileChangedPayload): voi
   ));
 }
 
-function onRelationshipChanged(_payload: RelationshipChangedPayload): void {
-  runDetached('relationship friendship projection refresh', () => (
-    refreshFriendshipProjection(true)
-  ));
+function onRelationshipChanged(payload: RelationshipChangedPayload): void {
+  runDetached('relationship friendship projection refresh', async () => {
+    await Promise.allSettled([
+      refreshFriendshipProjection(true),
+      useRelationshipsStore.getState().loadRelationshipStatus(payload.targetActorPtid),
+      useRelationshipsStore.getState().loadBlockedActors(true),
+    ]);
+  });
 }
 
 function startSocialReconcile(): void {

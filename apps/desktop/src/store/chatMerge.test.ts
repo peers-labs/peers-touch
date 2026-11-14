@@ -1,11 +1,28 @@
 import { describe, expect, it } from 'vitest';
+import type { CachedAgentMessage } from '@peers-touch/client-chat-core';
 import {
+  cachedMessageToChatMessage,
   foldToolMessages,
   isMessageRetryBlocked,
   mergeServerMessages,
   type ChatMessage,
   type ChatOperation,
 } from './chat';
+
+function cachedRow(extra: Partial<CachedAgentMessage>): CachedAgentMessage {
+  return {
+    messageId: 'msg-1',
+    conversationId: 'conv-1',
+    turnId: 'turn-1',
+    role: 'assistant',
+    status: 'completed',
+    content: '',
+    seq: 1,
+    createdAt: '2026-11-03T00:00:00Z',
+    updatedAt: '2026-11-03T00:00:00Z',
+    ...extra,
+  };
+}
 
 function msg(id: string, role: ChatMessage['role'], content: string, extra: Partial<ChatMessage> = {}): ChatMessage {
   return { id, role, content, timestamp: 1781680000000, ...extra };
@@ -534,6 +551,113 @@ describe('foldToolMessages', () => {
     expect(folded.map((m) => m.id)).toEqual(['leg-a', 'leg-b-1']);
     expect(folded[1].terminalStatus).toBe('interrupted');
     expect(folded[1].typedError?.error_type).toBe('LIFECYCLE_INTERRUPTED');
+  });
+
+  it('tracks the content-bearing leg id for byte provenance', () => {
+    const messages: ChatMessage[] = [
+      msg('user-1', 'user', 'run the task', { turnId: 'turn-1' }),
+      msg('leg-1', 'assistant', '', {
+        turnId: 'turn-1',
+        toolCalls: [{ id: 'call-1', name: 'local_shell_exec', pending: false }],
+      }),
+      msg('tool-1', 'tool', '**local_shell_exec** ok'),
+      msg('leg-2', 'assistant', 'Final answer.', {
+        turnId: 'turn-1',
+        terminalStatus: 'completed',
+      }),
+      // A tool-only turn: the bubble exists but carries no claimable bytes.
+      msg('leg-3', 'assistant', '', {
+        turnId: 'turn-2',
+        toolCalls: [{ id: 'call-2', name: 'local_shell_exec', pending: false }],
+      }),
+    ];
+
+    const folded = foldToolMessages(messages);
+
+    const answered = folded.find((m) => m.role === 'assistant' && m.turnId === 'turn-1');
+    expect(answered?.id).toBe('leg-1');
+    expect(answered?.contentMessageId).toBe('leg-2');
+
+    const toolOnly = folded.find((m) => m.role === 'assistant' && m.turnId === 'turn-2');
+    expect(toolOnly?.id).toBe('leg-3');
+    expect(toolOnly?.contentMessageId).toBeUndefined();
+  });
+
+  it('never marks a completed tool-call leg as the Turn terminal', () => {
+    // Persisted row mapping: intermediate leg carries tool calls.
+    const toolLeg = cachedMessageToChatMessage(cachedRow({
+      toolCallsJson: JSON.stringify([{ id: 'call-1', name: 'local_shell_exec' }]),
+    }));
+    expect(toolLeg.terminalStatus).toBeUndefined();
+    expect(toolLeg.loading).toBe(false);
+
+    // A failed tool leg stays terminal: failures end the Turn.
+    const failedToolLeg = cachedMessageToChatMessage(cachedRow({
+      status: 'failed',
+      toolCallsJson: JSON.stringify([{ id: 'call-1', name: 'local_shell_exec' }]),
+    }));
+    expect(failedToolLeg.terminalStatus).toBe('failed');
+
+    // Content leg is the real Turn terminal.
+    const contentLeg = cachedMessageToChatMessage(cachedRow({
+      messageId: 'msg-2',
+      seq: 2,
+      content: 'Final answer.',
+    }));
+    expect(contentLeg.terminalStatus).toBe('completed');
+
+    // Fold gap: snapshot taken after the tool result but before the final
+    // leg row exists must not terminate the bubble.
+    const folded = foldToolMessages([toolLeg]);
+    expect(folded[0].terminalStatus).toBeUndefined();
+  });
+
+  it('keeps the bubble non-terminal while a later leg is still streaming', () => {
+    const streaming: ChatMessage[] = [
+      msg('user-1', 'user', 'run the task', { turnId: 'turn-1' }),
+      msg('leg-1', 'assistant', '', {
+        turnId: 'turn-1',
+        terminalStatus: 'completed',
+        toolCalls: [{ id: 'call-1', name: 'local_shell_exec', pending: false }],
+      }),
+      msg('tool-1', 'tool', '**local_shell_exec** ok'),
+      msg('leg-2', 'assistant', 'partial', { turnId: 'turn-1', loading: true }),
+    ];
+
+    const folded = foldToolMessages(streaming);
+    const assistant = folded.find((m) => m.role === 'assistant' && m.turnId === 'turn-1');
+    expect(assistant?.loading).toBe(true);
+    expect(assistant?.terminalStatus).toBeUndefined();
+
+    // Once the final leg settles, a fresh snapshot fold becomes terminal.
+    const settled: ChatMessage[] = [
+      streaming[0],
+      streaming[1],
+      streaming[2],
+      msg('leg-2', 'assistant', 'Final answer.', {
+        turnId: 'turn-1',
+        terminalStatus: 'completed',
+      }),
+    ];
+    const foldedSettled = foldToolMessages(settled);
+    const done = foldedSettled.find((m) => m.role === 'assistant' && m.turnId === 'turn-1');
+    expect(done?.loading).toBe(false);
+    expect(done?.terminalStatus).toBe('completed');
+    expect(done?.contentMessageId).toBe('leg-2');
+  });
+
+  it('stamps a single content-bearing leg as its own provenance', () => {
+    const messages: ChatMessage[] = [
+      msg('leg-a', 'assistant', 'plain answer', {
+        turnId: 'turn-a',
+        terminalStatus: 'completed',
+      }),
+    ];
+
+    const folded = foldToolMessages(messages);
+
+    expect(folded[0].id).toBe('leg-a');
+    expect(folded[0].contentMessageId).toBe('leg-a');
   });
 
   it('does not fold assistant rows without a turn id', () => {

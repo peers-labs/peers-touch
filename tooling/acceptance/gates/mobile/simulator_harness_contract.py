@@ -98,6 +98,8 @@ SOCIAL_CROSS_STATION_MIXED_CHILD_HARNESS_ACTIONS = frozenset(
         "moments.private.acceptance.prepareKeys",
         "moments.private.comment.submit",
         "moments.private.comments.read",
+        "moments.private.interaction.replay",
+        "moments.private.interaction.observe",
         "moments.private.publishText",
         "moments.private.read",
         "moments.private.reconcile",

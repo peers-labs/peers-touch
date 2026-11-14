@@ -165,7 +165,7 @@ export function ChatStorageSettings() {
 
   if (!snapshot) {
     return (
-      <SettingsContainer fullHeight tier="standard">
+      <SettingsContainer tier="standard">
         <div className="sc-storage-status">
           <Icon iconId="hard-drive" size={28} className="sc-storage-status__icon" />
           <Text tone="secondary">
@@ -218,7 +218,7 @@ export function ChatStorageSettings() {
   ];
 
   return (
-    <SettingsContainer fullHeight tier="standard">
+    <SettingsContainer tier="standard">
       <div
         className="sc-storage-summary"
         data-chat-storage-summary

@@ -582,6 +582,11 @@ func (s *GORMPrivateContentStore) DeletePrivatePost(
 					err,
 				)
 			}
+			for _, model := range []any{&privatePollChoiceModel{}, &privatePollBallotModel{}, &privatePollStateModel{}, &privatePollProjectionModel{}} {
+				if err := tx.Where("post_id = ?", postID).Delete(model).Error; err != nil {
+					return fmt.Errorf("social private content delete poll projection: %w", err)
+				}
+			}
 			if err := s.afterWrite(
 				ctx,
 				PrivateContentBoundaryReactionsRemoved,
@@ -900,6 +905,7 @@ type PrivatePostReadModel struct {
 
 type PrivateCommentReadModel struct {
 	Comment                 dbmodel.SocialPrivateContentComment
+	ParentAuthorPTID        string
 	Snapshot                dbmodel.SocialPrivateAudienceSnapshot
 	Envelope                *dbmodel.SocialPrivateContentEnvelope
 	Objects                 []dbmodel.SocialPrivateObjectAttachment
@@ -1227,6 +1233,7 @@ func loadPrivateCommentReadModel(
 	}
 	return &PrivateCommentReadModel{
 		Comment:                 comment,
+		ParentAuthorPTID:        parent.AuthorPTID,
 		Snapshot:                snapshot,
 		Envelope:                envelope,
 		Objects:                 objects,

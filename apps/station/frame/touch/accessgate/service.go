@@ -68,13 +68,15 @@ type Attempt struct {
 }
 
 type PolicyInput struct {
-	Mode              string
-	AllowedEmails     []string
-	AllowedUsernames  []string
-	AllowedActorPTIDs []string
-	EnabledGates      []pb.AccessGateType
-	SelfServiceInvite bool
-	UpdatedBy         string
+	Mode                     string
+	AllowedEmails            []string
+	AllowedUsernames         []string
+	AllowedActorPTIDs        []string
+	EnabledGates             []pb.AccessGateType
+	SelfServiceInvite        bool
+	DeviceApprovalEnabled    bool
+	DeviceApprovalMaxDevices uint32
+	UpdatedBy                string
 }
 
 func StartAttempt(ctx context.Context, req *pb.StartAccessAttemptRequest) (*pb.AccessDecision, error) {
@@ -439,6 +441,10 @@ func registry() *gatekeeper.Registry {
 		r.Register(allowlistGatekeeper{allowed: CheckActorAllowed})
 		r.Register(inviteCodeGatekeeper{})
 		r.Register(termsAcceptanceGatekeeper{})
+		// Registered for explicit enabled-gates policies only; deliberately
+		// absent from defaultGateOrder so the default-off switch cannot change
+		// any current authorization decision.
+		r.Register(deviceApprovalGatekeeper{})
 		registryInst = r
 	})
 	return registryInst
@@ -541,6 +547,8 @@ func UpdatePolicy(ctx context.Context, input PolicyInput) (*dbmodel.AccessPolicy
 	policy.AllowedActorPTIDs = joinStrings(input.AllowedActorPTIDs)
 	policy.EnabledGates = encodeEnabledGates(input.EnabledGates)
 	policy.SelfServiceInvite = input.SelfServiceInvite
+	policy.DeviceApprovalEnabled = input.DeviceApprovalEnabled
+	policy.DeviceApprovalMaxDevices = input.DeviceApprovalMaxDevices
 	policy.UpdatedBy = input.UpdatedBy
 
 	if err := rds.WithContext(ctx).Save(policy).Error; err != nil {
@@ -636,14 +644,16 @@ func decodeEnabledGates(raw string) []pb.AccessGateType {
 
 func ToProtoPolicy(policy *dbmodel.AccessPolicy) *pb.AccessPolicy {
 	return &pb.AccessPolicy{
-		Mode:              toProtoPolicyMode(policy.Mode),
-		AllowedEmails:     splitList(policy.AllowedEmails),
-		AllowedUsernames:  splitList(policy.AllowedUsernames),
-		AllowedActorPtids: splitList(policy.AllowedActorPTIDs),
-		EnabledGates:      decodeEnabledGates(policy.EnabledGates),
-		SelfServiceInvite: policy.SelfServiceInvite,
-		UpdatedAt:         timestamppb.New(policy.UpdatedAt),
-		UpdatedBy:         policy.UpdatedBy,
+		Mode:                     toProtoPolicyMode(policy.Mode),
+		AllowedEmails:            splitList(policy.AllowedEmails),
+		AllowedUsernames:         splitList(policy.AllowedUsernames),
+		AllowedActorPtids:        splitList(policy.AllowedActorPTIDs),
+		EnabledGates:             decodeEnabledGates(policy.EnabledGates),
+		SelfServiceInvite:        policy.SelfServiceInvite,
+		DeviceApprovalEnabled:    policy.DeviceApprovalEnabled,
+		DeviceApprovalMaxDevices: policy.DeviceApprovalMaxDevices,
+		UpdatedAt:                timestamppb.New(policy.UpdatedAt),
+		UpdatedBy:                policy.UpdatedBy,
 	}
 }
 

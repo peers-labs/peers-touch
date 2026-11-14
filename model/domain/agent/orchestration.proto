@@ -225,6 +225,15 @@ message TaskRun {
   google.protobuf.Timestamp started_at = 12;
   google.protobuf.Timestamp updated_at = 13;
   google.protobuf.Timestamp ended_at = 14;
+  // Canonical user-visible conversation for a Chat-surface task. A Chat task
+  // has 0..1 conversation (0 only before the first admitted Turn) and a
+  // conversation owns at most one Chat task.
+  string canonical_conversation_id = 15;
+  // Current accepted goal / acceptance target of the task. Distinct from the
+  // display title; updated only through explicit goal revision.
+  string goal = 16;
+  // User-defined organization labels. Labels never carry execution semantics.
+  repeated string labels = 17;
 }
 
 message ExecutionStep {

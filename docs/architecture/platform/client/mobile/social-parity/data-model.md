@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-10-06 | **Updated**: 2026-10-06
+> **Created**: 2026-10-06 | **Updated**: 2026-11-08
 > **Owner**: Mobile / Social / Client Architecture
 > **Module**: `model/domain/social/`, `apps/mobile/`
 
@@ -178,11 +178,46 @@ EDITING/IDLE -> PENDING -> COMMITTED
                          -> FAILED_ROLLBACK
 ```
 
+Private reactions use the original Native journal for both posts and comments.
+Its target is `(postId, commentId, kind)`, with an empty `commentId` selecting the
+post. The target is included in signed request bytes, request hash, result
+identity, retry readback, and the atomic completion fence. Migration adds the
+empty comment target to existing post commands without rewriting signed bytes.
+
+Native completion updates only reaction fields in the current authorized
+projection inside the journal transaction. Resource and media read commits merge
+the same monotonic reaction revision and return the merged bytes. Older receipts
+or resource reads cannot overwrite newer reactions; equal revisions with
+different summaries are rejected. Comment count and viewer state are derived
+from the typed summaries.
+
+The original private runtime shares in-flight completion per target and
+direction, retains exact unknown commands for retry, and fences results on scope
+replacement or revocation. Comment reads from `device.social`, including
+historical Search anchors, enter that runtime rather than a parallel Native
+adapter. Visible threads merge Native reconciliation into the same projections.
+The Runtime returns the merged comment page to its caller, including Search
+anchor reads. Content generation and reaction revision advance independently;
+an older body may carry a newer authorized reaction summary without replacing
+newer plaintext. Comment LIKE intents, status keys and count/viewer derivation
+use the generated `ReactionKind.REACTION_LIKE`, never a hand-maintained number.
+Equivalent comment reads share completion through publication; a different
+cursor, limit or historical anchor supersedes the current post read. Superseded
+pages and errors cannot replace or release a newer thread. Scope replacement and
+parent revocation invalidate pending reads. The Runtime fences both Native
+dispatch and the return after synchronous publication subscribers run.
+Reaction dispatch likewise revalidates the original scope and parent access
+before invoking Native, including exact-command retries.
+Rows consume the shared `MomentCommentRow` component; counts remain unchanged
+until committed, while pending, failure, and retry are rendered separately.
+Mobile public writes retain AD-08 signed-write denial.
+
 ## 7. Persistence
 
 | Data | Owner | Persistence |
 |---|---|---|
-| Social business truth | Station | canonical Social storage |
+| public Social truth | Actor device chain | original signed Feed Log; Station tables are projections |
+| private Social truth | original Secure Content / Social owner | original authority and command/result storage |
 | remote delivery | Federation/source Social | durable outbox/inbox |
 | private ciphertext/key refs and wrapped recovery master | Mobile Rust private engine | encrypted local store / platform secure storage |
 | may-commit commands | Mobile Rust command ledger | encrypted, bounded, scope-keyed |

@@ -9,11 +9,11 @@ import {
 import { listen } from '@tauri-apps/api/event';
 import { GlobalLayout } from '../components/GlobalLayout';
 import { AppSideNav } from '../components/AppSideNav';
-import { AgentModuleNav } from '../components/agent/AgentModuleNav';
 import { PageRouter } from '../components/PageRouter';
 import { CommandMenu } from '../components/CommandMenu';
 import { SearchHost } from '../components/search/SearchHost';
 import { SearchReturnBar } from '../components/search/SearchReturnBar';
+import { LoginApprovalDialogHost } from '../components/shell/LoginApprovalDialogHost';
 import { useHashRouter } from '../hooks/useHashRouter';
 import { useNavigation } from '../hooks/useNavigation';
 import { useCommandMenuShortcut } from '../hooks/useCommandMenuShortcut';
@@ -108,7 +108,6 @@ export function ReadyView({ lifecycle: _lifecycle }: ReadyViewProps) {
           flexDirection: 'column',
         }}>
           <SearchReturnBar navigation={navigation} />
-          <AgentModuleNav page={router.page} navigation={navigation} />
           <div style={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative' }}>
             <ShellCommitProfiler owner="shell:page-host" surface="page-host">
               <PageHost
@@ -130,6 +129,7 @@ export function ReadyView({ lifecycle: _lifecycle }: ReadyViewProps) {
         navigateToAgentSurface={navigation.navigateToAgentSurface}
         navigateToSettings={navigation.navigateToSettings}
       />
+      <LoginApprovalDialogHost />
     </PageContextProvider>,
   );
 }

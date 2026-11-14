@@ -59,6 +59,10 @@ export function UIProvider({ children, theme = 'system', className = '', style, 
   const restoreFocus = useCallback((target: HTMLElement) => {
     const win = target.ownerDocument.defaultView;
     if (!win) return;
+    // A successor overlay cancels the scheduled focus frame on registration.
+    // Retain the source immediately so it inherits the surviving trigger,
+    // rather than the menu item that is about to unmount.
+    if (target.isConnected) lastTrigger.current = target;
     const frame = win.requestAnimationFrame(() => {
       focusFrames.current.delete(frame);
       restoreNavigationFocus(target);

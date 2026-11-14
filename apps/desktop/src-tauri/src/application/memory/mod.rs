@@ -129,6 +129,7 @@ pub fn memory_list(
         since: value_string(&params, "since"),
         until: value_string(&params, "until"),
         period: value_string(&params, "period"),
+        status: value_i32(&params, "status"),
     };
     match station_client
         .request_peers_proto::<agent::ListMemoriesRequest, agent::ListMemoriesResponse>(
@@ -509,6 +510,7 @@ fn value_to_memory_item(value: &Value) -> agent::MemoryItem {
             .get("is_frozen")
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
+        status: value_i32(value, "status"),
     }
 }
 

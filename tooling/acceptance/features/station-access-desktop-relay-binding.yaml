@@ -13,6 +13,7 @@
     "apps/desktop/src/acceptance/stationAccess.ts",
     "apps/desktop/src/acceptance/station_access/**",
     "apps/desktop/src/pages/login/StationSetupPanel.tsx",
+    "apps/desktop/src/pages/login/useStationRegistry.ts",
     "tooling/acceptance/gates/station_access/desktop_relay_native_e2e.py"
   ],
   "truth_sources": [

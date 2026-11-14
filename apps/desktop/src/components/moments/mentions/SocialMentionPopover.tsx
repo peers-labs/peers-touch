@@ -1,4 +1,4 @@
-import { Button, Empty, theme } from 'antd';
+import { Button, Empty } from '@peers-touch/ui';
 import { AtSign } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { SocialMentionCandidate } from './socialMentionModel';
@@ -21,7 +21,6 @@ export function SocialMentionPopover({
   onHover,
   onPick,
 }: SocialMentionPopoverProps) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('moments');
   if (!open) return null;
 
@@ -36,16 +35,15 @@ export function SocialMentionPopover({
         zIndex: 20,
         maxHeight: 220,
         overflowY: 'auto',
-        background: token.colorBgElevated,
-        border: `1px solid ${token.colorBorderSecondary}`,
-        borderRadius: token.borderRadius,
-        boxShadow: token.boxShadowSecondary,
+        background: 'var(--pt-raised)',
+        border: '1px solid var(--pt-border)',
+        borderRadius: 'var(--pt-radius-md)',
+        boxShadow: 'var(--pt-shadow-float)',
         padding: 4,
       }}
     >
       {candidates.length === 0 ? (
         <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
           description={t('moments.comment.mentionNoMatch')}
           style={{ margin: '8px 0' }}
         />
@@ -58,8 +56,9 @@ export function SocialMentionPopover({
           return (
             <Button
               key={candidate.actorPtid}
-              type="text"
-              block
+              actionId={`moments.mention.${candidate.actorPtid}`}
+              emphasis="quiet"
+              fullWidth
               data-moments-mention-index={index}
               onMouseEnter={() => onHover(index)}
               onClick={(event) => {
@@ -70,13 +69,11 @@ export function SocialMentionPopover({
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
-                height: 'auto',
-                padding: '6px 8px',
                 textAlign: 'left',
-                background: active ? token.colorFillQuaternary : 'transparent',
               }}
+              aria-current={active || undefined}
             >
-              <AtSign size={13} color={token.colorTextTertiary} />
+              <AtSign size={13} color="var(--pt-muted)" />
               <span
                 style={{
                   minWidth: 0,
@@ -89,7 +86,7 @@ export function SocialMentionPopover({
                   style={{
                     fontSize: 13,
                     fontWeight: active ? 600 : 400,
-                    color: token.colorText,
+                    color: 'var(--pt-text)',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
@@ -101,7 +98,7 @@ export function SocialMentionPopover({
                   <span
                     style={{
                       fontSize: 11,
-                      color: token.colorTextTertiary,
+                      color: 'var(--pt-muted)',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',

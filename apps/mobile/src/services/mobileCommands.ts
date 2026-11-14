@@ -802,6 +802,9 @@ export type PrivateMomentReadContent =
     text: string;
     question: string;
     options: string[];
+    opaqueOptionIds?: string[];
+    optionSetSha256?: string;
+    result?: PrivatePollResultProjection;
     minChoices: number;
     maxChoices: number;
     expiresAtSeconds: number;
@@ -858,6 +861,15 @@ export interface PrivateReactionSummaryProjection {
   reactedByViewer: boolean;
 }
 
+export interface PrivatePollResultProjection {
+  voteCounts: string[];
+  selectedOptions: number[];
+  voterCount: string;
+  projectionRevision: string;
+  commandId: string;
+  voteActorPtid: string;
+}
+
 export type PrivateReactionCommandState =
   | 'REACTION_PENDING'
   | 'REACTION_RETRYING'
@@ -868,8 +880,10 @@ export type PrivateReactionCommandState =
 export interface PrivateReactionCommandProjection {
   commandId: string;
   postId: string;
+  commentId: string;
   kind: number;
-  operation: 'REACT' | 'UNREACT';
+  operation: 'REACT' | 'UNREACT' | 'VOTE_POLL';
+  selectedOpaqueOptionIds?: string[];
   state: PrivateReactionCommandState;
   attemptCount: number;
   projectionRevision: string;
@@ -883,6 +897,7 @@ export interface PrivateReactionMutationResult {
   reactions: PrivateReactionSummaryProjection[];
   projectionRevision: string;
   exactReplay: boolean;
+  poll?: PrivatePollResultProjection;
 }
 
 export type PrivateCommentState =
@@ -923,6 +938,9 @@ export interface PrivateCommentProjection {
   text?: string;
   mentions: PrivateMomentMention[];
   reactionsCount: number;
+  reactions?: PrivateReactionSummaryProjection[];
+  reactionRevision?: string;
+  reactionsHydrated?: boolean;
   repliesCount: number;
   createdAtMillis?: number;
   updatedAtMillis?: number;
@@ -1066,32 +1084,44 @@ export async function privateSocialComments(
     postId: string;
     cursor?: string;
     limit?: number;
+    anchorCommentId?: string;
   },
 ): Promise<PrivateCommentPage> {
   return invoke<PrivateCommentPage>('social_private_comments', { input });
 }
 
 export async function privateSocialReact(
-  input: PrivateSocialAccountInput & { postId: string; kind: number },
+  input: PrivateSocialAccountInput & { postId: string; commentId?: string; kind: number },
 ): Promise<PrivateReactionMutationResult> {
   requirePrivateSocialMutation(input);
   return invoke<PrivateReactionMutationResult>('social_private_react', {
     input: {
       ...privateSocialReactionScope(input),
       postId: input.postId,
+      commentId: input.commentId ?? '',
       kind: input.kind,
     },
   });
 }
 
+export async function privateSocialPollVote(
+  input: PrivateSocialAccountInput & { postId: string; selectedOptions: readonly number[] },
+): Promise<PrivateReactionMutationResult> {
+  requirePrivateSocialMutation(input);
+  return invoke<PrivateReactionMutationResult>('social_private_poll_vote', {
+    input: { ...privateSocialReactionScope(input), postId: input.postId, selectedOptions: [...input.selectedOptions] },
+  });
+}
+
 export async function privateSocialUnreact(
-  input: PrivateSocialAccountInput & { postId: string; kind: number },
+  input: PrivateSocialAccountInput & { postId: string; commentId?: string; kind: number },
 ): Promise<PrivateReactionMutationResult> {
   requirePrivateSocialMutation(input);
   return invoke<PrivateReactionMutationResult>('social_private_unreact', {
     input: {
       ...privateSocialReactionScope(input),
       postId: input.postId,
+      commentId: input.commentId ?? '',
       kind: input.kind,
     },
   });

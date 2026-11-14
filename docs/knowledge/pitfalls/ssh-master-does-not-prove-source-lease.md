@@ -32,6 +32,11 @@ ordinary Gate children and cleanup. Borrowers do not release the master.
 Runtime descriptors and socket paths are not evidence or repository artifacts.
 Forward processes retain separate ownership so terminating a borrower cannot
 leave master-owned forwards behind.
+Each cleanup callback enters the existing owner connection context again.
+After a source lease releases its master, later deployment/restoration children
+must observe no descriptor for that released connection. The enclosing caller's
+environment is restored after each callback. See the cleanup contract in
+`docs/architecture/engineering/acceptance/design.md`.
 
 ## How to detect a recurrence
 
@@ -43,3 +48,7 @@ inheritance, exact target/owner/PID rejection, deliberate lease loss while a
 borrowed channel is active, lock reacquisition and removal of all owned
 processes and private socket roots. These transport observations remain
 supporting evidence; original Native Gates separately own product proof.
+The original cleanup regression must observe a live descriptor in a borrower
+child, then no descriptor in the restoration child after source-lease release.
+Runner sealing must retain an initial refusal's diagnostic in `primaryFailure`
+when a separate cleanup failure makes the aggregate `FAILED/UNPROVEN`.

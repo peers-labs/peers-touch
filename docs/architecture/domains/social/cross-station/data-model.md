@@ -277,7 +277,7 @@ message FederatedPrivateInteractionResult {
 `operation`. Unknown fields, mismatched operation types, or hash changes are
 terminal.
 
-Comment prepare and submit requests carry the actor signing-key ID and a
+Comment prepare/submit and reaction/unreaction requests carry the actor signing-key ID and a
 device signature over the domain-separated operation plus canonical request
 bytes with the signature field cleared. The source Station verifies that
 signature after authenticating the actor's Home Station frame. A successful
@@ -286,6 +286,23 @@ re-attests that key before returning the source-signed plan to Native Desktop.
 For a Comment authored away from the source-resource Station, the source also
 embeds the actor key it verified at commit time so each receiver can validate
 the envelope without treating the source Station as the actor's Home Station.
+
+Reaction request and response `comment_id` identifies a Comment under the
+required `post_id`; empty means a Post reaction. Both identifiers bind the
+device signature, canonical command hash, exact replay and result validation.
+The source's original private Store validates the parent, Comment visibility,
+current grant and block state in its mutation transaction.
+
+`PrivateReactionProjection` stores `post_id`, `comment_id` and typed
+`ReactionSummary` values. Its SQL key is
+`(source_station_peer_id, post_id, comment_id, viewer_ptid)`, with a monotonic
+revision per target. Source reads derive current viewer summaries from the
+original reaction rows; remote reads consume only that viewer's received
+projection. `CommentMetadata.reactions/reaction_revision/is_liked` carries the
+authorized readback, and `reactions_count` counts LIKE only. Comment writes
+cannot alter Post reaction counts. Existing derived Post-encoded projection
+rows are translated once during schema migration; runtime readers accept only
+the typed projection.
 
 ## 7. Object Peer Read
 

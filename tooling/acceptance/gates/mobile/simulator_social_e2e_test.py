@@ -187,7 +187,7 @@ class SimulatorSocialGateTests(unittest.TestCase):
             IOS_SOCIAL_PARITY_SCENARIOS.index("rc01-circles-publish"),
         )
         self.assertEqual(source.count('"social-reaction-open"'), 1)
-        self.assertIn('state.get("publicPostId")', source)
+        self.assertIn('state.get("privatePostId")', source)
         self.assertIn('"moments.comment"', source)
         self.assertIn("data-reaction-picker-item", source)
         self.assertNotIn("moments.private.comment.submit", source)
@@ -927,7 +927,7 @@ class SimulatorSocialGateTests(unittest.TestCase):
     def test_explore_sort_requires_the_visible_sheet_before_selection(self) -> None:
         gate = SimulatorSocialGate("ios-social-parity")
         sender = Mock()
-        sender.call_action.return_value = {"postId": "public-post"}
+        sender.call_action.return_value = {"postId": "private-post"}
         receiver = Mock()
         sort_sheet_open = False
         hot_selected = False
@@ -945,6 +945,10 @@ class SimulatorSocialGateTests(unittest.TestCase):
 
         receiver.execute_script.side_effect = click_visible
         with (
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_social_e2e.assert_public_composer_denial",
+                return_value={"publicWriteRejected": True, "composerDraftRetained": True},
+            ),
             patch.object(gate, "_wait_ui"),
             patch.object(gate, "_wait_ui_attribute"),
             patch.object(gate, "_wait_for_moment", return_value={"found": True}),
@@ -954,6 +958,7 @@ class SimulatorSocialGateTests(unittest.TestCase):
                 sender,
                 receiver,
                 self._actor("sim-ios", "alice"),
+                self._actor("sim-ios-peer", "bob"),
                 "journey",
                 {},
             )
@@ -962,7 +967,7 @@ class SimulatorSocialGateTests(unittest.TestCase):
         self.assertFalse(sort_sheet_open)
         self.assertEqual(
             result["receiverAssertion"],
-            "receiver-post:public-post",
+            "receiver-post:private-post",
         )
 
     def test_missing_runtime_manifest_blocks_before_journey(self) -> None:
@@ -2837,6 +2842,12 @@ class SimulatorSocialGateTests(unittest.TestCase):
                 payload: object = None,
             ) -> object:
                 if action == "moments.publish":
+                    if isinstance(payload, dict) and payload.get("audienceKind") == 1:
+                        return {"rejected": True, "code": "FEED_SIGNED_WRITE_REQUIRED"}
+                    if not isinstance(payload, dict) or payload.get("audience") != {
+                        "kind": "CUSTOM_ALLOW", "actorPtids": ["ptid:bob"],
+                    }:
+                        raise AssertionError(("private audience", payload))
                     return {
                         "postId": "post-1",
                         "authorPtid": "ptid:alice",
@@ -2928,13 +2939,18 @@ class SimulatorSocialGateTests(unittest.TestCase):
         receiver_session = ReceiverSession()
         notification_ui = {"read": {"unread": False}, "delete": {"ownerRowAbsent": True}}
         with (
-            patch.object(gate, "_prepare_private_keys", return_value={"endpointPrekeysAvailable": 16}),
+            patch.object(gate, "_prepare_private_keys", return_value={
+                "endpointPrekeysAvailable": 16, "recoveryPrekeysAvailable": 4,
+            }) as prepare,
             patch.object(gate, "_run_notification_ui", return_value=notification_ui) as notification,
         ):
             result = gate._run_moments_journey(
                 sender_session=sender_session, receiver_session=receiver_session,
                 sender=sender, receiver=receiver, journey_id="run",
             )
+            self.assertEqual(prepare.call_count, 4)
+            self.assertTrue(result["publicWriteRejected"])
+            self.assertEqual(result["audience"], "CUSTOM_ALLOW")
             notification.assert_called_once_with(
                 sender_session, comment_id="mention-run-30", post_id="private-1",
                 expected_comment_ids={f"mention-run-{index}" for index in range(31)},

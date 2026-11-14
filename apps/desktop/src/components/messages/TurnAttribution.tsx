@@ -1,16 +1,7 @@
-import {
-  BookOpenText,
-  Brain,
-  ChevronDown,
-  FileText,
-  Paperclip,
-  Sparkles,
-  Wrench,
-  type LucideIcon,
-} from 'lucide-react';
-import { useState } from 'react';
+import { useState, type ComponentProps } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Button, Icon } from '@peers-touch/ui';
 import {
   TurnAttributionKind,
   TurnAttributionOutcome,
@@ -19,21 +10,30 @@ import {
   type TurnAttributionProjection,
 } from '../../gen/proto/domain/agent/agent_pb';
 
+// Derive the icon id union from peers-ui itself so this package needs no
+// direct dependency on @peers-touch/ui-assets.
+type IconIdValue = ComponentProps<typeof Icon>['iconId'];
+
+// View-layer migration: lucide components are replaced by peers-ui icon ids
+// that resolve to the same lucide glyph set through @peers-touch/ui-assets.
+// IdCard / BookOpenText have no direct peers-ui id, so they map to the closest
+// semantic equivalents (user / book-open).
 const KIND_META = new Map<
   TurnAttributionKind,
-  { icon: LucideIcon; localeKey: string }
+  { iconId: IconIdValue; localeKey: string }
 >([
-  [TurnAttributionKind.SKILL, { icon: Sparkles, localeKey: 'skill' }],
-  [TurnAttributionKind.MEMORY, { icon: Brain, localeKey: 'memory' }],
+  [TurnAttributionKind.SKILL, { iconId: 'sparkles', localeKey: 'skill' }],
+  [TurnAttributionKind.PROFILE, { iconId: 'user', localeKey: 'profile' }],
+  [TurnAttributionKind.MEMORY, { iconId: 'brain', localeKey: 'memory' }],
   [TurnAttributionKind.KNOWLEDGE, {
-    icon: BookOpenText,
+    iconId: 'book-open',
     localeKey: 'knowledge',
   }],
   [TurnAttributionKind.ATTACHMENT, {
-    icon: Paperclip,
+    iconId: 'paperclip',
     localeKey: 'attachment',
   }],
-  [TurnAttributionKind.TOOL, { icon: Wrench, localeKey: 'tool' }],
+  [TurnAttributionKind.TOOL, { iconId: 'wrench', localeKey: 'tool' }],
 ]);
 
 const REASON_KEYS: Record<string, string> = {
@@ -118,7 +118,7 @@ export function TurnAttribution({
   if (projection.state === TurnAttributionState.UNAVAILABLE) {
     return (
       <span className="sc-attribution-unavailable" data-turn-attribution-state="unavailable">
-        <FileText size={12} />
+        <Icon iconId="file-text" size={12} />
         {t('chat.message.attribution.unavailable')}
       </span>
     );
@@ -146,7 +146,6 @@ export function TurnAttribution({
         {groups.map((group) => {
           const meta = KIND_META.get(group.kind);
           if (!meta) return null;
-          const Icon = meta.icon;
           const kindLabel = t(`chat.message.attribution.kind.${meta.localeKey}`);
           // The collapsed chip stays quiet and kind-level; individual tool
           // names (which are machine identifiers) live in the expanded detail.
@@ -174,36 +173,41 @@ export function TurnAttribution({
                 outcome: outcomeLabel,
               });
           return (
-            <button
+            <Button
               key={`attribution-kind-${meta.localeKey}`}
-              type="button"
+              actionId={`attribution-kind.${meta.localeKey}`}
+              emphasis="quiet"
+              density="compact"
               className={`sc-attribution__chip${group.truncated ? ' is-warning' : ''}`}
               aria-expanded={open}
               aria-label={chipLabel}
               data-attribution-kind={meta.localeKey}
               data-attribution-count={group.entries.length}
               data-attribution-outcome={representativeOutcome}
-              onClick={() => setOpen((value) => !value)}
+              leading={<Icon iconId={meta.iconId} size={12} />}
+              onActivate={() => setOpen((value) => !value)}
             >
-              <Icon size={12} />
               <span className="sc-attribution__chip-label">{label}</span>
-            </button>
+            </Button>
           );
         })}
-        <button
-          type="button"
+        <Button
+          actionId="attribution.sources-toggle"
+          emphasis="quiet"
+          density="compact"
           className="sc-attribution__toggle"
           aria-expanded={open}
-          onClick={() => setOpen((value) => !value)}
+          leading={<Icon iconId="file-text" size={12} />}
+          onActivate={() => setOpen((value) => !value)}
         >
-          <FileText size={12} />
           {t('chat.message.attribution.sources')}
-          <ChevronDown
+          <Icon
+            iconId="chevron-down"
             size={12}
             className="sc-attribution__chevron"
             style={{ transform: open ? 'rotate(180deg)' : 'none' }}
           />
-        </button>
+        </Button>
       </div>
 
       {open && (
@@ -233,7 +237,6 @@ function AttributionDetail({ entry }: { entry: TurnAttributionEntry }) {
   const { t } = useTranslation('chat');
   const meta = KIND_META.get(entry.kind);
   if (!meta) return null;
-  const Icon = meta.icon;
   const outcomeKey = attributionOutcomeKey(entry.outcome);
   const reasonKey = REASON_KEYS[entry.reasonCode] ?? 'unknown';
   const tone = entry.outcome === TurnAttributionOutcome.TRUNCATED
@@ -249,7 +252,7 @@ function AttributionDetail({ entry }: { entry: TurnAttributionEntry }) {
       data-attribution-detail-outcome={outcomeKey}
     >
       <span className="sc-attribution__row-icon">
-        <Icon size={13} />
+        <Icon iconId={meta.iconId} size={13} />
       </span>
       <span className="sc-attribution__row-body">
         <span className="sc-attribution__row-title">

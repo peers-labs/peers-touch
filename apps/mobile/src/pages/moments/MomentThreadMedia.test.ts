@@ -23,6 +23,7 @@ describe('mobile Moment thread and media ownership', () => {
     const comments = source('./MomentCommentsSection.tsx');
 
     expect(comments).toContain('usePrivateThread ? null : (facade?.feed ?? null)');
+    expect(comments).toContain('const usePrivateThread = privateRoute && !sourceId');
     expect(comments).toMatch(/intents\s*\.\s*readPrivateComments/);
     expect(comments).toMatch(/intents\s*\.\s*submitPrivateComment/);
   });

@@ -24,6 +24,7 @@ export interface DesktopClientStorageRuntime {
     readonly agentMessages: DomainCacheRepository<Record<string, unknown[]>>;
     readonly agentTurnEvents: DomainCacheRepository<Record<string, unknown[]>>;
     readonly agentCursor: DomainCacheRepository<number>;
+    readonly agentComposerDrafts: DomainCacheRepository<unknown>;
   };
   readonly clearSession: () => Promise<void>;
 }
@@ -57,6 +58,7 @@ export function createDesktopClientStorageRuntime(scope: DesktopStorageSessionSc
       agentMessages: kernel.repository<Record<string, unknown[]>>('agent.message'),
       agentTurnEvents: kernel.repository<Record<string, unknown[]>>('agent.turn-event'),
       agentCursor: kernel.repository<number>('agent.cursor'),
+      agentComposerDrafts: kernel.repository<unknown>('agent.composer-draft'),
     },
     clearSession: () => kernel.invalidateSession(),
   };
