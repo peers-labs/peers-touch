@@ -169,7 +169,7 @@ export function AgentFeature() {
                 onActivate={() => setDrawer('agents')}
               />
             )}
-            <Heading level={4} truncate>
+            <Heading level={4} truncate className="pa-conversation__heading">
               {selectedTopic?.title ?? selectedAgent.name}
             </Heading>
           </Flex>

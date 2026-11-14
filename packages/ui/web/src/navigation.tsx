@@ -6,8 +6,10 @@ import { Icon } from './icon';
 export interface TabItem { id: string; label: ReactNode; content: ReactNode; disabled?: boolean; keepMounted?: boolean }
 export interface TabsProps extends HTMLAttributes<HTMLDivElement> {
   items: readonly TabItem[]; value?: string; defaultValue?: string; onValueChange?: (value: string) => void;
+  /** App-owned class merged onto each rendered tab panel (layout). */
+  panelClassName?: string;
 }
-export function Tabs({ items, value: supplied, defaultValue, onValueChange, className = '', ...props }: TabsProps) {
+export function Tabs({ items, value: supplied, defaultValue, onValueChange, className = '', panelClassName = '', ...props }: TabsProps) {
   const [local, setLocal] = useState(defaultValue ?? items[0]?.id), value = supplied ?? local;
   const [visited, setVisited] = useState(() => new Set([supplied ?? defaultValue ?? items[0]?.id]));
   const list = useRef<HTMLDivElement>(null), id = useId();
@@ -27,7 +29,7 @@ export function Tabs({ items, value: supplied, defaultValue, onValueChange, clas
         aria-selected={value === item.id} tabIndex={value === item.id ? 0 : -1} disabled={item.disabled}
         onClick={() => select(item.id)}>{item.label}</button>)}
     </div>
-    {items.filter(item => value === item.id || item.keepMounted && visited.has(item.id)).map(item => <div key={item.id} className="pt-tab-panel"
+    {items.filter(item => value === item.id || item.keepMounted && visited.has(item.id)).map(item => <div key={item.id} className={`pt-tab-panel ${panelClassName}`}
       id={`${id}-panel-${item.id}`} role="tabpanel" aria-labelledby={`${id}-tab-${item.id}`} hidden={value !== item.id}>{item.content}</div>)}
   </div>;
 }

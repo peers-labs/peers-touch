@@ -168,6 +168,7 @@ export function FileDock() {
       </Flex>
       <Tabs
         className="pa-wb-file__tabs"
+        panelClassName="pa-wb-file__tab-panel"
         items={tabItems}
         value={view}
         onValueChange={value => setView(value as FileView)}

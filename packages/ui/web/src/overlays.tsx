@@ -223,6 +223,8 @@ export function Popover({ children, content, open: controlled, onOpenChange, pla
 export interface MenuEntry extends Omit<MenuAction,'label'|'onActivate'> {
   label: ReactNode; leading?: ReactNode; kind?: 'action'|'separator';
   onActivate?: (event: React.MouseEvent<HTMLElement>) => void; children?: readonly MenuEntry[];
+  /** App-owned class merged onto the rendered menu item for surface layout. */
+  className?: string;
 }
 export interface MenuProps extends Omit<PopoverProps, 'content'> {
   actions: readonly MenuEntry[]; anchorPoint?: {x:number;y:number};
@@ -261,7 +263,7 @@ export function Menu({ actions, ...props }: MenuProps) {
       {entries.map(action => action.kind==='separator' ? <div key={action.id} role="separator" className="pt-menu-separator">{action.label}</div> : <Button key={action.id} actionId={action.id}
         role="menuitem" tabIndex={commands.indexOf(action) === active ? 0 : -1} emphasis="quiet"
         tone={asActionTone(action.tone)}
-        availability={action.availability} className="pt-menu-item"
+        availability={action.availability} className={`pt-menu-item ${action.className ?? ''}`}
         leading={action.leading ?? (action.iconId ? <Icon iconId={action.iconId as never} /> : undefined)}
         {...toDataAttributes(action.data)}
         onActivate={event => { close(true); action.onActivate?.(event); props.onAction?.(action.id,event); }}>{action.label}</Button>)}

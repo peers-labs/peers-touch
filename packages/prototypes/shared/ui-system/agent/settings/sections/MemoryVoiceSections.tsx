@@ -75,6 +75,7 @@ export function MemorySection() {
             <em>{vectorWeight}%</em>
           </Text>
           <Slider
+            className="pa-memory__weight-slider"
             value={vectorWeight}
             label={t('agent.ai.memory.vector')}
             valueLabel={value => `${value}%`}
@@ -86,6 +87,7 @@ export function MemorySection() {
             <em>{100 - vectorWeight}%</em>
           </Text>
           <Slider
+            className="pa-memory__weight-slider"
             value={100 - vectorWeight}
             label={t('agent.ai.memory.keyword')}
             valueLabel={value => `${value}%`}

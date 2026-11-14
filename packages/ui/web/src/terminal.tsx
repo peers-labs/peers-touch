@@ -49,6 +49,8 @@ export interface TerminalSurfaceProps extends HTMLAttributes<HTMLDivElement> {
   emptyLabel?: string;
   /** Max viewport height; defaults to the bounded 240px console surface. */
   maxHeight?: number | string;
+  /** App-owned class merged onto the scrollable viewport (layout). */
+  viewportClassName?: string;
 }
 
 const STATUS_TONE: Record<TerminalStatus, 'info' | 'success' | 'warning' | 'neutral'> = {
@@ -85,6 +87,7 @@ export function TerminalSurface({
   emptyLabel = 'No output yet',
   maxHeight = 240,
   className = '',
+  viewportClassName = '',
   ...props
 }: TerminalSurfaceProps) {
   const viewportRef = useRef<HTMLPreElement>(null);
@@ -121,7 +124,7 @@ export function TerminalSurface({
       </div>
       <pre
         ref={viewportRef}
-        className="pt-terminal__viewport"
+        className={`pt-terminal__viewport ${viewportClassName}`}
         style={{ maxHeight }}
         role="log"
         aria-live="polite"

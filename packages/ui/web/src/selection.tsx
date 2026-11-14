@@ -309,9 +309,9 @@ export interface SliderProps extends Omit<InputHTMLAttributes<HTMLInputElement>,
   value?: number; onValueChange?: (value: number) => void; label?: string;
   ticks?: readonly { value: number; label: string }[]; valueLabel?: (value: number) => string;
 }
-export function Slider({ value, onValueChange, label, ticks, valueLabel, style, ...props }: SliderProps) {
+export function Slider({ value, onValueChange, label, ticks, valueLabel, style, className = '', ...props }: SliderProps) {
   const id = useId();
-  return <div className="pt-slider" style={style}>
+  return <div className={`pt-slider ${className}`} style={style}>
     <input {...props} type="range" value={value} list={ticks ? id : undefined}
       aria-label={label ?? props['aria-label']} aria-valuetext={value !== undefined ? valueLabel?.(value) : undefined}
       title={value !== undefined ? valueLabel?.(value) : undefined}

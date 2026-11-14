@@ -86,6 +86,7 @@ export function AgentProfile({ agent, onBack, onIdentityChange }: AgentProfilePr
             label={t('agent.profile.backToAgent')} emphasis="quiet"
             data-pt-agent-profile-back onActivate={onBack} />
           <TextField
+            frameClassName="pa-profile__title-frame"
             value={title}
             aria-label={t('agent.profile.identityTitlePlaceholder')}
             placeholder={t('agent.profile.identityTitlePlaceholder')}
@@ -108,6 +109,7 @@ export function AgentProfile({ agent, onBack, onIdentityChange }: AgentProfilePr
             <IdentityAvatar agent={agent} />
           </Button>
           <TextArea
+            frameClassName="pa-profile__identity-frame"
             value={description}
             framing="embedded"
             minimumRows={3}
@@ -126,6 +128,7 @@ export function AgentProfile({ agent, onBack, onIdentityChange }: AgentProfilePr
 
         <Tabs
           className="pa-profile__tabs"
+          panelClassName="pa-profile__tab-panel"
           items={items}
           value={section}
           onValueChange={value => setSection(value as ProfileSection)}
@@ -147,14 +150,14 @@ export function AgentProfile({ agent, onBack, onIdentityChange }: AgentProfilePr
 function IdentityAvatar({ agent }: { agent: AgentRecord }) {
   const mode: AvatarMode = agent.avatarMode;
   if (mode === 'image') {
-    return <AgentAvatar name={agent.name} source={agent.avatarValue} size={64} />;
+    return <AgentAvatar className="pa-profile__avatar" name={agent.name} source={agent.avatarValue} size={64} />;
   }
   if (mode === 'emoji') {
     return (
-      <AgentAvatar name={agent.name} size={64}>
+      <AgentAvatar className="pa-profile__avatar" name={agent.name} size={64}>
         <EmojiArtwork emoji={agent.avatarValue} label={agent.name} />
       </AgentAvatar>
     );
   }
-  return <AgentAvatar name={agent.name} size={64} />;
+  return <AgentAvatar className="pa-profile__avatar" name={agent.name} size={64} />;
 }

@@ -167,6 +167,7 @@ export function TerminalDock() {
       {active ? (
         <TerminalSurface
           className="pa-wb-term__surface"
+          viewportClassName="pa-wb-term__viewport"
           lines={active.lines}
           status={active.status}
           exitCode={active.exitCode}

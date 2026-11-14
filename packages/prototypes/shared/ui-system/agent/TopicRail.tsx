@@ -179,7 +179,7 @@ export function TopicRail({
   return (
     <Flex
       direction="column"
-      className="pa-rail pa-topics"
+      className={`pa-rail pa-topics${fullWidth ? ' pa-rail--embedded' : ''}`}
       width={fullWidth ? undefined : 238}
       style={fullWidth ? { flex: 1, width: '100%' } : undefined}
       aria-label={t('agent.topic.title')}
@@ -505,6 +505,7 @@ function TopicRow({
           value={renameValue}
           aria-label={t('agent.topic.rename')}
           density="compact"
+          frameClassName="pa-topic-row__rename-frame"
           onValueChange={setRenameValue}
           onEnter={(event) => {
             event.stopPropagation();

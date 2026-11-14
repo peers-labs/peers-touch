@@ -93,8 +93,8 @@ export function AgentRoster({
   return (
     <Flex
       direction="column"
-      className="pa-rail"
-      width={230}
+      className={`pa-rail${embedded ? ' pa-rail--embedded' : ''}`}
+      width={embedded ? undefined : 230}
       aria-label={t('agent.roster.title')}
       data-pt-agent-rail="expanded"
     >
@@ -106,6 +106,8 @@ export function AgentRoster({
                 density="compact"
                 clearable
                 autoFocus
+                frameClassName="pa-rail__search-frame"
+                className="pa-rail__search-input"
                 leading={<Icon iconId="search" size={15} />}
                 aria-label={t('agent.roster.search')}
                 placeholder={t('agent.roster.search')}

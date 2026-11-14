@@ -54,6 +54,7 @@ export function ToolCallView({
     <Card
       flat
       className="pa-tool"
+      headerClassName="pa-tool__header"
       data-pt-tool-name={tool.title}
       data-pt-tool-status={tool.status}
       heading={(

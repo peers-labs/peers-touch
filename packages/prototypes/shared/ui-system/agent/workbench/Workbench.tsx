@@ -50,6 +50,7 @@ export function Workbench({ messages, title, agentName }: WorkbenchProps) {
       maximum={560}
       label={t('agent.wb.resize')}
       className="pa-workbench"
+      bodyClassName="pa-workbench__panel-body"
       data-pt-wb-panel
     >
       <WorkbenchHeader workbench={workbench} t={t} />

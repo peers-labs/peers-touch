@@ -65,14 +65,14 @@
 /* Normalize the search frame to a fixed 36px (compact control + two xxs
    paddings); the input drops its normal-density min-height so it cannot
    re-grow the frame. */
-.pa-rail__search-field .pt-field-frame {
+.pa-rail__search-frame {
   flex: 1;
   min-width: 0;
   height: calc(var(--pt-control-compact) + var(--pt-space-xxs) * 2);
   min-height: calc(var(--pt-control-compact) + var(--pt-space-xxs) * 2);
 }
 
-.pa-rail__search-field .pt-input {
+.pa-rail__search-input {
   min-height: 0;
   padding-top: 0;
   padding-bottom: 0;
@@ -131,9 +131,10 @@
   z-index: 2;
 }
 
-/* Inside a Drawer the overlay owns border and dismissal, but the rail head
-   (mode switch / search / create) stays functional rather than hidden. */
-.pt-drawer-left .pa-rail {
+/* Rails embedded in a Drawer fill the drawer body and drop their own border:
+   the overlay owns border and dismissal, while the rail head (mode switch /
+   search / create) stays functional rather than hidden. */
+.pa-rail--embedded {
   border-right: 0;
   width: 100%;
 }
@@ -170,11 +171,11 @@
 /* The row overflow menu only carries two short actions; tighten it to hug
    its content instead of the library's generic 180px menu min-width. Scoped
    to this surface so other menus keep the shared spec. */
-.pt-overlay.pa-row-menu {
+.pa-row-menu {
   min-width: 150px;
 }
 
-.pa-row-menu .pt-menu-item {
+.pa-row-menu__item {
   padding-inline: var(--pt-space-sm);
 }
 
@@ -396,7 +397,7 @@
 }
 
 /* Checkbox label becomes the full selectable row in batch mode. */
-.pa-topic-row--select.pt-check-label {
+.pa-topic-row--select {
   display: flex;
   align-items: center;
   gap: var(--pt-space-sm);
@@ -407,7 +408,7 @@
   cursor: pointer;
 }
 
-.pa-topic-row--select.pt-check-label:hover {
+.pa-topic-row--select:hover {
   background: var(--pt-subtle);
 }
 
@@ -432,7 +433,7 @@
   padding: 4px var(--pt-space-sm);
 }
 
-.pa-topic-row--editing .pt-field {
+.pa-topic-row__rename-frame {
   flex: 1;
   min-width: 0;
 }
@@ -455,7 +456,7 @@
 /* The h4 keeps its UA block margins (~18.6px each side) because peers-ui does
    not reset heading margins; zero them so the bar settles on the 44px track
    instead of growing to 59px and misaligning the topic-rail title row. */
-.pa-conversation__bar .pt-heading {
+.pa-conversation__heading {
   margin: 0;
 }
 
@@ -508,13 +509,13 @@
 }
 
 /* Open state: the library ResizablePanel owns width + the resize separator. */
-.pa-workbench.pt-resizable {
+.pa-workbench {
   height: 100%;
   border-left: 1px solid var(--pt-border);
   background: var(--pt-raised);
 }
 
-.pa-workbench .pt-resizable-body {
+.pa-workbench__panel-body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -549,7 +550,7 @@
   background: var(--pt-primarySubtle);
 }
 
-.pa-wb-tab__select.pt-button {
+.pa-wb-tab__select {
   font-size: 12px;
 }
 
@@ -566,7 +567,7 @@
   font-size: 13px;
 }
 
-.pa-wb-launcher__row.pt-button {
+.pa-wb-launcher__row {
   align-items: flex-start;
   justify-content: flex-start;
   text-align: left;
@@ -675,7 +676,7 @@
   flex-direction: column;
 }
 
-.pa-wb-file__tabs .pt-tab-panel {
+.pa-wb-file__tab-panel {
   flex: 1;
   min-height: 0;
   padding-top: 0;
@@ -687,7 +688,7 @@
   padding: var(--pt-space-xs) var(--pt-space-xxs);
 }
 
-.pa-wb-tree-row.pt-button {
+.pa-wb-tree-row {
   font-size: 12px;
   font-weight: 400;
 }
@@ -720,7 +721,7 @@
   white-space: nowrap;
 }
 
-.pa-wb-file__count.pt-tag {
+.pa-wb-file__count {
   flex: 0 0 auto;
   min-width: 18px;
   padding: 0 5px;
@@ -728,7 +729,7 @@
   line-height: 15px;
 }
 
-.pa-wb-file__status.pt-tag {
+.pa-wb-file__status {
   flex: 0 0 auto;
   width: 28px;
   justify-content: center;
@@ -736,7 +737,7 @@
   font-size: 11px;
 }
 
-.pa-wb-change-row.pt-button {
+.pa-wb-change-row {
   font-size: 12px;
   font-weight: 400;
 }
@@ -786,7 +787,7 @@
   padding: var(--pt-space-lg);
 }
 
-.pa-wb-browser__start .pt-field {
+.pa-wb-browser__start-field {
   width: 100%;
 }
 
@@ -823,7 +824,7 @@
   font-size: 12px;
 }
 
-.pa-wb-browser__navbar .pt-field {
+.pa-wb-browser__navbar-field {
   flex: 1;
   min-width: 0;
 }
@@ -879,7 +880,9 @@
   background: var(--pt-subtle);
 }
 
-.pa-wb-term__tab .pt-button-content {
+/* The button content span inherits the tab's 12px type; the glyph carries an
+   explicit icon size and is unaffected by the font-size. */
+.pa-wb-term__tab {
   font-size: 12px;
 }
 
@@ -887,13 +890,13 @@
   color: var(--pt-muted);
 }
 
-.pa-wb-term__surface.pt-terminal {
+.pa-wb-term__surface {
   flex: 1;
   min-height: 0;
   margin: var(--pt-space-xs);
 }
 
-.pa-wb-term__surface .pt-terminal__viewport {
+.pa-wb-term__viewport {
   flex: 1;
   max-height: none;
 }
@@ -934,7 +937,7 @@
   border-radius: var(--pt-radius-md);
 }
 
-.pa-wb-memory__layer.pt-tag {
+.pa-wb-memory__layer {
   align-self: flex-start;
 }
 
@@ -992,10 +995,9 @@
 }
 
 /* Production parity: a borderless 23px/750 transparent title input (38px
-   tall), not a bordered form field. peers-ui forwards the consumer className
-   to the inner <input>, so the flex item is the wrapping .pt-field-frame and
-   must be sized as a direct child of the title row. */
-.pa-profile__title-row > .pt-field-frame {
+   tall), not a bordered form field. frameClassName lands on the field frame,
+   which is the flex item sized directly inside the title row. */
+.pa-profile__title-frame {
   flex: 1;
   min-width: 0;
   height: 38px;
@@ -1016,7 +1018,7 @@
   margin-top: var(--pt-space-xs);
 }
 
-.pa-profile__avatar-button.pt-button {
+.pa-profile__avatar-button {
   flex: 0 0 auto;
   width: 64px;
   height: 64px;
@@ -1024,13 +1026,13 @@
   border-radius: var(--pt-radius-lg);
 }
 
-.pa-profile__avatar-button .pt-avatar {
+.pa-profile__avatar {
   border-radius: var(--pt-radius-lg);
 }
 
-/* The TextArea className lands on the inner <textarea>; the flex item that
-   must absorb the row width is its wrapping .pt-field-frame. */
-.pa-profile__identity-row > .pt-field-frame {
+/* The TextArea frameClassName lands on the field frame, the flex item that
+   must absorb the identity row width. */
+.pa-profile__identity-frame {
   flex: 1;
   min-width: 0;
 }
@@ -1042,7 +1044,7 @@
   font-weight: 400;
 }
 
-.pa-profile__tabs .pt-tab-panel {
+.pa-profile__tab-panel {
   padding-top: var(--pt-space-md);
 }
 
@@ -1052,12 +1054,12 @@
 }
 
 @media (max-width: 680px) {
-  .pa-profile-identity__grid.pt-grid {
+  .pa-profile-identity__grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 
-.pa-doc-editor.pt-card {
+.pa-doc-editor {
   min-width: 0;
 }
 
@@ -1082,7 +1084,7 @@
   gap: var(--pt-space-xxs);
 }
 
-.pa-avatar-picker__emoji.pt-button {
+.pa-avatar-picker__emoji {
   height: 44px;
   padding: 0;
   justify-content: center;
@@ -1152,7 +1154,7 @@
   min-height: 120px;
 }
 
-.pa-extension-picker__row.pt-button {
+.pa-extension-picker__row {
   align-items: center;
   justify-content: flex-start;
   gap: var(--pt-space-sm);
@@ -1227,7 +1229,7 @@
 }
 
 /* Section cards + rows. */
-.pa-aisec.pt-card {
+.pa-aisec {
   min-width: 0;
 }
 
@@ -1294,7 +1296,7 @@
   min-height: 0;
 }
 
-.pa-providers__item.pt-button {
+.pa-providers__item {
   justify-content: flex-start;
   gap: var(--pt-space-xs);
   font-size: 12px;
@@ -1377,7 +1379,7 @@
 }
 
 /* Memory weights. */
-.pa-memory__weights .pt-slider {
+.pa-memory__weight-slider {
   width: 100%;
 }
 
@@ -1607,7 +1609,7 @@
   gap: var(--pt-space-sm);
 }
 
-.pa-tool .pt-card-header {
+.pa-tool__header {
   align-items: center;
 }
 

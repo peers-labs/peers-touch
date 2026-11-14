@@ -139,6 +139,7 @@ export function BrowserDock() {
         className="pa-wb-dock pa-wb-browser__start" data-pt-wb-browser-start-form>
         <Icon iconId="globe" size={28} className="pa-wb-browser__globe" />
         <TextField
+          frameClassName="pa-wb-browser__start-field"
           value={startUrl}
           aria-label={t('agent.wb.browser.urlPlaceholder')}
           placeholder="https://"
@@ -201,6 +202,7 @@ export function BrowserDock() {
           label={t('agent.wb.browser.reload')} emphasis="quiet"
           data-pt-wb-browser-reload onActivate={reload} />
         <TextField
+          frameClassName="pa-wb-browser__navbar-field"
           value={address || activeTab?.url || ''}
           aria-label={t('agent.wb.browser.urlPlaceholder')}
           placeholder={t('agent.wb.browser.urlPlaceholder')}

@@ -89,6 +89,7 @@ function AgentRow({
       id: `agent.row.profile.${agent.id}`,
       label: t('agent.common.profile'),
       iconId: 'user',
+      className: 'pa-row-menu__item',
       onActivate: () => onOpenProfile(agent.id),
     },
     ...(agent.systemOwned
@@ -98,6 +99,7 @@ function AgentRow({
         label: t('agent.common.delete'),
         iconId: 'delete',
         tone: 'danger' as const,
+        className: 'pa-row-menu__item',
         onActivate: () => onRequestDelete(agent),
       }]),
   ];
