@@ -21,6 +21,8 @@
   ],
   "documentCollections": [
     "docs/architecture/domains/agent/modules",
+    "docs/architecture/domains/agent/task-workbench",
+    "docs/architecture/domains/identity/device-login-approval",
     "docs/architecture/domains/applets/atelier",
     "docs/architecture/domains/chat/calling/prototype",
     "docs/architecture/domains/chat/encryption",
