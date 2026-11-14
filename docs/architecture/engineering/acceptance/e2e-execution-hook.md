@@ -67,8 +67,12 @@ Hook 必须先于构建、Fixture 重置、客户端启动及登录。它只读�
 }
 ```
 
+Development 结果按原检查强度保留 `SOURCE_CHECK`、`STRUCTURAL_CHECK`、
+`UX_REVIEW` 或 `FUNCTIONAL_CHECK` 及对应 artifactKind。未声明强度的 local
+源码检查不构成功能 Journey；`ci-structure` 为结构检查，环境检查为功能检查。
 Development 依赖只接受本次结果集合中的原 `developmentManifest`，
-核验 inventory、source、功能结果及 cleanup，保留 `NOT_APPLICABLE`。
+核验 inventory、source、原检查类别及 cleanup，保留 `NOT_APPLICABLE`。
+功能专用 consumer 仍须核验 `FUNCTIONAL_CHECK`，不能用源码或结构检查核销。
 正式依赖仍核验原 `runManifest` 的完整证明；两者没有互相提升通道。
 
 Hook 逐项检查引用存在、符号存在、依赖完整、无环及生命周期方向。结果区分：

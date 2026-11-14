@@ -19,6 +19,7 @@ export const PRIVATE_MOMENTS_COMMANDS = {
   react: 'social_private_react',
   unreact: 'social_private_unreact',
   retryReaction: 'social_private_reaction_retry',
+  votePoll: 'social_private_poll_vote',
 } as const;
 
 const SUPPORTED_REACTION_KINDS = new Set<ReactionKind>([
@@ -129,8 +130,10 @@ export type PrivateReactionState =
 export interface PrivateReactionCommandProjection {
   commandId: string;
   postId: string;
+  commentId: string;
   kind: ReactionKind;
-  operation: 'REACT' | 'UNREACT';
+  operation: 'REACT' | 'UNREACT' | 'VOTE_POLL';
+  selectedOpaqueOptionIds?: string[];
   state: PrivateReactionState;
   attemptCount: number;
   projectionRevision: string;
@@ -144,6 +147,24 @@ export interface PrivateReactionMutationResult {
   reactions: ReactionSummary[];
   projectionRevision: string;
   exactReplay: boolean;
+  poll?: PrivatePollResultProjection;
+}
+
+export interface PrivatePollResultProjection {
+  voteCounts: string[];
+  selectedOptions: number[];
+  voterCount: string;
+  projectionRevision: string;
+  commandId: string;
+  voteActorPtid: string;
+}
+
+export function privateReactionTargetKey(
+  postId: string,
+  commentId = '',
+  kind: ReactionKind = ReactionKind.REACTION_LIKE,
+): string {
+  return JSON.stringify([postId, commentId, kind]);
 }
 
 export interface PrivateMomentMention {
@@ -200,6 +221,9 @@ export type PrivateMomentContentProjection =
       text: string;
       question: string;
       options: string[];
+      opaqueOptionIds?: string[];
+      optionSetSha256?: string;
+      result?: PrivatePollResultProjection;
       minChoices: number;
       maxChoices: number;
       expiresAtSeconds: number;
@@ -237,6 +261,7 @@ export interface PrivateMomentProjection {
   reactions?: ReactionSummary[];
   reactionRevision?: string;
   reactionsHydrated?: boolean;
+  commentsCount?: string;
   content?: PrivateMomentContentProjection;
   errorCode?: string;
   retryAfterSeconds?: number;
@@ -399,6 +424,8 @@ interface NativeProjectionWire {
   reactionRevision?: unknown;
   reactions_hydrated?: unknown;
   reactionsHydrated?: unknown;
+  comments_count?: unknown;
+  commentsCount?: unknown;
   content?: unknown;
   error_code?: unknown;
   errorCode?: unknown;
@@ -483,6 +510,7 @@ const REACTION_STATES = new Set<PrivateReactionState>([
 const REACTION_OPERATIONS = new Set<PrivateReactionCommandProjection['operation']>([
   'REACT',
   'UNREACT',
+  'VOTE_POLL',
 ]);
 
 export class PrivateMomentsNativeError extends Error {
@@ -552,7 +580,7 @@ function generationField(value: unknown): string {
   return /^\d+$/.test(raw) ? raw : '';
 }
 
-function normalizeReactionSummaries(value: unknown): ReactionSummary[] {
+export function normalizeReactionSummaries(value: unknown): ReactionSummary[] {
   if (!Array.isArray(value) || value.length > SUPPORTED_REACTION_KINDS.size) {
     throw privateProjectionContractError('private Reaction summaries are malformed');
   }
@@ -570,7 +598,9 @@ function normalizeReactionSummaries(value: unknown): ReactionSummary[] {
       || !SUPPORTED_REACTION_KINDS.has(kind)
       || seen.has(kind)
       || !count
+      || BigInt(count) > 0xffffffffffffffffn
       || typeof reactedByViewer !== 'boolean'
+      || (count === '0' && reactedByViewer)
     ) {
       throw privateProjectionContractError('private Reaction summary is invalid');
     }
@@ -589,6 +619,7 @@ function normalizeReactionCommand(value: unknown): PrivateReactionCommandProject
   }
   const commandId = stringField(value.command_id ?? value.commandId);
   const postId = stringField(value.post_id ?? value.postId);
+  const commentId = stringField(value.comment_id ?? value.commentId);
   const kind = optionalNumber(value.kind) as ReactionKind | undefined;
   const operation = stringField(value.operation).toUpperCase() as
     PrivateReactionCommandProjection['operation'];
@@ -600,24 +631,37 @@ function normalizeReactionCommand(value: unknown): PrivateReactionCommandProject
   const retryNotBeforeUnixMs = optionalNumber(
     value.retry_not_before_unix_ms ?? value.retryNotBeforeUnixMs,
   );
+  const selectedOpaqueOptionIds = value.selected_opaque_option_ids ?? value.selectedOpaqueOptionIds ?? [];
   if (
     !commandId
     || !postId
     || kind === undefined
+    || (operation === 'VOTE_POLL'
+      ? kind !== ReactionKind.REACTION_UNSPECIFIED || commentId !== ''
+      : !SUPPORTED_REACTION_KINDS.has(kind))
+    || (commentId !== '' && kind !== ReactionKind.REACTION_LIKE)
     || !REACTION_OPERATIONS.has(operation)
     || !REACTION_STATES.has(state)
     || attemptCount === undefined
     || !Number.isSafeInteger(attemptCount)
     || attemptCount < 0
     || !projectionRevision
+    || !Array.isArray(selectedOpaqueOptionIds)
+    || selectedOpaqueOptionIds.some(id => typeof id !== 'string' || !/^[a-f0-9]{64}$/.test(id))
+    || (operation === 'VOTE_POLL'
+      ? selectedOpaqueOptionIds.length === 0
+        || selectedOpaqueOptionIds.some((id, index) => index > 0 && selectedOpaqueOptionIds[index - 1] >= id)
+      : selectedOpaqueOptionIds.length !== 0)
   ) {
     throw privateProjectionContractError('private Reaction command identity is invalid');
   }
   return {
     commandId,
     postId,
+    commentId,
     kind,
     operation,
+    selectedOpaqueOptionIds,
     state,
     attemptCount,
     projectionRevision,
@@ -648,6 +692,30 @@ function normalizeReactionMutationResult(value: unknown): PrivateReactionMutatio
     reactions: normalizeReactionSummaries(value.reactions),
     projectionRevision,
     exactReplay,
+    poll: value.poll === undefined || value.poll === null ? undefined : normalizePollResult(value.poll),
+  };
+}
+
+function normalizePollResult(value: unknown): PrivatePollResultProjection {
+  if (!isRecord(value)) throw privateProjectionContractError('private poll result is malformed');
+  const voteCounts = value.vote_counts ?? value.voteCounts;
+  const selectedOptions = value.selected_options ?? value.selectedOptions;
+  const voterCount = generationField(value.voter_count ?? value.voterCount);
+  const projectionRevision = generationField(value.projection_revision ?? value.projectionRevision);
+  if (!Array.isArray(voteCounts) || voteCounts.some(count => !generationField(count))
+    || !Array.isArray(selectedOptions) || selectedOptions.some((index, position) =>
+      !Number.isSafeInteger(index) || index < 0 || index >= voteCounts.length
+      || (position > 0 && selectedOptions[position - 1] >= index))
+    || !voterCount || !projectionRevision) {
+    throw privateProjectionContractError('private poll result identity is invalid');
+  }
+  return {
+    voteCounts: voteCounts.map(count => generationField(count)!),
+    selectedOptions,
+    voterCount,
+    projectionRevision,
+    commandId: stringField(value.command_id ?? value.commandId),
+    voteActorPtid: stringField(value.vote_actor_ptid ?? value.voteActorPtid),
   };
 }
 
@@ -792,6 +860,8 @@ function normalizeContent(value: unknown): PrivateMomentContentProjection | unde
     const expiresAtSeconds = optionalNumber(
       value.expires_at_seconds ?? value.expiresAtSeconds,
     );
+    const opaqueOptionIds = value.opaque_option_ids ?? value.opaqueOptionIds;
+    const optionSetSha256 = stringField(value.option_set_sha256 ?? value.optionSetSha256);
     if (
       !question
       || options.length < 2
@@ -799,6 +869,10 @@ function normalizeContent(value: unknown): PrivateMomentContentProjection | unde
       || minChoices === undefined
       || maxChoices === undefined
       || expiresAtSeconds === undefined
+      || !Array.isArray(opaqueOptionIds) || opaqueOptionIds.length !== options.length
+      || opaqueOptionIds.some(id => typeof id !== 'string' || !/^[a-f0-9]{64}$/.test(id))
+      || new Set(opaqueOptionIds).size !== opaqueOptionIds.length
+      || !/^[a-f0-9]{64}$/.test(optionSetSha256)
     ) {
       throw privateProjectionContractError('private poll projection is incomplete');
     }
@@ -807,6 +881,9 @@ function normalizeContent(value: unknown): PrivateMomentContentProjection | unde
       text,
       question,
       options,
+      opaqueOptionIds,
+      optionSetSha256,
+      result: value.result === undefined || value.result === null ? undefined : normalizePollResult(value.result),
       minChoices,
       maxChoices,
       expiresAtSeconds,
@@ -883,6 +960,9 @@ export function normalizePrivateMomentProjection(value: unknown): PrivateMomentP
   const reactionsHydrated = wire.reactions_hydrated
     ?? wire.reactionsHydrated
     ?? false;
+  const commentsCountValue = wire.comments_count ?? wire.commentsCount;
+  const commentsCount = commentsCountValue === undefined
+    ? undefined : generationField(commentsCountValue);
   const mentions = Array.isArray(wire.mentions)
     ? wire.mentions.map((value) => {
         if (!isRecord(value)) {
@@ -919,6 +999,7 @@ export function normalizePrivateMomentProjection(value: unknown): PrivateMomentP
     || (remoteDeliveryState !== undefined && !REMOTE_DELIVERY_STATES.has(remoteDeliveryState))
     || !reactionRevision
     || typeof reactionsHydrated !== 'boolean'
+    || (commentsCount !== undefined && !/^\d+$/.test(commentsCount))
   ) {
     throw privateProjectionContractError('private Moment projection identity or state is invalid');
   }
@@ -963,6 +1044,7 @@ export function normalizePrivateMomentProjection(value: unknown): PrivateMomentP
     reactions,
     reactionRevision,
     reactionsHydrated,
+    commentsCount,
     content,
     errorCode: stringField(wire.error_code ?? wire.errorCode) || undefined,
     retryAfterSeconds: optionalNumber(wire.retry_after_seconds ?? wire.retryAfterSeconds),
@@ -993,11 +1075,12 @@ function normalizeSnapshot(value: unknown): PrivateMomentsNativeSnapshot {
   }
   const normalizedReactionCommands = reactionCommands.map(normalizeReactionCommand);
   if (
-    new Set(normalizedReactionCommands.map((command) => command.postId)).size
+    new Set(normalizedReactionCommands.map((command) =>
+      privateReactionTargetKey(command.postId, command.commentId, command.kind))).size
       !== normalizedReactionCommands.length
   ) {
     throw privateProjectionContractError(
-      'private Reaction snapshot contains duplicate post commands',
+      'private Reaction snapshot contains duplicate target commands',
     );
   }
   return {
@@ -1340,10 +1423,23 @@ export const privateMomentsNative = {
     ));
   },
 
+  async votePoll(input: {
+    actorPtid: string; rendererGeneration: number; postId: string; selectedOptions: readonly number[];
+  }): Promise<PrivateReactionMutationResult> {
+    assertNative('PRIVATE_UNSUPPORTED_ON_DEVICE');
+    return normalizeReactionMutationResult(await invokePrivateNative(
+      PRIVATE_MOMENTS_COMMANDS.votePoll,
+      { actor_ptid: input.actorPtid, renderer_generation: input.rendererGeneration,
+        post_id: input.postId, selected_options: [...input.selectedOptions] },
+      'REACTION_REJECTED',
+    ));
+  },
+
   async react(input: {
     actorPtid: string;
     rendererGeneration: number;
     postId: string;
+    commentId?: string;
     kind: ReactionKind;
   }): Promise<PrivateReactionMutationResult> {
     assertNative('PRIVATE_UNSUPPORTED_ON_DEVICE');
@@ -1353,6 +1449,7 @@ export const privateMomentsNative = {
         actor_ptid: input.actorPtid,
         renderer_generation: input.rendererGeneration,
         post_id: input.postId,
+        comment_id: input.commentId ?? '',
         kind: input.kind,
       },
       'REACTION_REJECTED',
@@ -1363,6 +1460,7 @@ export const privateMomentsNative = {
     actorPtid: string;
     rendererGeneration: number;
     postId: string;
+    commentId?: string;
     kind: ReactionKind;
   }): Promise<PrivateReactionMutationResult> {
     assertNative('PRIVATE_UNSUPPORTED_ON_DEVICE');
@@ -1372,6 +1470,7 @@ export const privateMomentsNative = {
         actor_ptid: input.actorPtid,
         renderer_generation: input.rendererGeneration,
         post_id: input.postId,
+        comment_id: input.commentId ?? '',
         kind: input.kind,
       },
       'REACTION_REJECTED',

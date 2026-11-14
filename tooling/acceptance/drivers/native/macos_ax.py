@@ -31,6 +31,19 @@ class NativeAXReadUnavailable(RuntimeError):
         super().__init__(f"{attribute} inspection failed: AX error {status}")
 
 
+class NativeAXActionUnavailable(RuntimeError):
+    def __init__(
+        self, operation: str, status: int | None, elapsed_seconds: float,
+        *, deadline_exceeded: bool = False,
+    ) -> None:
+        self.observed = {
+            "axOperation": operation, "axStatus": status,
+            "axActionElapsedSeconds": elapsed_seconds,
+            "actionDeadlineExceeded": deadline_exceeded,
+        }
+        super().__init__(f"{operation} failed: AX error {status}")
+
+
 class AXReadSession:
     def __init__(
         self, ax: ctypes.CDLL, cf: ctypes.CDLL, *, deadline: float,
@@ -133,12 +146,42 @@ class AXReadSession:
             if value:
                 self.cf.CFRelease(value)
 
+    def _one_shot(
+        self, element: _REF, operation: str, invoke: Callable[[], int],
+    ) -> None:
+        # The short read timeout is also inherited by AX actions. A Search
+        # confirmation can synchronously update the XPC-hosted panel, so it
+        # must use the original operation deadline rather than the read cap.
+        # A missing reply is an unknown mutation outcome: never replay it.
+        started = time.monotonic()
+        remaining = self.deadline - started
+        if remaining <= 0:
+            raise NativeAXActionUnavailable(
+                operation, None, 0.0, deadline_exceeded=True,
+            )
+        self._check(
+            self.ax.AXUIElementSetMessagingTimeout(element, remaining),
+            f"{operation} timeout setup",
+        )
+        if time.monotonic() >= self.deadline:
+            raise NativeAXActionUnavailable(
+                operation, None, time.monotonic() - started,
+                deadline_exceeded=True,
+            )
+        status = int(invoke())
+        elapsed = time.monotonic() - started
+        expired = time.monotonic() >= self.deadline
+        if status != 0 or expired:
+            raise NativeAXActionUnavailable(
+                operation, status, elapsed, deadline_exceeded=expired,
+            )
+
     def set_attribute(self, element: _REF, name: str, value: _REF) -> None:
         key = self.string(name)
         try:
-            self._check(
-                self.ax.AXUIElementSetAttributeValue(element, key, value),
-                f"{name} mutation",
+            self._one_shot(
+                element, f"{name} mutation",
+                lambda: self.ax.AXUIElementSetAttributeValue(element, key, value),
             )
         finally:
             self.cf.CFRelease(key)
@@ -146,9 +189,9 @@ class AXReadSession:
     def perform_action(self, element: _REF, name: str) -> None:
         key = self.string(name)
         try:
-            self._check(
-                self.ax.AXUIElementPerformAction(element, key),
-                f"{name} action",
+            self._one_shot(
+                element, f"{name} action",
+                lambda: self.ax.AXUIElementPerformAction(element, key),
             )
         finally:
             self.cf.CFRelease(key)

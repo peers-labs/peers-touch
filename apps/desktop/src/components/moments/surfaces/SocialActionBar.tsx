@@ -1,279 +1,62 @@
-import { useCallback, useMemo, useState } from 'react';
-import { Button, Popover, Tooltip, theme } from 'antd';
-import { MessageCircle, Plus } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { Button, MomentReactionBar } from '@peers-touch/ui';
 import { useTranslation } from 'react-i18next';
-import {
-  ReactionKind,
-  type ReactionSummary,
-} from '../../../gen/proto/domain/social/post_pb';
-import {
-  REACTION_PRESENTATIONS,
-  reactionPresentation,
-} from '../reactionCatalog';
-import type { PrivateReactionState } from '../../../services/privateMomentsNative';
-
-// SocialActionBar — multi-kind reaction row for a single post.
-//
-// Contract (r3.1 S05):
-//   - the viewer can hold several kinds at once; every non-zero kind
-//     renders its own chip with the authoritative per-kind count;
-//   - the picker stays resident (never one-kind-then-hidden);
-//   - pending state is per-kind and keyed by a client operation id, so
-//     a double click on one kind only disables that kind and never the
-//     whole row;
-//   - failures collapse back to the authoritative server summary.
+import { ReactionKind, type ReactionSummary } from '../../../gen/proto/domain/social/post_pb';
+import { REACTION_PRESENTATIONS } from '../reactionCatalog';
+import type { PrivateReactionStatusProjection, PrivateReactionRecoveryProjection } from '../../../store/privateMoments';
 
 export interface SocialActionBarProps {
-  reactions?: ReactionSummary[];
-  commentCount?: number | string;
-  /** Private Secure-Content ledger state; disables catalog while pending. */
-  reactionState?: PrivateReactionState;
+  postId: string; reactions?: ReactionSummary[]; commentCount?: number; commentsOpen: boolean;
+  reactionCommands?: readonly (PrivateReactionStatusProjection & { recovery?: PrivateReactionRecoveryProjection })[];
   onReact?: (kind: ReactionKind, operationId: string) => void | Promise<void>;
   onUnreact?: (kind: ReactionKind | undefined, operationId: string) => void | Promise<void>;
-  /** Optional retry for the private reaction ledger. */
-  onRetryReaction?: () => void | Promise<void>;
-  /** When absent (embedded detail), the comment affordance is hidden. */
-  onOpenComments?: () => void;
+  onRetryReaction?: (kind: ReactionKind, commandId: string) => void | Promise<void>; onOpenComments: () => void;
 }
-
-function makeOperationId(): string {
-  if (typeof globalThis.crypto?.randomUUID === 'function') {
-    return globalThis.crypto.randomUUID();
-  }
-  return `reaction-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-export function SocialActionBar({
-  reactions = [],
-  commentCount = 0,
-  reactionState,
-  onReact,
-  onUnreact,
-  onRetryReaction,
-  onOpenComments,
-}: SocialActionBarProps) {
-  const { token } = theme.useToken();
+/** Per-kind command execution adapter; the authoritative summary is never shadowed in UI. */
+export function SocialActionBar({ postId, reactions = [], commentCount = 0, commentsOpen,
+  reactionCommands = [], onReact, onUnreact, onRetryReaction, onOpenComments }: SocialActionBarProps) {
   const { t } = useTranslation('moments');
-  const [pendingKinds, setPendingKinds] = useState<ReadonlySet<ReactionKind>>(
-    () => new Set(),
-  );
-  const [pickerOpen, setPickerOpen] = useState(false);
-
-  const viewerKinds = useMemo(
-    () => new Set(
-      reactions.filter((r) => r.reactedByViewer).map((r) => r.kind),
-    ),
-    [reactions],
-  );
-
-  const privateCommandPending = reactionState === 'REACTION_PENDING'
-    || reactionState === 'REACTION_RETRYING';
-
-  const chips = useMemo(() => {
-    const active = reactions
-      .filter((r) => Number(r.count ?? 0n) > 0)
-      .map((r) => ({
-        kind: r.kind,
-        count: Number(r.count ?? 0n),
-        reacted: r.reactedByViewer,
-      }))
-      .sort((left, right) => {
-        if (left.reacted !== right.reacted) return left.reacted ? -1 : 1;
-        return right.count - left.count;
-      });
-    return active;
-  }, [reactions]);
-
-  const setKindPending = useCallback((kind: ReactionKind, pending: boolean) => {
-    setPendingKinds((previous) => {
-      const next = new Set(previous);
-      if (pending) next.add(kind);
-      else next.delete(kind);
-      return next;
-    });
-  }, []);
-
-  const toggleKind = useCallback(async (kind: ReactionKind) => {
-    if (pendingKinds.has(kind) || privateCommandPending) return;
-    const operationId = makeOperationId();
-    const reacted = viewerKinds.has(kind);
-    setKindPending(kind, true);
-    try {
-      if (reacted) {
-        await onUnreact?.(kind, operationId);
-      } else {
-        await onReact?.(kind, operationId);
-      }
-    } finally {
-      // The store's post-wide summary is authoritative; clear pending
-      // regardless of outcome so failure collapses back to it.
-      setKindPending(kind, false);
-    }
-  }, [
-    onReact,
-    onUnreact,
-    pendingKinds,
-    privateCommandPending,
-    setKindPending,
-    viewerKinds,
-  ]);
-
-  const picker = (
-    <div
-      style={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        gap: 2,
-        maxWidth: 280,
-        padding: 4,
-      }}
-    >
-      {REACTION_PRESENTATIONS.map((meta) => {
-        const active = viewerKinds.has(meta.kind);
-        const kindPending = pendingKinds.has(meta.kind);
-        const disabled = kindPending
-          || privateCommandPending
-          || (!onReact && !onUnreact);
-        return (
-          <Tooltip key={meta.kind} title={t(meta.label)}>
-            <Button
-              type="text"
-              shape="circle"
-              size="small"
-              aria-pressed={active}
-              data-acceptance-id={`social-reaction-pick-${meta.kind}`}
-              disabled={disabled}
-              onClick={(event) => {
-                event.stopPropagation();
-                void toggleKind(meta.kind);
-              }}
-              style={{
-                width: 30,
-                height: 30,
-                padding: 0,
-                fontSize: 16,
-                background: active ? token.colorPrimaryBg : undefined,
-                outline: active ? `1px solid ${token.colorPrimaryBorder}` : undefined,
-              }}
-            >
-              {kindPending ? (
-                <span
-                  aria-label={t('moments.reaction.pending')}
-                  style={{ fontSize: 12 }}
-                >
-                  ⏳
-                </span>
-              ) : (
-                <span aria-hidden>{meta.emoji}</span>
-              )}
-            </Button>
-          </Tooltip>
-        );
-      })}
-    </div>
-  );
-
-  return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        marginTop: 10,
-        flexWrap: 'wrap',
-      }}
-    >
-      <Popover
-        open={pickerOpen}
-        onOpenChange={setPickerOpen}
-        trigger="click"
-        placement="topLeft"
-        arrow={false}
-        content={picker}
-      >
-        <Button
-          type="text"
-          size="small"
-          data-acceptance-id="social-reaction-trigger"
-          disabled={!onReact && !onUnreact}
-          icon={<Plus size={14} />}
-          style={{ paddingInline: 8, height: 28 }}
-          onClick={(event) => event.stopPropagation()}
-        >
-          {t('moments.reaction.add')}
-        </Button>
-      </Popover>
-
-      {chips.map((chip) => {
-        const meta = reactionPresentation(chip.kind);
-        const kindPending = pendingKinds.has(chip.kind);
-        return (
-          <Tooltip key={chip.kind} title={t(meta.label)}>
-            <Button
-              type={chip.reacted ? 'primary' : 'text'}
-              size="small"
-              shape="round"
-              data-acceptance-id={`social-reaction-chip-${chip.kind}`}
-              data-reaction-kind={chip.kind}
-              aria-pressed={chip.reacted}
-              loading={kindPending}
-              onClick={(event) => {
-                event.stopPropagation();
-                void toggleKind(chip.kind);
-              }}
-              style={{
-                paddingInline: 10,
-                height: 28,
-                borderRadius: 999,
-                color: chip.reacted ? undefined : token.colorTextSecondary,
-                background: chip.reacted ? token.colorPrimaryBg : token.colorFillQuaternary,
-              }}
-            >
-              <span aria-hidden style={{ marginRight: 4 }}>{meta.emoji}</span>
-              {chip.count}
-            </Button>
-          </Tooltip>
-        );
-      })}
-
-      {reactionState && reactionState !== 'REACTION_COMMITTED' && (
-        <span role="status" style={{ color: token.colorTextSecondary, fontSize: 12 }}>
-          {t(`moments.reaction.status.${reactionState}`)}
-          {reactionState === 'REACTION_REJECTED' && onRetryReaction && (
-            <Button
-              type="link"
-              size="small"
-              onClick={(event) => {
-                event.stopPropagation();
-                void onRetryReaction();
-              }}
-            >
-              {t('moments.reaction.retry')}
-            </Button>
-          )}
-        </span>
-      )}
-
-      {onOpenComments && (
-        <Button
-          type="text"
-          size="small"
-          data-acceptance-id="social-open-comments"
-          icon={<MessageCircle size={14} color={token.colorTextSecondary} />}
-          onClick={(event) => {
-            event.stopPropagation();
-            onOpenComments();
-          }}
-          style={{
-            marginLeft: 'auto',
-            color: token.colorTextSecondary,
-            paddingInline: 8,
-            height: 28,
-          }}
-        >
-          <span>{String(commentCount)}</span>
-        </Button>
-      )}
-    </div>
-  );
+  const pendingRef = useRef(new Set<ReactionKind>());
+  const [pending, setPending] = useState<ReadonlySet<ReactionKind>>(new Set());
+  const commands = reactionCommands.filter(command =>
+    command.postId === postId && !command.commentId && command.operation !== 'VOTE_POLL');
+  const isPrivatePending = (kind: ReactionKind) => commands.some(command =>
+    command.kind === kind && (command.state === 'REACTION_PENDING' || command.state === 'REACTION_RETRYING'));
+  const toggle = async (kind: ReactionKind) => {
+    const selected = Boolean(reactions.find(item => item.kind === kind)?.reactedByViewer);
+    const command = selected ? onUnreact : onReact;
+    if (!command || pendingRef.current.has(kind) || isPrivatePending(kind)) return;
+    pendingRef.current.add(kind);
+    setPending(new Set(pendingRef.current));
+    try { await command(kind, crypto.randomUUID()); }
+    finally { pendingRef.current.delete(kind); setPending(new Set(pendingRef.current)); }
+  };
+  return <MomentReactionBar postId={postId} commentsOpen={commentsOpen} commentCount={commentCount}
+    reactions={REACTION_PRESENTATIONS.map(meta => {
+      const summary = reactions.find(item => item.kind === meta.kind);
+      const selected = summary?.reactedByViewer ?? false;
+      return {
+        kind: String(meta.kind), emoji: meta.emoji, label: t(meta.label),
+        count: Number(summary?.count ?? 0n), selected,
+        execution: pending.has(meta.kind) || isPrivatePending(meta.kind) ? 'pending' as const : 'idle' as const,
+        availability: (selected ? onUnreact : onReact) ? undefined
+          : { kind: 'disabled' as const, reason: t('moments.reaction.retryUnavailable') },
+      };
+    })}
+    copy={{ picker: t('moments.reaction.add'), add: t('moments.reaction.add'),
+      comments: count => t('moments.identity.commentCount', { count }), selected: t('moments.identity.unreactHint') }}
+    onToggleReaction={kind => void toggle(Number(kind) as ReactionKind)}
+    onToggleComments={onOpenComments}
+    status={commands.filter(command => command.state !== 'REACTION_COMMITTED').map(command => {
+      const meta = REACTION_PRESENTATIONS.find(item => item.kind === command.kind);
+      return <span role="status" key={command.kind}>
+        {meta && `${meta.emoji} ${t(meta.label)} · `}{t(`moments.reaction.status.${command.state}`)}
+        {command.recovery?.eligible && command.recovery.commandId && onRetryReaction && <Button
+          actionId={`moment.reaction.retry.${postId}.${command.kind}`} emphasis="quiet" density="compact"
+          label={t('moments.reaction.retry')}
+          availability={command.recovery.ready ? undefined
+            : { kind: 'disabled', reason: t('moments.reaction.pending') }}
+          onActivate={() => void onRetryReaction(command.kind, command.recovery!.commandId!)} />}
+      </span>;
+    })} />;
 }

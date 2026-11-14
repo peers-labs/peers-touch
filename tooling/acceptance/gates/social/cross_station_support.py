@@ -17,19 +17,17 @@ from typing import Any
 
 from tooling.acceptance.core import (
     AcceptanceGate,
-    BlockedError,
     GateError,
     ProvisioningError,
     RuntimeReuseContract,
-    load_runtime_manifest,
     validate_suite_runtime_report,
-    workspace_id,
 )
+from tooling.acceptance.core.evidence_store import ArtifactRef, EvidenceStore, source_identity
+from tooling.acceptance.core.execution_graph import prerequisite_results
+from tooling.development.secure_content.prepared_native import CLIENT_BINDINGS
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-SUITE_ARTIFACT_ROOT_ENV = "PT_SOCIAL_CROSS_STATION_ARTIFACT_ROOT"
-ACCEPTANCE_RUNTIME_MANIFEST_ENV = "PT_ACCEPTANCE_RUNTIME_MANIFEST"
 SUITE_ARTIFACT_KIND = "social-cross-station-suite-result"
 SUITE_SCHEMA_VERSION = 1
 SCENARIO_IDS = (
@@ -44,19 +42,8 @@ SCENARIO_IDS = (
     "same-station-regression",
 )
 SERVICE_IDS = ("station-four", "station-five-arm")
-CLIENT_BINDINGS = {
-    "alice": ("alice", "station-four"),
-    "bob": ("bob", "station-five-arm"),
-    "eve": ("eve", "station-five-arm"),
-    "bob2": ("bob", "station-five-arm"),
-}
 LAUNCHED_CLIENTS = ("alice", "bob", "bob2")
 FIXTURE_ONLY_CLIENTS = ("eve",)
-ALLOWED_POST_RESULT_PREFIXES = (
-    "docs/architecture/domains/social/cross-station/",
-    "tooling/acceptance/",
-    "tooling/development/secure_content/",
-)
 SUITE_RESULT_FIELDS = frozenset(
     {
         "artifactKind",
@@ -69,7 +56,9 @@ SUITE_RESULT_FIELDS = frozenset(
         "worktreeSetDigest",
         "runId",
         "fixtureEpoch",
-        "activation",
+        "source",
+        "provisioningRunId",
+        "schemaInventory",
         "runtimeManifest",
         "scenarioResults",
         "suiteRuntimeReport",
@@ -87,6 +76,7 @@ SUITE_RUNTIME_MANIFEST_FIELDS = frozenset(
         "state",
         "cleanupState",
         "runId",
+        "provisioningRunId",
         "workspaceId",
         "sourceCommit",
         "controlCommit",
@@ -140,6 +130,8 @@ class ValidatedSuiteResult:
     suite_runtime_path: Path
     suite_runtime_report: dict[str, Any]
     supporting_artifacts: tuple[Path, ...]
+    producer_manifest: dict[str, Any] | None = None
+    result_ref: dict[str, Any] | None = None
 
 
 def canonical_digest(value: Mapping[str, Any]) -> str:
@@ -271,107 +263,6 @@ def run_source_commands(
     return results
 
 
-def current_control_commit(repo_root: Path = REPO_ROOT) -> str:
-    completed = subprocess.run(
-        ["git", "rev-parse", "--verify", "HEAD"],
-        cwd=repo_root,
-        text=True,
-        capture_output=True,
-        timeout=15,
-        check=False,
-    )
-    commit = completed.stdout.strip()
-    if completed.returncode != 0 or COMMIT.fullmatch(commit) is None:
-        raise GateError("cannot resolve the current CSS-09 control HEAD")
-    return commit
-
-
-def suite_artifact_root(
-    repo_root: Path = REPO_ROOT,
-    *,
-    environment: Mapping[str, str] | None = None,
-    home: Path | None = None,
-) -> Path:
-    current_environment = os.environ if environment is None else environment
-    override = current_environment.get(SUITE_ARTIFACT_ROOT_ENV, "").strip()
-    if override:
-        return Path(override).expanduser().resolve()
-    return (
-        (Path.home() if home is None else home)
-        / ".peers-touch"
-        / "dev"
-        / "workspaces"
-        / workspace_id(repo_root)
-    ).resolve()
-
-
-def discover_suite_result(
-    repo_root: Path = REPO_ROOT,
-    *,
-    artifact_root: Path | None = None,
-    control_commit: str | None = None,
-    environment: Mapping[str, str] | None = None,
-    home: Path | None = None,
-) -> tuple[Path, Path, str, str]:
-    resolved_control = control_commit or current_control_commit(repo_root)
-    if COMMIT.fullmatch(resolved_control) is None:
-        raise GateError("CSS-09 control commit must be a lowercase 40-hex SHA")
-    resolved_workspace = workspace_id(repo_root)
-    root = (
-        artifact_root.resolve()
-        if artifact_root is not None
-        else suite_artifact_root(
-            repo_root,
-            environment=environment,
-            home=home,
-        )
-    )
-    generation_root = (
-        root / "development" / "secure-content" / "CSS-09"
-    )
-    exact_result = (
-        generation_root / resolved_control / "suite" / "result.json"
-    )
-    if exact_result.is_file() and not exact_result.is_symlink():
-        return exact_result, root, resolved_control, resolved_workspace
-
-    candidates: list[tuple[int, Path]] = []
-    if generation_root.is_dir():
-        for generation in generation_root.iterdir():
-            result_path = generation / "suite" / "result.json"
-            if (
-                COMMIT.fullmatch(generation.name) is None
-                or result_path.is_symlink()
-                or not result_path.is_file()
-                or not _git_is_ancestor(
-                    repo_root,
-                    generation.name,
-                    resolved_control,
-                )
-            ):
-                continue
-            candidates.append(
-                (
-                    _git_commit_distance(
-                        repo_root,
-                        generation.name,
-                        resolved_control,
-                    ),
-                    result_path,
-                )
-            )
-    if not candidates:
-        raise BlockedError(
-            reason=(
-                "current-control CSS-09 suite result is unavailable: "
-                f"{exact_result}"
-            ),
-            resource="social-cross-station:css-09-suite-result",
-        )
-    candidates.sort(key=lambda item: (item[0], str(item[1])))
-    return candidates[0][1], root, resolved_control, resolved_workspace
-
-
 def _load_json(path: Path, label: str) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -406,109 +297,6 @@ def _first_string(
     return ""
 
 
-def _validate_activation(
-    activation: object,
-) -> dict[str, Any]:
-    if (
-        not isinstance(activation, Mapping)
-        or set(activation) != {"aggregatePath", "resultDigest", "profiles"}
-        or not isinstance(activation.get("aggregatePath"), str)
-        or not activation["aggregatePath"]
-        or SHA256.fullmatch(str(activation.get("resultDigest") or "")) is None
-        or activation.get("profiles")
-        != ["chat-native-disposable", "fiveArm"]
-    ):
-        raise GateError("CSS-09 activation evidence is invalid")
-    return dict(activation)
-
-
-def _validate_activation_artifact(
-    activation: Mapping[str, Any],
-    path: Path,
-    *,
-    source_commit: str,
-    workspace: str,
-) -> dict[str, Any]:
-    payload = _load_json(path, "CSS-09 activation aggregate")
-    unsigned = dict(payload)
-    digest = unsigned.pop("result_digest", None)
-    expected = {
-        "schema_version": 1,
-        "kind": "secure-content-schema-activation-aggregate",
-        "workstream_id": "CSS-W-ACTIVATION",
-        "task_id": "CSS-08A-schema-activation",
-        "generation_id": source_commit,
-        "source_commit": source_commit,
-        "workspace_id": workspace,
-        "reset_intent": "SCHEMA_ACTIVATION",
-        "profiles": ["chat-native-disposable", "fiveArm"],
-        "status": "PASS",
-        "claim": "CANONICAL_SCHEMA_ACTIVE_ONLY",
-    }
-    if any(payload.get(key) != value for key, value in expected.items()):
-        raise GateError("CSS-09 activation aggregate identity is invalid")
-    if (
-        not isinstance(digest, str)
-        or digest != activation["resultDigest"]
-        or not hmac.compare_digest(digest, canonical_digest(unsigned))
-    ):
-        raise GateError("CSS-09 activation aggregate digest is invalid")
-    children = payload.get("children")
-    if (
-        not isinstance(children, list)
-        or [
-            child.get("profile_id")
-            for child in children
-            if isinstance(child, Mapping)
-        ]
-        != ["chat-native-disposable", "fiveArm"]
-    ):
-        raise GateError("CSS-09 activation aggregate children are incomplete")
-    return payload
-
-
-def _normalized_client_id(value: str) -> str:
-    prefix = "cross-station-social-"
-    return value[len(prefix) :] if value.startswith(prefix) else value
-
-
-def _runtime_clients(value: object) -> dict[str, Mapping[str, Any]]:
-    if isinstance(value, Mapping):
-        clients = {
-            _normalized_client_id(str(client_id)): client
-            for client_id, client in value.items()
-            if isinstance(client, Mapping)
-        }
-        if len(clients) != len(value):
-            raise GateError("CSS-09 runtime clients must contain only objects")
-        return clients
-    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
-        clients: dict[str, Mapping[str, Any]] = {}
-        for client in value:
-            if not isinstance(client, Mapping):
-                raise GateError(
-                    "CSS-09 runtime clients must contain only objects"
-                )
-            client_id = _normalized_client_id(
-                _first_string(client, ("id", "clientId", "client_id"))
-            )
-            if not client_id or client_id in clients:
-                raise GateError("CSS-09 runtime client identity is invalid")
-            clients[client_id] = client
-        return clients
-    raise GateError("CSS-09 runtime manifest clients are missing")
-
-
-def _binding_service_id(client: Mapping[str, Any]) -> str:
-    bindings = client.get("service_bindings")
-    if not isinstance(bindings, Mapping):
-        bindings = client.get("serviceBindings")
-    station = bindings.get("station") if isinstance(bindings, Mapping) else None
-    if not isinstance(station, Mapping):
-        return ""
-    return _first_string(station, ("service_id", "serviceId"))
-
-
 def _validate_embedded_runtime_manifest(
     manifest: object,
     *,
@@ -517,6 +305,7 @@ def _validate_embedded_runtime_manifest(
     workspace: str,
     worktree_set_digest: str,
     run_id: str,
+    provisioning_run_id: str,
     fixture_epoch: str,
     suite_runtime_report_digest: str,
 ) -> dict[str, Any]:
@@ -533,6 +322,7 @@ def _validate_embedded_runtime_manifest(
 
     expected_identity = {
         "runId": run_id,
+        "provisioningRunId": provisioning_run_id,
         "workspaceId": workspace,
         "sourceCommit": source_commit,
         "controlCommit": control_commit,
@@ -542,11 +332,12 @@ def _validate_embedded_runtime_manifest(
     }
     if any(manifest.get(key) != value for key, value in expected_identity.items()):
         raise GateError("CSS-09 runtime source/run identity is inconsistent")
-    if manifest.get("profileBindings") != {
-        "chat-native-disposable": "station-four",
-        "fiveArm": "station-five-arm",
-    }:
+    profiles = manifest.get("profileBindings")
+    if (not isinstance(profiles, Mapping) or len(profiles) != 2
+        or set(profiles.values()) != set(SERVICE_IDS)
+        or any(not isinstance(profile, str) or not profile for profile in profiles)):
         raise GateError("CSS-09 runtime profile bindings are incomplete")
+    role_profiles = {role: profile for profile, role in profiles.items()}
     service_identities = manifest.get("serviceRuntimeIdentityDigests")
     if (
         not isinstance(service_identities, Mapping)
@@ -565,14 +356,10 @@ def _validate_embedded_runtime_manifest(
     ):
         raise GateError("CSS-09 runtime client bindings are missing")
     expected_clients = {
-        f"cross-station-social-{client_id}": {
-            "clientId": f"cross-station-social-{client_id}",
+        client_id: {
+            "clientId": client_id,
             "actorRole": actor,
-            "profileId": (
-                "chat-native-disposable"
-                if service_id == "station-four"
-                else "fiveArm"
-            ),
+            "profileId": role_profiles[service_id],
             "serviceId": service_id,
             "launched": client_id in LAUNCHED_CLIENTS,
         }
@@ -611,6 +398,7 @@ def _validate_resource_reuse(value: object) -> dict[str, Any]:
         "stationBuilds": 0,
         "stationDeployments": 0,
         "desktopBuilds": 0,
+        "newAccountRegistrations": 0,
     }
     for field, expected in integer_fields.items():
         actual = value.get(field)
@@ -628,14 +416,8 @@ def _validate_resource_reuse(value: object) -> dict[str, Any]:
         raise GateError(
             "CSS-09 resource reuse exceeds two concurrent Native clients"
         )
-    replacements = [
-        _normalized_client_id(str(item))
-        for item in value.get("clientReplacements", [])
-    ]
-    fixture_only = [
-        _normalized_client_id(str(item))
-        for item in value.get("fixtureOnlyClients", [])
-    ]
+    replacements = value.get("clientReplacements")
+    fixture_only = value.get("fixtureOnlyClients")
     if replacements != ["bob2"]:
         raise GateError("CSS-09 Bob2 must be the sole client replacement")
     if fixture_only != ["eve"]:
@@ -710,135 +492,68 @@ def _is_receiver_evidence(path: Path, reference: str, scenario_id: str) -> bool:
     )
 
 
-def _git_is_ancestor(
-    repo_root: Path,
-    ancestor: str,
-    descendant: str,
-) -> bool:
-    completed = subprocess.run(
-        ["git", "merge-base", "--is-ancestor", ancestor, descendant],
-        cwd=repo_root,
-        text=True,
-        capture_output=True,
-        timeout=15,
-        check=False,
-    )
-    if completed.returncode in {0, 1}:
-        return completed.returncode == 0
-    raise GateError("cannot validate the CSS-09 Git commit lineage")
-
-
-def _git_commit_distance(
-    repo_root: Path,
-    ancestor: str,
-    descendant: str,
-) -> int:
-    completed = subprocess.run(
-        ["git", "rev-list", "--count", f"{ancestor}..{descendant}"],
-        cwd=repo_root,
-        text=True,
-        capture_output=True,
-        timeout=15,
-        check=False,
-    )
-    value = completed.stdout.strip()
-    if completed.returncode != 0 or not value.isdigit():
-        raise GateError("cannot measure the CSS-09 control commit lineage")
-    return int(value)
-
-
-def _require_source_ancestor(
-    repo_root: Path,
-    source_commit: str,
-    result_control_commit: str,
-) -> None:
-    if not _git_is_ancestor(
-        repo_root,
-        source_commit,
-        result_control_commit,
+def _validate_schema_inventory(payload: Mapping[str, Any], *, repo_root: Path) -> None:
+    from tooling.development.secure_content import runtime_manifest
+    from tooling.development.secure_content.runtime_schema import RUNTIME_TARGETS
+    store = EvidenceStore.from_environment(repo_root=repo_root, worktree=repo_root)
+    inventory_ref = ArtifactRef.from_dict(payload["schemaInventory"])
+    if (
+        inventory_ref.gate_id != "social-cross-station-native-e2e"
+        or inventory_ref.run_id != payload["runId"]
+        or inventory_ref.workspace_id != payload["workspaceId"]
     ):
-        raise GateError(
-            "CSS-09 activated source commit is not an ancestor of "
-            "the result control commit"
+        raise GateError("private Social schema inventory belongs to another run")
+    inventory = store.read_json(inventory_ref)
+    if (
+        inventory.get("artifactKind") != "private-social-schema-inventory"
+        or inventory.get("runId") != payload["provisioningRunId"]
+        or inventory.get("sourceCommit") != payload["sourceCommit"]
+        or inventory.get("workspaceId") != payload["workspaceId"]
+        or set(inventory.get("services", {})) != set(SERVICE_IDS)
+    ):
+        raise GateError("private Social schema inventory source/epoch is invalid")
+    for role, entry in inventory["services"].items():
+        target = RUNTIME_TARGETS.get(entry["profileId"])
+        service_ref = ArtifactRef.from_dict(entry["serviceAttestationRef"])
+        service = store.read_json(service_ref)
+        if (
+            target is None or entry["physicalServiceId"] != target.service_id
+            or entry["deploymentEnvironment"] != target.deployment_environment
+            or service_ref.gate_id != inventory_ref.gate_id
+            or service_ref.run_id != inventory_ref.run_id
+            or service_ref.workspace_id != inventory_ref.workspace_id
+            or service.get("serviceId") != role
+            or service.get("commit") != payload["sourceCommit"]
+            or service.get("workspaceDigest") != "clean"
+            or service.get("deploymentEnvironment") != target.deployment_environment
+            or hashlib.sha256(str(service.get("runtimeIdentity", "")).encode()).hexdigest()
+            != payload["runtimeManifest"]["serviceRuntimeIdentityDigests"][role]
+            or payload["runtimeManifest"]["profileBindings"].get(entry["profileId"]) != role
+        ):
+            raise GateError("private Social schema physical owner or Station changed")
+        raw = entry["attestationRef"]
+        ref = ArtifactRef.from_dict({
+            **inventory_ref.to_dict(), "path": raw["path"], "sha256": raw["sha256"],
+        })
+        binding = runtime_manifest.load_canonical_private_schema_attestation(
+            store.resolve(ref), repo_root=repo_root,
+            source_commit=payload["sourceCommit"], workspace_id=payload["workspaceId"],
+            service_id=target.service_id, profile_id=target.profile_id,
+            deployment_environment=target.deployment_environment,
+            station_runtime_identity=service["runtimeIdentity"],
+            service_attestation_digest=runtime_manifest.schema_service_attestation_binding_digest(
+                target.service_id, {
+                    "kind": service["serviceKind"],
+                    "deployment_environment": service["deploymentEnvironment"],
+                    "schema_attestation_endpoint": service["endpoint"],
+                    "live_commit": service["commit"],
+                    "protocol_digest": service["protocolDigest"],
+                    "runtime_identity": service["runtimeIdentity"],
+                },
+            ),
         )
-    _require_allowed_commit_delta(
-        repo_root,
-        source_commit,
-        result_control_commit,
-        label="post-activation",
-    )
-
-
-def _require_allowed_commit_delta(
-    repo_root: Path,
-    base_commit: str,
-    head_commit: str,
-    *,
-    label: str,
-) -> None:
-    changed = subprocess.run(
-        [
-            "git",
-            "diff",
-            "--name-only",
-            "--diff-filter=ACDMRTUXB",
-            f"{base_commit}..{head_commit}",
-        ],
-        cwd=repo_root,
-        text=True,
-        capture_output=True,
-        timeout=30,
-        check=False,
-    )
-    if changed.returncode != 0:
-        raise GateError(f"cannot inspect CSS-09 {label} changes")
-    disallowed = sorted(
-        path
-        for path in changed.stdout.splitlines()
-        if path
-        and not any(
-            path.startswith(prefix)
-            for prefix in ALLOWED_POST_RESULT_PREFIXES
-        )
-    )
-    if disallowed:
-        raise GateError(
-            f"CSS-09 {label} has disallowed changes: "
-            + ", ".join(disallowed)
-        )
-
-
-def _require_allowed_control_lineage(
-    repo_root: Path,
-    result_control_commit: str,
-    current_head: str,
-) -> None:
-    if result_control_commit == current_head:
-        return
-    if not _git_is_ancestor(repo_root, result_control_commit, current_head):
-        raise GateError(
-            "CSS-09 result control commit is not an ancestor of current HEAD"
-        )
-    status = subprocess.run(
-        ["git", "status", "--porcelain", "--untracked-files=all"],
-        cwd=repo_root,
-        text=True,
-        capture_output=True,
-        timeout=15,
-        check=False,
-    )
-    if status.returncode != 0:
-        raise GateError("cannot validate CSS-09 current worktree cleanliness")
-    if status.stdout.strip():
-        raise GateError(
-            "CSS-09 descendant control HEAD requires a clean worktree"
-        )
-    _require_allowed_commit_delta(
-        repo_root,
-        result_control_commit,
-        current_head,
-        label="post-result control lineage",
-    )
+        if not binding.provenance_files:
+            raise GateError("private Social schema has no reset provenance")
 
 
 def validate_suite_result(
@@ -847,9 +562,9 @@ def validate_suite_result(
     result_path: Path,
     artifact_root: Path,
     repo_root: Path,
-    control_commit: str,
     expected_workspace: str,
-    require_ancestor: bool = True,
+    expected_source: Mapping[str, Any],
+    expected_run_id: str,
 ) -> ValidatedSuiteResult:
     if set(payload) != SUITE_RESULT_FIELDS:
         raise GateError("CSS-09 suite result has unknown or missing fields")
@@ -896,27 +611,22 @@ def validate_suite_result(
         payload.get("fixtureEpoch"),
         "CSS-09 fixtureEpoch",
     )
-    expected_result_generation = result_path.parent.parent.name
-    if expected_result_generation != declared_control:
-        raise GateError(
-            "CSS-09 suite result path does not match its control commit"
-        )
+    provisioning_run_id = _require_string(payload.get("provisioningRunId"), "Suite provisioning run")
     if declared_workspace != expected_workspace:
         raise GateError("CSS-09 suite result workspace identity is stale")
-    if require_ancestor:
-        _require_source_ancestor(repo_root, source_commit, declared_control)
-        _require_allowed_control_lineage(
-            repo_root,
-            declared_control,
-            control_commit,
-        )
+    if (
+        payload.get("source") != dict(expected_source)
+        or source_commit != expected_source["commit"] or declared_control != source_commit
+        or worktree_set_digest != canonical_digest(expected_source)
+        or run_id != expected_run_id or fixture_epoch != provisioning_run_id
+    ):
+        raise GateError("private Social Suite source/run/epoch is stale")
 
     suite_digest = _require_string(
         payload.get("suiteRuntimeReportDigest"),
         "CSS-09 suiteRuntimeReportDigest",
         pattern=SHA256,
     )
-    activation = _validate_activation(payload.get("activation"))
     _validate_embedded_runtime_manifest(
         payload.get("runtimeManifest"),
         source_commit=source_commit,
@@ -924,6 +634,7 @@ def validate_suite_result(
         workspace=declared_workspace,
         worktree_set_digest=worktree_set_digest,
         run_id=run_id,
+        provisioning_run_id=provisioning_run_id,
         fixture_epoch=fixture_epoch,
         suite_runtime_report_digest=suite_digest,
     )
@@ -979,22 +690,7 @@ def validate_suite_result(
         supporting_paths.append(path)
     supporting_set = set(supporting_paths)
 
-    activation_path, _ = _resolve_artifact(
-        activation["aggregatePath"],
-        label="CSS-09 activation aggregate",
-        result_path=result_path,
-        artifact_root=artifact_root,
-    )
-    if activation_path not in supporting_set:
-        raise GateError(
-            "CSS-09 activation aggregate is absent from supporting artifacts"
-        )
-    _validate_activation_artifact(
-        activation,
-        activation_path,
-        source_commit=source_commit,
-        workspace=declared_workspace,
-    )
+    _validate_schema_inventory(payload, repo_root=repo_root)
 
     scenario_results = payload.get("scenarioResults")
     if (
@@ -1052,35 +748,86 @@ def validate_suite_result(
 def load_suite_result(
     repo_root: Path = REPO_ROOT,
     *,
-    artifact_root: Path | None = None,
-    control_commit: str | None = None,
-    environment: Mapping[str, str] | None = None,
-    home: Path | None = None,
+    consumer_gate_id: str,
+    execution_policy: str,
 ) -> ValidatedSuiteResult:
-    result_path, root, resolved_control, resolved_workspace = (
-        discover_suite_result(
-            repo_root,
-            artifact_root=artifact_root,
-            control_commit=control_commit,
-            environment=environment,
-            home=home,
-        )
+    """Read the original producer selected by this execution graph, never history."""
+    from dataclasses import replace
+    def unique_fields(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise GateError("private Social prerequisite contains duplicate fields")
+            value[key] = item
+        return value
+    try:
+        refs = json.loads(os.environ.get("PT_ACCEPTANCE_PREREQUISITE_PROOFS", "[]"),
+                          object_pairs_hook=unique_fields)
+        envelope = json.loads(os.environ.get("PT_ACCEPTANCE_CURRENT_RESULTS", "{}"),
+                              object_pairs_hook=unique_fields)
+    except json.JSONDecodeError as error:
+        raise GateError("private Social prerequisite context is invalid") from error
+    field = "developmentManifest" if execution_policy == "development" else "runManifest"
+    producer = "social-cross-station-native-e2e"
+    if (
+        execution_policy not in {"development", "acceptance"}
+        or consumer_gate_id not in {"social-private-desktop-e2e", "social-cross-station-desktop-functional"}
+        or not isinstance(refs, list) or len(refs) != 1
+        or not isinstance(refs[0], dict) or set(refs[0]) != {"gateId", field}
+        or refs[0]["gateId"] != producer
+        or not isinstance(envelope, dict) or set(envelope) != {"source", "results"}
+        or not isinstance(envelope["results"], list)
+    ):
+        raise GateError("private Social requires its exact current prerequisite")
+    source = source_identity(repo_root)
+    if envelope["source"] != source:
+        raise GateError("private Social prerequisite source is stale")
+    ids = [result.get("id") for result in envelope["results"] if isinstance(result, dict)]
+    if len(ids) != len(envelope["results"]) or len(ids) != len(set(ids)):
+        raise GateError("private Social prerequisite results contain repeated identities")
+    store = EvidenceStore.from_environment(repo_root=repo_root, worktree=repo_root)
+    verified, missing = prerequisite_results(
+        {"id": consumer_gate_id, "dependsOn": [producer]}, envelope["results"], source, store,
+        execution_policy=execution_policy,
     )
-    payload = _load_json(result_path, "CSS-09 suite result")
-    return validate_suite_result(
-        payload,
-        result_path=result_path,
-        artifact_root=root,
-        repo_root=repo_root,
-        control_commit=resolved_control,
-        expected_workspace=resolved_workspace,
+    if missing or verified != refs:
+        raise GateError("private Social prerequisite differs from current Runner results")
+    manifest_ref = ArtifactRef.from_dict(refs[0][field])
+    manifest = store.read_run_manifest(
+        manifest_ref, manifest_sha256=manifest_ref.sha256, expected_gate_id=producer,
     )
+    report_ref = manifest["result"].get("sourceArtifact")
+    if report_ref not in manifest["artifacts"].values():
+        raise GateError("private Social producer report is outside the original inventory")
+    report = store.read_json(ArtifactRef.from_dict(report_ref))
+    result_ref = report.get("evidence", {}).get("suite-result")
+    if result_ref not in manifest["artifacts"].values():
+        raise GateError("private Social Suite result is outside the original inventory")
+    ref = ArtifactRef.from_dict(result_ref)
+    path = store.resolve(ref)
+    result = validate_suite_result(
+        store.read_json(ref), result_path=path,
+        artifact_root=store.resolve(manifest_ref).parent, repo_root=repo_root,
+        expected_workspace=store.workspace_id, expected_source=source,
+        expected_run_id=manifest_ref.run_id,
+    )
+    inventory_paths = {store.resolve(ArtifactRef.from_dict(item))
+                       for item in manifest["artifacts"].values()}
+    if not {result.suite_runtime_path, *result.supporting_artifacts} <= inventory_paths:
+        raise GateError("private Social supporting evidence is outside the original inventory")
+    return replace(result, producer_manifest=refs[0], result_ref=ref.to_dict())
 
 
 def attach_suite_evidence(
     gate: AcceptanceGate,
     result: ValidatedSuiteResult,
 ) -> None:
+    if result.producer_manifest is not None:
+        gate.report.runtime["privateSocialProducer"] = {
+            "originalManifest": result.producer_manifest,
+            "originalSuiteResult": result.result_ref,
+        }
+        return
     gate.report.add_evidence_file("suite-result", result.path)
     gate.report.add_evidence_file(
         "suite-runtime",
@@ -1088,78 +835,3 @@ def attach_suite_evidence(
     )
     for index, path in enumerate(result.supporting_artifacts, start=1):
         gate.report.add_evidence_file(f"suite-supporting-{index}", path)
-
-
-def validate_acceptance_runtime_manifest(
-    path: Path,
-    *,
-    gate_id: str = "social-cross-station-native-e2e",
-) -> dict[str, Any]:
-    if path.is_symlink() or not path.is_file():
-        raise GateError(f"Acceptance Runtime Manifest is unavailable: {path}")
-    try:
-        manifest = load_runtime_manifest(path, gate_id)
-    except ProvisioningError as error:
-        raise GateError(f"Acceptance Runtime Manifest is invalid: {error}") from error
-    if manifest.get("environmentId") != "cross-station-social-native":
-        raise GateError(
-            "Acceptance Runtime Manifest has the wrong environment"
-        )
-    profile = manifest.get("profile")
-    if (
-        not isinstance(profile, Mapping)
-        or profile.get("resolvedName") != "chat-native-disposable"
-        or profile.get("slot") != 13
-    ):
-        raise GateError(
-            "Acceptance Runtime Manifest is not bound to profile "
-            "chat-native-disposable slot 13"
-        )
-    services = manifest.get("services")
-    if not isinstance(services, Mapping) or set(services) != set(SERVICE_IDS):
-        raise GateError(
-            "Acceptance Runtime Manifest service topology is incomplete"
-        )
-    for service_id in SERVICE_IDS:
-        service = services[service_id]
-        if (
-            not isinstance(service, Mapping)
-            or service.get("kind") != "station"
-            or COMMIT.fullmatch(str(service.get("liveCommit") or "")) is None
-            or not service.get("runtimeIdentity")
-        ):
-            raise GateError(
-                f"Acceptance Runtime Manifest service {service_id} is invalid"
-            )
-
-    clients = _runtime_clients(manifest.get("clients"))
-    if set(clients) != set(CLIENT_BINDINGS):
-        raise GateError(
-            "Acceptance Runtime Manifest client topology is incomplete"
-        )
-    for client_id, (actor, service_id) in CLIENT_BINDINGS.items():
-        client = clients[client_id]
-        if (
-            _first_string(client, ("actor",)) != actor
-            or _first_string(client, ("runtime",)) != "native-tauri"
-            or _binding_service_id(client) != service_id
-        ):
-            raise GateError(
-                f"Acceptance Runtime Manifest client {client_id} is misbound"
-            )
-    return manifest
-
-
-def optional_acceptance_runtime_manifest(
-    *,
-    environment: Mapping[str, str] | None = None,
-) -> tuple[Path, dict[str, Any]] | None:
-    current_environment = os.environ if environment is None else environment
-    raw_path = current_environment.get(
-        ACCEPTANCE_RUNTIME_MANIFEST_ENV,
-        "",
-    ).strip()
-    if not raw_path:
-        return None
-    path = Path(raw_path).expanduser()
-    return path, validate_acceptance_runtime_manifest(path)

@@ -259,6 +259,32 @@ class NativeOperatorObservation:
         self._baseline = MappingProxyType(dict(adapter.snapshot_operator_state()))
         self._observations: dict[str, CellNonInterferenceIdentity] = {}
         self._failure: BlockedError | DriverError | None = None
+        self._closed = False
+        self._close_failure: BlockedError | DriverError | None = None
+
+    def close(self) -> None:
+        if self._close_failure is not None:
+            raise self._close_failure
+        if not self._closed:
+            self._closed = True
+            try:
+                self._adapter.close_operator_observation()
+            except (BlockedError, DriverError) as error:
+                self._close_failure = error
+                raise
+
+    def __enter__(self) -> "NativeOperatorObservation":
+        if self._closed:
+            raise DriverError("Operator observation is closed")
+        return self
+
+    def __exit__(self, kind, error, traceback) -> None:
+        try:
+            self.close()
+        except (BlockedError, DriverError) as cleanup:
+            if error is None:
+                raise
+            error.add_note(f"Operator observation cleanup failed: {type(cleanup).__name__}")
 
     @property
     def baseline(self) -> Mapping[str, object]:
@@ -309,6 +335,8 @@ class NativeOperatorObservation:
     ) -> NativeDesktopObservation:
         if self._failure is not None:
             raise self._failure
+        if self._closed:
+            raise DriverError("Operator observation is closed")
         if phase in self._observations:
             raise DriverError(f"Operator observation phase repeated: {phase}")
         try:
@@ -396,8 +424,14 @@ class NativeDesktopAdapter(ABC):
         del process_id
         raise DriverError("Combined native operator and chooser observation is unavailable")
 
-    def observe_operator(self) -> NativeOperatorObservation:
+    def observe_operator(
+        self, *, deadline_monotonic: float | None = None,
+    ) -> NativeOperatorObservation:
+        del deadline_monotonic
         return NativeOperatorObservation(self)
+
+    def close_operator_observation(self) -> None:
+        """Release the platform-owned observation scope, when present."""
 
     @property
     @abstractmethod

@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { resolvePrivateCommentComposerAction } from './privateCommentComposerState';
 
@@ -8,12 +8,15 @@ function source(relativePath: string): string {
 
 const composerSource = source('./MomentComposer.tsx');
 const audiencePickerSource = source('./AudiencePicker.tsx');
+const sharedAudienceSource = source('../../../../../packages/ui/web/src/moment-composer.tsx');
+const sharedMomentsCss = source('../../../../../packages/ui/web/src/moments.css');
 const commentListSource = source('./CommentList.tsx');
 const commentsSectionSource = source('./MomentCommentsSection.tsx');
 const detailSource = source('../../pages/moments/MomentDetailPage.tsx');
 const appSource = source('../../pages/moments/MomentsApp.tsx');
-const threadSource = source('./surfaces/SocialThreadSurface.tsx');
-const searchSource = source('../../pages/moments/UserSearchPage.tsx');
+const sharedCardSource = source('../../../../../packages/ui/web/src/moment-card.tsx');
+const scopeSource = source('../../../../../packages/ui/web/src/moment-scope-bar.tsx');
+const navigationSource = source('../../store/momentsNavigation.ts');
 const userSource = source('../../pages/moments/MomentsUserPage.tsx');
 const circleSource = source('../../pages/moments/CircleManagePage.tsx');
 const discoverySource = source('../../store/discovery.ts');
@@ -26,6 +29,35 @@ const enMoments = JSON.parse(
 ) as Record<string, string>;
 
 describe('Desktop Moments interaction contract', () => {
+  it('uses peers-ui across all Social surfaces and the shell-owned scoped feedback path', () => {
+    const legacy: string[] = [];
+    const inspect = (directory: URL) => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const file = new URL(entry.name + (entry.isDirectory() ? '/' : ''), directory);
+        if (entry.isDirectory()) inspect(file);
+        else if (/\.tsx?$/.test(entry.name) && !entry.name.includes('.test.')
+          && /(?:from\s*|import\s*\()\s*['"](?:antd|@lobehub\/ui)['"]/.test(readFileSync(file, 'utf8'))) {
+          legacy.push(file.pathname);
+        }
+      }
+    };
+    inspect(new URL('./', import.meta.url));
+    inspect(new URL('../../pages/moments/', import.meta.url));
+    expect(legacy).toEqual([]);
+    // The shell owns the session-scoped feedback channel: it creates it via
+    // useAppFeedback, provides it through AppFeedbackContext (consumed by
+    // useScopedFeedback), and renders its FeedbackHost. UIProvider itself moved
+    // up to main.tsx on master, so the binding lives on the context/host here.
+    const appSourceScoped = source('../../App.tsx');
+    expect(appSourceScoped).toContain('useAppFeedback()');
+    expect(appSourceScoped).toContain('AppFeedbackContext.Provider value={feedback}');
+    expect(appSourceScoped).toContain('<FeedbackHost channel={feedback} />');
+    for (const consumer of ['./MomentComposer.tsx', './MomentCard.tsx', './CommentList.tsx',
+      './MomentAuthorTrigger.tsx', './MomentRelationshipAction.tsx', '../../pages/moments/CircleManagePage.tsx']) {
+      expect(source(consumer)).toContain('useScopedFeedback');
+    }
+  });
+
   it('boots recovery projections independently from critical Chat readiness', () => {
     const deferredProjection = appRuntimeHookSource.indexOf(
       'void installDeferredAppRuntimeProjections(actorPtid);',
@@ -42,16 +74,23 @@ describe('Desktop Moments interaction contract', () => {
 
   it('keeps post text away from its visible input boundary', () => {
     expect(composerSource).toContain('data-moments-composer-input');
-    expect(composerSource).toContain("padding: '8px 12px'");
-    expect(composerSource).toContain('border: `1px solid ${token.colorBorderSecondary}`');
+    expect(composerSource).toContain('<MomentComposerSurface');
+    expect(sharedMomentsCss).toContain('.sk-compose .pt-field-frame');
+    expect(sharedMomentsCss).toContain('padding: 4px 8px');
   });
 
   it('lets users collapse and restore the comment thread inside the card', () => {
-    expect(threadSource).toContain('data-moments-comments-toggle');
+    expect(sharedCardSource).toContain('data-acceptance-id="social-open-comments"');
+    expect(sharedCardSource).toContain('aria-expanded={commentsOpen}');
+    expect(actionBarSource).toContain('<MomentReactionBar');
+    expect(detailSource).not.toContain('SocialThreadSurface');
     // Comments expand inline in the card; the section anchor stays on the
     // card root so deep-link captures find the thread from its card.
     expect(momentCardSource).toContain('data-moments-comments-region={post.id}');
-    expect(momentCardSource).toContain('commentsOpen && (');
+    expect(momentCardSource).toContain('commentsMounted && !unavailable');
+    expect(momentCardSource).toContain('commentsOpen={commentsOpen}');
+    expect(momentCardSource).toContain('active={commentsOpen}');
+    expect(sharedCardSource).toContain('hidden={!commentsOpen}');
     expect(momentCardSource).toContain('<MomentCommentsSection');
     expect(commentsSectionSource).toContain('<CommentList');
     expect(appSource).toContain('key={view.postId}');
@@ -59,6 +98,8 @@ describe('Desktop Moments interaction contract', () => {
     // revision identity — only thread + viewer identity keys it.
     expect(commentsSectionSource).not.toContain('draftRevision');
     expect(commentsSectionSource).not.toContain('rendererGeneration');
+    expect(commentsSectionSource).toContain('key={commentDraftKey(');
+    expect(commentsSectionSource).toContain('sessionEpoch');
   });
 
   it('keeps a committed private Comment actionable without plaintext', () => {
@@ -85,11 +126,13 @@ describe('Desktop Moments interaction contract', () => {
     );
   });
 
-  it('navigates from a search result only through its avatar', () => {
-    expect(searchSource).toContain('onAvatarClick={() => onOpenUser(u.id)}');
-    expect(searchSource).not.toContain('onClick={() => onOpenUser(u.id)}');
-    expect(searchSource).not.toContain('loading={searching}');
-    expect(searchSource).toContain('searchError && query === normalizedText');
+  it('keeps two scopes and nearby search while identities open their original profile', () => {
+    expect(navigationSource).toContain("MomentsTab = 'feed' | 'circles'");
+    expect(appSource).toContain('<MomentScopeBar');
+    expect(appSource).toContain("setQuery('')");
+    expect(scopeSource).toContain('data-scope-search={value}');
+    expect(scopeSource).toContain('onQueryChange');
+    expect(appSource).toContain('onAuthorClick={goUser}');
     expect(userSource).toContain('discoveryUser: s.usersById[actorPtid]');
     expect(userSource).toContain('loading={!author && profileLoading}');
     expect(userSource).toContain('refreshing={!!author && profileLoading}');
@@ -98,7 +141,9 @@ describe('Desktop Moments interaction contract', () => {
   });
 
   it('adds audience members through identity search instead of typed DIDs', () => {
-    expect(circleSource).toContain('data-moments-circle-person-picker');
+    expect(circleSource).toContain('<MomentCircleEditor');
+    expect(circleSource).toContain('void searchUsers(value)');
+    expect(circleSource).toContain('await saveCircle(');
     expect(circleSource).toContain("t('moments.circle.searchPeoplePlaceholder')");
     expect(circleSource).not.toContain('memberInput');
     expect(runtimeSource).toContain('export async function ensureCircleMemberProfiles');
@@ -117,10 +162,11 @@ describe('Desktop Moments interaction contract', () => {
     expect(admissionIndex).toBeGreaterThan(-1);
     expect(publishIndex).toBeGreaterThan(admissionIndex);
     expect(composerSource).toContain('privateMomentPublishIntent(privateDraft)');
-    expect(audiencePickerSource).toContain('data-moments-audience-kind');
-    expect(audiencePickerSource).toContain('data-moments-audience-target="circle"');
-    expect(audiencePickerSource).toContain('data-moments-audience-target="group"');
-    expect(audiencePickerSource).toContain('data-moments-audience-actors');
+    expect(sharedAudienceSource).toContain('data-moments-audience-kind');
+    expect(sharedAudienceSource).toContain('data-moments-audience-target');
+    expect(audiencePickerSource).toContain("case: 'circleId'");
+    expect(audiencePickerSource).toContain("case: 'groupConversationId'");
+    expect(sharedAudienceSource).toContain('data-moments-audience-actors');
     expect(composerSource).toContain('homeStationPeerId !== localStationPeerId');
     expect(composerSource).toContain('await preparePrivateAudience(intent)');
     expect(composerSource).toContain("privatePublishState === 'READY_PRIVATE'");
@@ -130,11 +176,15 @@ describe('Desktop Moments interaction contract', () => {
   });
 
   it('renders private Reaction status and explicit retry through SocialActionBar', () => {
-    expect(momentCardSource).toContain('privateReaction: s.reactionsByPost[post.id]');
-    expect(momentCardSource).toContain('retryPrivateReaction(post.id)');
+    expect(momentCardSource).toContain('Object.values(reactionCommands)');
+    expect(momentCardSource).toContain('command.postId === post.id && !command.commentId');
+    expect(momentCardSource).toContain('projectPrivateReactionRecovery(recoveryState, command)');
+    expect(momentCardSource).toContain("retryReaction(post.id, '', kind, commandId)");
     expect(momentCardSource).not.toContain('message.error(String(err))');
-    expect(actionBarSource).toContain("reactionState === 'REACTION_PENDING'");
+    expect(actionBarSource).toContain("command.state === 'REACTION_PENDING'");
     expect(actionBarSource).toContain("t('moments.reaction.retry')");
+    expect(actionBarSource).toContain('command.recovery?.eligible');
+    expect(actionBarSource).not.toContain("command.state === 'REACTION_REJECTED' && onRetryReaction");
     expect(enMoments['moments.reaction.status.REACTION_PENDING']).toBe(
       'Reaction pending',
     );
@@ -157,6 +207,7 @@ describe('Desktop Moments interaction contract', () => {
     expect(replyIndex).toBeGreaterThan(-1);
     expect(gateIndex).toBeGreaterThan(replyIndex);
     expect(commentListSource).toContain("t('moments.comment.deleteFailed')");
+    expect(commentListSource).toContain('onSubmit(trimmed, replyRootId, normalized)');
   });
 
   it('routes production and harness PUBLIC media through one composer decision', () => {

@@ -175,7 +175,7 @@ CLIENT_ACCESS_DISCOVERY_PATTERNS = (
         r"pub(?:\s+async)?\s+fn\s+(access_[a-z0-9_]+)\s*\(",
         re.MULTILINE,
     ),
-    re.compile(r"\b(?:auth|oauth)::(access_[a-z0-9_]+)\b"),
+    re.compile(r"\b(?:auth|oauth)::(access_[a-z0-9_]+)\b(?!\s*\()"),
     re.compile(
         r"\b(?:const|let|var)\s+[A-Za-z_$][A-Za-z0-9_$]*"
         r"\s*=\s*['\"`](access_[a-z0-9_]+)['\"`]"

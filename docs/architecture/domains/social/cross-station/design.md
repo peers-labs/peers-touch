@@ -259,8 +259,36 @@ payload. Every command has one immutable command ID, canonical request hash,
 and actor-device signature verified by source Social.
 The source returns exact replay results; hash conflict is terminal.
 
+Local private reactions use the same signed command, source mutation and
+durable result journal, omitting only Federation transport. There is no
+unsigned local reaction writer. `ReactionService` is a summary reader.
+Post and Comment targets have independent reaction state and revisions.
+Replay admission and imported results use the original current read policy;
+a cached result cannot reopen a locally deleted, blocked or revoked target.
+Committed wake events include the parent Post and optional Comment ID so the
+existing Moments Runtime can reconcile the affected thread.
+
+The recipient's authorized parent read derives `PostMetadata.stats.comments_count`
+from its active durable Comment projections in the same read transaction.
+The aggregate includes roots and replies across all pages, deduplicates content
+IDs, and binds the parent's source Station, Federation, target Station, and
+viewer. Comments require exactly one current endpoint envelope, or, when that
+endpoint envelope is absent, exactly one retained actor recovery envelope.
+Ambiguous envelopes, the existing either-direction block policy and revoked
+projections remain excluded.
+The read overlays only cloned response metadata; immutable delivery metadata,
+proofs, and authored timestamps remain unchanged. The existing Moments Runtime
+parent read consumes this aggregate without adding a client count authority.
+
 Unknown outcomes remain pending and retry with the same command ID. Comment
 draft text stays on Bob's Native Desktop.
+
+The source's original private-resource outbox delivers every remote viewer's
+complete endpoint and actor recovery envelopes, including a remote Comment
+author. The interaction result confirms the command and localizes proof-key
+trust; it does not create a resource projection from its single endpoint
+envelope. Resource delivery owns projection persistence and committed wakes,
+independent of result ordering and exact replay.
 
 ## 8. Revocation And Recovery
 
@@ -286,6 +314,14 @@ proof, and required retained-key attestation. After trusted recovery, a
 replacement Native Desktop can decrypt authorized never-opened history without
 the author being online. Revoked devices, expired Federation membership, or a
 higher invalidation revision remain denied.
+
+Remote Comment point reads, pages and read policy use the same endpoint-first
+recovery projection as remote Posts. A recovery-only read verifies the retained
+signing envelope against the payload and exact commit-proof author and returns
+no endpoint envelope. Native obtains the actor envelope through the existing
+recoverable-content read and decrypts locally. Reads never rewrite retained
+delivery bytes. After account restoration, each old Post still requires its
+own original Native recovery action before interaction readback.
 
 ## 9. Native Desktop Boundary
 

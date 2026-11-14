@@ -308,6 +308,36 @@ class ReviewedSchemaActivationTransportTest(unittest.TestCase):
 
         self.assertEqual(1, command_runner.call_count)
         self.assertEqual(["make", "station"], command_runner.call_args.args[0])
+        self.assertEqual(
+            "four", command_runner.call_args.kwargs["env"]["PT_DEV_TARGET_PROFILE"],
+        )
+        self.assertEqual(
+            COMMIT, command_runner.call_args.kwargs["env"]["PT_BUILD_SOURCE_COMMIT"],
+        )
+
+    def test_deploy_environment_binds_target_without_borrowing_parent_authority(self) -> None:
+        from tooling.development.secure_content.activation_transport import (
+            _deployment_environment,
+        )
+        parent = {
+            "PT_DEV_TARGET_PROFILE": "four",
+            "PT_BUILD_SOURCE_COMMIT": "a" * 40,
+            "PT_MACHINE_LEASE_FD": "64",
+            "PT_ACCEPTANCE_ENVIRONMENT": "cross-station-social-native",
+            "PT_ACCEPTANCE_RUN_ID": "parent-suite",
+            "PT_DEV_PROFILE_FILE": "/foreign/profile",
+            "PT_AGENT_CAPABILITY_SCENARIO_CONTROL": "foreign-control",
+        }
+        with mock.patch.dict(os.environ, parent, clear=True):
+            child = _deployment_environment(
+                120, target_profile="fiveArm", source_commit=COMMIT,
+            )
+            self.assertEqual(parent, dict(os.environ))
+        self.assertEqual({
+            "PT_DEV_TARGET_PROFILE": "fiveArm",
+            "PT_BUILD_SOURCE_COMMIT": COMMIT,
+            "PT_STATION_LEASE_BUDGET_SECONDS": "120",
+        }, child)
 
     def test_deploy_fails_before_station_when_profile_selection_fails(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

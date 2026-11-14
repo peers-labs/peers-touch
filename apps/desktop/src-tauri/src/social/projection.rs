@@ -122,6 +122,12 @@ pub enum PrivateMomentContentProjection {
         text: String,
         question: String,
         options: Vec<String>,
+        #[serde(default)]
+        opaque_option_ids: Vec<String>,
+        #[serde(default)]
+        option_set_sha256: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        result: Option<PrivatePollResultProjection>,
         min_choices: u32,
         max_choices: u32,
         expires_at_seconds: i64,
@@ -160,16 +166,42 @@ pub struct PrivateReactionSummaryProjection {
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum PrivateReactionOperation {
-    React,
-    Unreact,
+    React = 3,
+    Unreact = 4,
+    VotePoll = 5,
+}
+
+impl TryFrom<i64> for PrivateReactionOperation {
+    type Error = String;
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        match value {
+            3 => Ok(Self::React),
+            4 => Ok(Self::Unreact),
+            5 => Ok(Self::VotePoll),
+            _ => Err("private interaction operation is invalid".into()),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PrivatePollResultProjection {
+    pub vote_counts: Vec<String>,
+    pub selected_options: Vec<u32>,
+    pub voter_count: String,
+    pub projection_revision: String,
+    pub command_id: String,
+    pub vote_actor_ptid: String,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct PrivateReactionCommandProjection {
     pub command_id: String,
     pub post_id: String,
+    pub comment_id: String,
     pub kind: i32,
     pub operation: PrivateReactionOperation,
+    pub selected_opaque_option_ids: Vec<String>,
     pub state: String,
     pub attempt_count: u32,
     pub projection_revision: String,
@@ -199,6 +231,8 @@ pub struct PrivateMomentProjection {
     pub reaction_revision: String,
     #[serde(default)]
     pub reactions_hydrated: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comments_count: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<PrivateMomentContentProjection>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -478,6 +512,10 @@ fn decrypt_projection_from_response_at(
         reactions,
         reaction_revision,
         reactions_hydrated,
+        comments_count: metadata
+            .stats
+            .as_ref()
+            .map(|stats| stats.comments_count.to_string()),
         content: Some(content),
         error_code: None,
         retry_after_seconds: None,
@@ -1276,22 +1314,26 @@ fn project_plaintext(
             {
                 return Err("private poll Moment authority mismatch".to_string());
             }
-            Ok(PrivateMomentContentProjection::Poll {
-                text: poll.text.clone(),
-                question: poll.question.clone(),
-                options: poll
-                    .options
-                    .iter()
-                    .map(|option| option.label.clone())
-                    .collect(),
-                min_choices: poll.min_choices,
-                max_choices: poll.max_choices,
-                expires_at_seconds: poll
-                    .expires_at
-                    .as_ref()
-                    .map(|timestamp| timestamp.seconds)
-                    .ok_or_else(|| "private poll Moment expiry is unavailable".to_string())?,
-            })
+            let mut content = private_poll_content(poll);
+            let projected_result = private
+                .poll
+                .as_ref()
+                .map(|result| {
+                    super::private_poll::project_poll_result(
+                        &content,
+                        result,
+                        &authority
+                            .resource
+                            .as_ref()
+                            .ok_or("private poll resource is unavailable")?
+                            .content_id,
+                    )
+                })
+                .transpose()?;
+            if let PrivateMomentContentProjection::Poll { result, .. } = &mut content {
+                *result = projected_result;
+            }
+            Ok(content)
         }
         Some(social::private_moment_content::Body::Repost(repost)) => {
             let authority = match private
@@ -1382,6 +1424,32 @@ fn project_plaintext(
             })
         }
         _ => Err("private Moment subtype is unsupported by the W7 pilot".to_string()),
+    }
+}
+
+fn private_poll_content(poll: &social::PrivatePollContent) -> PrivateMomentContentProjection {
+    PrivateMomentContentProjection::Poll {
+        text: poll.text.clone(),
+        question: poll.question.clone(),
+        options: poll
+            .options
+            .iter()
+            .map(|option| option.label.clone())
+            .collect(),
+        opaque_option_ids: poll
+            .options
+            .iter()
+            .map(|option| hex::encode(&option.opaque_option_id))
+            .collect(),
+        option_set_sha256: hex::encode(&poll.option_set_sha256),
+        result: None,
+        min_choices: poll.min_choices,
+        max_choices: poll.max_choices,
+        expires_at_seconds: poll
+            .expires_at
+            .as_ref()
+            .map(|value| value.seconds)
+            .unwrap_or_default(),
     }
 }
 
@@ -2374,6 +2442,7 @@ mod tests {
             reactions: Vec::new(),
             reaction_revision: "0".to_string(),
             reactions_hydrated: false,
+            comments_count: None,
             content: None,
             error_code: Some("RECOVERY_REQUIRED".to_string()),
             retry_after_seconds: None,
@@ -2463,6 +2532,9 @@ mod tests {
                     })
                     .collect(),
                 voter_count: 0,
+                post_id: resource.content_id.clone(),
+                option_set_sha256: option_set_sha256.to_vec(),
+                ..Default::default()
             }),
             verification: Some(social::PrivateContentVerification {
                 subtype_authority: Some(

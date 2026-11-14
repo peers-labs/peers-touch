@@ -1,5 +1,5 @@
-import { Button } from '@lobehub/ui';
-import { Image, Spin, Typography, theme } from 'antd';
+import { useEffect, useState } from 'react';
+import { Button, Image, Lightbox, Spin, VideoPlayer, type ResourceView } from '@peers-touch/ui';
 import {
   ImageIcon,
   LockKeyhole,
@@ -12,8 +12,6 @@ import type {
   PrivateMediaState,
   PrivateMomentMediaProjection,
 } from '../../services/privateMomentsNative';
-
-const { Text } = Typography;
 
 interface PrivateMediaGridProps {
   media: PrivateMomentMediaProjection[];
@@ -49,27 +47,42 @@ function mediaStateLabel(item: PrivateMomentMediaProjection): string {
 }
 
 function MediaStateIcon({ state }: { state: PrivateMediaState }) {
-  const { token } = theme.useToken();
   if (isBusy(state)) return <Spin size="small" />;
   if (state === 'MEDIA_INTEGRITY_FAILURE') {
-    return <ShieldAlert size={20} color={token.colorError} />;
+    return <ShieldAlert size={20} color="var(--pt-danger)" />;
   }
   if (state === 'MEDIA_ACCESS_DENIED') {
-    return <LockKeyhole size={20} color={token.colorWarning} />;
+    return <LockKeyhole size={20} color="var(--pt-warning)" />;
   }
   if (state === 'MEDIA_OFFLINE_RETRYABLE') {
-    return <WifiOff size={20} color={token.colorWarning} />;
+    return <WifiOff size={20} color="var(--pt-warning)" />;
   }
-  return <ImageIcon size={20} color={token.colorTextTertiary} />;
+  return <ImageIcon size={20} color="var(--pt-muted)" />;
 }
 
 export function PrivateMediaGrid({ media, onOpen }: PrivateMediaGridProps) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('moments');
+  const [selected, setSelected] = useState<string | null>(null);
+  const resource = (item: PrivateMomentMediaProjection): ResourceView => ({
+    // Native-authorized render handles are the only source. A revoke removes
+    // the resource and closes any preview; a new grant has a new identity.
+    resourceId: `${item.objectId}:${item.renderUrl}`,
+    source: item.renderUrl,
+    name: item.altText || t('moments.private.media.ready.alt'),
+    state: 'available',
+    failureReason: t('moments.lightbox.unavailable'),
+  });
+  const images = media.filter(item => item.state === 'MEDIA_READY' && item.renderUrl
+    && !item.mimeType?.startsWith('video/')).map(resource);
+  const selectedIndex = images.findIndex(image => image.resourceId === selected);
+  useEffect(() => {
+    if (selected !== null && selectedIndex < 0) setSelected(null);
+  }, [selected, selectedIndex]);
   if (media.length === 0) return null;
 
   const single = media.length === 1;
   return (
+    <>
     <div
       data-private-media-grid
       style={{
@@ -91,30 +104,19 @@ export function PrivateMediaGrid({ media, onOpen }: PrivateMediaGridProps) {
             minHeight: single ? 180 : 108,
             aspectRatio: single ? 'auto' : '1 / 1',
             overflow: 'hidden',
-            borderRadius: token.borderRadius,
-            background: token.colorFillSecondary,
+            borderRadius: 'var(--pt-radius-md)',
+            background: 'var(--pt-subtle)',
           }}
         >
           {item.state === 'MEDIA_READY'
           && item.renderUrl
           && item.mimeType?.startsWith('video/') ? (
-            <video
-              src={item.renderUrl}
-              controls
-              playsInline
-              style={{
-                display: 'block',
-                width: '100%',
-                height: '100%',
-                minHeight: single ? 180 : 108,
-                objectFit: 'cover',
-              }}
-            />
+            <VideoPlayer resource={resource(item)} />
           ) : item.state === 'MEDIA_READY' && item.renderUrl ? (
-            <Image
-              src={item.renderUrl}
-              alt={item.altText || t('moments.private.media.ready.alt')}
-              preview={{ mask: false }}
+            <Button actionId={`private-media.preview.${item.objectId}`} emphasis="quiet"
+              aria-label={t('moments.lightbox.openImage', { index: 1, total: images.length })}
+              onActivate={() => setSelected(resource(item).resourceId)}>
+            <Image resource={resource(item)}
               style={{
                 display: 'block',
                 width: '100%',
@@ -123,6 +125,7 @@ export function PrivateMediaGrid({ media, onOpen }: PrivateMediaGridProps) {
                 objectFit: 'cover',
               }}
             />
+            </Button>
           ) : (
             <div
               style={{
@@ -138,15 +141,16 @@ export function PrivateMediaGrid({ media, onOpen }: PrivateMediaGridProps) {
               }}
             >
               <MediaStateIcon state={item.state} />
-              <Text type="secondary" style={{ fontSize: 12 }}>
+              <span style={{ color: 'var(--pt-secondary)' }}>
                 {t(mediaStateLabel(item))}
-              </Text>
+              </span>
               {canOpen(item) && (
                 <Button
-                  size="small"
-                  type="text"
-                  icon={<RefreshCcw size={12} />}
-                  onClick={() => onOpen(item.objectId)}
+                  actionId={`private-media.open.${item.objectId}`}
+                  density="compact"
+                  emphasis="quiet"
+                  leading={<RefreshCcw size={12} />}
+                  onActivate={() => onOpen(item.objectId)}
                 >
                   {item.state === 'MEDIA_PLACEHOLDER'
                     ? t('moments.private.media.open')
@@ -158,5 +162,12 @@ export function PrivateMediaGrid({ media, onOpen }: PrivateMediaGridProps) {
         </div>
       ))}
     </div>
+    <Lightbox images={images} index={selectedIndex < 0 ? null : selectedIndex}
+      onIndexChange={index => setSelected(images[index].resourceId)} onDismiss={() => setSelected(null)}
+      copy={{ title: t('moments.lightbox.title'), close: t('moments.lightbox.close'),
+        previous: t('moments.lightbox.previous'), next: t('moments.lightbox.next'),
+        singleImage: t('moments.lightbox.singleImage'),
+        openImage: (index, total) => t('moments.lightbox.openImage', { index, total }) }} />
+    </>
   );
 }

@@ -6,6 +6,9 @@ fn main() {
         proto_root.join("domain/peer/station_identity.proto"),
         proto_root.join("domain/peer/access_endpoint.proto"),
         proto_root.join("domain/peer/bootstrap_blob.proto"),
+        proto_root.join("domain/social/feed_log.proto"),
+        proto_root.join("domain/social/post.proto"),
+        proto_root.join("domain/social/comment.proto"),
     ];
     for proto in &protos {
         println!("cargo:rerun-if-changed={}", proto.display());

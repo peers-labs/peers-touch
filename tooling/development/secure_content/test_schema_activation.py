@@ -1853,6 +1853,7 @@ class SchemaActivationOwnerTest(unittest.TestCase):
                 encoder := json.NewEncoder(os.Stdout)
                 encoder.SetEscapeHTML(false)
                 if err := encoder.Encode(map[string]any{
+                    "database_targets": infrastructure.CanonicalDatabaseResetTargets(),
                     "attestation": attestation,
                     "attestation_digest": attestationDigest,
                     "invocation": invocation,
@@ -1883,6 +1884,12 @@ class SchemaActivationOwnerTest(unittest.TestCase):
             )
         self.assertEqual(0, completed.returncode, completed.stderr)
         fixture = json.loads(completed.stdout)
+        self.assertEqual(
+            [(spec.table, spec.operation, spec.predicate) for spec in DATABASE_TARGET_SPECS],
+            [(target["table"], target["operation"], target.get("predicate"))
+             for target in fixture["database_targets"]],
+            "Python reset validation must consume the Station owner's exact ordered target list",
+        )
 
         invocation = fixture["invocation"]
         invocation_digest = invocation.pop("invocation_digest")
@@ -2059,7 +2066,10 @@ class SchemaActivationOwnerTest(unittest.TestCase):
             write_immutable_json(path, {"value": 1})
 
     def test_lease_wrapped_boundary_only_accepts_ssh_transport(self) -> None:
-        request = {"destructive_scope": "station-four-social-private"}
+        request = {
+            "profile_id": "four",
+            "destructive_scope": "station-four-social-private",
+        }
         boundary = LeaseWrappedSSHMaintenanceBoundary(
             repo_root=self.repo_root,
             environment={
@@ -2079,6 +2089,7 @@ class SchemaActivationOwnerTest(unittest.TestCase):
             command[:3],
         )
         self.assertEqual("station.reset", command[command.index("--resource-kind") + 1])
+        self.assertEqual("four", command[command.index("--target-profile") + 1])
         self.assertEqual(
             "station-four-social-private",
             command[command.index("--reset-scope") + 1],
@@ -2097,7 +2108,10 @@ class SchemaActivationOwnerTest(unittest.TestCase):
             invalid.command_for(request, budget_seconds=3600)
 
     def test_lease_wrapped_boundary_can_resolve_reviewed_ssh_transport(self) -> None:
-        request = {"destructive_scope": "station-four-social-private"}
+        request = {
+            "profile_id": "four",
+            "destructive_scope": "station-four-social-private",
+        }
         resolver = mock.Mock(
             return_value=["ssh", "station-four", "secure-content-maintenance"]
         )
@@ -2112,6 +2126,13 @@ class SchemaActivationOwnerTest(unittest.TestCase):
         resolver.assert_called_once_with(request, 3600)
         separator = command.index("--")
         self.assertEqual("ssh", command[separator + 1])
+        self.assertEqual("four", command[command.index("--target-profile") + 1])
+
+        with self.assertRaisesRegex(ValidationError, "profile_id"):
+            boundary.command_for(
+                {"destructive_scope": "station-four-social-private"},
+                budget_seconds=3600,
+            )
 
     def test_lease_wrapped_session_forwards_sigterm_to_process_group(self) -> None:
         previous_handlers = {

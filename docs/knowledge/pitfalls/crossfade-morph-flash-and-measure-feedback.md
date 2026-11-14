@@ -3,6 +3,8 @@ kind: pitfall
 title: Morphing capsule flashes empty when visibility delays the incoming layer and width measurement feeds back into the clipped layer
 status: active
 owns:
+  - packages/ui/web/src/feed-sort-float.tsx
+  - packages/ui/web/src/moments.css
   - packages/prototypes/shared/ui-system/moments/moments.css
   - packages/prototypes/shared/ui-system/moments/MomentsFeature.tsx
   - tooling/scripts/ui-system/suites/north-star.suite.json
@@ -45,6 +47,9 @@ own layer geometry:
 
 Geometry ownership, not numeric tuning:
 
+实现现归 `packages/ui/web/src/feed-sort-float.tsx` 和 `moments.css`；
+原型及生产消费者传入滚动宿主与排序值，不再持有测量/变形代码。
+
 1. One `width: max-content; flex: 0 0 auto` grid **stage** inside the pill
    holds both layers in the same cell, right-anchored. The stage is intrinsic
    and non-shrinkable, so its width is independent of the pill's animated
@@ -71,8 +76,9 @@ mode flips, scroll-to-top and radius:
   block-flow bug wrapped it to ~56px.
 - `sorter-width-restored`: pill width returns to the measured 112px after the
   round trip (the feedback-pinned 36px failure).
-- `right-edge-anchored-in-top-mode` / `...-after-restore`: pill right edge
-  equals the first post's right edge within 1px in both modes.
+- `right-edge-inset-card-in-top-mode` / `...-after-restore`: pill right edge
+  stays 14px inside the first post's right edge within 1px in both modes,
+  matching the pinned confirmed prototype.
 
 ## How to detect a recurrence
 

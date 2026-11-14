@@ -1,7 +1,11 @@
 package domain
 
 import (
+	"bytes"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 )
@@ -32,6 +36,58 @@ type CircleMember struct {
 	CircleID  uint64
 	ActorPTID string
 	AddedAt   time.Time
+}
+
+// CircleMemberCursor binds the temporal anchor to its owning circle.
+// PTID resolves equal timestamps, including an entire bulk insertion.
+type CircleMemberCursor struct {
+	CircleID  uint64    `json:"circle"`
+	AddedAt   time.Time `json:"ts"`
+	ActorPTID string    `json:"ptid"`
+}
+
+func (c CircleMemberCursor) IsZero() bool {
+	return c.CircleID == 0 && c.AddedAt.IsZero() && c.ActorPTID == ""
+}
+
+func (c CircleMemberCursor) Encode() string {
+	if c.IsZero() {
+		return ""
+	}
+	b, err := json.Marshal(c)
+	if err != nil {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+func DecodeCircleMemberCursor(s string, circleID uint64) (CircleMemberCursor, error) {
+	if s == "" {
+		return CircleMemberCursor{}, nil
+	}
+	b, err := base64.RawURLEncoding.DecodeString(s)
+	if err != nil || base64.RawURLEncoding.EncodeToString(b) != s {
+		return CircleMemberCursor{}, fmt.Errorf("non-canonical member cursor")
+	}
+	var c CircleMemberCursor
+	decoder := json.NewDecoder(bytes.NewReader(b))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&c); err != nil {
+		return CircleMemberCursor{}, fmt.Errorf("invalid member cursor: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return CircleMemberCursor{}, fmt.Errorf("trailing member cursor data")
+	}
+	if c.CircleID == 0 || c.CircleID != circleID || c.AddedAt.IsZero() ||
+		c.ActorPTID == "" || c.ActorPTID != strings.TrimSpace(c.ActorPTID) ||
+		strings.ContainsRune(c.ActorPTID, '\x00') {
+		return CircleMemberCursor{}, fmt.Errorf("invalid member cursor anchor")
+	}
+	canonical, err := json.Marshal(c)
+	if err != nil || !bytes.Equal(canonical, b) {
+		return CircleMemberCursor{}, fmt.Errorf("non-canonical member cursor")
+	}
+	return c, nil
 }
 
 // Length bounds for Circle invariants. UTF-8 rune counts (not bytes) so

@@ -304,6 +304,14 @@ func (s *subServer) Handlers() []server.Handler {
 	deviceIDWrapper := serverwrapper.DeviceID()
 
 	return []server.Handler{
+		server.NewStrictTypedHandler(
+			"actor-endpoint-manifest",
+			"/actor/endpoint-manifest",
+			server.POST,
+			s.handleClientEndpointManifest,
+			logIDWrapper,
+			jwtWrapper,
+		),
 		server.NewTypedHandler(
 			"actor-device-enroll",
 			actorDeviceEnrollPath,
@@ -539,6 +547,16 @@ func (s *subServer) currentCapabilities() (*actorCapabilities, error) {
 	}
 
 	return s.capabilities, nil
+}
+
+func (s *subServer) ResolveRetainedActorIdentityPublicKey(
+	ctx context.Context, transaction federationdelivery.Transaction, actorPTID string,
+) ([]byte, error) {
+	capabilities, err := s.currentCapabilities()
+	if err != nil {
+		return nil, err
+	}
+	return capabilities.ResolveRetainedActorIdentityPublicKey(ctx, transaction, actorPTID)
 }
 
 func signProductionEndpointManifest(

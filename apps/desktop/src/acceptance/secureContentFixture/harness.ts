@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { ActorDeviceStatus } from '../../gen/proto/domain/actor/actor_pb';
 import { identityRuntime } from '../../kernel/identityRuntime';
+import { momentsRuntime } from '../../runtimes/momentsRuntime';
 import { api } from '../../services/desktop_api';
 import { imServiceV1 } from '../../services/im-service';
 import { messagingRecoveryService } from '../../services/messaging-recovery-service';
@@ -30,6 +31,15 @@ interface AccountSwitchInput {
   secondaryLoginId: string;
   pin: string;
   password: string;
+}
+
+interface PreparedAccountSwitchInput {
+  accountId: string;
+  actorPtid: string;
+  storageIdentitySha256: string;
+  outgoingActorPtid: string;
+  outgoingSessionEpoch: number;
+  pin: string;
 }
 
 interface StationFixtureInput {
@@ -65,7 +75,29 @@ interface NativeRuntimeIdentityResult {
   data?: {
     accountStorageIdentitySha256?: unknown;
   };
+  error?: {
+    message?: unknown;
+    details?: {
+      native_error_code?: unknown;
+      state?: unknown;
+    };
+  };
 }
+
+// Diagnostics identify fixed Native refusal branches without exposing dynamic
+// errors, filesystem paths, credentials or account data from a failed command.
+const identityRefusalReasons = new Map<string, string>([
+  ['secure content supervisor is not active', 'PRIVATE_RUNTIME_INACTIVE'],
+  ['secure content supervisor lock poisoned', 'PRIVATE_RUNTIME_LOCK_FAILED'],
+  ['secure content Station binding changed during identity capture', 'STATION_BINDING_CHANGED'],
+  ['secure content Station binding is not complete', 'STATION_BINDING_INCOMPLETE'],
+  ['secure content active Station peer ID is unavailable', 'STATION_IDENTITY_UNAVAILABLE'],
+  ['secure content active Station peer ID is invalid', 'STATION_IDENTITY_INVALID'],
+  ['secure content active Station URL is invalid', 'STATION_ENDPOINT_INVALID'],
+  ['secure content bound Station identity is unavailable', 'BOUND_STATION_IDENTITY_UNAVAILABLE'],
+  ['secure content bound Station route is unavailable', 'BOUND_STATION_ROUTE_UNAVAILABLE'],
+  ['secure content Station binding identity is inconsistent', 'STATION_BINDING_INCONSISTENT'],
+]);
 
 function requireText(value: unknown, field: string): string {
   if (typeof value !== 'string' || !value.trim()) {
@@ -153,10 +185,40 @@ async function maintainRecoveryPreKeys(expectedEpoch: number): Promise<number> {
   return recoveryPreKeyAvailable;
 }
 
-async function accountStorageIdentitySha256(): Promise<string> {
-  const actorPtid = requireCurrentActor();
-  const rendererGeneration = usePrivateMomentsStore.getState().scope.rendererGeneration;
-  const result = await invoke<NativeRuntimeIdentityResult>(
+// After an account switch the Station identity can settle a few beats after
+// the session is unlocked. Each late identity event advances the Moments
+// renderer generation, and the new generation's native Secure Content lease
+// activates asynchronously. Capturing the lease against a generation whose
+// lease is still activating transiently returns AUTHENTICATION_REQUIRED.
+// Retry with a fresh bootstrap + the latest scope generation until the
+// projection converges and the native lease attests.
+const NATIVE_IDENTITY_SETTLE_TIMEOUT_MS = 30_000;
+const NATIVE_IDENTITY_SETTLE_INTERVAL_MS = 400;
+
+// Refusals that mean "the lease for the current generation is not ready yet"
+// rather than a permanent identity/integrity failure.
+const TRANSIENT_IDENTITY_STATES = new Set([
+  'AUTHENTICATION_REQUIRED',
+  'PRIVATE_RUNTIME_INACTIVE',
+]);
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => { window.setTimeout(resolve, ms); });
+}
+
+async function captureNativeRuntimeIdentity(
+  actorPtid: string,
+): Promise<NativeRuntimeIdentityResult> {
+  // Re-bootstrap on every attempt so a late Station identity advances the
+  // projection queue and the read uses the settled generation, not a stale one.
+  await momentsRuntime.bootstrap(actorPtid);
+  const { actorPtid: projectedActorPtid, rendererGeneration } =
+    usePrivateMomentsStore.getState().scope;
+  if (requireCurrentActor() !== actorPtid || projectedActorPtid !== actorPtid
+    || !Number.isSafeInteger(rendererGeneration) || rendererGeneration < 1) {
+    throw new Error('secureContentFixture.accountStorageScopeMismatch');
+  }
+  return invoke<NativeRuntimeIdentityResult>(
     'social_private_moments_acceptance_runtime_identity',
     {
       input: {
@@ -165,12 +227,58 @@ async function accountStorageIdentitySha256(): Promise<string> {
       },
     },
   );
-  return requireText(
-    result.ok === true
-      ? result.data?.accountStorageIdentitySha256
-      : undefined,
-    'accountStorageIdentity',
-  );
+}
+
+function identityResultState(result: NativeRuntimeIdentityResult): string | undefined {
+  const raw = result.error?.details?.state;
+  return typeof raw === 'string' ? raw : undefined;
+}
+
+async function accountStorageIdentitySha256(): Promise<string> {
+  return captureAccountStorageIdentitySha256(false);
+}
+
+// After switching back to the primary account the Station identity can settle
+// a few beats after unlock and advance the Moments renderer generation while
+// the new generation's native lease activates asynchronously. The restore
+// proof waits for that convergence; first-time captures (before any switch)
+// must fail immediately on a real supervisor/integrity refusal.
+async function restoredAccountStorageIdentitySha256(): Promise<string> {
+  return captureAccountStorageIdentitySha256(true);
+}
+
+async function captureAccountStorageIdentitySha256(allowSettle: boolean): Promise<string> {
+  const actorPtid = requireCurrentActor();
+  const deadline = performance.now() + NATIVE_IDENTITY_SETTLE_TIMEOUT_MS;
+  let result = await captureNativeRuntimeIdentity(actorPtid);
+  while (
+    allowSettle
+    && result.ok !== true
+    && TRANSIENT_IDENTITY_STATES.has(identityResultState(result) ?? '')
+    && performance.now() < deadline
+  ) {
+    await delay(NATIVE_IDENTITY_SETTLE_INTERVAL_MS);
+    result = await captureNativeRuntimeIdentity(actorPtid);
+  }
+  if (result.ok !== true) {
+    const code = result.error?.details?.native_error_code;
+    const state = result.error?.details?.state;
+    const message = result.error?.message;
+    const reason = typeof message === 'string' ? identityRefusalReasons.get(message) : undefined;
+    const diagnostic = [
+      typeof state === 'string' && /^[A-Z][A-Z0-9_]+$/.test(state) ? state : undefined,
+      reason,
+    ].filter((value): value is string => value !== undefined);
+    throw new Error(`secureContentFixture.accountStorageIdentityRejected:${
+      typeof code === 'string' && /^[A-Z][A-Z0-9_]+$/.test(code)
+        ? code : 'NATIVE_IDENTITY_UNAVAILABLE'}${
+      diagnostic.length ? `:${diagnostic.join(':')}` : ''}`);
+  }
+  const digest = requireText(result.data?.accountStorageIdentitySha256, 'accountStorageIdentity');
+  if (!/^[0-9a-f]{64}$/.test(digest)) {
+    throw new Error('secureContentFixture.accountStorageIdentityInvalid');
+  }
+  return digest;
 }
 
 async function boundStation() {
@@ -224,42 +332,81 @@ export function installAcceptanceHarness(): void {
       }
       const primaryStorageIdentitySha256 = await accountStorageIdentitySha256();
       await api.accountSetPin(primaryAccount.id, requireText(input.pin, 'pin'));
-      await replaceSessionWithPassword(
-        requireText(input.secondaryAccount, 'secondaryAccount'),
-        requireText(input.password, 'password'),
-      );
-      const secondaryActorPtid = requireCurrentActor();
-      const secondaryAccount = await api.accountGetActive();
-      if (
-        !secondaryAccount?.id
-        || !accountOwnsActor(secondaryAccount, secondaryActorPtid)
-        || secondaryAccount.id === primaryAccount.id
-        || secondaryActorPtid === primaryActorPtid
-      ) {
-        throw new Error('secureContentFixture.secondaryAccountMissing');
+      let prepared: {
+        secondaryAccountId: string;
+        secondaryActorPtid: string;
+        secondaryStorageIdentitySha256: string;
+      } | undefined;
+      let preparationFailure: unknown;
+      try {
+        await replaceSessionWithPassword(
+          requireText(input.secondaryAccount, 'secondaryAccount'),
+          requireText(input.password, 'password'),
+        );
+        const secondaryActorPtid = requireCurrentActor();
+        const secondaryAccount = await api.accountGetActive();
+        if (!secondaryAccount?.id || !accountOwnsActor(secondaryAccount, secondaryActorPtid)
+          || secondaryAccount.id === primaryAccount.id || secondaryActorPtid === primaryActorPtid) {
+          throw new Error('secureContentFixture.secondaryAccountMissing');
+        }
+        const secondaryStorageIdentitySha256 = await accountStorageIdentitySha256();
+        if (secondaryStorageIdentitySha256 === primaryStorageIdentitySha256) {
+          throw new Error('secureContentFixture.accountStorageIdentityCollision');
+        }
+        await api.accountSetPin(secondaryAccount.id, input.pin);
+        prepared = { secondaryAccountId: secondaryAccount.id, secondaryActorPtid,
+          secondaryStorageIdentitySha256 };
+      } catch (error) {
+        preparationFailure = error;
       }
-      const secondaryStorageIdentitySha256 = await accountStorageIdentitySha256();
-      if (secondaryStorageIdentitySha256 === primaryStorageIdentitySha256) {
-        throw new Error('secureContentFixture.accountStorageIdentityCollision');
+      try {
+        await identityRuntime.unlockWithPin(primaryAccount.id, input.pin);
+        await completeLogin();
+        if (requireCurrentActor() !== primaryActorPtid) {
+          throw new Error('secureContentFixture.primaryAccountRestoreFailed');
+        }
+        if (await restoredAccountStorageIdentitySha256() !== primaryStorageIdentitySha256) {
+          throw new Error('secureContentFixture.primaryStorageRestoreFailed');
+        }
+      } catch (restoreFailure) {
+        if (preparationFailure !== undefined) {
+          throw Object.assign(new Error('secureContentFixture.accountPreparationAndRestoreFailed'),
+            { errors: [preparationFailure, restoreFailure] });
+        }
+        throw restoreFailure;
       }
-      await api.accountSetPin(secondaryAccount.id, input.pin);
-      await identityRuntime.unlockWithPin(primaryAccount.id, input.pin);
-      await completeLogin();
-      if (requireCurrentActor() !== primaryActorPtid) {
-        throw new Error('secureContentFixture.primaryAccountRestoreFailed');
-      }
-      if (await accountStorageIdentitySha256() !== primaryStorageIdentitySha256) {
-        throw new Error('secureContentFixture.primaryStorageRestoreFailed');
-      }
+      if (preparationFailure !== undefined) throw preparationFailure;
+      if (!prepared) throw new Error('secureContentFixture.accountPreparationMissing');
       return {
         primaryAccountId: primaryAccount.id,
         primaryActorPtid,
         primaryStorageIdentitySha256,
-        secondaryAccountId: secondaryAccount.id,
-        secondaryActorPtid,
-        secondaryStorageIdentitySha256,
+        ...prepared,
         sessionGeneration: useSessionStore.getState().sessionEpoch,
       };
+    },
+
+    async switchPreparedAccount(input: PreparedAccountSwitchInput) {
+      const before = useSessionStore.getState();
+      const beforeGeneration = before.sessionEpoch;
+      const stationPeerId = before.stationPeerId;
+      if (!before.authenticated || requireCurrentActor() !== input.outgoingActorPtid
+        || before.sessionEpoch !== input.outgoingSessionEpoch || !/^\d{6}$/.test(input.pin)) {
+        throw new Error('secureContentFixture.accountSwitchScopeMismatch');
+      }
+      await identityRuntime.unlockWithPin(requireText(input.accountId, 'accountId'), input.pin);
+      await completeLogin();
+      const account = await api.accountGetActive();
+      const actorPtid = requireCurrentActor();
+      const storageIdentitySha256 = await accountStorageIdentitySha256();
+      const after = useSessionStore.getState();
+      if (account?.id !== input.accountId || !accountOwnsActor(account, actorPtid)
+        || actorPtid !== input.actorPtid || storageIdentitySha256 !== input.storageIdentitySha256
+        || after.sessionEpoch <= beforeGeneration || after.stationPeerId !== stationPeerId) {
+        throw new Error('secureContentFixture.preparedAccountSwitchFailed');
+      }
+      return { actorPtidSha256: await sha256(actorPtid), storageIdentitySha256,
+        beforeGeneration, afterGeneration: after.sessionEpoch };
     },
 
     async roundTripAccountSwitch(input: AccountSwitchInput) {
@@ -426,6 +573,14 @@ export function installAcceptanceHarness(): void {
         committedProfileVersion: revoked.profileVersion.toString(),
         revoked: true,
       };
+    },
+
+    async maintainCurrentRecoveryPreKeys(input: RecoveryAdvanceInput) {
+      if (!Number.isSafeInteger(input.expectedEpoch) || input.expectedEpoch < 1) {
+        throw new Error('secureContentFixture.recoveryEpochInvalid');
+      }
+      const recoveryPreKeyAvailable = await maintainRecoveryPreKeys(input.expectedEpoch);
+      return { recoveryEpoch: input.expectedEpoch, recoveryPreKeyAvailable };
     },
 
     async prepareHistoricalRecoveryEpoch() {

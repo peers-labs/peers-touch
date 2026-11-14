@@ -114,10 +114,19 @@ func (r *commentRepo) ListPublicWindow(ctx context.Context, postID, anchorCommen
 
 func (r *commentRepo) hydrate(ctx context.Context, rows []*db.SocialComment) ([]*domain.Comment, error) {
 	ids := make([]uint64, 0, len(rows))
+	commentIDs := make([]uint64, 0, len(rows)*2)
 	for _, row := range rows {
 		ids = append(ids, row.AuthorID)
+		commentIDs = append(commentIDs, row.ID)
+		if row.ParentCommentID != nil {
+			commentIDs = append(commentIDs, *row.ParentCommentID)
+		}
 	}
 	ptids, err := r.identity.PTIDsByIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	refs, err := feedObjectRefs(ctx, r.db, "comment", commentIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -125,19 +134,19 @@ func (r *commentRepo) hydrate(ctx context.Context, rows []*db.SocialComment) ([]
 	for _, row := range rows {
 		comment := r.conv.CommentDBToDomain(row)
 		comment.AuthorPTID = ptids[row.AuthorID]
+		comment.PublicFeedRef = refs[row.ID]
+		comment.ReplyToPublicFeedRef = refs[comment.ParentCommentID]
 		out = append(out, comment)
 	}
 	return out, nil
 }
 
 func (r *commentRepo) hydrateOne(ctx context.Context, row *db.SocialComment) (*domain.Comment, error) {
-	authorPTID, err := r.identity.ResolveID(ctx, row.AuthorID)
+	comments, err := r.hydrate(ctx, []*db.SocialComment{row})
 	if err != nil {
 		return nil, err
 	}
-	comment := r.conv.CommentDBToDomain(row)
-	comment.AuthorPTID = authorPTID
-	return comment, nil
+	return comments[0], nil
 }
 
 func (r *commentRepo) CountByPost(ctx context.Context, postID uint64) (int64, error) {

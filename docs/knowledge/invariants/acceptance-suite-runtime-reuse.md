@@ -54,6 +54,17 @@ cleanup has succeeded, and the Suite Runtime report is valid. The Suite owner
 then publishes the complete result generation atomically. A failed or retried
 Suite must expose no partial child set at the aggregate-visible path.
 
+Selected Mobile builds reuse the original build-identity producer. Development
+diagnostics may bind an exact dirty workspace digest; they must never label it
+clean or substitute a caller's commit for the observed HEAD. Check the selected
+runtime commit and workspace digest before resource preparation and again after
+compilation, and compare the original build-input digest before installing.
+Source drift fails closed. Formal proof retains its existing clean-source rule.
+The canonical input owner excludes generated Tauri web copies under the exact
+Apple `gen/apple/assets` output path. Source asset catalogs, native project
+configuration and input assets stay in the digest; the copied web output has
+its separate packaged build-identity and artifact checks.
+
 Harness and API observations are supporting evidence only. A required UI action
 or receiver-visible assertion cannot be satisfied by directly invoking a
 Harness action, reading a private Store, or checking only an API response.
@@ -75,6 +86,7 @@ Journey whose product assertion is restart behavior.
 
 ```bash
 python3 -m unittest tooling.acceptance.tests.test_suite_runtime
+python3 -m unittest tooling.acceptance.tests.test_mobile_simulator_provisioner.MobileSimulatorProvisionerTests
 python3 tooling/scripts/acceptance-pipeline-audit-test.py
 python3 tooling/scripts/acceptance-pipeline-audit.py \
   --plan <plan.md> \

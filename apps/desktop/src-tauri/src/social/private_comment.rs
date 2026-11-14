@@ -32,14 +32,19 @@ use crate::secure_content::store::{
 use crate::secure_content::{SecureContentLease, SecureContentSupervisor};
 
 use super::crypto::{bounded_command_id, seal_content_envelopes, validate_content_plan};
+use super::federation_retry::{
+    is_federation_dependency_pending, with_federation_dependency_retry,
+    FEDERATION_DEPENDENCY_PENDING_CODE, FEDERATION_PREPARE_MAX_ATTEMPTS,
+};
 use super::private_mention::{
     build_signed_mention_routing, canonical_private_mentions, validated_mention_routing_hash,
     verify_decrypted_mentions, PrivateMentionIntent,
 };
 use super::projection::{
-    canonical_identifier, checked_timestamp_millis, current_unix_seconds,
-    object_descriptor_set_hash, validated_object_descriptor_set_hash, verify_station_attestation,
-    verify_viewer_envelope, PrivateMentionProjection, SenderKeyRequirement,
+    canonical_identifier, canonical_reaction_summaries, checked_timestamp_millis,
+    current_unix_seconds, object_descriptor_set_hash, validated_object_descriptor_set_hash,
+    verify_station_attestation, verify_viewer_envelope, PrivateMentionProjection,
+    PrivateReactionSummaryProjection, SenderKeyRequirement,
 };
 
 const PRIVATE_COMMENT_LIMIT_DEFAULT: u32 = 20;
@@ -102,6 +107,12 @@ pub struct PrivateCommentProjection {
     #[serde(default)]
     pub mentions: Vec<PrivateMentionProjection>,
     pub reactions_count: i64,
+    #[serde(default = "zero_reaction_revision")]
+    pub reaction_revision: String,
+    #[serde(default)]
+    pub reactions: Vec<PrivateReactionSummaryProjection>,
+    #[serde(default)]
+    pub reactions_hydrated: bool,
     pub replies_count: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at_millis: Option<i64>,
@@ -110,13 +121,17 @@ pub struct PrivateCommentProjection {
 }
 
 impl PrivateCommentProjection {
-    fn encode_local(&self) -> Result<Vec<u8>, String> {
+    pub(crate) fn encode_local(&self) -> Result<Vec<u8>, String> {
         serde_json::to_vec(self).map_err(|error| error.to_string())
     }
 
     pub(crate) fn decode_local(bytes: &[u8]) -> Result<Self, String> {
         serde_json::from_slice(bytes).map_err(|error| error.to_string())
     }
+}
+
+fn zero_reaction_revision() -> String {
+    "0".to_string()
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -309,6 +324,25 @@ impl<'a> PrivateCommentOrchestrator<'a> {
         .and_then(|draft| draft_projection(&draft))
     }
 
+    /// Call prepare-private, tolerating the asynchronous federation round-trip.
+    ///
+    /// For a remote parent post the home station enqueues the interaction and
+    /// replies `SOCIAL_PRIVATE_DEPENDENCY_FAILURE` while the source station
+    /// produces the encryption plan. Re-issuing the identical (signed, stable
+    /// command_id) request is an idempotent exact replay, so poll until the plan
+    /// resolves. Any other transport error — including a dependency failure that
+    /// never resolves within the bounded window — propagates unchanged.
+    fn prepare_private_comment_with_federation_retry(
+        &self,
+        post_id: &str,
+        request: &social::PreparePrivateCommentRequest,
+    ) -> Result<social::PreparePrivateCommentResponse, NativeTransportError> {
+        with_federation_dependency_retry(
+            |_| self.transport.prepare_private_comment(post_id, request),
+            std::thread::sleep,
+        )
+    }
+
     pub fn prepare(
         &self,
         intent: &PrivateCommentIntent,
@@ -363,9 +397,10 @@ impl<'a> PrivateCommentOrchestrator<'a> {
                 ))
                 .map_err(|error| PrivateCommentFailure::failed("COMMENT_PREPARE_INVALID", error))?;
             let prepare_response = match self
-                .transport
-                .prepare_private_comment(&stored.post_id, &prepare_request)
-            {
+                .prepare_private_comment_with_federation_retry(
+                    &stored.post_id,
+                    &prepare_request,
+                ) {
                 Ok(response) => response,
                 Err(error) => {
                     return Err(PrivateCommentFailure::from_transport(error));
@@ -632,10 +667,13 @@ impl<'a> PrivateCommentOrchestrator<'a> {
                 cause,
             )
         })?;
-        match self
-            .transport
-            .submit_private_comment(&acquired.draft.post_id, request_bytes)
-        {
+        match with_federation_dependency_retry(
+            |_| {
+                self.transport
+                    .submit_private_comment(&acquired.draft.post_id, request_bytes)
+            },
+            std::thread::sleep,
+        ) {
             Ok(_) => {
                 let committed = self.commit_comment_submit_response(&acquired)?;
                 self.reconcile_comment_readback(committed)?.ok_or_else(|| {
@@ -760,8 +798,7 @@ impl<'a> PrivateCommentOrchestrator<'a> {
                     None,
                 )?
             };
-            self.persist_decrypted(&decrypted)?;
-            comments.push(decrypted.projection);
+            comments.push(self.persist_decrypted(&decrypted)?);
         }
         Ok(PrivateCommentPage {
             post_id: input.post_id.clone(),
@@ -947,7 +984,7 @@ impl<'a> PrivateCommentOrchestrator<'a> {
                             "private Comment root is unavailable",
                         )
                     })?;
-                    let opened = decrypt_comment_resource(
+                    let mut opened = decrypt_comment_resource(
                         self.lease.session.as_ref(),
                         self.lease.store.as_ref(),
                         &draft.post_id,
@@ -957,7 +994,7 @@ impl<'a> PrivateCommentOrchestrator<'a> {
                         Some(ContentKey::from_bytes(root)),
                         None,
                     )?;
-                    self.persist_decrypted(&opened)?;
+                    opened.projection = self.persist_decrypted(&opened)?;
                     Ok::<_, PrivateCommentFailure>(opened)
                 })();
                 match verified {
@@ -1282,7 +1319,7 @@ impl<'a> PrivateCommentOrchestrator<'a> {
     fn persist_decrypted(
         &self,
         decrypted: &DecryptedPrivateComment,
-    ) -> Result<(), PrivateCommentFailure> {
+    ) -> Result<PrivateCommentProjection, PrivateCommentFailure> {
         let generation = decrypted
             .projection
             .generation
@@ -1297,7 +1334,7 @@ impl<'a> PrivateCommentOrchestrator<'a> {
             .projection
             .encode_local()
             .map_err(|error| PrivateCommentFailure::failed("COMMENT_PROJECTION_INVALID", error))?;
-        self.with_current_store("COMMENT_PROJECTION_INVALID", |store| {
+        let bytes = self.with_current_store("COMMENT_PROJECTION_INVALID", |store| {
             store.commit_comment_root(
                 &decrypted.projection.content_id,
                 generation,
@@ -1307,7 +1344,9 @@ impl<'a> PrivateCommentOrchestrator<'a> {
                 decrypted.consumed_prekey.as_deref(),
                 &projection_bytes,
             )
-        })
+        })?;
+        PrivateCommentProjection::decode_local(&bytes)
+            .map_err(|error| PrivateCommentFailure::failed("COMMENT_PROJECTION_INVALID", error))
     }
 
     fn persist_submit_failure(
@@ -2180,6 +2219,14 @@ fn decrypt_comment_resource(
         display: mention.display,
     })
     .collect();
+    let reactions = canonical_reaction_summaries(&metadata.reactions)
+        .map_err(|error| PrivateCommentFailure::failed("COMMENT_INTEGRITY_FAILURE", error))?;
+    if metadata.reaction_revision == 0 && (!reactions.is_empty() || metadata.reactions_count != 0) {
+        return Err(PrivateCommentFailure::failed(
+            "COMMENT_INTEGRITY_FAILURE",
+            "private Comment reaction revision is missing",
+        ));
+    }
     Ok(DecryptedPrivateComment {
         projection: PrivateCommentProjection {
             comment_id: metadata.comment_id.clone(),
@@ -2193,6 +2240,9 @@ fn decrypt_comment_resource(
             text: Some(decoded.text),
             mentions,
             reactions_count: metadata.reactions_count,
+            reaction_revision: metadata.reaction_revision.to_string(),
+            reactions,
+            reactions_hydrated: true,
             replies_count: metadata.replies_count,
             created_at_millis: timestamp_millis(metadata.created_at.as_ref()),
             updated_at_millis: timestamp_millis(metadata.updated_at.as_ref()),
@@ -2234,6 +2284,77 @@ mod tests {
     use crate::secure_content::{SecureContentSession, SecureContentSessionKey};
     use ed25519_dalek::{Signer, SigningKey};
     use std::sync::Arc;
+
+    fn dependency_pending_error() -> NativeTransportError {
+        NativeTransportError {
+            http_status: Some(500),
+            stable_code: crate::model::error::ErrorCode::InternalServerError as i32,
+            retry_after_seconds: None,
+            disposition: NativeErrorDisposition::Terminal,
+            message: FEDERATION_DEPENDENCY_PENDING_CODE.to_string(),
+        }
+    }
+
+    fn other_transport_error() -> NativeTransportError {
+        NativeTransportError {
+            http_status: Some(500),
+            stable_code: crate::model::error::ErrorCode::InternalServerError as i32,
+            retry_after_seconds: None,
+            disposition: NativeErrorDisposition::Terminal,
+            message: "ERROR_CODE_INTERNAL_SERVER_ERROR".to_string(),
+        }
+    }
+
+    #[test]
+    fn federation_dependency_retry_resolves_after_pending() {
+        let mut calls = 0u32;
+        let result: Result<u32, NativeTransportError> = with_federation_dependency_retry(
+            |_| {
+                calls += 1;
+                if calls < 3 {
+                    Err(dependency_pending_error())
+                } else {
+                    Ok(42u32)
+                }
+            },
+            |_| {},
+        );
+        assert_eq!(result.unwrap(), 42);
+        assert_eq!(calls, 3);
+    }
+
+    #[test]
+    fn non_dependency_transport_error_is_not_retried() {
+        let mut calls = 0u32;
+        let result: Result<u32, NativeTransportError> = with_federation_dependency_retry(
+            |_| {
+                calls += 1;
+                Err(other_transport_error())
+            },
+            |_| {},
+        );
+        assert!(result.is_err());
+        assert_eq!(calls, 1);
+    }
+
+    #[test]
+    fn pending_dependency_retry_is_bounded_and_surfaces_last_error() {
+        let mut calls = 0u32;
+        let sleeps = std::cell::Cell::new(0u32);
+        let result: Result<u32, NativeTransportError> = with_federation_dependency_retry(
+            |_| {
+                calls += 1;
+                Err(dependency_pending_error())
+            },
+            |_| {
+                sleeps.set(sleeps.get() + 1);
+            },
+        );
+        let error = result.unwrap_err();
+        assert!(is_federation_dependency_pending(&error));
+        assert_eq!(calls, FEDERATION_PREPARE_MAX_ATTEMPTS);
+        assert_eq!(sleeps.get(), FEDERATION_PREPARE_MAX_ATTEMPTS - 1);
+    }
 
     fn session() -> SecureContentSession {
         session_with_client(StationClient::testing_scoped("station-1", 1))
@@ -2808,6 +2929,9 @@ mod tests {
                 text: Some("private comment".into()),
                 mentions: Vec::new(),
                 reactions_count: 0,
+                reaction_revision: "0".into(),
+                reactions: Vec::new(),
+                reactions_hydrated: true,
                 replies_count: 0,
                 created_at_millis: Some(crate::social::crypto::now_unix_ms()),
                 updated_at_millis: None,
@@ -2972,7 +3096,7 @@ mod tests {
                 "cached-comment",
                 &[7; 32],
                 None,
-                b"{\"cached\":true}",
+                br#"{"comment_id":"cached-comment","content_id":"cached-content","generation":"1","post_id":"post-1","reply_to_comment_id":"","author_ptid":"ptid:alice","state":"COMMENT_POSTED","text":"cached","mentions":[],"reactions_count":0,"replies_count":0}"#,
             )
             .unwrap();
         let orchestrator = PrivateCommentOrchestrator {

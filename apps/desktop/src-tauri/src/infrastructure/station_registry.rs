@@ -846,16 +846,9 @@ impl StationRegistry {
             .state
             .write()
             .expect("StationRegistry write lock poisoned");
-        if !state
-            .entries
-            .iter()
-            .any(|entry| entry.station_peer_id == station_peer_id)
-        {
-            return Err(io::Error::new(
-                io::ErrorKind::NotFound,
-                "Station must be registered before its Federation key is pinned",
-            ));
-        }
+        // A scoped, verified Actor profile can establish a Home Station key
+        // without registering that Station as a client transport destination.
+        // Route acquisition still requires a separate verified registry entry.
         let candidate = PersistedFederationSigningKeyPin {
             signing_key_id: signing_key_id.to_string(),
             ed25519_public_key: ed25519_public_key.to_vec(),
@@ -889,13 +882,6 @@ impl StationRegistry {
             .state
             .read()
             .expect("StationRegistry read lock poisoned");
-        if !state
-            .entries
-            .iter()
-            .any(|entry| entry.station_peer_id == station_peer_id)
-        {
-            return Ok(None);
-        }
         state
             .federation_signing_key_pins
             .get(station_peer_id)
@@ -984,12 +970,6 @@ impl PersistedData {
         }) {
             self.active_station_peer_id = None;
         }
-        self.federation_signing_key_pins
-            .retain(|station_peer_id, _| {
-                self.entries
-                    .iter()
-                    .any(|entry| entry.station_peer_id == *station_peer_id)
-            });
         for entry in &self.entries {
             self.lifecycle_generations
                 .entry(entry.station_peer_id.clone())
@@ -1197,6 +1177,24 @@ mod tests {
     use std::sync::Mutex;
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn actor_profile_key_pin_does_not_register_a_transport_destination() {
+        with_seed(None, || {
+            let root = temp_dir("profile-key-only");
+            let registry = StationRegistry::new(&root);
+            registry.pin_or_verify_federation_signing_key("remote-home", "profile-key", [7; 32]).unwrap();
+            assert!(registry.entry("remote-home").is_none());
+            assert_eq!(registry.federation_signing_key_pin("remote-home").unwrap().unwrap()
+                .ed25519_public_key, [7; 32]);
+            assert!(registry.pin_or_verify_federation_signing_key("remote-home", "other-key", [8; 32]).is_err());
+            drop(registry);
+            let reopened = StationRegistry::new(&root);
+            assert!(reopened.entry("remote-home").is_none());
+            assert!(reopened.federation_signing_key_pin("remote-home").unwrap().is_some());
+            std::fs::remove_dir_all(root).unwrap();
+        });
+    }
 
     fn temp_dir(name: &str) -> PathBuf {
         let path = std::env::temp_dir().join(format!(

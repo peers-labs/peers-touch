@@ -112,6 +112,7 @@ apps/mobile/flutter/
 packages/messaging-core/target/
 packages/messaging-native-filesystem/target/
 packages/secure-content-core/target/
+packages/station-trust/target/
 packages/search-core/target/
 packages/x-config-core/target/
 packages/schema-core/target/

@@ -36,6 +36,7 @@ from tooling.acceptance.gates.mobile.messaging_journey import (
     MessagingActor,
     MobileMessagingJourney,
 )
+from tooling.acceptance.gates.mobile.moments_cutover import assert_public_composer_denial
 
 
 GATE_ID = "mobile-social-android-native"
@@ -131,6 +132,10 @@ class _ActorScopedSession:
     def background_app(self, duration_seconds: float = 1.0) -> None:
         self.controller.activate(self.role)
         self.controller.session.background_app(duration_seconds)
+
+    def capture_screenshot(self, label: str) -> ArtifactRef:
+        self.controller.activate(self.role)
+        return self.controller.session.capture_screenshot(label)
 
 
 class AndroidSocialGate(AcceptanceGate):
@@ -386,6 +391,7 @@ class AndroidSocialGate(AcceptanceGate):
                     scoped["alice"],
                     scoped["bob"],
                     actors["alice"],
+                    actors["bob"],
                     journey_id,
                     state,
                 ),
@@ -717,23 +723,34 @@ class AndroidSocialGate(AcceptanceGate):
         sender_session: _ActorScopedSession,
         receiver_session: _ActorScopedSession,
         sender: MessagingActor,
+        receiver: MessagingActor,
         journey_id: str,
         state: dict[str, Any],
     ) -> dict[str, Any]:
-        text = f"mps11a-public-{journey_id}"
+        denial = assert_public_composer_denial(self, sender_session, f"public-{journey_id}")
+        for actor_session in (sender_session, receiver_session):
+            prepared = actor_session.call_action("moments.private.acceptance.prepareKeys")
+            if not isinstance(prepared, Mapping) or not all(
+                isinstance(prepared.get(key), int) and prepared[key] > 0
+                for key in ("endpointPrekeysAvailable", "recoveryPrekeysAvailable")
+            ):
+                raise GateError("Android private seed Content PreKeys are unavailable")
+            actor_session.call_action("moments.private.reconcile")
+        text = f"mps11a-private-{journey_id}"
         published = self._mapping(
             sender_session.call_action(
                 "moments.publish",
-                {"text": text, "audienceKind": 1},
+                {"text": text, "audienceKind": 6,
+                 "audience": {"kind": "CUSTOM_ALLOW", "actorPtids": [receiver.ptid]}},
             ),
-            "Android public seed Moment",
+            "Android private seed Moment",
         )
         post_id = self._text(
             published.get("postId"),
-            "Android public seed post ID",
+            "Android private seed post ID",
         )
-        state["publicPostId"] = post_id
-        state["publicPostText"] = text
+        state["privatePostId"] = post_id
+        state["privatePostText"] = text
         receiver_session.call_action(
             "navigation.apply",
             {"kind": "primary", "routeId": "tab:moments"},
@@ -783,6 +800,7 @@ class AndroidSocialGate(AcceptanceGate):
             "receiverAssertion": f"receiver-post:{post_id}",
             "supportingObservation": f"timeline-author:{sender.ptid}",
             "post": receiver_post,
+            **denial,
         }
 
     def _run_ios_search_profile(
@@ -1037,8 +1055,8 @@ class AndroidSocialGate(AcceptanceGate):
         state: Mapping[str, Any],
     ) -> dict[str, Any]:
         post_id = self._text(
-            state.get("publicPostId"),
-            "Android public post state",
+            state.get("privatePostId"),
+            "Android private post state",
         )
         for index in range(11):
             session.call_action(

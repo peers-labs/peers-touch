@@ -89,6 +89,22 @@ describe('private Moment feed projection', () => {
     ]);
   });
 
+  it('retains confirmed private ballot results in decrypted display order without public write authority', () => {
+    const post = privateMomentFeedPost({
+      ...baseProjection, postId: 'post-poll',
+      content: { kind: 'POLL', text: 'poll', question: 'Choose', options: ['B', 'A'],
+        minChoices: 1, maxChoices: 2, expiresAtSeconds: 4_000_000_000,
+        opaqueOptionIds: ['22'.repeat(32), '11'.repeat(32)], optionSetSha256: '33'.repeat(32),
+        result: { voteCounts: ['2', '1'], selectedOptions: [0], voterCount: '2',
+          projectionRevision: '3', commandId: 'ballot', voteActorPtid: 'ptid:alice' } },
+    });
+    expect(post?.publicFeedRef).toBe('');
+    expect(post?.content.value.result).toMatchObject({
+      postId: 'post-poll', totalVotes: 2n, hasVoted: true, userVotes: [0],
+      options: [{ index: 0, text: 'B', votes: 2n }, { index: 1, text: 'A', votes: 1n }],
+    });
+  });
+
   it('deduplicates public and private rows by canonical Post ID', () => {
     const publicPost = create(PostSchema, {
       id: 'post-shared',

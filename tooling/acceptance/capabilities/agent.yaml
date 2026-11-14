@@ -719,7 +719,9 @@
       ],
       "synthetic_paths": [
         "apps/station/app/subserver/agent/service/memory_service.go",
-        "apps/desktop/src/store/memory.ts"
+        "apps/desktop/src/modules/memory.ts",
+        "apps/desktop/src/components/settings/MemorySettingsSection.tsx",
+        "apps/desktop/src/components/settings/MemorySettingsTab.tsx"
       ],
       "evidence": {
         "truth_sources": [

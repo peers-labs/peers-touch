@@ -645,6 +645,7 @@
   "mobile.moments.audience.activeMembers": "{{count}} active members",
   "mobile.moments.audience.followersExceptSelection": "Followers except {{names}}",
   "mobile.moments.publishUnknown": "Publish confirmation is pending. Your draft was kept for reconciliation.",
+  "mobile.moments.publicSignedWriteRequired": "Public publishing requires the authorized Desktop device. Mobile support is coming later; your draft is kept. Private audiences remain available.",
   "mobile.moments.publishPrivateFailed": "Private publish failed. Your draft was kept.",
   "mobile.moments.reaction.like": "Like",
   "mobile.moments.reaction.love": "Love",

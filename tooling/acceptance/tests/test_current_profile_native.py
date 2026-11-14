@@ -37,6 +37,10 @@ class CurrentProfileProvisionerTest(unittest.TestCase):
             role: {"ptid": f"ptid:{role}", "accountRef": f"station-account:{role}@example"}
             for role in ("alice", "bob")
         }
+        gate.client_specs = {
+            role: {"id": role, "actor": role}
+            for role in ("alice", "bob")
+        }
         gate.clients, gate.ptids, gate.device_ids, gate.station_access = {}, {}, {}, {}
         gate.runtime_instances, gate.runtime_instance_actors = [], {}
         gate.manifest = {}

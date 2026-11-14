@@ -25,19 +25,31 @@ func NewCircleRepository(gdb *gorm.DB) domain.CircleRepository {
 	return &circleRepo{db: gdb, conv: domain.NewPostConverter(), identity: NewActorIdentity(gdb)}
 }
 
-func (r *circleRepo) Create(ctx context.Context, c *domain.Circle) error {
+func (r *circleRepo) Create(ctx context.Context, c *domain.Circle, memberPTIDs []string) error {
 	row := r.conv.CircleToDB(c)
 	ownerID, err := r.identity.RequireID(ctx, c.OwnerPTID)
 	if err != nil {
 		return err
 	}
 	row.OwnerID = ownerID
-	if err := r.db.WithContext(ctx).Create(row).Error; err != nil {
+	var count int64
+	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(row).Error; err != nil {
+			return err
+		}
+		if len(memberPTIDs) == 0 {
+			return nil
+		}
+		_, total, err := NewCircleRepository(tx).AddMembers(ctx, row.ID, memberPTIDs)
+		count = total
+		return err
+	}); err != nil {
 		return err
 	}
 	c.ID = row.ID
 	c.CreatedAt = row.CreatedAt
 	c.UpdatedAt = row.UpdatedAt
+	c.MemberCount = count
 	return nil
 }
 
@@ -223,7 +235,10 @@ func (r *circleRepo) RemoveMembers(ctx context.Context, circleID uint64, actorPT
 			if err := tx.
 				Model(&db.SocialCircle{}).
 				Where("id = ?", circleID).
-				Update("member_count", gorm.Expr("MAX(0, COALESCE(member_count,0) - ?)", removed)).Error; err != nil {
+				Update("member_count", gorm.Expr(
+					"CASE WHEN COALESCE(member_count,0) >= ? THEN COALESCE(member_count,0) - ? ELSE 0 END",
+					removed, removed,
+				)).Error; err != nil {
 				return err
 			}
 		}
@@ -253,16 +268,13 @@ func lockCircleAudienceAuthority(
 	return lockSocialRelationshipAuthority(database, owner.PTID)
 }
 
-func (r *circleRepo) ListMembers(ctx context.Context, circleID uint64, c domain.Cursor, limit int) ([]*domain.CircleMember, error) {
+func (r *circleRepo) ListMembers(ctx context.Context, circleID uint64, c domain.CircleMemberCursor, limit int) ([]*domain.CircleMember, error) {
 	q := r.db.WithContext(ctx).Where("circle_id = ?", circleID)
 	if !c.IsZero() {
-		// Members don't have a numeric id; cursor uses (added_at, did)
-		// — `LastID` here is unused (membership PK is composite); we
-		// just paginate by `added_at`.
-		q = q.Where("added_at < ?", c.CreatedAt)
+		q = q.Where("(added_at, actor_ptid) < (?, ?)", c.AddedAt, c.ActorPTID)
 	}
 	var rows []*db.SocialCircleMember
-	if err := q.Order("added_at DESC").Limit(limit).Find(&rows).Error; err != nil {
+	if err := q.Order("added_at DESC, actor_ptid DESC").Limit(limit).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	out := make([]*domain.CircleMember, 0, len(rows))

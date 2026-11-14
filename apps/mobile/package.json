@@ -38,6 +38,7 @@
     "@peers-touch/client-chat-core": "workspace:*",
     "@peers-touch/client-media-security": "workspace:*",
     "@peers-touch/client-storage": "workspace:*",
+    "@peers-touch/ui": "workspace:*",
     "@tauri-apps/api": "2.12.4",
     "antd": "^6.4.3",
     "lucide-react": "^1.17.0",

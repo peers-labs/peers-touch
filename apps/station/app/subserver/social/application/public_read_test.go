@@ -7,9 +7,53 @@ import (
 	"testing"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"gorm.io/gorm"
 )
+
+func TestPublicFeedAuthorizationDoesNotRequireFollowOrLivePost(t *testing.T) {
+	f := newFixture(t)
+	if err := NewPublicReadPort(f.repos).AuthorizeFeed(
+		context.Background(), fixturePTID(2), fixturePTID(1)); err != nil {
+		t.Fatalf("explicit PUBLIC read required follow or live post: %v", err)
+	}
+}
+
+func TestPublicFeedAuthorizationUsesBilateralBlockAndStationModeration(t *testing.T) {
+	for _, scenario := range []string{"author-block", "viewer-block", "source-moderation", "requester-moderation", "unknown-viewer"} {
+		t.Run(scenario, func(t *testing.T) {
+			f := newFixture(t)
+			viewer, author := fixturePTID(2), fixturePTID(1)
+			switch scenario {
+			case "author-block":
+				seedBlock(t, f, 1, 2)
+			case "viewer-block":
+				seedBlock(t, f, 2, 1)
+			case "unknown-viewer":
+				viewer = "ptid:unknown:viewer"
+			default:
+				id := 1
+				if scenario == "requester-moderation" {
+					id = 2
+				}
+				if err := f.gdb.Model(&db.Actor{}).Where("id = ?", id).
+					Update("home_station_peer_id", "moderated-peer").Error; err != nil {
+					t.Fatal(err)
+				}
+				if err := f.gdb.Create(&db.SocialStationModerationPolicy{
+					ID: 9001, Kind: "BLOCK", StationPeerID: "moderated-peer",
+				}).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := NewPublicReadPort(f.repos).AuthorizeFeed(
+				context.Background(), viewer, author); !errors.Is(err, domain.ErrFeedWriter) {
+				t.Fatalf("unreadable PUBLIC feed permitted: %v", err)
+			}
+		})
+	}
+}
 
 func seedPublicReadRows(t *testing.T, f *fixture, count int) {
 	t.Helper()

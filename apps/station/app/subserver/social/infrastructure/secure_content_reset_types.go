@@ -581,6 +581,10 @@ func expectedResetTarget(profileID string) (string, string, bool) {
 		return "station-five-arm", "station-five-arm-social-private", true
 	case "corpdebug":
 		return "corpdebug-station", "corpdebug-station-social-private", true
+	case "fedlab-a":
+		return "station-fedlab-a", "station-fedlab-a-social-private", true
+	case "fedlab-b":
+		return "station-fedlab-b", "station-fedlab-b-social-private", true
 	default:
 		return "", "", false
 	}
@@ -808,6 +812,11 @@ func CanonicalDatabaseResetTargets() []DatabaseResetTarget {
 		{Table: "social_comments", Operation: ResetOperationDeletePrivatePostClass, Predicate: "post_class = 'private'"},
 		{Table: "social_moment_deliveries", Operation: ResetOperationClearTable},
 		{Table: "social_remote_private_commands", Operation: ResetOperationClearTable},
+		{Table: "social_private_reaction_projections", Operation: ResetOperationClearTable},
+		{Table: "social_private_poll_choices", Operation: ResetOperationClearTable},
+		{Table: "social_private_poll_ballots", Operation: ResetOperationClearTable},
+		{Table: "social_private_poll_states", Operation: ResetOperationClearTable},
+		{Table: "social_private_poll_projections", Operation: ResetOperationClearTable},
 		{Table: "social_remote_private_envelopes", Operation: ResetOperationClearTable},
 		{Table: "social_remote_private_resources", Operation: ResetOperationClearTable},
 		{Table: "social_remote_private_tombstones", Operation: ResetOperationClearTable},

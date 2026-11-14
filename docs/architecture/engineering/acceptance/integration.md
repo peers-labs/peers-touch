@@ -300,10 +300,21 @@ fail closed，不能通过 Profile、平台名或输入 flag 推导资格。该�
 parent 与 picker 从 `NativeOperatorObservation.file_chooser` 消费同一次真实读取的
 typed panel presence 与 operator identity。每个等待样本都对照同一 baseline；
 任一 mismatch 保持失败，不等面板状态收敛后才检测。
-macOS 的 operator-only/operator+panel/control/pointer 复用一个有界 native probe。
-每次只启动一个受管子进程，其中独立读取两次稳定 focus；禁止持久 worker 或
-缓存现场状态。focus 截止时间包含子进程初始化，保留原 1s 稳定、2s control、
-3s observation 限制和原面板等待窗口。
+macOS 的 operator-only/operator+panel 在一次 observation scope 中复用原 Driver
+的一个私有只读子进程。每个请求重新读取两次实际 AX 控件和窗口，通过 CFEqual
+验证稳定性及 frozen baseline；title/value/counts 不定义身份。Core 保留原四字段、
+phase、distinct target PID 和 sticky mismatch；没有第二个 oracle 或 Runner。
+scope deadline 固定且不超过 owning operation/Cell lease；focus 截止时间包含
+首次子进程初始化，保留原1s稳定、2s control、3s observation 和面板等待窗口。
+parent 明确绑定独立 focus/observation deadline；面板使用原 AX read cap 与
+剩余 observation 时间，不能续期 focus 或 scope。
+一次 qualification 从 prelaunch 持有到 owned-stop，一次 picker 从 staging
+持有到选择完成；finally 在构造、启动、staging、selection、source drift、取消
+等失败路径关闭并 reap。close 只确认释放，不添加 AX sample。一般 control/
+pointer/panel 仍使用短命一次性 probe，不能供应跨 scope 焦点身份。
+协议回归验证 scope/sequence/mode/PID、大小、时限、重复字段、EOF 与退出；
+真实双窗口/同角色控件对照验证 CFEqual 的区分与内容变化稳定性。两者仅是框架
+证据，必须另外完成当前源码 parent qualification 和所选产品 Journey。
 Driver 的只读观测与选择复用同一个 AX 面板查找器。生命周期必须 absent →
 present → absent；窗口/sheet 数量只是其它窗口诊断，不能替代面板观测。
 需要未独立取得资格的 native file panel、permission sheet、physical hover/drag

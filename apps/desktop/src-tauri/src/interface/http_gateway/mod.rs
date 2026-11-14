@@ -2257,6 +2257,19 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(t) => t,
                 Err(e) => return e,
             };
+            let input = match parse_args::<Option<SocialCircleListInput>>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let mut query = Vec::new();
+            if let Some(input) = input {
+                if let Some(cursor) = input.cursor {
+                    query.push(("cursor", cursor));
+                }
+                if let Some(limit) = input.limit {
+                    query.push(("limit", limit.to_string()));
+                }
+            }
             let resp = match state
                 .station
                 .client()
@@ -2264,13 +2277,45 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     Method::GET,
                     "/api/v1/social/circles",
                     &token,
-                    None,
+                    Some(&query),
                     None::<&()>,
                 ) {
                 Ok(r) => r,
                 Err(e) => return to_json(e.into_app_result::<Vec<u8>>("list circles failed")),
             };
             to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_circle_list_members" => {
+            let input = match parse_args::<SocialCircleListMembersInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let circle_id = match input.circle_id.parse::<u64>() {
+                Ok(value) if value > 0 && value.to_string() == input.circle_id => value,
+                _ => return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument, "circle_id must be canonical uint64", None,
+                )),
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let mut query = Vec::new();
+            if let Some(cursor) = input.cursor {
+                query.push(("cursor", cursor));
+            }
+            if let Some(limit) = input.limit {
+                query.push(("limit", limit.to_string()));
+            }
+            let path = format!("/api/v1/social/circles/{circle_id}/members");
+            let response = match state.station.client()
+                .request_proto::<(), model::social::ListCircleMembersResponse>(
+                    Method::GET, &path, &token, Some(&query), None::<&()>,
+                ) {
+                Ok(response) => response,
+                Err(error) => return to_json(error.into_app_result::<Vec<u8>>("list circle members failed")),
+            };
+            to_json(AppResult::success(response.encode_to_vec()))
         }
         "social_get_my_stats" => {
             let token = match token_from_state(state) {
@@ -2317,6 +2362,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             let req = model::social::ReactToPostRequest {
                 post_id: input.post_id.clone(),
+                comment_id: String::new(),
                 kind: input.kind,
                 command_id: String::new(),
                 actor_signing_key_id: String::new(),
@@ -2351,6 +2397,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             let req = model::social::UnreactToPostRequest {
                 post_id: input.post_id.clone(),
+                comment_id: String::new(),
                 kind: input.kind,
                 command_id: String::new(),
                 actor_signing_key_id: String::new(),
@@ -6630,6 +6677,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     command: "account_unlock".to_string(),
                     status: "authenticated".to_string(),
                     actor_ptid: Some(session.actor_ptid),
+                    session_activation_id: None,
                     session_token: Some(token),
                     name: p_name,
                     email: p_email,

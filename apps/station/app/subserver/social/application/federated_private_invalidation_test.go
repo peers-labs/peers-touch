@@ -184,7 +184,8 @@ func TestFederatedPrivateInvalidationCommitsTombstoneAndTypedWake(
 		if moment == nil ||
 			moment.GetKind() != realtime.MomentEvent_DELETED ||
 			moment.GetPostId() != "post-revoked" ||
-			moment.GetActorPtid() != "ptid:bob" ||
+			moment.GetTargetActorPtid() != "ptid:bob" ||
+			moment.GetActorPtid() != "" ||
 			moment.GetAudience() != message.GetReason().String() {
 			t.Fatalf("receiver revocation event = %+v", event)
 		}

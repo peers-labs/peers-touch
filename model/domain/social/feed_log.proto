@@ -1,0 +1,228 @@
+syntax = "proto3";
+
+package peers_touch.model.social.feed.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
+
+// v1 is a single-writer public chain. Private content uses Secure Content.
+// No map fields: ascending field-number protobuf encoding is canonical.
+message FeedGenesisStatement {
+  uint32 format_version = 1;
+  string actor_ptid = 2;
+  string chain_id = 3;
+  bytes actor_identity_public_key = 4;
+}
+
+message FeedGenesis {
+  FeedGenesisStatement statement = 1;
+  bytes actor_signature = 2;
+}
+
+// Root authorization is portable; a Station cannot grant a different writer.
+// v1 has exactly one grant, bound by genesis hash, with no rotation operation.
+message FeedWriterGrantStatement {
+  uint32 format_version = 1;
+  string actor_ptid = 2;
+  string chain_id = 3;
+  bytes genesis_hash = 4;
+  string device_id = 5;
+  string signing_key_id = 6;
+  bytes device_public_key = 7;
+}
+
+message FeedWriterGrant {
+  FeedWriterGrantStatement statement = 1;
+  bytes actor_signature = 2;
+}
+
+enum FeedEventKind {
+  FEED_EVENT_KIND_UNSPECIFIED = 0;
+  FEED_EVENT_KIND_POST_CREATED = 1;
+  FEED_EVENT_KIND_POST_UPDATED = 2;
+  FEED_EVENT_KIND_POST_TOMBSTONED = 3;
+  FEED_EVENT_KIND_REACTION_SET = 4;
+  FEED_EVENT_KIND_REACTION_REMOVED = 5;
+  FEED_EVENT_KIND_COMMENT_CREATED = 6;
+  FEED_EVENT_KIND_COMMENT_UPDATED = 7;
+  FEED_EVENT_KIND_COMMENT_TOMBSTONED = 8;
+  FEED_EVENT_KIND_POLL_BALLOT_SET = 9;
+}
+
+message FeedEventStatement {
+  uint32 format_version = 1;
+  string actor_ptid = 2;
+  string chain_id = 3;
+  bytes writer_grant_hash = 4;
+  uint64 sequence = 5;
+  // First event references genesis hash; thereafter the prior event hash.
+  bytes previous_hash = 6;
+  FeedEventKind kind = 7;
+  bytes payload_hash = 8;
+  int64 created_at_unix_ms = 9;
+}
+
+message FeedEvent {
+  FeedEventStatement statement = 1;
+  bytes payload = 2;
+  bytes device_signature = 3;
+}
+
+message FeedPostMutation {
+  // Stable decimal object ID allocated by the writer before signing.
+  string post_id = 1;
+  // Canonical social.v1.CreatePostRequest; PUBLIC only. Empty for tombstone.
+  bytes create_request = 2;
+}
+
+message FeedReactionMutation {
+  // oss://<author-home-station>/post/<id>; never a transport origin.
+  string target_post_ref = 1;
+  int32 reaction_kind = 2;
+  // Optional oss://<comment-author-home>/comment/<id>, bound to the parent
+  // post's verified comment creation. Empty selects the post itself.
+  string target_comment_ref = 3;
+}
+
+message FeedCommentMutation {
+  string comment_id = 1;
+  string target_post_ref = 2;
+  // Canonical social.v1.CreateCommentRequest; empty for tombstone.
+  // post_id equals target_post_ref. reply_to_comment_id, when present, is
+  // oss://<comment-author-home-station>/comment/<writer-allocated-id>.
+  // Projection-local numeric IDs never appear in the signed payload.
+  bytes create_request = 3;
+}
+
+message FeedPayload {
+  oneof mutation {
+    FeedPostMutation post = 1;
+    FeedReactionMutation reaction = 2;
+    FeedCommentMutation comment = 3;
+    FeedPollBallotMutation poll_ballot = 4;
+  }
+}
+
+message FeedBundle {
+  FeedGenesis genesis = 1;
+  FeedWriterGrant writer_grant = 2;
+  repeated FeedEvent events = 3;
+}
+
+message FeedHead {
+  string actor_ptid = 1;
+  string chain_id = 2;
+  uint64 sequence = 3;
+  bytes event_hash = 4;
+}
+
+message SubmitFeedEventRequest {
+  FeedBundle bundle = 1;
+}
+
+message SubmitFeedEventResponse {
+  FeedHead head = 1;
+  bool duplicate = 2;
+  repeated FeedPollAdmission poll_admissions = 3;
+}
+
+message ReadFeedRequest {
+  string actor_ptid = 1;
+  string chain_id = 2;
+  uint64 after_sequence = 3;
+  uint32 limit = 4;
+  bool include_thread = 5;
+  uint64 after_thread_cursor = 6;
+  // An authenticated foreground PUBLIC read. It does not create a follow or
+  // subscription. False retains subscription-authorized automatic replication.
+  bool explicit_public_read = 7;
+}
+
+message ReadFeedResponse {
+  FeedBundle bundle = 1;
+  FeedHead head = 2;
+  bool has_more = 3;
+  repeated FeedThreadEntry thread_entries = 4;
+  uint64 thread_cursor = 5;
+  bool thread_has_more = 6;
+}
+
+// Arrival order at the post author's home; independent of author-log sequence.
+// The receipt signature authenticates content, never completeness/order.
+message FeedThreadEntry {
+  uint64 cursor = 1;
+  string interaction_home_station = 2;
+  FeedInteraction receipt = 3;
+}
+
+// Notification contains no replicated history. Receivers durably mark the
+// subscribed chain dirty, then perform bounded authorized pull.
+message FeedNotification {
+  FeedHead head = 1;
+}
+
+// Interactions can be authenticated without importing an unrelated author's
+// prefix. This does NOT constitute continuity proof of that author's chain.
+message FeedInteraction {
+  FeedGenesis genesis = 1;
+  FeedWriterGrant writer_grant = 2;
+  FeedEvent event = 3;
+  FeedPollAdmission poll_admission = 4;
+}
+
+// Reconstructed from the original signed creation and its timestamp.
+// Body edits cannot change the question, options, constraints or deadline.
+message FeedPollDefinition {
+  string question = 1;
+  repeated string options = 2;
+  uint32 min_choices = 3;
+  uint32 max_choices = 4;
+  int64 expires_at_unix_ms = 5;
+}
+
+message FeedPollBallotMutation {
+  string target_post_ref = 1;
+  bytes definition_hash = 2;
+  // Strictly increasing and distinct; replaces the Actor's complete ballot.
+  repeated int32 option_indices = 3;
+}
+
+enum FeedPollAdmissionResult {
+  FEED_POLL_ADMISSION_RESULT_UNSPECIFIED = 0;
+  FEED_POLL_ADMISSION_RESULT_ACCEPTED = 1;
+  FEED_POLL_ADMISSION_RESULT_CLOSED = 2;
+  FEED_POLL_ADMISSION_RESULT_INVALID_SELECTION = 3;
+  FEED_POLL_ADMISSION_RESULT_DEFINITION_CHANGED = 4;
+  FEED_POLL_ADMISSION_RESULT_TARGET_UNAVAILABLE = 5;
+}
+
+// Author Home authenticates admission time and decision, never Actor intent,
+// aggregate completeness or absolute physical clock correctness.
+message FeedPollAdmissionStatement {
+  uint32 format_version = 1;
+  string home_station_peer_id = 2;
+  string target_post_ref = 3;
+  bytes event_hash = 4;
+  bytes definition_hash = 5;
+  int64 accepted_at_unix_ms = 6;
+  FeedPollAdmissionResult result = 7;
+  string signing_key_id = 8;
+}
+
+message FeedPollAdmission {
+  FeedPollAdmissionStatement statement = 1;
+  bytes station_signature = 2;
+}
+
+message FeedSubscription {
+  string author_ptid = 1;
+  string chain_id = 2;
+  string subscriber_ptid = 3;
+  bool enabled = 4;
+  uint64 revision = 5;
+}
+
+// Client journal rows persist exact signed bytes, avoiding re-signing on retry.
+message FeedJournalEntry {
+  FeedBundle bundle = 1;
+  bool acknowledged = 2;
+}

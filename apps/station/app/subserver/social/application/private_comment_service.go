@@ -46,11 +46,14 @@ func ProjectPublicCommentResource(
 				Acct: authorAcct,
 				Kind: actormodel.ActorKind_ACTOR_KIND_PERSON,
 			},
-			CreatedAt:      comment.GetCreatedAt(),
-			UpdatedAt:      comment.GetUpdatedAt(),
-			IsDeleted:      comment.GetIsDeleted(),
-			ReactionsCount: comment.GetLikesCount(),
-			RepliesCount:   comment.GetRepliesCount(),
+			CreatedAt:            comment.GetCreatedAt(),
+			UpdatedAt:            comment.GetUpdatedAt(),
+			IsDeleted:            comment.GetIsDeleted(),
+			ReactionsCount:       comment.GetLikesCount(),
+			RepliesCount:         comment.GetRepliesCount(),
+			IsLiked:              comment.GetIsLiked(),
+			PublicFeedRef:        comment.GetPublicFeedRef(),
+			ReplyToPublicFeedRef: comment.GetReplyToPublicFeedRef(),
 		},
 		Body: &privatecontentpb.CommentResource_PublicContent{
 			PublicContent: &privatecontentpb.PublicCommentContent{
@@ -352,7 +355,9 @@ func (s *PrivateContentService) projectRemotePrivateComment(
 	if read == nil ||
 		read.Delivery == nil ||
 		read.Delivery.GetComment() == nil ||
-		read.Delivery.GetVerification() == nil {
+		read.Delivery.GetPayload() == nil ||
+		read.Delivery.GetVerification() == nil ||
+		read.Delivery.GetVerification().GetCommitProof() == nil {
 		return nil, socialdomain.NewPrivateContentError(
 			socialdomain.PrivateContentIntegrityFailed,
 			operation,
@@ -379,19 +384,69 @@ func (s *PrivateContentService) projectRemotePrivateComment(
 		)
 	}
 	verification.StationSigningKeyAttestation = attestation
-	var viewerEnvelope *securecontentpb.ViewerContentKeyEnvelope
-	if len(message.GetTargetActorEnvelopes()) == 1 {
+	var (
+		viewerEnvelope  *securecontentpb.ViewerContentKeyEnvelope
+		signingEnvelope *securecontentpb.ViewerContentKeyEnvelope
+	)
+	switch len(message.GetTargetActorEnvelopes()) {
+	case 0:
+		if read.RecoveryEnvelope != nil {
+			signingEnvelope = proto.Clone(
+				read.RecoveryEnvelope,
+			).(*securecontentpb.ViewerContentKeyEnvelope)
+		}
+	case 1:
+		if read.RecoveryEnvelope != nil {
+			return nil, socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentIntegrityFailed,
+				operation,
+				"viewer_envelope",
+				"has conflicting endpoint and recovery projections",
+			)
+		}
 		viewerEnvelope = proto.Clone(
 			message.GetTargetActorEnvelopes()[0],
 		).(*securecontentpb.ViewerContentKeyEnvelope)
-	}
-	if viewerEnvelope == nil || viewerEnvelope.GetBinding() == nil ||
-		viewerEnvelope.GetBinding().GetSender() == nil {
+		signingEnvelope = viewerEnvelope
+	default:
 		return nil, socialdomain.NewPrivateContentError(
 			socialdomain.PrivateContentIntegrityFailed,
 			operation,
 			"viewer_envelope",
+			"is ambiguous",
+		)
+	}
+	if signingEnvelope == nil || signingEnvelope.GetBinding() == nil ||
+		signingEnvelope.GetBinding().GetSender() == nil {
+		return nil, socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentIntegrityFailed,
+			operation,
+			"signing_envelope",
 			"is incomplete",
+		)
+	}
+	if err := securecontentkernel.ValidateViewerContentKeyEnvelope(signingEnvelope, s.policy); err != nil {
+		return nil, socialdomain.WrapPrivateContentError(
+			socialdomain.PrivateContentIntegrityFailed, operation, err,
+		)
+	}
+	if viewerEnvelope == nil &&
+		(signingEnvelope.GetRecoveryActor() == nil ||
+			signingEnvelope.GetRecoveryActor().GetPtid() != message.GetTargetActor().GetPtid()) {
+		return nil, socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentIntegrityFailed, operation,
+			"recovery_envelope", "is not bound to the target actor",
+		)
+	}
+	binding := signingEnvelope.GetBinding()
+	proofAuthor := verification.GetCommitProof().GetAuthor()
+	if proofAuthor == nil || proofAuthor.GetActor() == nil ||
+		!proto.Equal(binding.GetResource(), message.GetResource()) ||
+		!proto.Equal(binding.GetSender(), proofAuthor) ||
+		!bytes.Equal(binding.GetPayloadCiphertextSha256(), message.GetPayload().GetCiphertextSha256()) {
+		return nil, socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentIntegrityFailed, operation,
+			"signing_envelope", "does not bind the retained payload and proof author",
 		)
 	}
 	if verification.GetReceiverVerifiedSenderSigningKey() == nil {
@@ -400,7 +455,7 @@ func (s *PrivateContentService) projectRemotePrivateComment(
 			transaction,
 			verification.GetCommitProof().GetAuthor(),
 			message.GetSourceStationPeerId(),
-			viewerEnvelope.GetBinding().GetSenderSigningKeyId(),
+			binding.GetSenderSigningKeyId(),
 			message.GetCommittedAt().AsTime(),
 		)
 		if err != nil {
@@ -420,7 +475,22 @@ func (s *PrivateContentService) projectRemotePrivateComment(
 		}
 		verification.ReceiverVerifiedSenderSigningKey = authorKey
 	}
-	return &privatecontentpb.CommentResource{
+	signingBytes, err := securecontentkernel.CanonicalEnvelopeBindingBytes(binding)
+	if err != nil {
+		return nil, socialdomain.WrapPrivateContentError(
+			socialdomain.PrivateContentIntegrityFailed, operation, err,
+		)
+	}
+	if err := verifyFederatedPrivateReceiverVerifiedSender(
+		verification.GetReceiverVerifiedSenderSigningKey(), proofAuthor,
+		binding.GetSenderSigningKeyId(), signingBytes, signingEnvelope.GetSenderSignature(),
+		message.GetCommittedAt().AsTime(),
+	); err != nil {
+		return nil, socialdomain.WrapPrivateContentError(
+			socialdomain.PrivateContentIntegrityFailed, operation, err,
+		)
+	}
+	resource := &privatecontentpb.CommentResource{
 		Metadata: proto.Clone(
 			message.GetComment(),
 		).(*privatecontentpb.CommentMetadata),
@@ -434,7 +504,13 @@ func (s *PrivateContentService) projectRemotePrivateComment(
 				Verification:   verification,
 			},
 		},
-	}, nil
+	}
+	resource.Metadata.Author = proto.Clone(proofAuthor.GetActor()).(*actormodel.ActorRef)
+	if err := s.projectPrivateCommentReactions(ctx, transaction,
+		message.GetSourceStationPeerId(), "", message.GetTargetActor().GetPtid(), resource.GetMetadata()); err != nil {
+		return nil, err
+	}
+	return resource, nil
 }
 
 func (s *PrivateContentService) validatePrivateContentViewer(
@@ -798,7 +874,7 @@ func (s *PrivateContentService) projectPrivateComment(
 		}
 		access.Verification.ReceiverVerifiedSenderSigningKey = authorKey
 	}
-	return &privatecontentpb.CommentResource{
+	resource := &privatecontentpb.CommentResource{
 		Metadata: &privatecontentpb.CommentMetadata{
 			CommentId:        read.Comment.CommentID,
 			ContentId:        read.Comment.ContentID,
@@ -815,5 +891,10 @@ func (s *PrivateContentService) projectPrivateComment(
 		Body: &privatecontentpb.CommentResource_PrivateContent{
 			PrivateContent: access,
 		},
-	}, nil
+	}
+	if err := s.projectPrivateCommentReactions(ctx, transaction, s.localStationPeerID,
+		read.ParentAuthorPTID, viewer.GetActor().GetPtid(), resource.GetMetadata()); err != nil {
+		return nil, err
+	}
+	return resource, nil
 }

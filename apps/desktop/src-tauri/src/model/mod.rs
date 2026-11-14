@@ -100,6 +100,11 @@ pub mod realtime {
 }
 
 pub mod social {
+    pub mod feed {
+        pub mod v1 {
+            pub use station_trust::feed_log::proto::*;
+        }
+    }
     pub mod v1 {
         include!(concat!(env!("OUT_DIR"), "/peers_touch.model.social.v1.rs"));
     }

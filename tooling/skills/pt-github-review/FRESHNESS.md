@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-11-10
-covered_docs_hash: 56067ee15aa5ec99e2574076ecd7e61d1f642df68e7cb4da76aec59781e5c826
+last_verified_at: 2026-11-14
+covered_docs_hash: c5a34d9d06420511071b4febe62757430c148ab5a68a11b1d31ec509b217b8cf
 
 covered_docs:
   - AGENTS.md
@@ -1950,3 +1950,31 @@ pointer to the Quiet Internet north-star draft V2 with its evidence boundary
 user confirmation). Both changes are documentation-only index/pointer
 additions; no review rule, fixture, or policy semantics changed, so only the
 `covered_docs_hash` is re-pinned.
+
+## 2026-11-14 Social Initial Integration Review
+
+Reviewed all nine covered documents changed since checkpoint `20c0ce119`.
+The seven Acceptance documents describe the existing Native Driver's scoped
+AX object comparison, bounded private observation protocol, distinct focus
+and observation deadlines, exact-PID chooser ownership and complete cleanup.
+They also preserve the original primary failure during cleanup, distinguish
+Development check strength, and keep pending frontend output unqualified until
+the input owner rechecks it. Review must reject cached samples, renewed
+deadlines, input-owner receipts presented as product proof, or source/structure
+checks presented as functional or formal Acceptance. Existing evidence,
+runtime ownership and failure-honesty rules already cover these constraints;
+the original Native driver, provisioner and input-owner regressions remain the
+verification owners. No second review policy or generic fixture is required.
+
+`docs/client/desktop/runtime-projections.md` keeps HOME/Public composition,
+complete Circle acquisition, inline comments and current-actor statistics in
+their existing Runtime/Store owners. Its relationship publication fences and
+exact retained reaction recovery are covered by the current source regressions
+and `social-publication-and-retry-ownership` pitfall. Review still rejects UI
+policy timers, stale revision publication, terminal-command retry and
+renderer generation used as Native actor teardown authority.
+`docs/knowledge/README.md` indexes those business and Native pitfalls without
+adding a second rule source. The existing ownership and source-bound review
+rules cover both documents, so no `SKILL.md` rule or generic review fixture
+change is needed. This freshness review does not supply Native, PostgreSQL,
+cross-platform or release proof; those results remain separately classified.

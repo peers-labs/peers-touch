@@ -5,12 +5,20 @@ import {
   socialGetFollowing,
   socialGetRelationship,
   socialUnfollow,
+  socialGetRelationshipStatus,
+  socialBlockActor,
+  socialUnblockActor,
 } from '../services/social_api';
 import type {
   Follower,
   Following,
   Relationship,
+  SocialRelationshipProjection,
+  BlockedActorProjection,
 } from '../gen/proto/domain/social/relationship_pb';
+import { SocialRelationshipAction, SocialRelationshipCommandResultKind, BlockedActorProjectionSchema } from '../gen/proto/domain/social/relationship_pb';
+import { create } from '@bufbuild/protobuf';
+import { loadAllSocialBlockedActors } from '../services/socialRelationshipPages';
 import { EVENT, eventBus } from '../kernel/events';
 import { log } from '../utils/logger';
 import {
@@ -21,6 +29,12 @@ import {
 const TAG = 'relationships-store';
 const RELATIONSHIP_PAGE_SIZE = 100;
 let relationshipsGeneration = 0;
+const statusReads = new Map<string, Promise<SocialRelationshipProjection>>();
+const blockFlights = new Map<string, { blocked: boolean; completion: Promise<void> }>();
+let blockedRead: Promise<void> | null = null;
+let blockProjectionVersion = 0;
+let blockedListPublicationEpoch = 0;
+const blockDecisions = new Map<string, { blocked: boolean; revision: bigint }>();
 
 // Per-actor relationship cache:
 //   - `relations[actorPtid]` — the viewer's edge to that actor
@@ -54,6 +68,12 @@ interface RelationshipsState {
   // viewer's edge to a given target actor (sparse cache).
   relations: Record<string, Relationship>;
   loading: Record<string, boolean>;
+  statuses: Record<string, SocialRelationshipProjection>;
+  statusErrors: Record<string, string>;
+  blockPending: Record<string, boolean>;
+  blockedActors: Record<string, BlockedActorProjection>;
+  blockedActorsLoadedAt?: number;
+  blockedActorsError: string | null;
 
   followersByActor: Record<string, RelationListState<Follower>>;
   followingByActor: Record<string, RelationListState<Following>>;
@@ -66,6 +86,10 @@ interface RelationshipsState {
   loadRelationship: (targetActorPtid: string) => Promise<Relationship | undefined>;
   follow: (targetActorPtid: string) => Promise<void>;
   unfollow: (targetActorPtid: string) => Promise<void>;
+  loadRelationshipStatus: (targetActorPtid: string) => Promise<SocialRelationshipProjection>;
+  setBlocked: (targetActorPtid: string, blocked: boolean) => Promise<void>;
+  reconcileRelationships: () => Promise<void>;
+  loadBlockedActors: (refresh?: boolean) => Promise<void>;
 
   loadFollowers: (actorPtid: string, refresh?: boolean) => Promise<void>;
   loadFollowing: (actorPtid: string, refresh?: boolean) => Promise<void>;
@@ -79,6 +103,12 @@ const initialState: Pick<
   RelationshipsState,
   | 'relations'
   | 'loading'
+  | 'statuses'
+  | 'statusErrors'
+  | 'blockPending'
+  | 'blockedActors'
+  | 'blockedActorsLoadedAt'
+  | 'blockedActorsError'
   | 'followersByActor'
   | 'followingByActor'
   | 'mutualFriends'
@@ -89,6 +119,12 @@ const initialState: Pick<
 > = {
   relations: {},
   loading: {},
+  statuses: {},
+  statusErrors: {},
+  blockPending: {},
+  blockedActors: {},
+  blockedActorsLoadedAt: undefined,
+  blockedActorsError: null,
   followersByActor: {},
   followingByActor: {},
   mutualFriends: [],
@@ -146,8 +182,208 @@ async function loadAllFollowing(actorPtid: string): Promise<Following[]> {
   return following;
 }
 
+type RelationshipPublication =
+  | { status: SocialRelationshipProjection; blockedActor?: BlockedActorProjection }
+  | { items: BlockedActorProjection[] };
+
+// All three publishers arbitrate here. List absence has no edge revision:
+// retain the known floor as a tombstone, never use a page maximum as a clock.
+function publishRelationshipProjection(publication: RelationshipPublication): SocialRelationshipProjection | undefined {
+  const current = useRelationshipsStore.getState();
+  const statuses = { ...current.statuses };
+  const blockedActors = { ...current.blockedActors };
+  const changes: Array<{ targetActorPtid: string; action: 'block' | 'unblock' }> = [];
+  let decisionChanged = false;
+  const applyBlock = (id: string, blocked: boolean, revision: bigint, item?: BlockedActorProjection): boolean => {
+    const previous = blockDecisions.get(id);
+    if (previous && (revision < previous.revision
+      || (revision === previous.revision && blocked !== previous.blocked))) return false;
+    const wasBlocked = previous?.blocked ?? Boolean(current.blockedActors[id]);
+    if (previous ? previous.revision !== revision || previous.blocked !== blocked : wasBlocked !== blocked) {
+      decisionChanged = true;
+    }
+    blockDecisions.set(id, { blocked, revision });
+    if (blocked && item) blockedActors[id] = item;
+    else delete blockedActors[id];
+    if (statuses[id] && (statuses[id].revision < revision || statuses[id].blockedByViewer !== blocked)) {
+      delete statuses[id];
+    }
+    if (wasBlocked !== blocked && (previous || 'items' in publication)) {
+      changes.push({ targetActorPtid: id, action: blocked ? 'block' : 'unblock' });
+    }
+    return true;
+  };
+  let status: SocialRelationshipProjection | undefined;
+  let statusErrors = current.statusErrors;
+  if ('status' in publication) {
+    status = publication.status;
+    const id = status.targetActor!.ptid;
+    const previous = statuses[id];
+    if (!applyBlock(id, status.blockedByViewer, status.revision,
+      publication.blockedActor ?? (status.blockedByViewer ? create(BlockedActorProjectionSchema, {
+        actor: status.targetActor, revision: status.revision,
+        homeStationPeerId: status.targetHomeStationPeerId, blockedAt: blockedActors[id]?.blockedAt,
+      }) : undefined))) {
+      if (previous) return previous;
+      throw new Error('SOCIAL_RELATIONSHIP_READ_SUPERSEDED');
+    }
+    statuses[id] = status;
+    statusErrors = Object.fromEntries(Object.entries(statusErrors).filter(([target]) => target !== id));
+  } else {
+    blockedListPublicationEpoch += 1;
+    const items = new Map(publication.items.map(item => [item.actor!.ptid, item]));
+    const ids = new Set([...blockDecisions.keys(), ...Object.keys(statuses),
+      ...Object.keys(blockedActors), ...statusReads.keys(), ...items.keys()]);
+    for (const id of ids) {
+      const item = items.get(id);
+      if (item) applyBlock(id, true, item.revision, item);
+      else {
+        const revision = blockDecisions.get(id)?.revision
+          ?? statuses[id]?.revision ?? blockedActors[id]?.revision ?? 0n;
+        // Complete readback is authoritative for absence at the retained floor.
+        blockDecisions.set(id, { blocked: false, revision });
+        const wasBlocked = Boolean(blockedActors[id]);
+        delete blockedActors[id];
+        if (statuses[id]?.blockedByViewer) delete statuses[id];
+        if (wasBlocked) changes.push({ targetActorPtid: id, action: 'unblock' });
+      }
+    }
+  }
+  if ('items' in publication || decisionChanged) blockProjectionVersion += 1;
+  useRelationshipsStore.setState({
+    statuses, statusErrors, blockedActors,
+    ...('items' in publication ? { blockedActorsLoadedAt: Date.now(), blockedActorsError: null } : {}),
+  });
+  for (const change of changes) eventBus.publish(EVENT.RELATIONSHIP_CHANGED, change);
+  return status;
+}
+
 export const useRelationshipsStore = createDesktopStore<RelationshipsState>('relationships', (set, get) => ({
   ...initialState,
+
+  loadBlockedActors: async (refresh = false) => {
+    const generation = relationshipsGeneration;
+    if (blockedRead) {
+      if (!refresh) return blockedRead;
+      await blockedRead.catch(() => {});
+      if (generation !== relationshipsGeneration) throw new Error('SOCIAL_SESSION_STALE');
+    }
+    const version = blockProjectionVersion;
+    const assertScope = () => {
+      if (generation !== relationshipsGeneration) throw new Error('SOCIAL_SESSION_STALE');
+      if (version !== blockProjectionVersion) throw new Error('SOCIAL_RELATIONSHIP_READ_SUPERSEDED');
+    };
+    const read = loadAllSocialBlockedActors(assertScope).then(items => {
+      assertScope();
+      publishRelationshipProjection({ items });
+    }).catch(error => {
+      if (generation === relationshipsGeneration && version === blockProjectionVersion) {
+        set({ blockedActorsError: String(error) });
+      }
+      throw error;
+    }).finally(() => { if (blockedRead === read) blockedRead = null; });
+    blockedRead = read;
+    await read;
+  },
+
+  loadRelationshipStatus: async targetActorPtid => {
+    const existing = statusReads.get(targetActorPtid);
+    if (existing) return existing;
+    const generation = relationshipsGeneration;
+    const listEpoch = blockedListPublicationEpoch;
+    const read = socialGetRelationshipStatus(targetActorPtid).then(response => {
+      if (generation !== relationshipsGeneration) throw new Error('SOCIAL_SESSION_STALE');
+      const status = response.relationship;
+      if (!status || status.targetActor?.ptid !== targetActorPtid || status.revision < 0n) {
+        throw new Error('SOCIAL_RELATIONSHIP_PROJECTION_INVALID');
+      }
+      if (listEpoch !== blockedListPublicationEpoch) {
+        const retained = get().statuses[targetActorPtid];
+        if (retained) return retained;
+        throw new Error('SOCIAL_RELATIONSHIP_READ_SUPERSEDED');
+      }
+      return publishRelationshipProjection({ status })!;
+    }).catch(error => {
+      if (generation === relationshipsGeneration) set(s => ({
+        statusErrors: { ...s.statusErrors, [targetActorPtid]: String(error) },
+      }));
+      throw error;
+    }).finally(() => { if (statusReads.get(targetActorPtid) === read) statusReads.delete(targetActorPtid); });
+    statusReads.set(targetActorPtid, read);
+    return read;
+  },
+
+  setBlocked: async (targetActorPtid, blocked) => {
+    const existing = blockFlights.get(targetActorPtid);
+    if (existing) {
+      if (existing.blocked !== blocked) throw new Error('SOCIAL_RELATIONSHIP_MUTATION_PENDING');
+      return existing.completion;
+    }
+    const generation = relationshipsGeneration;
+    const assertScope = () => {
+      if (generation !== relationshipsGeneration) throw new Error('SOCIAL_SESSION_STALE');
+    };
+    set(s => ({ blockPending: { ...s.blockPending, [targetActorPtid]: true } }));
+    const flight = (async () => {
+      const observed = await get().loadRelationshipStatus(targetActorPtid);
+      assertScope();
+      if (observed.blockedByViewer === blocked) return;
+      if (!observed.targetHomeStationPeerId) throw new Error('SOCIAL_RELATIONSHIP_HOME_UNAVAILABLE');
+      const input = {
+        targetActorPtid, targetHomeStationPeerId: observed.targetHomeStationPeerId,
+        observedRevision: observed.revision,
+      };
+      const listEpoch = blockedListPublicationEpoch;
+      const response = await (blocked ? socialBlockActor(input) : socialUnblockActor(input));
+      assertScope();
+      const result = response.result;
+      const status = result?.projection;
+      const event = result?.event;
+      if (!result || ![
+        SocialRelationshipCommandResultKind.COMMITTED,
+        SocialRelationshipCommandResultKind.DUPLICATE,
+      ].includes(result.kind) || !status || !event
+        || status.targetActor?.ptid !== targetActorPtid || status.blockedByViewer !== blocked
+        || status.targetHomeStationPeerId !== observed.targetHomeStationPeerId
+        || event.targetActor?.ptid !== targetActorPtid || event.blocked !== blocked
+        || event.action !== (blocked ? SocialRelationshipAction.BLOCK : SocialRelationshipAction.UNBLOCK)
+        || event.revision !== status.revision || status.revision <= observed.revision) {
+        throw new Error('SOCIAL_RELATIONSHIP_NOT_CONFIRMED');
+      }
+      if (listEpoch !== blockedListPublicationEpoch
+        && blockDecisions.get(targetActorPtid)?.blocked !== blocked) {
+        throw new Error('SOCIAL_RELATIONSHIP_READ_SUPERSEDED');
+      }
+      publishRelationshipProjection({ status, blockedActor: blocked
+        ? create(BlockedActorProjectionSchema, {
+          actor: event.targetActor, revision: event.revision, blockedAt: event.committedAt,
+          homeStationPeerId: status.targetHomeStationPeerId,
+        }) : undefined });
+    })().catch(async error => {
+      if (generation === relationshipsGeneration) {
+        await get().loadRelationshipStatus(targetActorPtid).catch(() => {});
+      }
+      throw error;
+    }).finally(() => {
+      if (blockFlights.get(targetActorPtid)?.completion === flight) blockFlights.delete(targetActorPtid);
+      if (generation === relationshipsGeneration) set(s => ({
+        blockPending: { ...s.blockPending, [targetActorPtid]: false },
+      }));
+    });
+    blockFlights.set(targetActorPtid, { blocked, completion: flight });
+    await flight;
+  },
+
+  reconcileRelationships: async () => {
+    const generation = relationshipsGeneration;
+    const ids = [...new Set([...Object.keys(get().relations), ...Object.keys(get().statuses)])];
+    for (let index = 0; index < ids.length; index += 6) {
+      if (generation !== relationshipsGeneration) return;
+      await Promise.allSettled(ids.slice(index, index + 6).flatMap(id => [
+        get().loadRelationship(id), get().loadRelationshipStatus(id),
+      ]));
+    }
+  },
 
   loadRelationship: async (targetActorPtid) => {
     const generation = relationshipsGeneration;
@@ -412,6 +648,12 @@ export const useRelationshipsStore = createDesktopStore<RelationshipsState>('rel
 
   reset: () => {
     relationshipsGeneration += 1;
+    blockProjectionVersion += 1;
+    blockedListPublicationEpoch += 1;
+    blockedRead = null;
+    statusReads.clear();
+    blockFlights.clear();
+    blockDecisions.clear();
     set({ ...initialState });
   },
 }));

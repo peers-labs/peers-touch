@@ -11,6 +11,8 @@ import type { SocialTextMention } from '../components/moments/mentions/socialMen
 // contents (text + mentions) for both paths.
 
 export interface SocialCommentDraftState {
+  draftId?: string;
+  revision?: number;
   text: string;
   mentions: SocialTextMention[];
   replyToCommentId?: string;
@@ -40,9 +42,16 @@ export const useSocialCommentDraftsStore = createDesktopStore<SocialCommentDraft
   (set) => ({
     ...emptyState(),
 
-    setDraft: (key, draft) => set((state) => ({
-      drafts: { ...state.drafts, [key]: draft },
-    })),
+    setDraft: (key, draft) => set((state) => {
+      const previous = state.drafts[key];
+      const same = previous?.text === draft.text
+        && previous.replyToCommentId === draft.replyToCommentId
+        && JSON.stringify(previous.mentions) === JSON.stringify(draft.mentions);
+      return { drafts: { ...state.drafts, [key]: {
+        ...draft, draftId: previous?.draftId ?? crypto.randomUUID(),
+        revision: (previous?.revision ?? 0) + (same ? 0 : 1),
+      } } };
+    }),
 
     clearDraft: (key) => set((state) => {
       if (!(key in state.drafts)) return state;

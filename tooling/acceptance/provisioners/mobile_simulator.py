@@ -48,6 +48,7 @@ from tooling.acceptance.core import (
     RuntimeManifest,
     require_runtime_client_service,
     verify_client_binding_observation,
+    source_identity,
 )
 from tooling.acceptance.core._paths import ENVIRONMENTS_DIR, REPO_ROOT
 from tooling.acceptance.core.attestation import (
@@ -58,6 +59,7 @@ from tooling.acceptance.core.attestation import (
 )
 from tooling.acceptance.core.provisioner import (
     load_env_file,
+    resolve_deployment_environment_path,
     resolve_machine_profile_environment,
     resolve_reviewed_profile_environment,
 )
@@ -71,6 +73,7 @@ from tooling.acceptance.core.reset_authority import (
     require_station_reset_authority,
     station_reset_authorization_ref,
 )
+from tooling.acceptance.core.runtime_cell import runtime_source_matches
 from tooling.acceptance.fixtures.chat_native_actors import (
     ACTOR_ACCOUNTS,
     ACTOR_PASSWORD,
@@ -122,10 +125,10 @@ from tooling.acceptance.provisioners.preset_actor import (
     actor_identity_key_name,
 )
 from tooling.acceptance.provisioners.station_access_relay_role import (
-    StationAccessRelayRoleProvisioner,
     _relay_peer_identity,
     _station_runtime_config,
 )
+from tooling.acceptance.provisioners.relay_attachment import RelayAttachmentFixture
 
 
 IOS_RUNTIME = "iOS 26.5"
@@ -4001,8 +4004,16 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
         self.selected_clients = selected
         self.runtime_source_commit = runtime_source_commit
 
-    def _build_inputs_digest(self, platform: str) -> str:
-        return canonical_build_inputs_digest(self.repo_root, platform)
+    def _validate_runtime_source(self, manifest: RuntimeManifest) -> None:
+        if (
+            manifest.source_commit != self.runtime_source_commit
+            or self._git_commit() != manifest.source_commit
+            or self._git_workspace_digest() != manifest.workspace_digest
+        ):
+            raise BlockedError(
+                reason="Selected Mobile simulator source changed or conflicts with its runtime",
+                resource="mobile-simulator:source-identity",
+            )
 
     def _platform_build_identity(
         self,
@@ -4011,35 +4022,10 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
         platform: str,
         command_env: Mapping[str, str],
     ) -> dict[str, Any]:
-        if manifest.workspace_digest != "clean":
-            raise BlockedError(
-                reason=(
-                    "Selected Mobile simulator builds require a clean "
-                    "source projection"
-                ),
-                resource="mobile-simulator:source-identity",
-            )
-        environment = {
-            name: command_env[name]
-            for name in sorted(SELECTED_BUILD_ENVIRONMENT_KEYS)
-            if name in command_env
-        }
-        try:
-            return create_build_identity(
-                build_id=f"{manifest.run_id}-{platform}",
-                platform=platform,
-                source=SourceIdentity(
-                    source_commit=self.runtime_source_commit,
-                    workspace_state="clean",
-                    workspace_digest="clean",
-                ),
-                build_inputs_digest=self._build_inputs_digest(platform),
-                environment_digest=canonical_value_digest(environment),
-            )
-        except MobileNativeBuildError as error:
-            raise ProvisioningError(
-                f"Selected Mobile simulator build identity is invalid: {error}"
-            ) from error
+        self._validate_runtime_source(manifest)
+        return super()._platform_build_identity(
+            manifest, platform=platform, command_env=command_env,
+        )
 
     def provision(self, gate_id: str) -> RuntimeManifest:
         self._manifest = self._new_base_manifest(gate_id)
@@ -4052,6 +4038,7 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
                     reason="Mobile simulator source identity is unavailable",
                     resource="mobile-simulator:source-identity",
                 )
+            self._validate_runtime_source(self._manifest)
             spec = load_mobile_simulator_spec(self.contract_path)
             command_env = {
                 **os.environ,
@@ -4186,6 +4173,13 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
                         ):
                             android_manifest_guard.restore()
 
+            self._validate_runtime_source(manifest)
+            for platform, identity in build_identities.items():
+                if self._build_inputs_digest(platform) != identity["buildInputsDigest"]:
+                    raise BlockedError(
+                        reason="Selected Mobile simulator build inputs changed during compilation",
+                        resource="mobile-simulator:source-identity",
+                    )
             applications: dict[str, dict[str, Any]] = {}
             for platform in platforms:
                 application = self._stage_application(
@@ -5240,26 +5234,81 @@ class MobileStationOutageCapabilityHandler(EphemeralCapabilityHandler):
         deployment_environment: str,
         expected_commit: str,
     ) -> None:
-        if os.environ.get(
-            "PT_MOBILE_ACCEPTANCE_ALLOW_STATION_RESTART"
-        ) != "1":
+        station_url = self._require_restart_authority(
+            deployment_environment, expected_commit,
+        )
+        self._config = _station_runtime_config(
+            deployment_environment,
+            station_url=station_url,
+            allow_profile_managed=True,
+        )
+        if self._config.public_base_url.rstrip("/") != station_url.rstrip("/"):
             raise BlockedError(
-                reason=(
-                    "PT_MOBILE_ACCEPTANCE_ALLOW_STATION_RESTART=1 is "
-                    "required for the authorized Mobile Station outage"
-                ),
+                reason="Station outage runtime origin differs from the reviewed Profile",
                 resource="mobile.station-outage:authorization",
             )
-        self._config = PosixServiceRuntimeConfig.load(
-            deployment_environment,
-            expected_role="station",
-        )
         self._transport = self._config.transport()
         self._expected_commit = expected_commit
         self._before: dict[str, Any] | None = None
         self._container_id = ""
         self._stopped = False
         self._closed = False
+
+    @staticmethod
+    def _require_restart_authority(
+        deployment_environment: str, expected_commit: str,
+    ) -> str:
+        # The parent retains the Profile and remote-source leases throughout
+        # this capability. Resolve its operation target without rebinding them.
+        target_file = resolve_deployment_environment_path(deployment_environment)
+        target_profile = target_file.parent.parent.name
+        resource = "mobile.station-outage:authorization"
+        try:
+            checked = subprocess.run(
+                ["node", str(REPO_ROOT / "tooling/scripts/local-dev/machine-dev.mjs"),
+                 "check", "--workspace-root", str(REPO_ROOT),
+                 "--target-profile", target_profile,
+                 "--capabilities", "station.deploy"],
+                cwd=REPO_ROOT, capture_output=True, text=True,
+                timeout=30, check=False,
+            )
+            if checked.returncode != 0:
+                detail = redact_text(checked.stderr.strip() or checked.stdout.strip())
+                raise BlockedError(
+                    reason="Station outage Machine Dev check failed"
+                    + (f": {detail[-1000:]}" if detail else ""),
+                    resource=resource,
+                )
+            authority = json.loads(checked.stdout)
+            binding, profile, source = (
+                authority["binding"], authority["profile"], authority["source"],
+            )
+            allowed = binding["allowedCapabilities"]
+            authorized = (
+                authority["authority"] == "machine-control-plane"
+                and Path(binding["canonicalRoot"]).resolve() == REPO_ROOT.resolve()
+                and isinstance(allowed, list) and "station.deploy" in allowed
+                and profile["profile"] == target_profile
+                and profile["resetPolicy"] == "agent-resettable"
+                and profile["sourceState"] == "tracked-clean"
+                and profile["stationMode"] == "remote"
+                and isinstance(profile["stationUrl"], str) and bool(profile["stationUrl"])
+                and profile["stationDeployEnvironment"] == deployment_environment
+                and Path(profile["stationDeployFile"]).resolve() == target_file.resolve()
+                and GIT_COMMIT_PATTERN.fullmatch(source["head"]) is not None
+                and commits_match(source["head"], expected_commit)
+            )
+        except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError) as error:
+            raise BlockedError(
+                reason=f"Station outage Machine Dev authority is unavailable or invalid: {type(error).__name__}",
+                resource=resource,
+            ) from error
+        if not authorized:
+            raise BlockedError(
+                reason="Station outage requires the current source and an exact reviewed non-stable deployment capability",
+                resource=resource,
+            )
+        return profile["stationUrl"]
 
     @property
     def allowed_operations(self) -> tuple[str, ...]:
@@ -7960,6 +8009,7 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
     actor_manifest_kind = ""
     actor_manifest_path = ""
     additional_fixture_roles_by_gate: Mapping[str, tuple[str, ...]] = {}
+    allowed_desktop_client_sets: tuple[frozenset[str], ...] = ()
 
     def __init__(
         self,
@@ -7988,6 +8038,124 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
         self._base_manifest: MobileSimulatorRuntimeManifest | None = None
         self._transport_environment: dict[str, str] = {}
         self._transport_trust: dict[str, Any] = {}
+
+    def _desktop_clients(
+        self,
+        run_id: str,
+        *,
+        clients: Sequence[EnvironmentClient] | None = None,
+    ) -> tuple[ClientRuntime, ...]:
+        declared = tuple(
+            client for client in (clients or self.contract.clients)
+            if client.runtime == "native-tauri"
+        )
+        if frozenset(client.id for client in declared) not in self.allowed_desktop_client_sets:
+            raise BlockedError(
+                reason=f"{self.environment_id} has an unsupported Desktop client set",
+                resource=f"{self.environment_id}:desktop-clients",
+            )
+        runtime_root = Path(
+            tempfile.mkdtemp(prefix=f"peers-touch-{self.environment_id}-")
+        )
+        self.register_cleanup(
+            f"{self.environment_id}:desktop-storage",
+            partial(shutil.rmtree, runtime_root),
+        )
+        ports: set[int] = set()
+
+        def available_port() -> int:
+            while True:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+                    listener.bind(("127.0.0.1", 0))
+                    port = int(listener.getsockname()[1])
+                if port not in ports:
+                    ports.add(port)
+                    return port
+
+        return tuple(
+            ClientRuntime(
+                id=client.id,
+                actor=client.actor,
+                runtime=client.runtime,
+                worktree=str(REPO_ROOT),
+                gateway_port=available_port(),
+                renderer_port=available_port(),
+                webdriver_port=available_port(),
+                profile=f"{self.environment_id}-{run_id}-{client.id}",
+                storage_root=str(runtime_root / client.id),
+                required_service_roles=client.required_service_roles,
+                service_bindings=client.service_bindings,
+            )
+            for client in declared
+        )
+
+    def _prepare_desktop_actor_identity_fixtures(
+        self,
+        clients: Sequence[ClientRuntime],
+        actor_manifest: Mapping[str, Any],
+    ) -> None:
+        routes = actor_manifest.get("clients")
+        stations = actor_manifest.get("stations")
+        if not isinstance(routes, list) or not isinstance(stations, Mapping):
+            raise BlockedError(
+                reason=f"{self.environment_id} actor manifest is invalid",
+                resource=f"{self.environment_id}:actor-identity-fixture",
+            )
+        seeds: dict[tuple[str, str], bytearray] = {}
+        try:
+            for client in clients:
+                route = next(
+                    (
+                        value for value in routes
+                        if isinstance(value, Mapping) and value.get("id") == client.id
+                    ), None,
+                )
+                station = (
+                    stations.get(route.get("serviceId"))
+                    if isinstance(route, Mapping) else None
+                )
+                actors = station.get("actors") if isinstance(station, Mapping) else None
+                actor = next(
+                    (
+                        value for value in actors
+                        if isinstance(value, Mapping) and value.get("role") == client.actor
+                    ), None,
+                ) if isinstance(actors, list) else None
+                station_peer_id = (
+                    str(actor.get("homeStationPeerId") or "")
+                    if isinstance(actor, Mapping) else ""
+                )
+                actor_ptid = (
+                    str(actor.get("ptid") or "")
+                    if isinstance(actor, Mapping) else ""
+                )
+                if not station_peer_id or not actor_ptid.startswith("ptid:"):
+                    raise BlockedError(
+                        reason=f"{self.environment_id} Desktop actor identity scope is incomplete: {client.id}",
+                        resource=f"{self.environment_id}:actor-identity:{client.id}",
+                    )
+                seed = seeds.setdefault(
+                    (station_peer_id, actor_ptid),
+                    bytearray(secrets.token_bytes(32)),
+                )
+                identity_root = (
+                    Path(client.storage_root) / "peers-touch" / "desktop"
+                    / "data" / "secure-store" / "identity-keys"
+                )
+                identity_root.mkdir(parents=True, mode=0o700)
+                identity_root.chmod(0o700)
+                identity_file = identity_root / actor_identity_key_name(
+                    station_peer_id, actor_ptid,
+                )
+                descriptor = os.open(
+                    identity_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                    | getattr(os, "O_NOFOLLOW", 0), 0o600,
+                )
+                with os.fdopen(descriptor, "w", encoding="ascii") as target:
+                    target.write(seed.hex())
+        finally:
+            for seed in seeds.values():
+                seed[:] = b"\x00" * len(seed)
 
     def provision(self, gate_id: str) -> RuntimeManifest:
         self._manifest = self._new_base_manifest(gate_id)
@@ -9206,11 +9374,7 @@ class MobileRelaySimulatorProvisioner(
             Callable[[str, str, str], bytes] | None
         ) = None,
         relay_attachment_fixture_factory: (
-            Callable[
-                [EnvironmentContract],
-                StationAccessRelayRoleProvisioner,
-            ]
-            | None
+            Callable[..., RelayAttachmentFixture] | None
         ) = None,
         **kwargs: Any,
     ) -> None:
@@ -9228,7 +9392,7 @@ class MobileRelaySimulatorProvisioner(
         )
         self._relay_attachment_fixture_factory = (
             relay_attachment_fixture_factory
-            or StationAccessRelayRoleProvisioner
+            or RelayAttachmentFixture
         )
 
     def _prepare_service_fixtures(
@@ -9256,15 +9420,9 @@ class MobileRelaySimulatorProvisioner(
             relay.deployment_environment
         )
         fixture = self._relay_attachment_fixture_factory(
-            EnvironmentContract.from_yaml(
-                ENVIRONMENTS_DIR / "station-access-relay-role.yaml"
-            )
+            register_cleanup=self.register_cleanup,
         )
-        self.register_cleanup(
-            "mobile-relay-attachment-fixture",
-            fixture.cleanup,
-        )
-        fixture._prepare_native_relay_fixture(
+        fixture.prepare(
             manifest=manifest,
             station_config=_station_runtime_config(
                 station.deployment_environment,
@@ -9490,6 +9648,10 @@ class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):
     actor_manifest_path = "runtime/chat-mixed-native-actors.json"
     gate_ids = CHAT_MIXED_NATIVE_GATE_IDS
     child_harness_actions = CHAT_MIXED_NATIVE_HARNESS_ACTIONS
+    allowed_desktop_client_sets = (
+        frozenset({"desktop-alice", "desktop-bob"}),
+        frozenset({"desktop-alice", "desktop-bob", "desktop-bob-peer"}),
+    )
 
     def __init__(
         self,
@@ -9530,11 +9692,14 @@ class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):
         ):
             return manifest
         try:
-            if manifest.workspace_digest != "clean":
+            if not runtime_source_matches(
+                {"commit": manifest.source_commit, "workspaceDigest": manifest.workspace_digest},
+                source_identity(REPO_ROOT),
+            ):
                 raise BlockedError(
                     reason=(
-                        "Chat mixed-native proof requires a clean "
-                        "orchestrator source"
+                        "Mixed native orchestrator does not match the current "
+                        "exact source snapshot"
                     ),
                     resource="source-identity:workspace",
                 )
@@ -9687,165 +9852,6 @@ class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):
             )
             self._appium_cleanup_registered = True
         return context
-
-    def _desktop_clients(
-        self,
-        run_id: str,
-        *,
-        clients: Sequence[EnvironmentClient] | None = None,
-    ) -> tuple[ClientRuntime, ...]:
-        declared = tuple(
-            client
-            for client in (clients or self.contract.clients)
-            if client.runtime == "native-tauri"
-        )
-        declared_ids = {client.id for client in declared}
-        allowed_client_sets = {
-            frozenset({"desktop-alice", "desktop-bob"}),
-            frozenset({
-                "desktop-alice",
-                "desktop-bob",
-                "desktop-bob-peer",
-            }),
-        }
-        if frozenset(declared_ids) not in allowed_client_sets:
-            raise BlockedError(
-                reason=(
-                    "Chat mixed-native environment has an unsupported "
-                    "Desktop client set"
-                ),
-                resource=f"{self.environment_id}:desktop-clients",
-            )
-        runtime_root = Path(
-            tempfile.mkdtemp(prefix=f"peers-touch-{self.environment_id}-")
-        )
-        self.register_cleanup(
-            "chat-mixed-desktop-storage",
-            partial(shutil.rmtree, runtime_root),
-        )
-        ports: set[int] = set()
-
-        def available_port() -> int:
-            while True:
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
-                    listener.bind(("127.0.0.1", 0))
-                    port = int(listener.getsockname()[1])
-                if port not in ports:
-                    ports.add(port)
-                    return port
-
-        return tuple(
-            ClientRuntime(
-                id=client.id,
-                actor=client.actor,
-                runtime=client.runtime,
-                worktree=str(REPO_ROOT),
-                gateway_port=available_port(),
-                renderer_port=available_port(),
-                webdriver_port=available_port(),
-                profile=f"{self.environment_id}-{run_id}-{client.id}",
-                storage_root=str(runtime_root / client.id),
-                required_service_roles=client.required_service_roles,
-                service_bindings=client.service_bindings,
-            )
-            for client in declared
-        )
-
-    @staticmethod
-    def _prepare_desktop_actor_identity_fixtures(
-        clients: Sequence[ClientRuntime],
-        actor_manifest: Mapping[str, Any],
-    ) -> None:
-        routes = actor_manifest.get("clients")
-        stations = actor_manifest.get("stations")
-        if not isinstance(routes, list) or not isinstance(stations, Mapping):
-            raise BlockedError(
-                reason="Chat mixed-native actor manifest is invalid",
-                resource="chat-mixed-native:actor-identity-fixture",
-            )
-        seeds: dict[tuple[str, str], bytearray] = {}
-        try:
-            for client in clients:
-                route = next(
-                    (
-                        value
-                        for value in routes
-                        if isinstance(value, Mapping)
-                        and value.get("id") == client.id
-                    ),
-                    None,
-                )
-                station = (
-                    stations.get(route.get("serviceId"))
-                    if isinstance(route, Mapping)
-                    else None
-                )
-                actors = (
-                    station.get("actors")
-                    if isinstance(station, Mapping)
-                    else None
-                )
-                actor = next(
-                    (
-                        value
-                        for value in actors
-                        if isinstance(value, Mapping)
-                        and value.get("role") == client.actor
-                    ),
-                    None,
-                ) if isinstance(actors, list) else None
-                station_peer_id = (
-                    str(actor.get("homeStationPeerId") or "")
-                    if isinstance(actor, Mapping)
-                    else ""
-                )
-                actor_ptid = (
-                    str(actor.get("ptid") or "")
-                    if isinstance(actor, Mapping)
-                    else ""
-                )
-                if not station_peer_id or not actor_ptid.startswith("ptid:"):
-                    raise BlockedError(
-                        reason=(
-                            "Chat mixed-native Desktop actor identity "
-                            f"scope is incomplete: {client.id}"
-                        ),
-                        resource=(
-                            f"chat-mixed-native:actor-identity:"
-                            f"{client.id}"
-                        ),
-                    )
-                seed = seeds.setdefault(
-                    (station_peer_id, actor_ptid),
-                    bytearray(secrets.token_bytes(32)),
-                )
-                identity_root = (
-                    Path(client.storage_root)
-                    / "peers-touch"
-                    / "desktop"
-                    / "data"
-                    / "secure-store"
-                    / "identity-keys"
-                )
-                identity_root.mkdir(parents=True, mode=0o700)
-                identity_root.chmod(0o700)
-                identity_file = identity_root / actor_identity_key_name(
-                    station_peer_id,
-                    actor_ptid,
-                )
-                descriptor = os.open(
-                    identity_file,
-                    os.O_WRONLY
-                    | os.O_CREAT
-                    | os.O_EXCL
-                    | getattr(os, "O_NOFOLLOW", 0),
-                    0o600,
-                )
-                with os.fdopen(descriptor, "w", encoding="ascii") as target:
-                    target.write(seed.hex())
-        finally:
-            for seed in seeds.values():
-                seed[:] = b"\x00" * len(seed)
 
     def _cleanup_appium_sessions(self) -> None:
         if self._appium_handler is None:

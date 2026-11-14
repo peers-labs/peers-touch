@@ -628,15 +628,20 @@ func publishPrivateCommentParent(
 	t *testing.T,
 	fixture *privateContentServiceFixture,
 	label string,
+	parentRequests ...*privatecontentpb.PreparePrivateMomentRequest,
 ) string {
 	t.Helper()
+	request := privateMomentPrepareRequest("prepare-comment-parent-"+label, "comment-parent-"+label)
+	if len(parentRequests) > 1 {
+		t.Fatal("one original private parent request is required")
+	}
+	if len(parentRequests) == 1 {
+		request = parentRequests[0]
+	}
 	prepared, err := fixture.service.PreparePrivateMoment(
 		context.Background(),
 		fixture.author,
-		privateMomentPrepareRequest(
-			"prepare-comment-parent-"+label,
-			"comment-parent-"+label,
-		),
+		request,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -649,6 +654,9 @@ func publishPrivateCommentParent(
 		"submit-comment-parent-"+label,
 		"private Comment parent",
 	)
+	if request.GetPollAuthority() != nil {
+		submit.PollAuthority = proto.Clone(request.GetPollAuthority()).(*privatecontentpb.PrivatePollAuthority)
+	}
 	response, err := fixture.service.SubmitPrivateMoment(
 		context.Background(),
 		fixture.author.Endpoint,

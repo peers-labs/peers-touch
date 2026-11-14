@@ -39,9 +39,11 @@ roots from explicit caller-supplied roots or the machine registry
 write back, and one unresolvable root or corrupt record is isolated into an
 error list instead of masking healthy worktrees.
 
-The Hook installed in one worktree reports only events resolved to that same
-installation root. It never writes an observation for a sibling worktree, and
-an ambiguous multi-root event produces no observation.
+Only the explicit `make dev-observe` reporter writes this diagnostic record.
+IDE Hooks remain read-only: a caught filesystem error can still make a sandboxed
+host reject the process, so reporting must not run on the Hook path.
+The installed Hook emits guidance only for its own resolved installation root;
+sibling and ambiguous events never write observations.
 
 Observation and `git worktree list` discovery MUST NOT register a workspace,
 allocate profile/slot, assert runtime activity, grant authorization, select a
@@ -75,7 +77,8 @@ reconciliation provides visibility without changing control-plane ownership.
 - `node --test tooling/scripts/local-dev/workflow-snapshot.test.mjs` proves
   stale observations cannot override Git branch/HEAD.
 - `rg -n 'reportWorktreeObservation' tooling/plugins/pt-ew-plugin
-  tooling/scripts/local-dev` finds only the reporter and thin hook adapter.
+  tooling/scripts/local-dev` finds only the diagnostic reporter and its store.
+- Hook tests deny filesystem writes and still require explicit workflow guidance.
 - Multi-root Hook tests prove sibling-root and ambiguous events leave the
   observation reporter untouched.
 

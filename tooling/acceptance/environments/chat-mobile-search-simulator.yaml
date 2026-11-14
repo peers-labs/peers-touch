@@ -3,6 +3,10 @@
   "base_environment": "mobile-simulator",
   "profile": {"required": false, "identity_match": false},
   "source_identity": {"commit_required": true, "workspace_digest_required": true},
+  "default_client_ids": ["sim-ios", "sim-android"],
+  "gate_client_ids": {
+    "social-content-search-mobile-native-e2e": ["desktop-author", "sim-ios", "sim-android"]
+  },
   "services": {
     "station": {
       "kind": "station",
@@ -20,10 +24,15 @@
     "authorization_required": true,
     "authorization_ref": "station.reset:mobile-social-simulator-actors",
     "target_assertion": "the Station is an approved disposable target",
-    "initial_assertion": "Alice and Bob have distinct PTIDs on the same Station"
+    "initial_assertion": "selected actors have distinct PTIDs on the same Station; Social Search has an independent Eve Desktop author"
   }],
   "credentials": [],
   "clients": [
+    {
+      "id": "desktop-author", "actor": "eve", "runtime": "native-tauri",
+      "required_service_roles": ["station"],
+      "service_bindings": {"station": {"service_id": "station", "required_kind": "station"}}
+    },
     {
       "id": "sim-ios", "actor": "alice", "runtime": "tauri-ios-simulator",
       "required_service_roles": ["station"],
@@ -55,6 +64,7 @@
   "proof_scope": {
     "proves": [
       "source-bound iOS Simulator and Android Emulator receivers",
+      "Social Search consumes Suite-prepared posts and historical comments from an independent source-bound signed Desktop author",
       "real received Chinese messages, replies and attachment filenames",
       "native Search query, canonical Chat open, return, paging and Settings navigation",
       "persisted light and dark themes and real software-keyboard input clearance",
@@ -69,6 +79,7 @@
   "cleanup": {
     "resources": [
       "appium-process", "app-installations", "ports", "storage", "simulator-boot",
+      "signed-desktop-author-process", "signed-desktop-author-storage",
       "station-process-state", "actor-fixture", "profile-leases", "deployment-leases"
     ],
     "deterministic": true

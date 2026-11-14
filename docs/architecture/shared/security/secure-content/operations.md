@@ -52,6 +52,14 @@ distributed database transaction:
 
 This chooses safe key loss over unsafe PreKey reuse.
 
+Native Suite recovery preparation uses the bundled
+`secure-content-fixture.maintainCurrentRecoveryPreKeys` action for an already
+created recovery epoch. That original fixture owns the current Actor and
+renderer generation and delegates to canonical Native maintenance. It must
+reject an epoch mismatch or empty inventory without creating another revision.
+Runtime owners do not import development source-module URLs to obtain Store
+scope; the same action operates in the prepared Native executable.
+
 ### 2.1 Accepted Client Publication Boundary
 
 Under accepted `SC-D20`, Native publishes and inventories Content PreKeys only
@@ -156,6 +164,22 @@ registers archival cleanup before attempting the remote join. Alice and Bob
 consume that explicit Federation through their ordinary client projections;
 their Social sessions never create, join, or administer it. Fixture archival
 must complete before the Suite publishes its result.
+
+Private Suite schema preparation uses `prepare_private_social_runtime` before
+retaining Station deployment/source leases. Each logical Station role supplies
+its explicit reviewed physical Profile and current source checkpoint.
+`env-check`, both deployments and the reset lease carry that target without
+rebinding the workspace or slot. Station, local Go replacement services,
+protocol inputs and remote reset code must be checkpoint-clean; unrelated
+work does not enter the Station build. Physical schema attestations and their
+reset/journal provenance remain unchanged under the role mapping.
+
+The original nine-scenario Private Social Suite now uses Runner preparation,
+the prepared Native binding and the existing lifecycle ledger. Its producer
+and consumers bind the Evidence Run separately from the provisioning epoch;
+only current-source sealed prerequisite artifacts with successful cleanup are
+reusable. The current integration contract and execution selection live in
+[Cross-Station Integration](../../../domains/social/cross-station/integration.md#6-acceptance-integration).
 
 iOS Social parity uses the retained preset Actor Identity Fixture across fresh
 Simulator installations. The parent owns `mobile.social.actor-identity`, verifies

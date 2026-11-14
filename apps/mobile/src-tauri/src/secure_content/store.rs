@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use prost::Message;
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use secure_content_core::object::{
     ObjectDescriptor, ObjectTransferDirection, ObjectTransferErrorCode, ObjectTransferFailure,
@@ -18,6 +19,7 @@ use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
 
 use crate::secure_content::proto::secure_content::v1::ContentPreKeyKind;
+use crate::social::private_reaction::PrivateReactionOperation;
 
 mod search;
 pub use search::{SearchBoundary, SearchDocumentPage, SEARCH_BACKFILL_MAX, SEARCH_BATCH_MAX};
@@ -223,8 +225,9 @@ pub struct StoredSubmission {
 pub struct StoredReactionCommand {
     pub command_id: String,
     pub post_id: String,
+    pub comment_id: String,
     pub kind: i32,
-    pub remove: bool,
+    pub operation: PrivateReactionOperation,
     pub request_sha256: [u8; 32],
     pub request_bytes: Vec<u8>,
     pub result_sha256: Option<[u8; 32]>,
@@ -1026,7 +1029,7 @@ impl PrivateSocialStore {
         comment_id: &str,
         post_id: &str,
         projection_json: &[u8],
-    ) -> Result<(), String> {
+    ) -> Result<Vec<u8>, String> {
         if comment_id.trim().is_empty() || post_id.trim().is_empty() || projection_json.is_empty() {
             return Err("private Comment projection is invalid".to_string());
         }
@@ -1035,6 +1038,8 @@ impl PrivateSocialStore {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| error.to_string())?;
         search::require_upsert(&transaction, "social-comment", comment_id, post_id)?;
+        let projection_json =
+            merge_receiver_reactions(&transaction, post_id, comment_id, projection_json)?;
         transaction
             .execute(
                 "INSERT INTO mobile_private_social_comment_projections(
@@ -1047,8 +1052,9 @@ impl PrivateSocialStore {
                 params![comment_id, post_id, projection_json, now_unix_ms()],
             )
             .map_err(|error| error.to_string())?;
-        search::update_comment(&transaction, comment_id, post_id, projection_json)?;
-        transaction.commit().map_err(|error| error.to_string())
+        search::update_comment(&transaction, comment_id, post_id, &projection_json)?;
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(projection_json)
     }
 
     pub fn comment_projections(&self, post_id: &str) -> Result<Vec<Vec<u8>>, String> {
@@ -1704,7 +1710,7 @@ impl PrivateSocialStore {
         root_key: &[u8; 32],
         endpoint_prekey_id: Option<&str>,
         projection_json: &[u8],
-    ) -> Result<(), String> {
+    ) -> Result<Vec<u8>, String> {
         if content_id.trim().is_empty()
             || generation == 0
             || post_id.trim().is_empty()
@@ -1718,6 +1724,9 @@ impl PrivateSocialStore {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| error.to_string())?;
         search::require_upsert(&transaction, "social-post", post_id, "")?;
+        let projection_json = merge_receiver_reactions(&transaction, post_id, "", projection_json)?;
+        let retained =
+            crate::secure_content::receiver::PrivateMomentReadProjection::decode(&projection_json)?;
         transaction
             .execute(
                 "INSERT INTO mobile_private_social_roots(
@@ -1756,8 +1765,14 @@ impl PrivateSocialStore {
                    updated_at_unix_ms = excluded.updated_at_unix_ms",
                 params![
                     post_id,
-                    content_id,
-                    to_i64(generation, "content generation")?,
+                    retained.content_id,
+                    to_i64(
+                        retained
+                            .generation
+                            .parse::<u64>()
+                            .map_err(|error| error.to_string())?,
+                        "content generation"
+                    )?,
                     projection_json,
                     now_unix_ms(),
                 ],
@@ -1778,8 +1793,9 @@ impl PrivateSocialStore {
                 );
             }
         }
-        search::update_post(&transaction, post_id, projection_json)?;
-        transaction.commit().map_err(|error| error.to_string())
+        search::update_post(&transaction, post_id, &projection_json)?;
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(projection_json)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1793,7 +1809,7 @@ impl PrivateSocialStore {
         root_key: &[u8; 32],
         endpoint_prekey_id: Option<&str>,
         projection_json: &[u8],
-    ) -> Result<(), String> {
+    ) -> Result<Vec<u8>, String> {
         if content_id.trim().is_empty()
             || generation == 0
             || post_id.trim().is_empty()
@@ -1808,6 +1824,8 @@ impl PrivateSocialStore {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| error.to_string())?;
         search::require_upsert(&transaction, "social-comment", comment_id, post_id)?;
+        let projection_json =
+            merge_receiver_reactions(&transaction, post_id, comment_id, projection_json)?;
         transaction
             .execute(
                 "INSERT INTO mobile_private_social_roots(
@@ -1861,8 +1879,9 @@ impl PrivateSocialStore {
                 );
             }
         }
-        search::update_comment(&transaction, comment_id, post_id, projection_json)?;
-        transaction.commit().map_err(|error| error.to_string())
+        search::update_comment(&transaction, comment_id, post_id, &projection_json)?;
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(projection_json)
     }
 
     pub fn persist_reaction_command(
@@ -1871,7 +1890,9 @@ impl PrivateSocialStore {
     ) -> Result<StoredReactionCommand, String> {
         if command.command_id.trim().is_empty()
             || command.post_id.trim().is_empty()
-            || command.kind <= 0
+            || (command.operation == PrivateReactionOperation::VotePoll
+                && (command.kind != 0 || !command.comment_id.is_empty()))
+            || (command.operation != PrivateReactionOperation::VotePoll && command.kind <= 0)
             || command.request_bytes.is_empty()
             || Sha256::digest(&command.request_bytes).as_slice() != command.request_sha256
             || command.state != ReactionCommandState::Pending
@@ -1889,7 +1910,7 @@ impl PrivateSocialStore {
         let active: Option<String> = transaction
             .query_row(
                 "SELECT command_id FROM mobile_private_social_reaction_commands
-                 WHERE post_id = ?1 AND state IN (?2, ?3, ?4, ?5)
+                 WHERE post_id = ?1 AND comment_id = ?6 AND kind = ?7 AND state IN (?2, ?3, ?4, ?5)
                  ORDER BY updated_at_unix_ms DESC LIMIT 1",
                 params![
                     command.post_id,
@@ -1897,6 +1918,8 @@ impl PrivateSocialStore {
                     ReactionCommandState::InFlight as i64,
                     ReactionCommandState::UnknownOutcome as i64,
                     ReactionCommandState::Retrying as i64,
+                    command.comment_id,
+                    command.kind,
                 ],
                 |row| row.get(0),
             )
@@ -1911,42 +1934,44 @@ impl PrivateSocialStore {
         transaction
             .execute(
                 "INSERT INTO mobile_private_social_reaction_commands(
-                    command_id, post_id, kind, remove_reaction, request_sha256,
+                    command_id, post_id, kind, operation, request_sha256,
                     request_bytes, result_sha256, result_bytes, state,
                     session_generation, lease_generation, attempt_count,
                     projection_revision, error_code, retry_after_seconds,
-                    retry_not_before_unix_ms, updated_at_unix_ms
+                    retry_not_before_unix_ms, updated_at_unix_ms, comment_id
                  ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, NULL, NULL, ?7, ?8, 0, 0, 0,
-                          NULL, NULL, NULL, ?9)
+                          NULL, NULL, NULL, ?9, ?10)
                  ON CONFLICT(command_id) DO NOTHING",
                 params![
                     command.command_id,
                     command.post_id,
                     command.kind,
-                    command.remove,
+                    command.operation as i64,
                     command.request_sha256.as_slice(),
                     command.request_bytes,
                     ReactionCommandState::Pending as i64,
                     to_i64(command.session_generation, "session generation")?,
                     now_unix_ms(),
+                    command.comment_id,
                 ],
             )
             .map_err(|error| error.to_string())?;
         let stored = transaction
             .query_row(
-                "SELECT command_id, post_id, kind, remove_reaction, request_sha256,
+                "SELECT command_id, post_id, kind, operation, request_sha256,
                         request_bytes, result_sha256, result_bytes, state,
                         session_generation, lease_generation, attempt_count,
                         projection_revision, error_code, retry_after_seconds,
-                        retry_not_before_unix_ms
+                        retry_not_before_unix_ms, comment_id
                  FROM mobile_private_social_reaction_commands WHERE command_id = ?1",
                 params![command.command_id],
                 reaction_command_from_row,
             )
             .map_err(|error| error.to_string())?;
         if stored.post_id != command.post_id
+            || stored.comment_id != command.comment_id
             || stored.kind != command.kind
-            || stored.remove != command.remove
+            || stored.operation != command.operation
             || stored.request_sha256 != command.request_sha256
             || stored.request_bytes != command.request_bytes
         {
@@ -1962,11 +1987,11 @@ impl PrivateSocialStore {
     ) -> Result<Option<StoredReactionCommand>, String> {
         self.connection()?
             .query_row(
-                "SELECT command_id, post_id, kind, remove_reaction, request_sha256,
+                "SELECT command_id, post_id, kind, operation, request_sha256,
                         request_bytes, result_sha256, result_bytes, state,
                         session_generation, lease_generation, attempt_count,
                         projection_revision, error_code, retry_after_seconds,
-                        retry_not_before_unix_ms
+                        retry_not_before_unix_ms, comment_id
                  FROM mobile_private_social_reaction_commands WHERE command_id = ?1",
                 params![command_id],
                 reaction_command_from_row,
@@ -1979,16 +2004,17 @@ impl PrivateSocialStore {
         let connection = self.connection()?;
         let mut statement = connection
             .prepare(
-                "SELECT command_id, post_id, kind, remove_reaction, request_sha256,
+                "SELECT command_id, post_id, kind, operation, request_sha256,
                         request_bytes, result_sha256, result_bytes, state,
                         session_generation, lease_generation, attempt_count,
                         projection_revision, error_code, retry_after_seconds,
-                        retry_not_before_unix_ms
+                        retry_not_before_unix_ms, comment_id
                  FROM mobile_private_social_reaction_commands AS command
                  WHERE command.rowid = (
                     SELECT MAX(latest.rowid)
                     FROM mobile_private_social_reaction_commands AS latest
                     WHERE latest.post_id = command.post_id
+                      AND latest.comment_id = command.comment_id AND latest.kind = command.kind
                  )
                  ORDER BY command.updated_at_unix_ms DESC, command.rowid DESC",
             )
@@ -2038,16 +2064,19 @@ impl PrivateSocialStore {
         }
         let command = transaction
             .query_row(
-                "SELECT command_id, post_id, kind, remove_reaction, request_sha256,
+                "SELECT command_id, post_id, kind, operation, request_sha256,
                         request_bytes, result_sha256, result_bytes, state,
                         session_generation, lease_generation, attempt_count,
                         projection_revision, error_code, retry_after_seconds,
-                        retry_not_before_unix_ms
+                        retry_not_before_unix_ms, comment_id
                  FROM mobile_private_social_reaction_commands WHERE command_id = ?1",
                 params![command_id],
                 reaction_command_from_row,
             )
             .map_err(|error| error.to_string())?;
+        if Sha256::digest(&command.request_bytes).as_slice() != command.request_sha256 {
+            return Err("private Reaction durable request hash is invalid".to_string());
+        }
         transaction.commit().map_err(|error| error.to_string())?;
         Ok(command)
     }
@@ -2110,25 +2139,22 @@ impl PrivateSocialStore {
     #[allow(clippy::too_many_arguments)]
     pub fn mark_reaction_committed(
         &self,
-        command_id: &str,
-        lease_generation: u64,
-        session_generation: u64,
+        command: &StoredReactionCommand,
         result_bytes: &[u8],
         result_sha256: &[u8; 32],
         projection_revision: u64,
-        post_id: &str,
-        projection_json: &[u8],
+        reactions: &[crate::secure_content::receiver::PrivateReactionSummaryProjection],
+        poll: Option<&crate::secure_content::receiver::PrivatePollResultProjection>,
     ) -> Result<bool, String> {
         if result_bytes.is_empty()
             || Sha256::digest(result_bytes).as_slice() != result_sha256
             || projection_revision == 0
-            || post_id.trim().is_empty()
-            || projection_json.is_empty()
+            || command.post_id.trim().is_empty()
         {
             return Err("private Reaction completion is invalid".to_string());
         }
         let mut connection = self.connection()?;
-        self.ensure_session_generation(session_generation)?;
+        self.ensure_session_generation(command.session_generation)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| error.to_string())?;
@@ -2140,37 +2166,91 @@ impl PrivateSocialStore {
                      retry_after_seconds = NULL, retry_not_before_unix_ms = NULL,
                      updated_at_unix_ms = ?5
                  WHERE command_id = ?6 AND post_id = ?7 AND state = ?8
-                   AND lease_generation = ?9 AND session_generation = ?10",
+                   AND lease_generation = ?9 AND session_generation = ?10
+                   AND comment_id = ?11 AND request_sha256 = ?12",
                 params![
                     result_sha256.as_slice(),
                     result_bytes,
                     ReactionCommandState::Committed as i64,
                     to_i64(projection_revision, "Reaction projection revision")?,
                     now_unix_ms(),
-                    command_id,
-                    post_id,
+                    command.command_id,
+                    command.post_id,
                     ReactionCommandState::InFlight as i64,
-                    to_i64(lease_generation, "Reaction lease generation")?,
-                    to_i64(session_generation, "session generation")?,
+                    to_i64(command.lease_generation, "Reaction lease generation")?,
+                    to_i64(command.session_generation, "session generation")?,
+                    command.comment_id,
+                    command.request_sha256.as_slice(),
                 ],
             )
             .map_err(|error| error.to_string())?;
         if changed == 1 {
-            let projection_changed = transaction
-                .execute(
+            let post_id = &command.post_id;
+            let comment_id = &command.comment_id;
+            search::require_upsert(&transaction, "social-post", post_id, "")?;
+            let parent_bytes: Vec<u8> = transaction.query_row(
+                "SELECT projection_json FROM mobile_private_social_read_projections WHERE post_id = ?1",
+                params![post_id], |row| row.get(0),
+            ).map_err(|error| error.to_string())?;
+            let parent = crate::secure_content::receiver::PrivateMomentReadProjection::decode(
+                &parent_bytes,
+            )?;
+            if parent.post_id != *post_id
+                || parent.state != crate::secure_content::receiver::PrivateReadState::ContentReady
+            {
+                return Err("private Reaction parent projection is unavailable".to_string());
+            }
+            let current_bytes = if comment_id.is_empty() {
+                parent_bytes
+            } else {
+                search::require_upsert(&transaction, "social-comment", comment_id, post_id)?;
+                transaction.query_row(
+                    "SELECT projection_json FROM mobile_private_social_comment_projections WHERE post_id = ?1 AND comment_id = ?2",
+                    params![post_id, comment_id], |row| row.get(0),
+                ).map_err(|error| error.to_string())?
+            };
+            let projection_json = if command.operation == PrivateReactionOperation::VotePoll {
+                let poll = poll.ok_or("private poll completion projection is unavailable")?;
+                if poll.projection_revision != projection_revision.to_string() {
+                    return Err("private poll completion revision is invalid".into());
+                }
+                crate::social::private_poll::project_target(post_id, &current_bytes, poll)?
+            } else {
+                if poll.is_some() {
+                    return Err("private Reaction cannot contain a poll result".into());
+                }
+                crate::social::private_reaction::project_reaction_target(
+                    post_id,
+                    comment_id,
+                    &current_bytes,
+                    reactions,
+                    projection_revision,
+                )?
+            };
+            let projection_changed = if comment_id.is_empty() {
+                transaction.execute(
                     "UPDATE mobile_private_social_read_projections
                      SET projection_json = ?1, updated_at_unix_ms = ?2
                      WHERE post_id = ?3",
-                    params![projection_json, now_unix_ms(), post_id],
+                    params![&projection_json, now_unix_ms(), post_id],
                 )
-                .map_err(|error| error.to_string())?;
+            } else {
+                transaction.execute(
+                    "UPDATE mobile_private_social_comment_projections
+                     SET projection_json = ?1, updated_at_unix_ms = ?2 WHERE post_id = ?3 AND comment_id = ?4",
+                    params![&projection_json, now_unix_ms(), post_id, comment_id],
+                )
+            }.map_err(|error| error.to_string())?;
             if projection_changed != 1 {
                 return Err(
                     "private Reaction completion has no private Moment projection".to_string(),
                 );
             }
-            search::require_upsert(&transaction, "social-post", post_id, "")?;
-            search::update_post(&transaction, post_id, projection_json)?;
+            if comment_id.is_empty() {
+                search::update_post(&transaction, post_id, &projection_json)?;
+            } else {
+                search::update_comment(&transaction, comment_id, post_id, &projection_json)?;
+            }
         }
         transaction.commit().map_err(|error| error.to_string())?;
         Ok(changed == 1)
@@ -2737,6 +2817,100 @@ fn bind_scope(
     Ok(())
 }
 
+/// Resource reads and command completions share the original interaction revision owner.
+fn merge_receiver_reactions(
+    connection: &Connection,
+    post_id: &str,
+    comment_id: &str,
+    incoming_bytes: &[u8],
+) -> Result<Vec<u8>, String> {
+    use crate::secure_content::private_comment::PrivateCommentProjection;
+    use crate::secure_content::receiver::{merge_reaction_fields, PrivateMomentReadProjection};
+    let current_bytes: Option<Vec<u8>> = if comment_id.is_empty() {
+        connection.query_row(
+            "SELECT projection_json FROM mobile_private_social_read_projections WHERE post_id = ?1",
+            params![post_id], |row| row.get(0),
+        )
+    } else {
+        connection.query_row(
+            "SELECT projection_json FROM mobile_private_social_comment_projections WHERE post_id = ?1 AND comment_id = ?2",
+            params![post_id, comment_id], |row| row.get(0),
+        )
+    }.optional().map_err(|error| error.to_string())?;
+    if comment_id.is_empty() {
+        let incoming_bytes =
+            crate::social::private_poll::merge_readback(current_bytes.as_deref(), incoming_bytes)?;
+        let mut incoming = PrivateMomentReadProjection::decode(&incoming_bytes)?;
+        if incoming.post_id != post_id {
+            return Err("private Social receiver target identity is invalid".to_string());
+        }
+        if let Some(bytes) = current_bytes {
+            let current = PrivateMomentReadProjection::decode(&bytes)?;
+            if current.content_id == incoming.content_id
+                && current
+                    .generation
+                    .parse::<u64>()
+                    .map_err(|error| error.to_string())?
+                    > incoming
+                        .generation
+                        .parse::<u64>()
+                        .map_err(|error| error.to_string())?
+            {
+                return Ok(bytes);
+            }
+            merge_reaction_fields(
+                &mut incoming.reaction_revision,
+                &mut incoming.reactions,
+                &mut incoming.reactions_hydrated,
+                &current.reactions,
+                current
+                    .reaction_revision
+                    .parse::<u64>()
+                    .map_err(|error| error.to_string())?,
+                current.reactions_hydrated,
+            )?;
+        }
+        incoming.encode()
+    } else {
+        let mut incoming = PrivateCommentProjection::decode(incoming_bytes)?;
+        if incoming.post_id != post_id || incoming.comment_id != comment_id {
+            return Err("private Comment receiver target identity is invalid".to_string());
+        }
+        if let Some(bytes) = current_bytes {
+            let current = PrivateCommentProjection::decode(&bytes)?;
+            if current.content_id != incoming.content_id {
+                return Err("private Comment receiver content identity conflicts".to_string());
+            }
+            if current
+                .generation
+                .parse::<u64>()
+                .map_err(|error| error.to_string())?
+                > incoming
+                    .generation
+                    .parse::<u64>()
+                    .map_err(|error| error.to_string())?
+            {
+                return Ok(bytes);
+            }
+            merge_reaction_fields(
+                &mut incoming.reaction_revision,
+                &mut incoming.reactions,
+                &mut incoming.reactions_hydrated,
+                &current.reactions,
+                current
+                    .reaction_revision
+                    .parse::<u64>()
+                    .map_err(|error| error.to_string())?,
+                current.reactions_hydrated,
+            )?;
+        }
+        if incoming.reactions_hydrated {
+            incoming.update_reactions_count()?;
+        }
+        incoming.encode()
+    }
+}
+
 fn migrate(connection: &mut Connection) -> Result<(), String> {
     connection
         .execute_batch(
@@ -2865,8 +3039,9 @@ fn migrate(connection: &mut Connection) -> Result<(), String> {
              CREATE TABLE IF NOT EXISTS mobile_private_social_reaction_commands (
                command_id TEXT PRIMARY KEY,
                post_id TEXT NOT NULL,
-               kind INTEGER NOT NULL CHECK(kind > 0),
-               remove_reaction INTEGER NOT NULL CHECK(remove_reaction IN (0, 1)),
+               comment_id TEXT NOT NULL DEFAULT '',
+               kind INTEGER NOT NULL,
+               operation INTEGER NOT NULL CHECK(operation IN (3, 4, 5)),
                request_sha256 BLOB NOT NULL CHECK(length(request_sha256) = 32),
                request_bytes BLOB NOT NULL,
                result_sha256 BLOB CHECK(result_sha256 IS NULL OR length(result_sha256) = 32),
@@ -2908,13 +3083,27 @@ fn migrate(connection: &mut Connection) -> Result<(), String> {
              );",
         )
         .map_err(|error| error.to_string())?;
-    connection
-        .execute(
-            "CREATE INDEX IF NOT EXISTS idx_mobile_private_social_reactions_post
-             ON mobile_private_social_reaction_commands(post_id, updated_at_unix_ms DESC)",
-            [],
-        )
-        .map_err(|error| error.to_string())?;
+    let reaction_has_comment_target = {
+        let mut statement = connection
+            .prepare("PRAGMA table_info(mobile_private_social_reaction_commands)")
+            .map_err(|error| error.to_string())?;
+        let columns = statement
+            .query_map([], |row| row.get::<_, String>(1))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        columns.iter().any(|column| column == "comment_id")
+    };
+    if !reaction_has_comment_target {
+        connection.execute("ALTER TABLE mobile_private_social_reaction_commands ADD COLUMN comment_id TEXT NOT NULL DEFAULT ''", [])
+            .map_err(|error| error.to_string())?;
+    }
+    migrate_reaction_operation(connection)?;
+    connection.execute_batch(
+        "DROP INDEX IF EXISTS idx_mobile_private_social_reactions_post;
+         CREATE INDEX IF NOT EXISTS idx_mobile_private_social_reactions_target
+         ON mobile_private_social_reaction_commands(post_id, comment_id, kind, updated_at_unix_ms DESC);"
+    ).map_err(|error| error.to_string())?;
     for column in [
         "mention_commitment_salt",
         "repost_commitment_salt",
@@ -3179,12 +3368,91 @@ fn prekey_publication_from_row(
     })
 }
 
+fn migrate_reaction_operation(connection: &mut Connection) -> Result<(), String> {
+    let columns = connection
+        .prepare("PRAGMA table_info(mobile_private_social_reaction_commands)")
+        .map_err(|e| e.to_string())?
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    if !columns.iter().any(|c| c == "remove_reaction") {
+        return Ok(());
+    }
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|e| e.to_string())?;
+    {
+        let mut statement = transaction.prepare(
+            "SELECT command_id, post_id, comment_id, kind, remove_reaction, request_bytes, request_sha256
+             FROM mobile_private_social_reaction_commands"
+        ).map_err(|e| e.to_string())?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i32>(3)?,
+                    row.get::<_, i64>(4)?,
+                    row.get::<_, Vec<u8>>(5)?,
+                    row.get::<_, Vec<u8>>(6)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?;
+        for row in rows {
+            let (id, post, comment, kind, remove, bytes, hash) = row.map_err(|e| e.to_string())?;
+            let request = crate::secure_content::proto::social::v1::ReactToPostRequest::decode(
+                bytes.as_slice(),
+            )
+            .map_err(|_| "private Social original interaction journal is malformed")?;
+            if !(0..=1).contains(&remove)
+                || request.encode_to_vec() != bytes
+                || request.command_id != id
+                || request.post_id != post
+                || request.comment_id != comment
+                || request.kind != kind
+                || kind <= 0
+                || request.actor_signing_key_id.trim().is_empty()
+                || request.actor_device_signature.len() != 64
+                || Sha256::digest(&bytes).as_slice() != hash
+            {
+                return Err(
+                    "private Social original interaction journal identity is invalid".into(),
+                );
+            }
+        }
+    }
+    transaction.execute_batch(
+        "CREATE TABLE mobile_private_social_reaction_operation_migration (
+            command_id TEXT PRIMARY KEY, post_id TEXT NOT NULL, comment_id TEXT NOT NULL DEFAULT '',
+            kind INTEGER NOT NULL, operation INTEGER NOT NULL CHECK(operation IN (3, 4, 5)),
+            request_sha256 BLOB NOT NULL CHECK(length(request_sha256) = 32), request_bytes BLOB NOT NULL,
+            result_sha256 BLOB CHECK(result_sha256 IS NULL OR length(result_sha256) = 32),
+            result_bytes BLOB, state INTEGER NOT NULL, session_generation INTEGER NOT NULL,
+            lease_generation INTEGER NOT NULL DEFAULT 0, attempt_count INTEGER NOT NULL DEFAULT 0,
+            projection_revision INTEGER NOT NULL DEFAULT 0, error_code TEXT,
+            retry_after_seconds INTEGER, retry_not_before_unix_ms INTEGER, updated_at_unix_ms INTEGER NOT NULL
+         );
+         INSERT INTO mobile_private_social_reaction_operation_migration
+         SELECT command_id, post_id, comment_id, kind, CASE remove_reaction WHEN 0 THEN 3 WHEN 1 THEN 4 END,
+            request_sha256, request_bytes, result_sha256, result_bytes, state, session_generation,
+            lease_generation, attempt_count, projection_revision, error_code, retry_after_seconds,
+            retry_not_before_unix_ms, updated_at_unix_ms FROM mobile_private_social_reaction_commands;
+         DROP TABLE mobile_private_social_reaction_commands;
+         ALTER TABLE mobile_private_social_reaction_operation_migration RENAME TO mobile_private_social_reaction_commands;"
+    ).map_err(|e| e.to_string())?;
+    transaction.commit().map_err(|e| e.to_string())
+}
+
 fn reaction_command_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredReactionCommand> {
     Ok(StoredReactionCommand {
         command_id: row.get(0)?,
         post_id: row.get(1)?,
+        comment_id: row.get(16)?,
         kind: row.get(2)?,
-        remove: row.get(3)?,
+        operation: PrivateReactionOperation::try_from(row.get::<_, i64>(3)?)
+            .map_err(conversion_error)?,
         request_sha256: fixed_32(row.get(4)?, "Reaction request hash")?,
         request_bytes: row.get(5)?,
         result_sha256: row
@@ -3701,14 +3969,16 @@ mod tests {
         let store = PrivateSocialStore::in_memory("station-1", "ptid:alice").unwrap();
         store.bind_session_generation(7).unwrap();
         store
-            .persist_receiver_failure(7, "post-1", br#"{"state":"CONTENT_READY"}"#, false)
+            .commit_receiver_projection(7, "post-1", 1, "post-1", &[7; 32], None,
+                br#"{"postId":"post-1","contentId":"post-1","generation":"1","authorPtid":"ptid:alice","audienceKind":"FRIENDS","state":"CONTENT_READY","content":{"kind":"TEXT","text":"parent"}}"#)
             .unwrap();
         let request_bytes = vec![1, 2, 3, 4];
         let command = StoredReactionCommand {
             command_id: "reaction-1".to_string(),
             post_id: "post-1".to_string(),
+            comment_id: String::new(),
             kind: 2,
-            remove: false,
+            operation: PrivateReactionOperation::React,
             request_sha256: Sha256::digest(&request_bytes).into(),
             request_bytes: request_bytes.clone(),
             result_sha256: None,
@@ -3743,25 +4013,218 @@ mod tests {
         let retry = store.acquire_reaction_command("reaction-1", 7).unwrap();
         let result_bytes = vec![9, 8, 7];
         let result_sha256: [u8; 32] = Sha256::digest(&result_bytes).into();
-        let projection = br#"{"state":"CONTENT_READY","reactionRevision":"2"}"#;
         assert!(store
-            .mark_reaction_committed(
-                "reaction-1",
-                retry.lease_generation,
-                7,
-                &result_bytes,
-                &result_sha256,
-                2,
-                "post-1",
-                projection,
-            )
+            .mark_reaction_committed(&retry, &result_bytes, &result_sha256, 2, &[], None)
             .unwrap());
         let committed = store.reaction_command("reaction-1").unwrap().unwrap();
         assert_eq!(committed.state, ReactionCommandState::Committed);
         assert_eq!(committed.attempt_count, 2);
+        let projection = crate::secure_content::receiver::PrivateMomentReadProjection::decode(
+            &store.read_projection("post-1").unwrap().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(projection.reaction_revision, "2");
+        assert!(projection.reactions_hydrated);
+    }
+
+    fn reaction_fixture() -> PrivateSocialStore {
+        let store = PrivateSocialStore::in_memory("station-1", "ptid:alice").unwrap();
+        store.bind_session_generation(7).unwrap();
+        store.commit_receiver_projection(7, "post-1", 1, "post-1", &[7; 32], None,
+            br#"{"postId":"post-1","contentId":"post-1","generation":"1","authorPtid":"ptid:alice","audienceKind":"FRIENDS","state":"CONTENT_READY","content":{"kind":"TEXT","text":"parent"}}"#).unwrap();
+        for id in ["root", "reply"] {
+            let projection = serde_json::json!({
+                "postId": "post-1", "commentId": id, "contentId": id, "generation": "1",
+                "replyToCommentId": if id == "reply" { "root" } else { "" },
+                "authorPtid": "ptid:bob", "state": "COMMENT_POSTED", "text": id,
+                "mentions": [], "reactionsCount": 0, "repliesCount": 0,
+            });
+            store
+                .commit_comment_receiver_projection(
+                    7,
+                    id,
+                    1,
+                    "post-1",
+                    id,
+                    &[8; 32],
+                    None,
+                    &serde_json::to_vec(&projection).unwrap(),
+                )
+                .unwrap();
+        }
+        store
+    }
+
+    fn reaction_command_fixture(id: &str, comment_id: &str, kind: i32) -> StoredReactionCommand {
+        let request_bytes = crate::secure_content::proto::social::v1::ReactToPostRequest {
+            post_id: "post-1".into(),
+            comment_id: comment_id.into(),
+            kind,
+            command_id: id.into(),
+            actor_signing_key_id: "device".into(),
+            actor_device_signature: vec![7; 64],
+        }
+        .encode_to_vec();
+        StoredReactionCommand {
+            command_id: id.into(),
+            post_id: "post-1".into(),
+            comment_id: comment_id.into(),
+            kind,
+            operation: PrivateReactionOperation::React,
+            request_sha256: Sha256::digest(&request_bytes).into(),
+            request_bytes,
+            result_sha256: None,
+            result_bytes: None,
+            state: ReactionCommandState::Pending,
+            session_generation: 7,
+            lease_generation: 0,
+            attempt_count: 0,
+            projection_revision: 0,
+            error_code: None,
+            retry_after_seconds: None,
+            retry_not_before_unix_ms: None,
+        }
+    }
+
+    #[test]
+    fn reaction_target_journal_separates_post_roots_replies_and_kinds() {
+        let store = reaction_fixture();
+        for (id, target, kind) in [
+            ("post", "", 2),
+            ("love", "", 3),
+            ("root", "root", 2),
+            ("reply", "reply", 2),
+        ] {
+            store
+                .persist_reaction_command(&reaction_command_fixture(id, target, kind))
+                .unwrap();
+        }
+        assert_eq!(store.reaction_commands().unwrap().len(), 4);
+        assert!(store
+            .persist_reaction_command(&reaction_command_fixture("duplicate", "root", 2))
+            .is_err());
+        let root = store.acquire_reaction_command("root", 7).unwrap();
+        let result = b"result";
+        let hash = Sha256::digest(result).into();
+        let wrong = StoredReactionCommand {
+            comment_id: "reply".into(),
+            ..root.clone()
+        };
+        assert!(!store
+            .mark_reaction_committed(&wrong, result, &hash, 2, &[], None)
+            .unwrap());
         assert_eq!(
-            store.read_projection("post-1").unwrap().unwrap(),
-            projection
+            store.reaction_command("root").unwrap().unwrap().state,
+            ReactionCommandState::InFlight
+        );
+        let reactions = vec![
+            crate::secure_content::receiver::PrivateReactionSummaryProjection {
+                kind: 2,
+                count: "1".into(),
+                reacted_by_viewer: true,
+            },
+        ];
+        assert!(store
+            .mark_reaction_committed(&root, result, &hash, 2, &reactions, None)
+            .unwrap());
+        let root_projection =
+            crate::secure_content::private_comment::PrivateCommentProjection::decode(
+                &store.comment_projection("root").unwrap().unwrap(),
+            )
+            .unwrap();
+        let reply_projection =
+            crate::secure_content::private_comment::PrivateCommentProjection::decode(
+                &store.comment_projection("reply").unwrap().unwrap(),
+            )
+            .unwrap();
+        assert_eq!(root_projection.reactions_count, 1);
+        assert_eq!(root_projection.text.as_deref(), Some("root"));
+        assert_eq!(reply_projection.reactions_count, 0);
+    }
+
+    #[test]
+    fn reaction_target_receipts_and_resource_reads_preserve_the_current_revision() {
+        let store = reaction_fixture();
+        let before = store.comment_projection("root").unwrap().unwrap();
+        let reactions = vec![
+            crate::secure_content::receiver::PrivateReactionSummaryProjection {
+                kind: 2,
+                count: "4".into(),
+                reacted_by_viewer: true,
+            },
+        ];
+        let current = crate::social::private_reaction::project_reaction_target(
+            "post-1", "root", &before, &reactions, 5,
+        )
+        .unwrap();
+        store
+            .persist_comment_projection("root", "post-1", &current)
+            .unwrap();
+        let readback = store
+            .commit_comment_receiver_projection(
+                7, "root", 1, "post-1", "root", &[8; 32], None, &before,
+            )
+            .unwrap();
+        assert_eq!(readback, current);
+        store
+            .persist_reaction_command(&reaction_command_fixture("root", "root", 2))
+            .unwrap();
+        let command = store.acquire_reaction_command("root", 7).unwrap();
+        let result = b"older-result";
+        let hash = Sha256::digest(result).into();
+        assert!(store
+            .mark_reaction_committed(&command, result, &hash, 4, &[], None)
+            .unwrap());
+        assert_eq!(store.comment_projection("root").unwrap().unwrap(), current);
+        assert!(crate::social::private_reaction::project_reaction_target(
+            "post-1",
+            "root",
+            &current,
+            &[],
+            5
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn reaction_target_migration_preserves_exact_signed_bytes_and_rejects_hash_tampering() {
+        let store = reaction_fixture();
+        let original = reaction_command_fixture("old-post", "", 2);
+        store.persist_reaction_command(&original).unwrap();
+        {
+            let mut connection = store.connection().unwrap();
+            connection
+                .execute_batch(
+                    "DROP INDEX idx_mobile_private_social_reactions_target;
+                ALTER TABLE mobile_private_social_reaction_commands DROP COLUMN comment_id;
+                ALTER TABLE mobile_private_social_reaction_commands DROP COLUMN operation;
+                ALTER TABLE mobile_private_social_reaction_commands ADD COLUMN remove_reaction INTEGER NOT NULL DEFAULT 0;",
+                )
+                .unwrap();
+            migrate(&mut connection).unwrap();
+        }
+        let migrated = store.reaction_command("old-post").unwrap().unwrap();
+        assert_eq!(migrated.comment_id, "");
+        assert_eq!(migrated.operation, PrivateReactionOperation::React);
+        let columns = store
+            .connection()
+            .unwrap()
+            .prepare("PRAGMA table_info(mobile_private_social_reaction_commands)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(!columns.iter().any(|column| column == "remove_reaction"));
+        assert_eq!(migrated.request_bytes, original.request_bytes);
+        assert_eq!(migrated.request_sha256, original.request_sha256);
+        store.connection().unwrap().execute(
+            "UPDATE mobile_private_social_reaction_commands SET request_bytes = ?1 WHERE command_id = ?2",
+            params![b"tampered", "old-post"]).unwrap();
+        assert!(store.acquire_reaction_command("old-post", 7).is_err());
+        assert_eq!(
+            store.reaction_command("old-post").unwrap().unwrap().state,
+            ReactionCommandState::Pending
         );
     }
 

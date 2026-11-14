@@ -7,16 +7,12 @@ import (
 
 // PublicPostRepository accesses `social_public_posts` exclusively. Its
 // signatures take no `viewerID` because public posts are visible to
-// everyone — including anonymous viewers and (post-v1) federated outbound
-// fan-out. The implementation MUST panic if `Create` is called with a
-// non-PUBLIC post; this is the first of the three defense lines (see
-// `docs/architecture/domains/social/core/moments.md §8`).
+// everyone — including anonymous viewers. Public object mutation belongs
+// exclusively to the verified FeedProjector, not this read repository.
 type PublicPostRepository interface {
-	Create(ctx context.Context, p *Post) error
 	GetByID(ctx context.Context, id uint64) (*Post, error)
 	GetByIDs(ctx context.Context, ids []uint64) ([]*Post, error)
 	ProbeRecordState(ctx context.Context, id uint64) (PostRecordState, error)
-	Delete(ctx context.Context, id uint64, authorPTID string) error
 
 	ListByAuthor(ctx context.Context, authorPTID string, c Cursor, limit int) ([]*Post, error)
 	ListPublic(ctx context.Context, c Cursor, limit int) ([]*Post, error)
@@ -106,23 +102,15 @@ type CommentRepository interface {
 	CountByPost(ctx context.Context, postID uint64) (int64, error)
 }
 
-// ReactionRepository persists `social_reactions`. Toggling a reaction is
-// `Add` followed by `Aggregate` to refresh the denormalized JSON on the
-// parent post; the ReactionService composes both.
+// ReactionRepository reads derived reaction rows. Signed Feed and private
+// command transactions own writes; the service derives viewer-bound summaries.
 type ReactionRepository interface {
 	Add(ctx context.Context, r *Reaction) error
 	Remove(ctx context.Context, postID string, actorPTID string, kind ReactionKindStr) error
 	ListByPost(ctx context.Context, postID string) ([]Reaction, error)
+	ListByComments(ctx context.Context, postID string, commentIDs []string) (map[string][]Reaction, error)
 	Aggregate(ctx context.Context, postID string) ([]ReactionSummary, error)
 	IsReactedByViewer(ctx context.Context, postID string, viewerPTID string, kind ReactionKindStr) (bool, error)
-	MutatePrivatePost(
-		ctx context.Context,
-		postID string,
-		actorPTID string,
-		kind ReactionKindStr,
-		remove bool,
-	) (string, []Reaction, error)
-
 	// HydrateReactedByViewer takes a slice of reaction summaries (already
 	// populated with Kind+Count by `Aggregate`) and fills in the
 	// `ReactedByViewer` flag for each row from one round-trip. Anonymous
@@ -140,7 +128,7 @@ type ReactionKindStr = string
 // All operations are owner-scoped — the application layer ALWAYS asserts
 // `circle.OwnerID == callerID` before delegating to the repo.
 type CircleRepository interface {
-	Create(ctx context.Context, c *Circle) error
+	Create(ctx context.Context, c *Circle, memberPTIDs []string) error
 	GetByID(ctx context.Context, id uint64) (*Circle, error)
 	Update(ctx context.Context, c *Circle) error
 	Delete(ctx context.Context, id uint64, ownerPTID string) error
@@ -148,7 +136,7 @@ type CircleRepository interface {
 
 	AddMembers(ctx context.Context, circleID uint64, actorPTIDs []string) (added int32, total int64, err error)
 	RemoveMembers(ctx context.Context, circleID uint64, actorPTIDs []string) (removed int32, total int64, err error)
-	ListMembers(ctx context.Context, circleID uint64, c Cursor, limit int) ([]*CircleMember, error)
+	ListMembers(ctx context.Context, circleID uint64, c CircleMemberCursor, limit int) ([]*CircleMember, error)
 	IsMember(ctx context.Context, circleID uint64, actorPTID string) (bool, error)
 
 	// MembershipsForViewer returns the IDs of circles the viewer is a

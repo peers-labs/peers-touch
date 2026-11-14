@@ -81,6 +81,10 @@ type Actor struct {
 	// just a cache miss.
 	CachedUntilUnixMs int64 `gorm:"column:cached_until_unix_ms;default:0;not null"`
 
+	// Original Home-signed profile bytes belong to the remote Actor cache.
+	// Display columns cannot reconstruct a cryptographic profile proof.
+	FederationProfileEnvelope []byte `gorm:"column:federation_profile_envelope;type:bytea"`
+
 	CreatedAt time.Time `gorm:"column:created_at"`
 	UpdatedAt time.Time `gorm:"column:updated_at"`
 }

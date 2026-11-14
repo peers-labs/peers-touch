@@ -19,6 +19,8 @@ import { fileURLToPath } from 'node:url';
 import {
   CONTENT_PREKEY_CLIENT_PROTO_INPUTS,
   CONTENT_PREKEY_CLIENT_SCOPE,
+  FEDERATION_RESOLVE_PROOF_SCOPE,
+  FEDERATION_RESOLVE_PROOF_PROTO_INPUTS,
   PROTO_INPUTS,
   SecureContentProtoError,
   buildOutputManifest,
@@ -46,6 +48,12 @@ function goPackageFor(input) {
   }
   if (input === 'domain/federation/delivery.proto') {
     return `${STATION_PREFIX}frame/core/federation/model;model`;
+  }
+  if (input === 'domain/federation/profile.proto') {
+    return `${STATION_PREFIX}frame/touch/federation/profile/pb;pb`;
+  }
+  if (input === 'domain/federation/federation_resolve.proto') {
+    return `${STATION_PREFIX}frame/touch/federation/api/pb;pb`;
   }
   if (input.startsWith('domain/social/')) {
     return `${STATION_PREFIX}frame/touch/model;model`;
@@ -299,6 +307,19 @@ test('content-prekey-client scope contains exactly its six declared outputs', ()
         'apps/station/frame/touch/model/error.pb.go',
       ],
     );
+  } finally {
+    scope.close();
+  }
+});
+
+test('federation-resolve-proof scope touches only the original proof contracts', () => {
+  const scope = fixture();
+  try {
+    const manifest = buildOutputManifest(scope.root, FEDERATION_RESOLVE_PROOF_SCOPE);
+    assert.deepEqual(manifest.inputs, FEDERATION_RESOLVE_PROOF_PROTO_INPUTS);
+    assert.equal(manifest.outputs.length, 6);
+    assert.ok(manifest.outputs.every(output =>
+      /(?:federation_resolve|profile)(?:\.pb\.go|_pb\.ts)$/.test(output.destination)));
   } finally {
     scope.close();
   }

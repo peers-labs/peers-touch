@@ -25,8 +25,12 @@ test('FLOW-A04 normalizes workspace context without constructing OWNER authority
   assert.equal(normalized.event, 'PRE_TOOL_USE');
   assert.equal(Object.hasOwn(normalized, 'bindingIdentity'), false);
   // The tool name is retained (not promoted to authority) so the append-only
-  // skill event log can record what actually ran on every host.
+  // skill event log can record what actually ran on every host. The raw
+  // tool_input object is still stripped, and edit targets are surfaced as
+  // willEditFilepaths instead.
   assert.equal(normalized.toolName, 'apply_patch');
+  assert.equal(Object.hasOwn(normalized, 'toolInput'), false);
+  assert.deepEqual(normalized.willEditFilepaths, ['/workspace/file.ts']);
 });
 
 test('tool name normalization is shared across trae, cursor and codex payloads', () => {

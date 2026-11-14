@@ -14,6 +14,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	securecontentkernel "github.com/peers-labs/peers-touch/station/app/internal/securecontent"
 	actoridentitydomain "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/domain"
+	"github.com/peers-labs/peers-touch/station/app/subserver/events"
 	keyexchangedomain "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/domain"
 	socialdomain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
@@ -1560,17 +1561,62 @@ func TestPrivateReactionUsesCanonicalPrivatePostIdentityAndCurrentGrant(
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
-	reactions := NewReactionService(
-		fixture.database,
-		infrastructure.NewRepos(fixture.database),
-	)
+	if err := fixture.database.Where("ptid = ?", "ptid:alice").FirstOrCreate(&dbmodel.Actor{
+		PTID: "ptid:alice", Namespace: "peers", PreferredUsername: "alice",
+		Email: "alice@station.test", PasswordHash: "test", FederatedHandle: "alice@station.test",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	bus, err := events.NewDurableEventBus(fixture.database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(bus.Close)
+	publisher := NewMomentEventPublisher()
+	publisher.bus = func() events.EventBus { return bus }
+	publisher.now = func() time.Time { return fixture.clock.now }
+	if err := fixture.service.ConfigureFederatedPrivateDelivery(
+		"station-local", allowFederatedPrivateMembership{}, publisher,
+	); err != nil {
+		t.Fatal(err)
+	}
+	bob := socialdomain.PrivateContentAuthor{
+		Endpoint: privateCommentBobViewer(), HomeStationPeerID: "station-local",
+	}
+	bob.Endpoint.Actor.Acct = "bob@station.test"
+	var sequence int
+	react := func(kind actormodel.ReactionKind) ([]*actormodel.ReactionSummary, error) {
+		sequence++
+		request := &actormodel.ReactToPostRequest{
+			PostId: prepared.GetPlan().GetResource().GetContentId(),
+			Kind:   kind, CommandId: fmt.Sprintf("reaction-%d", sequence), ActorSigningKeyId: "author-key",
+		}
+		signing, err := canonicalFederatedPrivateInteractionRequestSigningBytes(
+			privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_REACT, request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.ActorDeviceSignature = ed25519.Sign(fixture.authorPrivateKey, signing)
+		response, err := fixture.service.ReactPrivateMoment(context.Background(), bob, request)
+		return response.GetReactions(), err
+	}
+	unreact := func(kind actormodel.ReactionKind) ([]*actormodel.ReactionSummary, error) {
+		sequence++
+		request := &actormodel.UnreactToPostRequest{
+			PostId: prepared.GetPlan().GetResource().GetContentId(),
+			Kind:   kind, CommandId: fmt.Sprintf("reaction-%d", sequence), ActorSigningKeyId: "author-key",
+		}
+		signing, err := canonicalFederatedPrivateInteractionRequestSigningBytes(
+			privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_UNREACT, request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.ActorDeviceSignature = ed25519.Sign(fixture.authorPrivateKey, signing)
+		response, err := fixture.service.UnreactPrivateMoment(context.Background(), bob, request)
+		return response.GetReactions(), err
+	}
 	postID := prepared.GetPlan().GetResource().GetContentId()
-	summaries, err := reactions.React(
-		context.Background(),
-		postID,
-		"ptid:bob",
-		actormodel.ReactionKind_REACTION_LIKE,
-	)
+	summaries, err := react(actormodel.ReactionKind_REACTION_LIKE)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1600,12 +1646,7 @@ func TestPrivateReactionUsesCanonicalPrivatePostIdentityAndCurrentGrant(
 			read.GetResource().GetMetadata().GetStats().GetLikesCount(),
 		)
 	}
-	summaries, err = reactions.Unreact(
-		context.Background(),
-		postID,
-		"ptid:bob",
-		actormodel.ReactionKind_REACTION_LIKE,
-	)
+	summaries, err = unreact(actormodel.ReactionKind_REACTION_LIKE)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1632,12 +1673,7 @@ func TestPrivateReactionUsesCanonicalPrivatePostIdentityAndCurrentGrant(
 			read.GetResource().GetMetadata().GetStats().GetLikesCount(),
 		)
 	}
-	if _, err := reactions.React(
-		context.Background(),
-		postID,
-		"ptid:bob",
-		actormodel.ReactionKind_REACTION_LIKE,
-	); err != nil {
+	if _, err := react(actormodel.ReactionKind_REACTION_LIKE); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1648,22 +1684,12 @@ func TestPrivateReactionUsesCanonicalPrivatePostIdentityAndCurrentGrant(
 	).Error; err != nil {
 		t.Fatal(err)
 	}
-	_, err = reactions.React(
-		context.Background(),
-		postID,
-		"ptid:bob",
-		actormodel.ReactionKind_REACTION_LOVE,
-	)
+	_, err = react(actormodel.ReactionKind_REACTION_LOVE)
 	if socialdomain.PrivateContentCodeOf(err) !=
 		socialdomain.PrivateContentNotFound {
 		t.Fatalf("revoked private reaction error = %v", err)
 	}
-	_, err = reactions.Unreact(
-		context.Background(),
-		postID,
-		"ptid:bob",
-		actormodel.ReactionKind_REACTION_LIKE,
-	)
+	_, err = unreact(actormodel.ReactionKind_REACTION_LIKE)
 	if socialdomain.PrivateContentCodeOf(err) !=
 		socialdomain.PrivateContentNotFound {
 		t.Fatalf("revoked private unreact error = %v", err)

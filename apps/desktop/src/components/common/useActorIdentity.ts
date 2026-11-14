@@ -81,6 +81,13 @@ export function useActorIdentity(
     )?.trim() || '';
     return {
       ...identity,
+      // Effective viewer actor used for the isSelf decision, plus its two raw
+      // sources. Exposed for acceptance diagnostics: a native run can tell an
+      // author/self mismatch apart from socialChat masking the authoritative
+      // authenticated session actor after a rapid account switch.
+      currentUserPtid: effectiveCurrentUserPtid,
+      sessionActorPtid,
+      socialChatUserPtid: currentUserPtid,
       displayName: options.requireCanonicalProfile
         ? canonicalDisplayName
         : identity.displayName,
@@ -97,6 +104,7 @@ export function useActorIdentity(
   }, [
     actorPtid,
     actorStationEntries,
+    currentUserPtid,
     currentUserProfile,
     effectiveCurrentUserPtid,
     federationSelf,
@@ -106,6 +114,7 @@ export function useActorIdentity(
     options.requireCanonicalProfile,
     peerProfile,
     request,
+    sessionActorPtid,
     sessions,
   ]);
 }

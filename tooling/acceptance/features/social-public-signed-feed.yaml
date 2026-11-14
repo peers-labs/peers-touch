@@ -1,0 +1,42 @@
+{
+  "id": "social-public-signed-feed",
+  "status": "active",
+  "product_area": "social",
+  "owners": [
+    "apps/station/app/subserver/social/**",
+    "apps/desktop/src-tauri/src/social/public_feed*",
+    "packages/station-trust/src/feed_log.rs",
+    "model/domain/social/feed_log.proto"
+  ],
+  "truth_sources": [
+    "Independent Actor Identity retained root and device authorization",
+    "Actor-root-authorized device-signed public/v1 events",
+    "Native SQLCipher journal, verified prefixes and immutable interaction receipts"
+  ],
+  "visible_surfaces": [
+    {"type": "http", "route": "/api/v1/social/feed/events/submit"},
+    {"type": "desktop", "route": "#/moments"}
+  ],
+  "required_gates": ["social-public-feed-source", "station-api-ownership", "social-public-feed-native-e2e"],
+  "acceptance": {
+    "runtime": [
+      "source checks discover and execute signed feed and expiration/ACK regressions",
+      "Native publication, late follower history, non-follower interaction and restart require the independent public-feed Suite",
+      "AFL-J01 through AFL-J04 fault and prototype parity scope remains UNPROVEN until all named assertions are exercised"
+    ],
+    "visible": [
+      "AFL-J01 publication and exact retry",
+      "AFL-J02 missing notification reconciliation and late follower history",
+      "AFL-J03 non-follower comment and reaction plus independent thread history",
+      "IC-J01 root-comment and reply LIKE set/remove converge on both Native readers and survive receiver restart",
+      "AFL-O09 original two-Station Suite binds real publication and confirmed comment to verified Circuit routes, unchanged authenticated TCP legs, immutable complete packet capture and receiver paint; Relay exposes only transport metadata",
+      "AFL-J04 restart, cancellation of subscription, second device denial and tamper rejection"
+    ]
+  },
+  "negative": [
+    "SOURCE_CHECK never proves the visible Journeys",
+    "Existing private Social Native evidence cannot prove public signed-feed behavior",
+    "Unsigned public writes and Station signing on behalf of users are rejected",
+    "No v1 multi-device writing, station-destruction recovery or private subchains"
+  ]
+}

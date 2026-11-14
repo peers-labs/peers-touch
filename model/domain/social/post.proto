@@ -5,6 +5,8 @@ package peers_touch.model.social.v1;
 import "google/protobuf/timestamp.proto";
 import "domain/activity/activity.proto";
 import "domain/common/common.proto";
+import "domain/social/feed_log.proto";
+import "domain/social/poll.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
 
@@ -52,6 +54,9 @@ message Post {
   // prefer `typed_mentions` which carries offset/length so highlighting
   // works without re-parsing the text.
   repeated Mention typed_mentions = 52;
+  // Discovery hint only. Clients bind it to independently verified Feed events
+  // before displaying public content or using it as a signed mutation target.
+  string public_feed_ref = 53;
 }
 
 enum PostType {
@@ -135,9 +140,10 @@ message LinkPost {
 
 message PollPost {
   string text = 1;
-  peers_touch.model.activity.v1.Poll poll = 2;
+  peers_touch.model.social.feed.v1.FeedPollDefinition poll = 2;
   repeated string hashtags = 3;
   repeated string mentions = 4;
+  PollResult result = 5;
 }
 
 message RepostPost {
@@ -270,6 +276,10 @@ message CreatePollPostRequest {
   repeated string options = 3;
   int32 duration_hours = 4;
   bool multiple_choice = 5;
+  uint32 min_choices = 6;
+  uint32 max_choices = 7;
+  // Exactly one explicit deadline or duration measured from signed creation.
+  int64 expires_at_unix_ms = 8;
 }
 
 message CreateRepostRequest {
@@ -692,6 +702,8 @@ message ReactToPostRequest {
   string command_id = 3;
   string actor_signing_key_id = 4;
   bytes actor_device_signature = 5;
+  // Optional private comment ID; post_id remains the permission anchor.
+  string comment_id = 6;
 }
 
 message ReactToPostResponse {
@@ -702,6 +714,7 @@ message ReactToPostResponse {
   string command_id = 3;
   bool exact_replay = 4;
   uint64 projection_revision = 5;
+  string comment_id = 6;
 }
 
 message UnreactToPostRequest {
@@ -710,6 +723,7 @@ message UnreactToPostRequest {
   string command_id = 3;
   string actor_signing_key_id = 4;
   bytes actor_device_signature = 5;
+  string comment_id = 6;
 }
 
 message UnreactToPostResponse {
@@ -718,6 +732,7 @@ message UnreactToPostResponse {
   string command_id = 3;
   bool exact_replay = 4;
   uint64 projection_revision = 5;
+  string comment_id = 6;
 }
 
 message ListReactionsRequest {

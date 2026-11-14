@@ -56,7 +56,13 @@ cost/logs. A later request verifies both identity and bytes before reuse.
 Incomplete frontend work is never retained as qualified output, and source or
 output drift invalidates the checkpoint. The final binary receipt still requires
 Cargo success and source/output recheck. Neither checkpoint nor cache is a
-product result; all original timeouts remain in force.
+product result; explicit caller and parent deadlines remain in force.
+After compiler success, the owner immediately retains the complete output
+inventory as `PENDING_INPUT_RECHECK`. Expiry during the subsequent full installed
+input observation cannot discard completed work. A later request reobserves the
+entire source/configuration/toolchain identity and output bytes under the same
+OS lock before promoting that stage to `VERIFIED`; any mismatch rebuilds it.
+Pending stages never qualify a binary or bypass final source/output verification.
 The build observer still persists terminal failure, but
 `EphemeralLaunchCleanupFailed` must remain the original exception with its
 cleanup result. Converting it to `BlockedError` lets a parent report successful
@@ -98,8 +104,8 @@ Run from the selected worktree:
 `test_make_and_policy_python_prefix_reuse_the_same_verified_build` exercises
 the real owner with synthetic tools and requires one build across both caller
 forms. Qualification additionally compares actual Make/Cell identities and
-requires current-source `VERIFIED_BUILD` in the Native Gate. Budget limits remain
-unchanged; self-tests alone do not prove a product Journey.
+requires current-source `VERIFIED_BUILD` in the Native Gate. Explicit caller and
+parent budgets remain authoritative; self-tests alone do not prove a product Journey.
 `test_native_installation_drift_invalidates_both_build_receipts` requires one
 build for stable installation inputs, then frontend and binary rebuilds for
 compiler and SDK content changes. `test_native_toolchain` additionally compiles
@@ -116,6 +122,10 @@ installation observations remain necessary supporting evidence.
 `test_failed_process_cleanup_preserves_exception_and_terminal_observation`
 requires both the original Launcher failure and the persisted failed observation,
 without a successful build receipt.
+`test_completed_frontend_survives_input_recheck_deadline_and_is_requalified`
+requires one successful compiler run across a failed recheck and a fresh
+public-owner request. `test_pending_frontend_stage_rejects_input_or_output_drift`
+requires a rebuild for each source, tool or output change after that failure.
 `test_synthetic_source_commits_do_not_invoke_operator_hooks` installs a real
 recording Hook and Trace2 target through a temporary global Git configuration.
 Fixture creation and a later source commit must leave both markers absent. Run the complete build
@@ -123,6 +133,16 @@ and attestation modules, then the unchanged Runtime qualification command within
 the original deadline; partial unittest output remains UNPROVEN.
 
 ## Total budget includes synchronous publication
+
+The canonical cold-build owner defaults to 600 seconds for compilation, three
+complete installed-input observations and atomic publication together. Make and
+Native Cell consume that same default. A shorter explicit build limit or outer
+Gate deadline still cancels the entire operation, including final source,
+output and receipt checks. Completed-stage reuse repairs interrupted work; it
+must not be required for an ordinary cold build to fit its default budget.
+`test_default_budget_covers_cold_build_and_complete_input_rechecks` advances a
+virtual clock across three actual identity passes and verifies one complete
+cold request past 130 seconds, without skipping an inventory or process.
 
 An actual cold build published READY after 130.849504 seconds against its
 130-second limit. Child timeouts and installed-input guards did not cover

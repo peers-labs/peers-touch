@@ -191,8 +191,6 @@ func (n *CommentMentionNotifier) deliver(
 	deduplicated := dedupeMentionRecipients(recipientPTIDs, authorPTID, n, visibility)
 	if len(deduplicated) > socialCommentMentionMaxTargets {
 		logger.Warn(ctx, "comment.mention.notification: target cap reached, truncating fan-out",
-			"post_id", postID,
-			"comment_id", commentID,
 			"targets", len(deduplicated),
 			"cap", socialCommentMentionMaxTargets,
 		)
@@ -227,14 +225,12 @@ func (n *CommentMentionNotifier) deliver(
 		case err == nil:
 			n.observe(visibility, socialCommentMentionOutcomeProduced)
 		case errors.Is(err, notification.ErrBridgeUnregistered):
-			logger.Warn(ctx, "comment.mention.notification: bridge unregistered",
-				"post_id", postID, "comment_id", commentID)
+			logger.Warn(ctx, "comment.mention.notification: bridge unregistered")
 			n.observe(visibility, socialCommentMentionOutcomeUnregistered)
 		default:
 			// The comment commit is never rolled back; the recipient
 			// sees the mention on the next thread read regardless.
-			logger.Warn(ctx, "comment.mention.notification: produce failed",
-				"post_id", postID, "comment_id", commentID, "error", err)
+			logger.Warn(ctx, "comment.mention.notification: produce failed")
 			n.observe(visibility, socialCommentMentionOutcomeFailed)
 		}
 	}

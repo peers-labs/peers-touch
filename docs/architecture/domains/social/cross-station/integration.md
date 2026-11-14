@@ -1,8 +1,8 @@
 # Cross-Station Private Social - Integration
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-10-03 | **Updated**: 2026-10-06
+> **Version**: v1.4
+> **Created**: 2026-10-03 | **Updated**: 2026-11-08
 > **Owner**: Social / Federation
 
 ---
@@ -208,6 +208,42 @@ Required gates:
 The existing `social-private-desktop-e2e` remains the same-Station and public
 continuity regression. No Mobile gate is added retroactively to this Desktop plan;
 Mobile owns separate required iOS, Android and interop cells.
+
+### Runner-owned Private Suite
+
+`social-cross-station-native-e2e` is the sole producer of the original AS17 through
+AS24 and `same-station-regression` Suite. Both development and formal policies
+use shared Runner E2E preparation, `CrossStationSocialNativeProvisioner`, the
+original `W7RuntimeOwner.run_social_cross_station_suite`, and its existing
+receiver, painted comment/reply, durable retry and empty-device recovery oracles.
+
+The provisioner prepares both physical schemas through the existing Secure
+Content owner before retaining service/source leases. It independently verifies
+live schema and Station identity, then inventories unchanged schema/reset/journal
+bytes with the explicit logical role-to-physical Profile mapping. Preparation
+epoch and Evidence Run ID are distinct identities and are bound independently.
+
+`PreparedSocialNativeRuntime` delegates binary, ports, Station discovery, storage
+and process ownership to the prepared Native binding. Authentication uses the
+original Foundation Harness; logout and stop use `NativeClientLifecycleLedger`.
+Alice and Bob launch once, Eve is fixture-only, and fresh-storage Bob2 replaces
+Bob. The Suite retains one preparation, three launches and at most two Native
+windows; no scenario rebuilds or redeploys.
+
+`social-private-desktop-e2e` and `social-cross-station-desktop-functional` declare
+the producer dependency in the execution graph. Consumers require the original
+current-source sealed manifest/result, exact run/epoch, physical schema and
+successful cleanup. Development consumes `developmentManifest`; formal consumes
+`runManifest`. Consumers retain original ArtifactRefs without copying the
+producer evidence. The Suite cannot certify itself as formal proof.
+
+Current execution is specified by the
+[Social completion Plan](../federation/execution-plans/20261108-social-completion-native-runner/plan.md).
+Desktop commands explicitly select `desktop-macos-native` and reviewed
+`--service-profile` bindings. Machine Dev owns the workspace slot. Historical
+slot13, private CLI and activation-ancestor/result-discovery routes are absent
+from this Suite. Historical frozen Plans are records, not current execution
+instructions; other Secure Content Suites retain their own admission owners.
 
 ## 7. Atomic Cutovers
 

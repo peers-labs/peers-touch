@@ -604,7 +604,8 @@
         "apps/desktop/src-tauri/src/infrastructure/station_registry.rs",
         "apps/desktop/src-tauri/src/infrastructure/station/transport/mod.rs",
         "apps/desktop/src-tauri/src/interface/tauri_commands/station.rs",
-        "apps/desktop/src/components/common/StationPicker.tsx"
+        "apps/desktop/src/pages/login/StationSetupPanel.tsx",
+        "apps/desktop/src/pages/login/useStationRegistry.ts"
       ],
       "evidence": {
         "truth_sources": [

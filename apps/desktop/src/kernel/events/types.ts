@@ -322,6 +322,7 @@ export interface MomentCommentedPayload extends MomentRealtimeBasePayload {
 }
 
 export interface MomentReactedPayload extends MomentRealtimeBasePayload {
+  commentId?: string;
   reactionActorPtid?: string;
   kind?: string;
   removed: boolean;
@@ -395,6 +396,7 @@ export interface EventPayloadMap {
   [EVENT.MOMENT_REVOKED]: MomentRevokedPayload;
   [EVENT.MOMENT_COMMENTED]: MomentCommentedPayload;
   [EVENT.MOMENT_REACTED]: MomentReactedPayload;
+  [EVENT.MOMENT_UPDATED]: MomentRealtimeBasePayload;
   [EVENT.MOMENT_RESYNC_REQUESTED]: MomentResyncRequestedPayload;
   [EVENT.RELATIONSHIP_CHANGED]: RelationshipChangedPayload;
 }

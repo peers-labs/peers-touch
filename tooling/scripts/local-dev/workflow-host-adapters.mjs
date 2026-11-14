@@ -122,6 +122,9 @@ export function normalizeHostPayload(raw, options = {}) {
     willEditFilepaths: uniqueStrings([
       ...stringArray(payload.will_edit_filepaths),
       ...stringArray(payload.willEditFilepaths),
+      ...(event === 'PRE_TOOL_USE'
+        ? [firstString(toolInput.file_path, toolInput.filePath)]
+        : []),
     ]),
   };
 }

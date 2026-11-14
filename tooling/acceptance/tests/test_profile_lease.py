@@ -173,6 +173,7 @@ class ProfileLeaseTests(unittest.TestCase):
         self.assertIn(
             "${ACCEPTANCE_RUNTIME_ENV_PREFIX}"
             "${EXTERNAL_RUNTIME_ENV_PREFIX}"
+            "${SOCIAL_ACCEPTANCE_ENV_PREFIX}"
             "${CLI_RUNTIME_ENV_PREFIX}"
             "${PT_DEPLOY_RESTART_CMD}",
             deploy_source,
@@ -440,6 +441,7 @@ class RemoteGitSourceLeaseTests(unittest.TestCase):
             )
             lease = MagicMock()
             lease.resource = "station-three"
+            lease.connection_descriptor = None
             provisioner = DummyProvisioner(
                 EnvironmentContract(id="lease-test")
             )

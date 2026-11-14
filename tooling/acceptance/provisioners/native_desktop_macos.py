@@ -61,7 +61,6 @@ from .desktop_acceptance_build import DesktopAcceptanceBuild
 NATIVE_WINDOW_READY_TIMEOUT_SECONDS = 30.0
 NATIVE_FOCUS_READY_TIMEOUT_SECONDS = 30.0
 
-
 _WINDOW_BOUNDS_PROBE = r"""
 import json
 import sys
@@ -196,6 +195,7 @@ class NativeDesktopMacOSProvisioner:
         expires_at = datetime.now(timezone.utc) + timedelta(
             seconds=self.contract.lease_ttl_seconds
         )
+        self._observation_deadline = time.monotonic() + self.contract.lease_ttl_seconds
         self._write_state(
             {
                 "cellId": self.contract.cell_id,
@@ -207,7 +207,7 @@ class NativeDesktopMacOSProvisioner:
         try:
             source = self._source_identity()
             platform_identity, transport, display = self._host_identity()
-            adapter, webdriver_port = self._probe_native_adapter(source, run_id)
+            adapter, webdriver_port = self._qualified_native_adapter(source, run_id)
             current = source_identity(self.source_root)
             if (
                 current["commit"] != source.commit
@@ -374,6 +374,19 @@ class NativeDesktopMacOSProvisioner:
             ),
         )
 
+    def _qualified_native_adapter(
+        self,
+        source: CellSourceIdentity,
+        run_id: str,
+    ) -> tuple[CellAdapterIdentity, int]:
+        """Qualify once against one frozen prelaunch operator baseline.
+
+        Focus resources also identify real pointer/object mismatches and
+        cleanup failures. Retrying by resource name would erase that failure
+        and freeze the changed operator as a successful replacement baseline.
+        """
+        return self._probe_native_adapter(source, run_id)
+
     def _probe_native_adapter(
         self,
         source: CellSourceIdentity,
@@ -412,9 +425,13 @@ class NativeDesktopMacOSProvisioner:
         screenshot = screenshot_root / "desktop.png"
         log_path: Path | None = None
         session_stopped = False
+        operator = None
         try:
             operator = (
-                adapter.observe_operator()
+                adapter.observe_operator(deadline_monotonic=getattr(
+                    self, "_observation_deadline",
+                    time.monotonic() + self.contract.lease_ttl_seconds,
+                ))
                 if input_mode is NativeInputMode.SEMANTIC_NON_INTRUSIVE
                 else None
             )
@@ -564,13 +581,20 @@ class NativeDesktopMacOSProvisioner:
             log_path = session.log_path
             return probes, webdriver_port
         finally:
-            if not session_stopped:
-                session.stop()
-            shutil.rmtree(screenshot_root, ignore_errors=True)
-            if log_path is None:
-                log_path = launcher.log_path
-            if log_path is not None:
-                log_path.unlink(missing_ok=True)
+            primary = sys.exc_info()
+            try:
+                if not session_stopped:
+                    session.stop()
+            finally:
+                try:
+                    if operator is not None:
+                        operator.__exit__(*primary)
+                finally:
+                    shutil.rmtree(screenshot_root, ignore_errors=True)
+                    if log_path is None:
+                        log_path = launcher.log_path
+                    if log_path is not None:
+                        log_path.unlink(missing_ok=True)
 
     @classmethod
     def _await_process_owned_point(

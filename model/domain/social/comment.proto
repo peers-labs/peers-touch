@@ -28,6 +28,8 @@ message Comment {
   // (UTF-16 offsets into `content`). Populated on readback from the
   // existing social_comments.mentions_json column.
   repeated Mention typed_mentions = 22;
+  string public_feed_ref = 23;
+  string reply_to_public_feed_ref = 24;
 }
 
 message CreateCommentRequest {

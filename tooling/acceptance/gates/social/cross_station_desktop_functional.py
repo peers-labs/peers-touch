@@ -18,12 +18,13 @@ class Gate(AcceptanceGate):
     phase = "CSS-09 Social Desktop Functional Evidence"
     bom = ("CSS-09",)
     spec = (
-        "docs/architecture/domains/social/cross-station/execution-plans/"
-        "20261003-native-private-social/plan.md",
+        "docs/architecture/domains/social/cross-station/integration.md",
     )
 
     def run(self) -> dict[str, Any]:
-        result = load_suite_result()
+        result = load_suite_result(
+            consumer_gate_id=self.gate_id, execution_policy=self.e2e_preflight["executionPolicy"],
+        )
         attach_suite_evidence(self, result)
         for scenario_id in SCENARIO_IDS:
             self.assert_condition(

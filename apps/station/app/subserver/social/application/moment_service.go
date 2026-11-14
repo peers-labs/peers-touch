@@ -2,7 +2,6 @@ package application
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -23,24 +22,14 @@ import (
 //
 //   - Resolving viewer relationship state into a `domain.Viewer` so
 //     `CanRead` can be invoked with pure inputs.
-//   - Routing posts to the public/private repo pair based on
-//     `IsPublic` (the storage-separation invariant's second defense
-//     line — the repos themselves panic on the third).
-//   - Composing the multi-write transactions for CUSTOM_* posts
-//     (post insert + grants insert + dispatcher events).
-//   - Validating cross-subserver assertions: CIRCLE ownership,
-//     GROUP membership, mention PTID resolution.
+// Public mutations belong to FeedLogService and FeedProjector; private
+// mutations belong to the Secure Content pipeline. This service reads and
+// hydrates existing public projections.
 //
 // Stat hydration (author info, reactions snapshot, viewer interaction)
 // happens here too — converters return Posts with empty `Author /
 // Reactions / Interaction` and the application service fills those
 // in via batch lookups so the converter stays storage-agnostic.
-// maxImagesPerPost caps the number of image CIDs a single Moment can
-// carry. Mirrors the desktop composer's 3x3 grid limit (D4 in
-// `.dev-workflow/20260429-094000/plan.md`). Enforced server-side so a
-// hand-rolled client cannot bypass the UI cap.
-const maxImagesPerPost = 9
-
 type MomentService struct {
 	db        *gorm.DB
 	repos     *infrastructure.Repos
@@ -89,108 +78,6 @@ func NewMomentService(
 	}
 }
 
-// CreateMoment persists a new Moment per the Audience selector on the
-// request. The flow is:
-//
-//  1. Validate the audience shape + author-bound checks.
-//  2. Resolve cross-subserver invariants:
-//     - CIRCLE: confirm the author owns the target circle.
-//     - GROUP: confirm the author is a member of the target group.
-//     - CUSTOM_*: resolve actor PTIDs and verify the author isn't
-//     self-included (already covered by ValidateForAuthor — kept
-//     here as a defense-in-depth assertion).
-//  3. Convert to a domain.Post.
-//  4. Open a transaction and:
-//     a. Insert the post via the appropriate repo (panics on misroute).
-//     b. For CUSTOM_*, insert the audience-grant rows in the same TX.
-//  5. Hydrate the wire-shape Post (Author + Audience + body + empty
-//     stats) and return.
-//  6. Emit a `MomentCreated` event (logged at INFO in P1; consumed by
-//     the notification.Bridge in P3).
-func (s *MomentService) CreateMoment(ctx context.Context, req *model.CreatePostRequest, authorPTID string) (*model.Post, error) {
-	if req == nil {
-		return nil, fmt.Errorf("CreatePostRequest is nil")
-	}
-	if authorPTID == "" {
-		return nil, fmt.Errorf("authorPTID is required")
-	}
-	if req.Audience == nil {
-		return nil, fmt.Errorf("CreatePostRequest.audience is required for the moments route")
-	}
-
-	if err := domain.ValidateForAuthor(authorPTID, req.Audience); err != nil {
-		// In P1 the noop resolver returns an empty PTID for everyone,
-		// so the CUSTOM_* author-self-inclusion check inside
-		// ValidateForAuthor would fail with "requires non-empty author
-		// PTID". Guard against that specific failure mode by skipping
-		// the strict check when the resolver is no-op AND the audience
-		// is CUSTOM_*. This is logged at WARN so the limitation is
-		// audible.
-		if authorPTID == "" && (req.Audience.Kind == model.Audience_CUSTOM_ALLOW || req.Audience.Kind == model.Audience_CUSTOM_DENY) {
-			logger.Warn(ctx, "moment.create: CUSTOM_* author identity check skipped - actor resolver is no-op (P3 wiring pending)",
-				"audience_kind", req.Audience.Kind.String())
-		} else {
-			return nil, fmt.Errorf("audience validation: %w", err)
-		}
-	}
-
-	if err := s.assertAudienceTargetReachable(ctx, authorPTID, req.Audience); err != nil {
-		return nil, err
-	}
-
-	if err := s.validateAttachmentCIDs(ctx, req); err != nil {
-		return nil, err
-	}
-
-	// Repost gate: the caller must be able to READ the original post
-	// before they're allowed to wrap it in a public REPOST envelope.
-	// Without this check, anyone holding a private post id could turn
-	// "I know this id exists in author X's private inventory" into a
-	// publicly attributable wrapper post. We only validate readability
-	// here; whether the original is itself reposted is a P3 concern
-	// (we'd need to walk the chain).
-	if req.Type == model.PostType_REPOST {
-		original := req.GetRepost().GetOriginalPostId()
-		if original == "" {
-			return nil, fmt.Errorf("repost requires original_post_id")
-		}
-		readable, gerr := s.GetMoment(ctx, original, authorPTID)
-		if gerr != nil {
-			return nil, fmt.Errorf("repost gate: %w", gerr)
-		}
-		if readable == nil {
-			return nil, fmt.Errorf("repost source post %s is not readable", original)
-		}
-	}
-
-	mentions := req.Audience.GetActorPtids()
-	_ = mentions // mentions extraction is deferred to P3; preserved field for future use.
-
-	domainPost, err := s.conv.CreateRequestToDomain(req, authorPTID, nil /* mentions */)
-	if err != nil {
-		return nil, fmt.Errorf("convert request: %w", err)
-	}
-
-	if err := s.persistInTx(ctx, domainPost); err != nil {
-		return nil, err
-	}
-
-	out, err := s.hydratePost(ctx, domainPost, authorPTID)
-	if err != nil {
-		// Hydration errors are non-fatal — return the post with
-		// whatever fields succeeded; clients render partial.
-		logger.Warn(ctx, "moment.create: hydration partial", "error", err)
-	}
-
-	logger.Info(ctx, "moment.created",
-		"audience_kind", req.Audience.Kind.String(),
-		"is_public", domainPost.IsPublic())
-	if s.publisher != nil {
-		s.publisher.PublishCreated(ctx, domainPost.ID, authorPTID, req.Audience)
-	}
-	return out, nil
-}
-
 // validateAttachmentCIDs runs the per-content-type cap + MediaResolver
 // gate before we start converting to domain.Post. The gate exists so
 // the timeline never references foreign-origin or fabricated keys —
@@ -200,68 +87,7 @@ func (s *MomentService) CreateMoment(ctx context.Context, req *model.CreatePostR
 // happens at upload time inside the OSS subserver. The social
 // subserver trusts that anything in `oss_files` is well-formed.
 func (s *MomentService) validateAttachmentCIDs(ctx context.Context, req *model.CreatePostRequest) error {
-	switch req.Type {
-	case model.PostType_IMAGE:
-		img := req.GetImage()
-		if img == nil {
-			return fmt.Errorf("IMAGE post requires CreateImagePostRequest content")
-		}
-		imageIDs, err := imageIDsFromCreateRequest(img)
-		if err != nil {
-			return err
-		}
-		if n := len(imageIDs); n == 0 {
-			return fmt.Errorf("IMAGE post requires at least one image_id")
-		} else if n > maxImagesPerPost {
-			return fmt.Errorf("IMAGE post supports at most %d images, got %d", maxImagesPerPost, n)
-		}
-		return s.media.ValidateCIDs(ctx, imageIDs)
-
-	case model.PostType_VIDEO:
-		// Video is deferred to a later iteration (see plan D3) but the
-		// gate is wired now so a stray client request can't smuggle
-		// arbitrary CIDs in via the video path.
-		vid := req.GetVideo()
-		if vid == nil || vid.VideoId == "" {
-			return nil
-		}
-		return s.media.ValidateCIDs(ctx, []string{vid.VideoId})
-
-	case model.PostType_LOCATION:
-		loc := req.GetLocation()
-		if loc == nil || len(loc.ImageIds) == 0 {
-			return nil
-		}
-		if n := len(loc.ImageIds); n > maxImagesPerPost {
-			return fmt.Errorf("LOCATION post supports at most %d images, got %d", maxImagesPerPost, n)
-		}
-		return s.media.ValidateCIDs(ctx, loc.ImageIds)
-	}
-	return nil
-}
-
-func imageIDsFromCreateRequest(img *model.CreateImagePostRequest) ([]string, error) {
-	if img == nil {
-		return nil, nil
-	}
-	if len(img.ImageIds) > 0 && len(img.Images) > 0 {
-		return nil, fmt.Errorf("IMAGE post accepts either image_ids or images, not both")
-	}
-	if len(img.ImageIds) > 0 {
-		return img.ImageIds, nil
-	}
-	ids := make([]string, 0, len(img.Images))
-	for _, image := range img.Images {
-		if image == nil {
-			continue
-		}
-		if image.Id != "" {
-			ids = append(ids, image.Id)
-		} else if image.Url != "" {
-			ids = append(ids, image.Url)
-		}
-	}
-	return ids, nil
+	return domain.ValidatePostMedia(ctx, req, s.media)
 }
 
 // assertAudienceTargetReachable enforces the cross-subserver pre-flight
@@ -297,104 +123,6 @@ func (s *MomentService) assertAudienceTargetReachable(ctx context.Context, autho
 		}
 	}
 	return nil
-}
-
-// persistInTx writes the post inside a single transaction.
-func (s *MomentService) persistInTx(ctx context.Context, p *domain.Post) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Construct a per-transaction Repos snapshot so the inner
-		// repo calls participate in the same TX rather than the
-		// shared *gorm.DB.
-		txRepos := infrastructure.NewRepos(tx)
-
-		if p.IsPublic() {
-			if err := txRepos.PublicPosts.Create(ctx, p); err != nil {
-				return fmt.Errorf("public post create: %w", err)
-			}
-		} else {
-			// W11 hard-cut: legacy private posts are no longer created
-			// through this path. New private content uses the Secure
-			// Content prepare/submit pipeline.
-			return fmt.Errorf("legacy private post creation removed; use prepare-private/submit-private routes")
-		}
-
-		deliveries, err := s.buildMomentDeliveries(ctx, txRepos, p)
-		if err != nil {
-			return fmt.Errorf("build moment deliveries: %w", err)
-		}
-		if err := txRepos.Deliveries.Upsert(ctx, deliveries); err != nil {
-			return fmt.Errorf("moment deliveries: %w", err)
-		}
-		return nil
-	})
-}
-
-func (s *MomentService) buildMomentDeliveries(ctx context.Context, repos *infrastructure.Repos, p *domain.Post) ([]domain.MomentDelivery, error) {
-	if p == nil || p.IsPublic() || p.Audience == nil {
-		return nil, nil
-	}
-
-	recipients := map[string]struct{}{p.AuthorPTID: {}}
-	switch p.Audience.Kind {
-	case model.Audience_SELF:
-		// Author-only delivery is already seeded above.
-
-	case model.Audience_FOLLOWERS:
-		followers, err := repos.Follows.FollowerActorPTIDs(ctx, p.AuthorPTID)
-		if err != nil {
-			return nil, err
-		}
-		for _, ptid := range followers {
-			recipients[ptid] = struct{}{}
-		}
-
-	case model.Audience_CUSTOM_ALLOW:
-		for _, ptid := range p.Audience.ActorPtids {
-			if ptid != "" {
-				recipients[ptid] = struct{}{}
-			}
-		}
-
-	case model.Audience_CUSTOM_DENY:
-		if p.Audience.BaseKind != model.Audience_FOLLOWERS {
-			break
-		}
-		followers, err := repos.Follows.FollowerActorPTIDs(ctx, p.AuthorPTID)
-		if err != nil {
-			return nil, err
-		}
-		denied := make(map[string]struct{})
-		for _, ptid := range p.Audience.ActorPtids {
-			if ptid != "" {
-				denied[ptid] = struct{}{}
-			}
-		}
-		for _, ptid := range followers {
-			if _, blocked := denied[ptid]; !blocked {
-				recipients[ptid] = struct{}{}
-			}
-		}
-
-	case model.Audience_CIRCLE, model.Audience_GROUP:
-		// Real CIRCLE/GROUP fan-out waits for the ActorResolver and
-		// GroupMembershipChecker contracts to expose durable local IDs.
-		// Until then, author delivery preserves self-device consistency.
-	}
-
-	deliveries := make([]domain.MomentDelivery, 0, len(recipients))
-	for viewerPTID := range recipients {
-		if viewerPTID == "" {
-			continue
-		}
-		deliveries = append(deliveries, domain.MomentDelivery{
-			ViewerPTID:   viewerPTID,
-			PostID:       p.ID,
-			AuthorPTID:   p.AuthorPTID,
-			AudienceKind: p.Audience.Kind.String(),
-			DeliveredAt:  p.CreatedAt,
-		})
-	}
-	return deliveries, nil
 }
 
 // GetMoment returns a single public moment with viewer-bound visibility
@@ -455,39 +183,6 @@ func (s *MomentService) classifyUnreadableMoment(
 		return model.PostDetailOutcome_POST_DETAIL_OUTCOME_HIDDEN, nil
 	}
 	return model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE, nil
-}
-
-// DeleteMoment soft-deletes a public post. Legacy private posts are
-// unreachable after W11; new private content deletion goes through the
-// Secure Content pipeline. Returns nil when the post doesn't exist or
-// the caller is not the author, so the handler doesn't leak existence.
-func (s *MomentService) DeleteMoment(ctx context.Context, postIDStr, authorPTID string) error {
-	postID := domain.ParseID(postIDStr)
-	if postID == 0 {
-		return fmt.Errorf("invalid post_id %q", postIDStr)
-	}
-	owned, err := s.repos.PublicPosts.GetByID(ctx, postID)
-	if err != nil {
-		return err
-	}
-	if owned == nil || owned.AuthorPTID != authorPTID {
-		return nil
-	}
-	if err := s.repos.PublicPosts.Delete(ctx, postID, authorPTID); err != nil {
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
-		}
-	}
-	if s.repos.Deliveries != nil {
-		if err := s.repos.Deliveries.RevokePost(ctx, postID); err != nil {
-			logger.Warn(ctx, "moment.delete: delivery revoke failed", "error", err)
-		}
-	}
-	logger.Info(ctx, "moment.deleted")
-	if s.publisher != nil {
-		s.publisher.PublishDeleted(ctx, postID, authorPTID)
-	}
-	return nil
 }
 
 // ListByAuthor serves a profile page. Only public posts are returned

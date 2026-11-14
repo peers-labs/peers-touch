@@ -33,6 +33,7 @@ import {
   PostDetailOutcome,
   PostAuthorSchema,
   ReactToPostResponseSchema,
+  ReactionKind,
   TimelinePageOutcome,
   TimelineSort,
   UnreactToPostResponseSchema,
@@ -64,10 +65,10 @@ import {
 } from '../../runtimes/mutationAdmission';
 import {
   readPrivateMoment,
+  readPrivateComments,
   readPrivateMomentsSnapshot,
 } from '../../runtimes/privateMomentsRuntime';
 import {
-  privateSocialComments,
   type PrivateCommentProjection,
   type PrivateSocialAccountInput,
 } from '../mobileCommands';
@@ -268,6 +269,16 @@ export function createMomentsGateway(
 
   return {
     createMoment: async (draft) => {
+      if (isPublicSocialAudience(draft.audience)) {
+        return {
+          ok: false,
+          error: {
+            code: 'FEED_SIGNED_WRITE_REQUIRED',
+            message: 'mobile.moments.publicSignedWriteRequired',
+            status: 409, method: 'POST', path: '/api/v1/social/moments',
+          },
+        };
+      }
       const req = buildMobileCreatePostRequest(draft);
 
       try {
@@ -479,14 +490,9 @@ export function createMomentsGateway(
       if (options.sourceId === 'device.social') {
         try {
           const scope = requirePrivateScope();
-          const input = {
-            ...scope,
-            postId: request.postId,
-            cursor: request.cursor,
-            limit: request.limit,
-            anchorCommentId: request.anchorCommentId,
-          };
-          const page = await privateSocialComments(input);
+          const page = await readPrivateComments(
+            request.postId, request.cursor, request.limit, request.anchorCommentId,
+          );
           requirePrivateCompletion(scope);
           if (page.postId !== postId) return invalidMomentsOutcome(path);
           const comments = page.comments.map((comment) =>
@@ -666,7 +672,8 @@ function privateCommentFromProjection(
     authorPtid: projection.authorPtid,
     content: projection.text,
     replyToCommentId: projection.replyToCommentId,
-    likesCount: BigInt(projection.reactionsCount),
+    likesCount: BigInt(projection.reactions?.find((reaction) => reaction.kind === ReactionKind.REACTION_LIKE)?.count ?? '0'),
+    isLiked: projection.reactions?.some((reaction) => reaction.kind === ReactionKind.REACTION_LIKE && reaction.reactedByViewer) ?? false,
     repliesCount: BigInt(projection.repliesCount),
     author: create(PostAuthorSchema, { id: projection.authorPtid }),
     createdAt: projection.createdAtMillis === undefined

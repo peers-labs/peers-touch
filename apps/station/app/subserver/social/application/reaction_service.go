@@ -2,171 +2,22 @@ package application
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"sort"
-	"strconv"
+	"strings"
 
 	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
-	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
-	"gorm.io/gorm"
 )
 
-// ReactionService handles the typed `model.ReactionKind` catalog. Toggling a
-// reaction also
-// updates the parent post's denormalised `reactions_count_json`
-// snapshot so list queries don't pay an N+1 aggregation cost.
+// ReactionService derives viewer-bound summaries. Writes belong to the signed
+// public Feed and private interaction command owners.
 type ReactionService struct {
-	repos     *infrastructure.Repos
-	gdb       *gorm.DB
-	publisher *MomentEventPublisher
+	repos *infrastructure.Repos
 }
 
-// NewReactionService takes both the repo bundle (for high-level
-// operations) AND the bare *gorm.DB (for the post-class lookup which
-// MUST bypass the viewer-bound visibility filter — class
-// identification is a storage concern, not an authorisation one).
-func NewReactionService(gdb *gorm.DB, repos *infrastructure.Repos, publishers ...*MomentEventPublisher) *ReactionService {
-	var publisher *MomentEventPublisher
-	if len(publishers) > 0 {
-		publisher = publishers[0]
-	}
-	return &ReactionService{repos: repos, gdb: gdb, publisher: publisher}
-}
-
-// React records `(post, viewer, kind)` and refreshes the post's
-// reaction snapshot. Idempotent at the (post,viewer,kind) composite
-// key level — re-reacting with the same kind is a no-op.
-//
-// Public visibility is checked by the handler. Private visibility is checked
-// atomically with the mutation by the private reaction repository.
-func (s *ReactionService) React(ctx context.Context, postIDStr, viewerPTID string, kind model.ReactionKind) ([]*model.ReactionSummary, error) {
-	if viewerPTID == "" {
-		return nil, fmt.Errorf("authentication required to react")
-	}
-	if kind == model.ReactionKind_REACTION_UNSPECIFIED ||
-		model.ReactionKind_name[int32(kind)] == "" {
-		return nil, fmt.Errorf("reaction kind is required")
-	}
-	postID, publicPostID, postAuthorPTID, postClass, err :=
-		s.resolvePostMeta(ctx, postIDStr)
-	if err != nil {
-		return nil, err
-	}
-	if postClass == domain.PostClassPrivate {
-		postAuthorPTID, reactions, err := s.repos.Reactions.MutatePrivatePost(
-			ctx,
-			postID,
-			viewerPTID,
-			kind.String(),
-			false,
-		)
-		if err != nil {
-			return nil, mapPrivateStoreError(
-				"social.reaction.react",
-				err,
-			)
-		}
-		summaries, err := s.summarizeVisible(
-			ctx,
-			reactions,
-			postAuthorPTID,
-			viewerPTID,
-		)
-		if err != nil {
-			return nil, err
-		}
-		if s.publisher != nil {
-			s.publisher.PublishReacted(ctx, postID, viewerPTID, kind, false)
-		}
-		return s.toProtoSummaries(summaries), nil
-	}
-
-	if err := s.repos.Reactions.Add(ctx, &domain.Reaction{
-		PostID:    postID,
-		PostClass: postClass,
-		ActorPTID: viewerPTID,
-		Kind:      kind,
-	}); err != nil {
-		return nil, fmt.Errorf("add reaction: %w", err)
-	}
-
-	if err := s.refreshSnapshot(ctx, postID, publicPostID, postClass); err != nil {
-		logger.Warn(ctx, "react: snapshot refresh failed", "error", err)
-	}
-
-	summaries, err := s.Aggregate(ctx, postID, postAuthorPTID, viewerPTID)
-	if err != nil {
-		return nil, err
-	}
-	if s.publisher != nil {
-		s.publisher.PublishReacted(ctx, postID, viewerPTID, kind, false)
-	}
-	return s.toProtoSummaries(summaries), nil
-}
-
-// Unreact removes `(post, viewer, kind)` and refreshes the snapshot.
-// No-op if the row doesn't exist.
-func (s *ReactionService) Unreact(ctx context.Context, postIDStr, viewerPTID string, kind model.ReactionKind) ([]*model.ReactionSummary, error) {
-	if viewerPTID == "" {
-		return nil, fmt.Errorf("authentication required to unreact")
-	}
-	if kind == model.ReactionKind_REACTION_UNSPECIFIED ||
-		model.ReactionKind_name[int32(kind)] == "" {
-		return nil, fmt.Errorf("reaction kind is required")
-	}
-	postID, publicPostID, postAuthorPTID, postClass, err :=
-		s.resolvePostMeta(ctx, postIDStr)
-	if err != nil {
-		return nil, err
-	}
-	if postClass == domain.PostClassPrivate {
-		postAuthorPTID, reactions, err := s.repos.Reactions.MutatePrivatePost(
-			ctx,
-			postID,
-			viewerPTID,
-			kind.String(),
-			true,
-		)
-		if err != nil {
-			return nil, mapPrivateStoreError(
-				"social.reaction.unreact",
-				err,
-			)
-		}
-		summaries, err := s.summarizeVisible(
-			ctx,
-			reactions,
-			postAuthorPTID,
-			viewerPTID,
-		)
-		if err != nil {
-			return nil, err
-		}
-		if s.publisher != nil {
-			s.publisher.PublishReacted(ctx, postID, viewerPTID, kind, true)
-		}
-		return s.toProtoSummaries(summaries), nil
-	}
-
-	if err := s.repos.Reactions.Remove(ctx, postID, viewerPTID, kind.String()); err != nil {
-		return nil, fmt.Errorf("remove reaction: %w", err)
-	}
-
-	if err := s.refreshSnapshot(ctx, postID, publicPostID, postClass); err != nil {
-		logger.Warn(ctx, "unreact: snapshot refresh failed", "error", err)
-	}
-
-	summaries, err := s.Aggregate(ctx, postID, postAuthorPTID, viewerPTID)
-	if err != nil {
-		return nil, err
-	}
-	if s.publisher != nil {
-		s.publisher.PublishReacted(ctx, postID, viewerPTID, kind, true)
-	}
-	return s.toProtoSummaries(summaries), nil
+func NewReactionService(repos *infrastructure.Repos) *ReactionService {
+	return &ReactionService{repos: repos}
 }
 
 // Aggregate returns the reaction summaries for a post, with the
@@ -186,14 +37,82 @@ func (s *ReactionService) summarizeVisible(
 	postAuthorPTID string,
 	viewerPTID string,
 ) ([]domain.ReactionSummary, error) {
+	if len(reactions) == 0 {
+		return []domain.ReactionSummary{}, nil
+	}
+	canSeeActor, err := s.reactionActorVisibility(ctx, reactions, postAuthorPTID, viewerPTID)
+	if err != nil {
+		return nil, err
+	}
+	return summarizeReactions(reactions, viewerPTID, canSeeActor), nil
+}
+
+func (s *ReactionService) reactionActorVisibility(
+	ctx context.Context, reactions []domain.Reaction, postAuthorPTID, viewerPTID string,
+) (func(string) bool, error) {
 	visibility, err := buildInteractionVisibility(ctx, s.repos, viewerPTID, postAuthorPTID)
 	if err != nil {
 		return nil, err
 	}
+	ptids := make([]string, 0, len(reactions))
+	for _, reaction := range reactions {
+		ptids = append(ptids, reaction.ActorPTID)
+	}
+	blocked, err := blockedActorPTIDs(ctx, s.repos, viewerPTID, ptids)
+	if err != nil {
+		return nil, err
+	}
+	authors, err := s.repos.Identity.ActorsByPTIDs(ctx, ptids)
+	if err != nil {
+		return nil, err
+	}
+	domains, peers := make([]string, 0, len(authors)), make([]string, 0, len(authors))
+	for _, author := range authors {
+		domains = append(domains, author.HomeStationDomain)
+		peers = append(peers, author.HomeStationPeerID)
+	}
+	blockedDomains, blockedPeers, err := s.repos.Moderation.BlockedStations(ctx, domains, peers)
+	if err != nil {
+		return nil, err
+	}
+	return func(ptid string) bool {
+		author := authors[ptid]
+		return author != nil && !blocked[ptid] && visibility.CanSeeActor(ptid) &&
+			!blockedDomains[strings.TrimSpace(author.HomeStationDomain)] &&
+			!blockedPeers[strings.TrimSpace(author.HomeStationPeerID)]
+	}, nil
+}
+
+// AggregateComments reads one bounded target page, sharing the same actor
+// visibility decision across every comment and reply in the page.
+func (s *ReactionService) AggregateComments(ctx context.Context, postID, postAuthorPTID, viewerPTID string, commentIDs []string) (map[string][]domain.ReactionSummary, error) {
+	byComment, err := s.repos.Reactions.ListByComments(ctx, postID, commentIDs)
+	if err != nil {
+		return nil, err
+	}
+	all := make([]domain.Reaction, 0)
+	for _, reactions := range byComment {
+		all = append(all, reactions...)
+	}
+	if len(all) == 0 {
+		return map[string][]domain.ReactionSummary{}, nil
+	}
+	canSeeActor, err := s.reactionActorVisibility(ctx, all, postAuthorPTID, viewerPTID)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string][]domain.ReactionSummary, len(byComment))
+	for commentID, reactions := range byComment {
+		out[commentID] = summarizeReactions(reactions, viewerPTID, canSeeActor)
+	}
+	return out, nil
+}
+
+func summarizeReactions(reactions []domain.Reaction, viewerPTID string, canSeeActor func(string) bool) []domain.ReactionSummary {
 	counts := make(map[model.ReactionKind]int64)
 	reacted := make(map[model.ReactionKind]bool)
 	for _, reaction := range reactions {
-		if !visibility.CanSeeActor(reaction.ActorPTID) {
+		if !canSeeActor(reaction.ActorPTID) {
 			continue
 		}
 		counts[reaction.Kind] += 1
@@ -215,61 +134,7 @@ func (s *ReactionService) summarizeVisible(
 			ReactedByViewer: reacted[kind],
 		})
 	}
-	return out, nil
-}
-
-// resolvePostMeta looks up the post's storage class. After the W11
-// hard-cut, only public posts are reachable through this path; new
-// private content uses the Secure Content pipeline.
-func (s *ReactionService) resolvePostMeta(
-	ctx context.Context,
-	postIDStr string,
-) (string, uint64, string, domain.PostClass, error) {
-	postID := domain.ParseID(postIDStr)
-	if postID != 0 && strconv.FormatUint(postID, 10) == postIDStr {
-		pub, err := s.repos.PublicPosts.GetByID(ctx, postID)
-		if err != nil {
-			return "", 0, "", "", err
-		}
-		if pub != nil {
-			return postIDStr, postID, pub.AuthorPTID, domain.PostClassPublic, nil
-		}
-		return "", 0, "", "", fmt.Errorf("post %s not found", postIDStr)
-	}
-	if err := domain.ValidatePrivateContentID(
-		postIDStr,
-		"post_id",
-		"social.reaction.resolve_post",
-	); err != nil {
-		return "", 0, "", "", err
-	}
-	return postIDStr, 0, "", domain.PostClassPrivate, nil
-}
-
-func (s *ReactionService) refreshSnapshot(
-	ctx context.Context,
-	postID string,
-	publicPostID uint64,
-	class domain.PostClass,
-) error {
-	summaries, err := s.repos.Reactions.Aggregate(ctx, postID)
-	if err != nil {
-		return err
-	}
-	snapshot := make(map[string]int64, len(summaries))
-	for _, s := range summaries {
-		snapshot[s.Kind.String()] = s.Count
-	}
-	b, err := json.Marshal(snapshot)
-	if err != nil {
-		return err
-	}
-	switch class {
-	case domain.PostClassPublic:
-		return s.repos.PublicPosts.UpdateReactionsCount(ctx, publicPostID, string(b))
-	default:
-		return fmt.Errorf("unknown or unreachable post class %q", class)
-	}
+	return out
 }
 
 func (s *ReactionService) toProtoSummaries(in []domain.ReactionSummary) []*model.ReactionSummary {

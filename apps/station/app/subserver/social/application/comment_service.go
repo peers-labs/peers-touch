@@ -86,7 +86,7 @@ func (s *CommentService) CreateComment(ctx context.Context, req *model.CreateCom
 	// classifyPost lookup would hit.
 	postClass := domain.PostClassPrivate
 	if parent.Audience == nil || parent.Audience.Kind == model.Audience_PUBLIC {
-		postClass = domain.PostClassPublic
+		return nil, domain.ErrFeedWriter
 	}
 
 	if req.ReplyToCommentId != "" {
@@ -184,6 +184,9 @@ func (s *CommentService) DeleteComment(ctx context.Context, commentID uint64, au
 	if c == nil {
 		return nil
 	}
+	if c.PostClass == domain.PostClassPublic {
+		return domain.ErrFeedWriter
+	}
 
 	if err := s.repos.Comments.Delete(ctx, commentID, authorPTID); err != nil {
 		return err
@@ -213,7 +216,11 @@ func (s *CommentService) GetByPost(
 		return nil, nil
 	}
 	s.warnMalformedMentions(ctx, comment)
-	return s.commentToProtoWith(comment, batch.Authors[comment.AuthorPTID]), nil
+	result := s.commentToProtoWith(comment, batch.Authors[comment.AuthorPTID])
+	if err := s.hydrateCommentReactions(ctx, batch.Posts[parentPostID], viewerPTID, []*model.Comment{result}); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // warnMalformedMentions surfaces persisted mention JSON corruption
@@ -224,11 +231,7 @@ func (s *CommentService) warnMalformedMentions(ctx context.Context, comment *dom
 		return
 	}
 	if _, err := s.conv.CommentMentions(comment); err != nil {
-		logger.Warn(ctx, "comment.read: malformed mentions_json, mentions omitted",
-			"post_id", comment.PostID,
-			"comment_id", comment.ID,
-			"error", err,
-		)
+		logger.Warn(ctx, "comment.read: malformed mentions metadata omitted")
 	}
 }
 
@@ -294,11 +297,37 @@ func (s *CommentService) ListByPost(ctx context.Context, parentPostID uint64, vi
 	if hasMore && lastScanned != nil {
 		nextCursor = domain.Cursor{LastID: lastScanned.ID, CreatedAt: lastScanned.CreatedAt}.Encode()
 	}
+	if err := s.hydrateCommentReactions(ctx, batch.Posts[parentPostID], viewerPTID, comments); err != nil {
+		return nil, err
+	}
 	return &model.GetCommentsResponse{
 		Comments:   comments,
 		NextCursor: nextCursor,
 		HasMore:    hasMore,
 	}, nil
+}
+
+func (s *CommentService) hydrateCommentReactions(ctx context.Context, parent *domain.Post, viewerPTID string, comments []*model.Comment) error {
+	if len(comments) == 0 {
+		return nil
+	}
+	commentIDs := make([]string, 0, len(comments))
+	for _, comment := range comments {
+		commentIDs = append(commentIDs, comment.Id)
+	}
+	summaries, err := NewReactionService(s.repos).AggregateComments(ctx, fmt.Sprint(parent.ID), parent.AuthorPTID, viewerPTID, commentIDs)
+	if err != nil {
+		return err
+	}
+	for _, comment := range comments {
+		comment.LikesCount, comment.IsLiked = 0, false
+		for _, summary := range summaries[comment.Id] {
+			if summary.Kind == model.ReactionKind_REACTION_LIKE {
+				comment.LikesCount, comment.IsLiked = summary.Count, summary.ReactedByViewer
+			}
+		}
+	}
+	return nil
 }
 
 func (s *CommentService) commentToProtoWith(comment *domain.Comment, authorRecord *db.Actor) *model.Comment {

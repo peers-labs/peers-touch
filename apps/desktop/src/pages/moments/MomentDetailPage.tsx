@@ -1,13 +1,11 @@
 import { useCallback } from 'react';
-import { Button } from 'antd';
+import { Button } from '@peers-touch/ui';
 import { ChevronLeft } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { MomentCard } from '../../components/moments/MomentCard';
 import { SocialEmptyState } from '../../components/moments/surfaces/SocialEmptyState';
-import {
-  SocialThreadSurface,
-} from '../../components/moments/surfaces';
 import { useActiveMomentsSlice } from '../../components/moments/useActiveMomentsStore';
+import { momentResourceKey } from '../../store/momentsTimeline';
 
 export interface MomentDetailViewProps {
   postId: string;
@@ -18,7 +16,7 @@ export interface MomentDetailViewProps {
 }
 
 // Detail surface: the post card owns its inline comment thread
-// (MomentCommentsSection); this view only provides the thread frame,
+// (MomentCommentsSection); this view only provides
 // navigation, and post-level actions.
 export function MomentDetailView({
   postId,
@@ -52,6 +50,16 @@ export function MomentDetailView({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center' }}>
+        <Button
+          actionId="moments.detail.back"
+          emphasis="quiet"
+          leading={<ChevronLeft size={16} />}
+          onActivate={onBack}
+        >
+          {t('moments.action.back')}
+        </Button>
+      </div>
       {!post && (
         <SocialEmptyState
           kind="empty"
@@ -60,33 +68,19 @@ export function MomentDetailView({
         />
       )}
       {post && (
-        <SocialThreadSurface>
-          {/* Back belongs to the thread card header, not a detached row. */}
-          <div style={{ display: 'flex', alignItems: 'center' }}>
-            <Button
-              type="text"
-              icon={<ChevronLeft size={16} />}
-              onClick={onBack}
-              style={{ paddingInline: 4 }}
-            >
-              {t('moments.action.back')}
-            </Button>
-          </div>
-
-          <MomentCard
-            post={post}
-            reactions={reactions}
-            explanation={explanation}
-            viewerActorPtid={viewerActorPtid}
-            embedded
-            defaultCommentsOpen
-            targetCommentId={commentId}
-            onAuthorClick={onAuthorClick}
-            onReact={reactToPost}
-            onUnreact={unreactToPost}
-            onDelete={handleDeletePost}
-          />
-        </SocialThreadSurface>
+        <MomentCard
+          key={momentResourceKey(post)}
+          post={post}
+          reactions={reactions}
+          explanation={explanation}
+          viewerActorPtid={viewerActorPtid}
+          defaultCommentsOpen
+          targetCommentId={commentId}
+          onAuthorClick={onAuthorClick}
+          onReact={reactToPost}
+          onUnreact={unreactToPost}
+          onDelete={handleDeletePost}
+        />
       )}
     </div>
   );

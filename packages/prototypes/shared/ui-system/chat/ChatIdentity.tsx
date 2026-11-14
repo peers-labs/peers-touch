@@ -7,7 +7,8 @@
  * which cross to the moments surface via the supplied navigation callbacks.
  */
 import type { ReactElement } from 'react';
-import { IdentityTrigger } from '../identity/IdentityCard';
+import { IdentityTrigger } from '@peers-touch/ui';
+import { identityCopy } from '../identity/identity-copy';
 import { identityTone } from '../identity-tone';
 import { momentsByIdentity } from '../moments/AuthorCard';
 import { PEOPLE_SEEDS, VIEWER } from '../moments/moments-data';
@@ -27,6 +28,7 @@ export function ChatAvatarTrigger({ name, tone, conversation, children,
   const member = conversation.members?.find(m => m.name === name);
   return (
     <IdentityTrigger placement="bottom"
+      copy={identityCopy}
       name={name}
       tone={tone ?? member?.tone ?? person?.tone ?? (isSelf ? VIEWER.tone : identityTone(name))}
       station={person?.station ?? (conversation.kind === 'group' ? conversation.name : undefined)}

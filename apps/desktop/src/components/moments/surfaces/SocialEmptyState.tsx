@@ -1,9 +1,7 @@
-import { ReactNode } from 'react';
-import { Button, Spin, Typography, theme } from 'antd';
+import type { ReactNode } from 'react';
+import { Button, Empty, Spin } from '@peers-touch/ui';
 import {
-  FileText,
   Inbox,
-  Search,
   Settings2,
   RefreshCcw,
   AlertTriangle,
@@ -45,8 +43,6 @@ export interface SocialEmptyStateProps {
   compact?: boolean;
 }
 
-const { Text, Paragraph } = Typography;
-
 export function SocialEmptyState({
   kind,
   title,
@@ -56,7 +52,6 @@ export function SocialEmptyState({
   children,
   compact,
 }: SocialEmptyStateProps) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('moments');
 
   const content = buildContent({ kind, title, description, t });
@@ -64,15 +59,15 @@ export function SocialEmptyState({
   const iconSize = compact ? 28 : 34;
   const iconColor =
     kind === 'loading'
-      ? token.colorPrimary
+      ? 'var(--pt-primary)'
       : kind === 'degraded' || kind === 'unavailable'
-        ? token.colorWarning
-        : token.colorTextTertiary;
+        ? 'var(--pt-warning)'
+        : 'var(--pt-muted)';
 
   const Icon = (() => {
     switch (kind) {
       case 'loading':
-        return <FileText size={iconSize} color={iconColor} />;
+        return <Spin size="large" />;
       case 'degraded':
       case 'unavailable':
         return <AlertTriangle size={iconSize} color={iconColor} />;
@@ -85,69 +80,45 @@ export function SocialEmptyState({
   })();
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        textAlign: 'center',
-        gap: 8,
-        padding: compact ? '24px 12px' : '40px 18px',
-        background: 'transparent',
-        border: 'none',
-        borderRadius: 14,
-      }}
-    >
-      <div style={{ position: 'relative', display: 'inline-flex' }}>
-        {kind === 'loading' ? <Spin size="large" /> : Icon}
-      </div>
-      <Paragraph
-        style={{
-          margin: 0,
-          fontSize: compact ? 13 : 14,
-          fontWeight: 600,
-          color: token.colorText,
-        }}
-      >
-        {content.title}
-      </Paragraph>
+    <Empty data-social-empty-kind={kind} icon={Icon} description={<strong>{content.title}</strong>}
+      style={{ padding: compact ? '24px 12px' : '32px 18px' }}>
       {content.description && (
-        <Paragraph
+        <p
           style={{
             margin: 0,
-            fontSize: 12.5,
-            lineHeight: 1.6,
-            color: token.colorTextSecondary,
+            color: 'var(--pt-secondary)',
             maxWidth: 420,
           }}
         >
           {content.description}
-        </Paragraph>
+        </p>
       )}
 
       <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
         {kind === 'empty' && primaryAction && (
-          <Button type="primary" size="small" onClick={primaryAction.onClick}>
+          <Button actionId="moments.empty.create" emphasis="primary" density="compact" onActivate={primaryAction.onClick}>
             {primaryAction.label}
           </Button>
         )}
         {kind === 'loading' && (
-          <Text style={{ fontSize: 12, color: token.colorTextTertiary }}>
+          <span>
             {t('moments.empty.please-wait')}
-          </Text>
+          </span>
         )}
         {(kind === 'degraded' || kind === 'unavailable') && (
           <>
             <Button
-              type="text"
-              size="small"
-              icon={<RefreshCcw size={13} />}
-              onClick={primaryAction?.onClick}
+              actionId="moments.empty.retry"
+              emphasis="quiet"
+              density="compact"
+              leading={<RefreshCcw size={13} />}
+              onActivate={primaryAction?.onClick}
+              availability={!primaryAction ? { kind: 'disabled', reason: content.description } : undefined}
             >
               {primaryAction?.label ?? t('moments.empty.try-again')}
             </Button>
             {secondaryAction && (
-              <Button size="small" onClick={secondaryAction.onClick}>
+              <Button actionId="moments.empty.secondary" density="compact" onActivate={secondaryAction.onClick}>
                 {secondaryAction.label}
               </Button>
             )}
@@ -156,20 +127,22 @@ export function SocialEmptyState({
         {kind === 'not-implemented' && (
           <>
             <Button
-              type="text"
-              size="small"
-              icon={<PlugZap size={13} />}
-              onClick={primaryAction?.onClick}
-              disabled={!primaryAction}
+              actionId="moments.empty.capability"
+              emphasis="quiet"
+              density="compact"
+              leading={<PlugZap size={13} />}
+              onActivate={primaryAction?.onClick}
+              availability={!primaryAction ? { kind: 'disabled', reason: content.description } : undefined}
             >
               {primaryAction?.label ?? t('moments.empty.not-implemented.cta')}
             </Button>
             <Button
-              type="text"
-              size="small"
-              icon={<Settings2 size={13} />}
-              onClick={secondaryAction?.onClick}
-              disabled={!secondaryAction}
+              actionId="moments.empty.settings"
+              emphasis="quiet"
+              density="compact"
+              leading={<Settings2 size={13} />}
+              onActivate={secondaryAction?.onClick}
+              availability={!secondaryAction ? { kind: 'disabled', reason: content.description } : undefined}
             >
               {secondaryAction?.label ?? t('moments.empty.settings')}
             </Button>
@@ -178,38 +151,7 @@ export function SocialEmptyState({
       </div>
 
       {children}
-    </div>
-  );
-}
-
-// Small helper for when you only want a search empty state.
-export function SocialSearchEmpty({ query }: { query: string }) {
-  const { token } = theme.useToken();
-  const { t } = useTranslation('moments');
-  return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        textAlign: 'center',
-        gap: 8,
-        padding: '28px 16px',
-        background: 'transparent',
-        border: 'none',
-        borderRadius: 14,
-      }}
-    >
-      <Search size={28} color={token.colorTextTertiary} />
-      <Paragraph style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>
-        {t('moments.search.no-results.title')}
-      </Paragraph>
-      <Paragraph
-        style={{ margin: 0, fontSize: 12.5, color: token.colorTextSecondary, maxWidth: 420 }}
-      >
-        {t('moments.search.no-results.description', { query })}
-      </Paragraph>
-    </div>
+    </Empty>
   );
 }
 

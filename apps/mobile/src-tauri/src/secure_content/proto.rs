@@ -53,6 +53,14 @@ pub mod peers_touch {
 
         #[allow(dead_code)]
         pub mod social {
+            pub mod feed {
+                pub mod v1 {
+                    include!(concat!(
+                        env!("OUT_DIR"),
+                        "/peers_touch.model.social.feed.v1.rs"
+                    ));
+                }
+            }
             pub mod v1 {
                 include!(concat!(env!("OUT_DIR"), "/peers_touch.model.social.v1.rs"));
             }

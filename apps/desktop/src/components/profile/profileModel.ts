@@ -88,7 +88,7 @@ export function mergeAccountProfile(
     homeStationDomain: homeDomain(handle, remote) || fallback.homeStationDomain,
     bio: remote.note?.trim() || fallback.bio,
     did: remote.id?.trim() || fallback.did,
-    joined: joined ? `${joinedLabel} ${joined}` : fallback.joined,
+    joined: joined ?? fallback.joined,
     region: remote.region?.trim() || fallback.region,
     tags: (remote.tags ?? []).filter(Boolean),
     links: (remote.links ?? []).filter((link) => link && (link.label || link.url)),

@@ -87,6 +87,9 @@ from tooling.acceptance.core.input_artifacts import (
 from tooling.acceptance.core.scope_ownership import load_scope_catalog
 from tooling.acceptance.core.operation_observer import runner_operation_stream
 from tooling.acceptance.core.proof import read_gate_proof, require_report_proof
+from tooling.acceptance.core.result_contracts import (
+    DEVELOPMENT_RESULT_KINDS, development_verification_class,
+)
 
 
 def utc_now() -> str:
@@ -1136,13 +1139,13 @@ def load_plan(
         if not path.is_file():
             raise SystemExit(f"acceptance plan {str(path)!r} does not exist")
         return json.loads(path.read_text(encoding="utf-8")), str(path)
+    if execution_mode != "closure" and execution_plan_path is None:
+        raise SystemExit("completion/full requires an explicit --execution-plan")
     command = [
         sys.executable,
         "tooling/scripts/acceptance-plan.py",
     ]
-    if execution_plan_path is None:
-        command.append("--active-plan")
-    else:
+    if execution_plan_path is not None:
         command.extend(["--execution-plan", str(execution_plan_path)])
     if execution_mode == "completion":
         command.append("--completion")
@@ -1167,16 +1170,21 @@ def load_plan(
         if generated.returncode != 0:
             detail = generated.stderr.strip() or generated.stdout.strip()
             raise SystemExit(
-                "active execution plan projection failed with exit code "
+                "acceptance plan projection failed with exit code "
                 f"{generated.returncode}: {detail}"
             )
         plan = json.loads(projection_path.read_text(encoding="utf-8"))
     finally:
         projection_path.unlink(missing_ok=True)
     source = plan.get("execution", {}).get("formalPlan")
-    if not isinstance(source, str) or not source:
-        raise SystemExit("active execution plan projection has no formal plan")
-    return plan, source
+    if execution_plan_path is not None:
+        if not isinstance(source, str) or not source:
+            raise SystemExit("selected execution plan projection has no formal plan")
+        return plan, source
+    return plan, {
+        "artifactKind": "acceptance-diff-selection",
+        "range": plan.get("range", "HEAD"),
+    }
 
 
 def load_gate_definitions(path: Path) -> dict[str, Any]:
@@ -1823,7 +1831,8 @@ def standardize_result(
             declared_completion in {"PARTIAL", "BLOCKED"}
             or declared_proof == "UNPROVEN"
         )
-        standardized["artifactKind"] = "development-functional-result"
+        verification_class = development_verification_class(standardized)
+        standardized["artifactKind"] = DEVELOPMENT_RESULT_KINDS[verification_class]
         if status == "blocked":
             standardized["completionStatus"] = "BLOCKED"
             standardized["proofStatus"] = "UNPROVEN"
@@ -1843,7 +1852,7 @@ def standardize_result(
                     "development runtime result lacks complete typed runtime evidence",
                 )
         standardized["sampleEmissionAllowed"] = False
-        standardized["verificationClass"] = "FUNCTIONAL_CHECK"
+        standardized["verificationClass"] = verification_class
         standardized["traceability"] = traceability
         return standardized
     if status == "passed" and environment_evidence_valid:
@@ -2448,8 +2457,8 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--plan")
     parser.add_argument("--execution-plan")
-    parser.add_argument("--gates", default="tooling/acceptance/gates.yaml")
-    parser.add_argument("--gate", action="append", default=[])
+    parser.add_argument("--gates", default="tooling/acceptance/gates.yaml", help="Gate Catalog path")
+    parser.add_argument("--gate", action="append", default=[], help="select one Gate ID; repeat for multiple Gates")
     parser.add_argument("--all-gates", action="store_true")
     parser.add_argument("--exclude-domain", action="append", default=[])
     parser.add_argument("--exclude-gate", action="append", default=[])
@@ -2570,7 +2579,7 @@ def main() -> int:
         raise SystemExit("--plan and --execution-plan are mutually exclusive")
     if (args.completion or args.full) and (args.plan or args.gate):
         raise SystemExit(
-            "--completion/--full use the active formal plan and cannot be "
+            "--completion/--full use the selected plan projection and cannot be "
             "combined with --plan or --gate"
         )
     selected_execution_mode = (
@@ -3968,9 +3977,19 @@ def main() -> int:
                 result["cleanupStatus"] = cleanup_status
                 if runtime_cell_manifest:
                     result["runtimeCellManifest"] = runtime_cell_manifest
+            result.setdefault("environment", environment)
+            result.setdefault("tier", tier)
             if cleanup_artifact is not None:
                 result["cleanupArtifact"] = cleanup_artifact
             if cleanup_error:
+                if result.get("status") in {"blocked", "failed"}:
+                    result["primaryFailure"] = {
+                        field: result[field] for field in (
+                            "status", "completionStatus", "proofStatus", "reason",
+                            "errorType", "blockedReason", "blockedResource",
+                            "diagnostic", "sourcePhase",
+                        ) if field in result
+                    }
                 result.pop("diagnostic", None)
                 for field in ("blockedReason", "blockedResource", "sourceArtifact"):
                     result.pop(field, None)

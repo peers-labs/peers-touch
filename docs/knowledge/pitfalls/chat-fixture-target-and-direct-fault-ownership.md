@@ -78,6 +78,14 @@ pause-restoring `try/finally`; replacement failure must preserve its original
 exception while restoring the pause. Keep the healthy proxy and every original
 durable-command, loss, exact retry and bilateral receiver assertion.
 
+Disposable Actor reset clears continuity roots and devices under retained preset
+PTIDs. It must clear the original signed Social log family and its public
+projections in the same reset transaction. Retaining a previous root's genesis
+makes a new valid device fail `FEED_WRITER_NOT_AUTHORIZED`. Shared comment and
+reaction tables delete only public rows; private schema activation retains its
+existing separate owner. Stable Profile protection and the original live reset
+lease remain mandatory. Production continuity never substitutes a new root.
+
 ## How to detect a recurrence
 
 Run the existing target, reset authority, Runtime Binding, Native interaction,

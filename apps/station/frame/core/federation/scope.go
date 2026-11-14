@@ -44,6 +44,7 @@ const (
 	GroupCallAuthorityJoinScope = "group-call-authority-join"
 	// SocialPrivateObjectReadScope authenticates one bounded private-object range read.
 	SocialPrivateObjectReadScope = "social-private-object-read"
+	SocialPublicFeedReadScope    = "social-public-feed-read"
 
 	ClaimFrameID                 = "frame_id"
 	ClaimIdempotencyKey          = "idempotency_key"
@@ -67,6 +68,8 @@ const (
 	ClaimPlanRequestSHA256       = "plan_request_sha256"
 	ClaimCanonicalRequestSHA256  = "canonical_request_sha256"
 	ClaimCanonicalResponseSHA256 = "canonical_response_sha256"
+	ClaimFeedAuthorPTID          = "feed_author_ptid"
+	ClaimFeedChainID             = "feed_chain_id"
 	ClaimCallID                  = "call_id"
 	ClaimPresenceRequestSHA256   = "presence_request_sha256"
 	ClaimSenderPTID              = "sender_ptid"
@@ -336,6 +339,16 @@ var peerScopes = []scope.Scope{
 				ClaimObjectID,
 				ClaimCanonicalRequestSHA256,
 			},
+		},
+	},
+	{
+		Name:        SocialPublicFeedReadScope,
+		Description: "read a bounded public chain for a retained subscription or authorized explicit viewer",
+		Policy: scope.Policy{
+			TTLMax:           time.Minute,
+			AudienceRequired: true,
+			AllowedClaimKeys: []string{ClaimSourceStationPeerID, ClaimTargetStationPeerID,
+				ClaimActorPTID, ClaimFeedAuthorPTID, ClaimFeedChainID, ClaimCanonicalRequestSHA256},
 		},
 	},
 }

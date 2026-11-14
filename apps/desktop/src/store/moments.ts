@@ -1,4 +1,4 @@
-import { create } from '@bufbuild/protobuf';
+import { create, equals } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import { createDesktopStore } from './createDesktopStore';
 import {
@@ -6,6 +6,7 @@ import {
   Audience_Kind,
   PostAuthorSchema,
   PostSchema,
+  PostStatsSchema,
   PostType,
   ReactionKind,
 } from '../gen/proto/domain/social/post_pb';
@@ -16,26 +17,30 @@ import type {
   Post,
   PostAuthor,
   ReactionSummary,
+  GetMyMomentsStatsResponse,
 } from '../gen/proto/domain/social/post_pb';
-import type { Comment } from '../gen/proto/domain/social/comment_pb';
+import { CommentSchema, type Comment } from '../gen/proto/domain/social/comment_pb';
 import type { Circle, CircleMember } from '../gen/proto/domain/social/circle_pb';
 import {
   socialCreateMoment,
   socialDeleteMoment,
+  socialDeletePrivateMoment,
+  socialUpdateMomentText,
   socialGetComments,
   publicCommentFromResource,
   socialGetMomentResponse,
   socialGetTimeline,
+  socialGetMyStats,
   socialSyncMomentsProjection,
   socialListByAuthor,
   socialReact,
   socialUnreact,
   socialCreateComment,
   socialDeleteComment,
+  socialSetCommentLike,
+  socialVotePoll,
   socialCircleCreate,
   socialCircleDelete,
-  socialCircleListMembers,
-  socialCircleListMine,
   socialCircleRename,
   socialCircleAddMembers,
   socialCircleRemoveMembers,
@@ -52,11 +57,26 @@ import type {
 import { isReadablePrivateMomentProjection } from '../services/privateMomentsNative';
 import { usePrivateMomentsStore } from './privateMoments';
 import { log } from '../utils/logger';
+import { readPublicPollCommands, resetPublicFeed } from '../services/publicFeedNative';
+import { useSessionStore } from './session';
+import { commentDraftKey, useSocialCommentDraftsStore } from './socialCommentDrafts';
+import { loadAllSocialCircleMembers, loadAllSocialCircles } from '../services/socialCirclePages';
+import { PollResultSchema } from '../gen/proto/domain/social/poll_pb';
+import { pollFailureState, type PollCommand } from '../services/pollCommandState';
 
 const TAG = 'moments-store';
 const EMPTY_COMMENTS: Comment[] = [];
 const MAX_PROTO_UINT64 = 18_446_744_073_709_551_615n;
 let storeGeneration = 0;
+let circlesRead: Promise<void> | null = null;
+const circleMemberReads = new Map<string, Promise<void>>();
+let circleCatalogVersion = 0;
+const circleMembershipVersions = new Map<string, number>();
+
+function invalidateCircleMembership(circleId: string): void {
+  circleCatalogVersion += 1;
+  circleMembershipVersions.set(circleId, (circleMembershipVersions.get(circleId) ?? 0) + 1);
+}
 interface PublicCommentRead {
   generation: number;
   cursor: string;
@@ -65,6 +85,9 @@ interface PublicCommentRead {
   completion: Promise<void>;
 }
 const commentReads = new Map<string, PublicCommentRead>();
+// The head read is authoritative only for its acquired range. Keep paginated
+// rows outside that range and their cursor when a periodic head read arrives.
+const commentHeadIds = new Map<string, Set<string>>();
 let activeCommentTarget: { postId: string; commentId?: string } | null = null;
 
 // Per-post/per-kind reaction flights. A second click on the same kind
@@ -72,6 +95,7 @@ let activeCommentTarget: { postId: string; commentId?: string } | null = null;
 // issuing another command; the operation id is logged for correlation
 // and drives per-kind pending UI in SocialActionBar.
 const reactionFlights = new Map<string, Promise<void>>();
+const pollFlights = new Map<string, Promise<void>>();
 
 function reactionFlightKey(postId: string, kind: ReactionKind, direction: 'add' | 'remove'): string {
   return `${direction}:${postId}:${kind}`;
@@ -96,22 +120,22 @@ function runFencedReaction(
   const existing = reactionFlights.get(key);
   if (existing) {
     log.info(TAG, 'reaction intent fenced', {
-      operationId: operationId ?? 'implicit',
-      postId,
+      explicitCommand: Boolean(operationId),
       kind: effectiveKind,
       direction,
     });
     return existing;
   }
+  const opposite = reactionFlightKey(postId, effectiveKind, direction === 'add' ? 'remove' : 'add');
+  if (reactionFlights.has(opposite)) return Promise.reject(new Error('FEED_PENDING_ACK'));
   const id = operationId ?? makeReactionOperationId();
   log.info(TAG, 'reaction intent', {
-    operationId: id,
-    postId,
+    explicitCommand: Boolean(operationId),
     kind: effectiveKind,
     direction,
   });
   const flight = task(id).finally(() => {
-    reactionFlights.delete(key);
+    if (reactionFlights.get(key) === flight) reactionFlights.delete(key);
   });
   reactionFlights.set(key, flight);
   return flight;
@@ -155,6 +179,7 @@ export interface MomentComposerDraft {
   audience: Audience;
   mentions: Mention[];
   files: PrivateMomentLocalFileIntent[];
+  poll?: PrivateMomentPublishIntent['poll'];
 }
 
 const emptyFeed = (): MomentFeedState => ({
@@ -361,6 +386,9 @@ function privateMomentPostShell(
       kind: PRIVATE_AUDIENCE_KINDS[projection.audienceKind],
     }),
     reactions: projection.reactions ?? [],
+    stats: projection.commentsCount === undefined ? undefined : create(PostStatsSchema, {
+      commentsCount: BigInt(projection.commentsCount),
+    }),
   });
 }
 
@@ -390,16 +418,27 @@ function projectPrivateMoments(
   ));
   if (visible.length === 0) return {};
 
-  const postsById = { ...state.postsById };
-  const reactions = { ...state.reactions };
+  let postsById = state.postsById;
+  let reactions = state.reactions;
   for (const projection of visible) {
     const post = privateMomentPostShell(projection);
     if (!projection.reactionsHydrated) {
       post.reactions = reactions[post.id] ?? postsById[post.id]?.reactions ?? [];
+    } else {
+      const previous = reactions[post.id];
+      if (previous && sameReactionSummaries(previous, post.reactions)) {
+        post.reactions = previous;
+      } else {
+        if (reactions === state.reactions) reactions = { ...reactions };
+        reactions[post.id] = post.reactions;
+      }
     }
-    postsById[post.id] = post;
-    if (projection.reactionsHydrated) {
-      reactions[post.id] = post.reactions;
+    const previous = postsById[post.id];
+    // The private shell includes mutable authorized stats as well as the
+    // authored revision. Compare the complete shell so real updates repaint.
+    if (!previous || !equals(PostSchema, previous, post)) {
+      if (postsById === state.postsById) postsById = { ...postsById };
+      postsById[post.id] = post;
     }
   }
   const postIds = [
@@ -414,10 +453,15 @@ function projectPrivateMoments(
       - postCreatedAtMillis(postsById[left])
     ),
   );
+  const sameOrder = postIds.length === state.feeds.home.postIds.length
+    && postIds.every((id, index) => id === state.feeds.home.postIds[index]);
+  if (postsById === state.postsById && reactions === state.reactions && sameOrder) {
+    return state;
+  }
   return {
     postsById,
     reactions,
-    feeds: {
+    feeds: sameOrder ? state.feeds : {
       ...state.feeds,
       home: {
         ...state.feeds.home,
@@ -435,6 +479,14 @@ export function selectMomentComments(
 }
 
 interface MomentsState {
+  timelineSort: TimelineSort;
+  setTimelineSort: (sort: TimelineSort) => void;
+  myStats?: GetMyMomentsStatsResponse;
+  myStatsLoading: boolean;
+  loadMyStats: () => Promise<void>;
+  publicFeedReadError: string | null;
+  publicFeedRecoveryError: string | null;
+  setPublicFeedRecoveryError: (error: string | null) => void;
   // Posts indexed by id; every feed list stores ids only.
   postsById: Record<string, Post>;
   authorsById: Record<string, PostAuthor>;
@@ -442,7 +494,6 @@ interface MomentsState {
   // Two non-keyed feeds: home (followed + circles) and explore (public).
   feeds: Record<MomentFeedKind, MomentFeedState>;
   // Keyed feeds: per-circle and per-actor profile.
-  circleFeeds: Record<string, MomentFeedState>;
   userFeeds: Record<string, MomentFeedState>;
 
   // Per-post threads, indexed by post id.
@@ -450,6 +501,8 @@ interface MomentsState {
   commentsCursor: Record<string, string>;
   commentsHasMore: Record<string, boolean>;
   commentsLoading: Record<string, boolean>;
+  commentReactionCommands: Record<string, { pending: boolean; error?: string }>;
+  pollCommands: Record<string, PollCommand>;
 
   // Per-post reaction summary list. Sourced from `Post.reactions` on
   // every refresh — the explicit map exists so optimistic toggles in
@@ -462,6 +515,7 @@ interface MomentsState {
   circles: Circle[];
   circlesLoading: boolean;
   circleMembers: Record<string, CircleMember[]>;
+  circleMembersErrors: Record<string, string>;
 
   // Composer draft — kept in store so navigation away keeps state.
   composerDraft: MomentComposerDraft | null;
@@ -474,11 +528,11 @@ interface MomentsState {
   ) => Promise<void>;
   syncProjection: (reason: string) => Promise<void>;
   hydratePrivateMoments: (projections: readonly PrivateMomentProjection[]) => void;
-  loadCircleFeed: (circleId: string, refresh?: boolean) => Promise<void>;
   loadUserFeed: (actorPtid: string, refresh?: boolean) => Promise<void>;
 
   loadPost: (postId: string) => Promise<Post | undefined>;
   createPost: (draft: MomentDraft) => Promise<string>;
+  updatePostText: (postId: string, text: string, operationId: string) => Promise<void>;
   deletePost: (postId: string) => Promise<void>;
   /**
    * Pure local eviction driven by an authoritative delete/revoke
@@ -498,6 +552,10 @@ interface MomentsState {
     mentions?: StructuralMention[],
   ) => Promise<void>;
   deleteComment: (postId: string, commentId: string) => Promise<void>;
+  setCommentLike: (postId: string, commentId: string, liked: boolean) => Promise<void>;
+  votePoll: (postId: string, options: readonly number[]) => Promise<void>;
+  retryPoll: (postId: string) => Promise<void>;
+  reconcilePublicPollCommands: () => Promise<void>;
 
   /** Re-fetch only one post's reaction projection. Used by post-scoped
    * realtime wakeups so a reaction event never reloads feeds/threads. */
@@ -505,13 +563,14 @@ interface MomentsState {
   reactToPost: (postId: string, kind: ReactionKind, operationId?: string) => Promise<void>;
   unreactToPost: (postId: string, kind?: ReactionKind, operationId?: string) => Promise<void>;
 
-  listMyCircles: () => Promise<void>;
+  listMyCircles: (refresh?: boolean) => Promise<void>;
   createCircle: (name: string, description?: string) => Promise<string>;
   renameCircle: (circleId: string, name: string, description?: string) => Promise<void>;
   deleteCircle: (circleId: string) => Promise<void>;
-  loadCircleMembers: (circleId: string) => Promise<void>;
+  loadCircleMembers: (circleId: string, refresh?: boolean) => Promise<void>;
   addCircleMember: (circleId: string, actorPtid: string) => Promise<void>;
   removeCircleMember: (circleId: string, actorPtid: string) => Promise<void>;
+  saveCircle: (circleId: string, name: string, description: string, memberPtids: string[]) => Promise<void>;
 
   setComposerDraft: (draft: MomentsState['composerDraft']) => void;
   clearComposerDraft: () => void;
@@ -522,36 +581,50 @@ interface MomentsState {
 
 const initialState: Pick<
   MomentsState,
+  | 'timelineSort'
+  | 'myStats'
+  | 'myStatsLoading'
   | 'postsById'
   | 'authorsById'
   | 'feeds'
-  | 'circleFeeds'
   | 'userFeeds'
   | 'comments'
   | 'commentsCursor'
   | 'commentsHasMore'
   | 'commentsLoading'
+  | 'commentReactionCommands'
+  | 'pollCommands'
   | 'reactions'
   | 'feedExplanations'
   | 'circles'
   | 'circlesLoading'
   | 'circleMembers'
+  | 'circleMembersErrors'
   | 'composerDraft'
+  | 'publicFeedReadError'
+  | 'publicFeedRecoveryError'
 > = {
+  timelineSort: 'recent',
+  myStats: undefined,
+  myStatsLoading: false,
+  publicFeedReadError: null,
+  publicFeedRecoveryError: null,
   postsById: {},
   authorsById: {},
   feeds: { home: emptyFeed(), explore: emptyFeed() },
-  circleFeeds: {},
   userFeeds: {},
   comments: {},
   commentsCursor: {},
   commentsHasMore: {},
   commentsLoading: {},
+  commentReactionCommands: {},
+  pollCommands: {},
   reactions: {},
   feedExplanations: {},
   circles: [],
   circlesLoading: false,
   circleMembers: {},
+  circleMembersErrors: {},
   composerDraft: null,
 };
 
@@ -575,7 +648,17 @@ function samePostRevision(existing: Post | undefined, incoming: Post): boolean {
 }
 
 function mergePostEntity(existing: Post | undefined, incoming: Post): Post {
-  if (existing && samePostRevision(existing, incoming)) return existing;
+  if (existing && samePostRevision(existing, incoming)) {
+    // Authored revision is immutable across ballots. A changed verified result
+    // must still repaint; unchanged periodic reads retain the same card.
+    if (existing.content.case === 'pollPost' && incoming.content.case === 'pollPost') {
+      const oldResult = existing.content.value.result, nextResult = incoming.content.value.result;
+      if (oldResult && nextResult ? !equals(PollResultSchema, oldResult, nextResult) : oldResult !== nextResult) {
+        return { ...existing, content: incoming.content };
+      }
+    }
+    return existing;
+  }
   return incoming;
 }
 
@@ -690,6 +773,20 @@ function refreshProjectionBestEffort(store: MomentsState, reason: string): void 
 
 export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set, get) => ({
   ...initialState,
+  setTimelineSort: (sort) => set({ timelineSort: sort }),
+  loadMyStats: async () => {
+    if (get().myStatsLoading) return;
+    const generation = storeGeneration;
+    set({ myStatsLoading: true });
+    try {
+      const myStats = await socialGetMyStats();
+      if (generation === storeGeneration) set({ myStats, myStatsLoading: false });
+    } catch (error) {
+      if (generation === storeGeneration) set({ myStats: undefined, myStatsLoading: false });
+      throw error;
+    }
+  },
+  setPublicFeedRecoveryError: (error) => set({ publicFeedRecoveryError: error }),
 
   // -------------------------------------------------------------------------
   // Feeds
@@ -807,6 +904,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
           Object.values(privateState.postsById),
         );
         return {
+          publicFeedReadError: null,
           postsById: mergedExplore.postsById,
           authorsById: mergedExplore.authorsById,
           reactions: mergedExplore.reactions,
@@ -835,6 +933,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     } catch (err) {
       if (generation !== storeGeneration) return;
       log.warn(TAG, 'syncProjection failed', { reason, err: String(err) });
+      set({ publicFeedReadError: String(err) });
       throw err;
     }
   },
@@ -846,29 +945,6 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
       privateState.scope.actorPtid,
       projections,
     ));
-  },
-
-  loadCircleFeed: async (circleId, refresh = false) => {
-    // Backend support for per-circle feed reads ships in P3 — the
-    // server-side ActorResolver / GroupMembershipChecker is required
-    // to enforce membership. Until then we return an empty,
-    // explicitly-loaded feed so the UI shows a "Coming in P3" stub
-    // rather than a perpetual spinner.
-    const current = get().circleFeeds[circleId] ?? emptyFeed();
-    set((s) => ({
-      circleFeeds: {
-        ...s.circleFeeds,
-        [circleId]: {
-          ...current,
-          postIds: refresh ? [] : current.postIds,
-          loading: false,
-          loadedAt: Date.now(),
-          hasMore: false,
-          nextCursor: '',
-        },
-      },
-    }));
-    log.info(TAG, 'loadCircleFeed: noop (P3)');
   },
 
   loadUserFeed: async (actorPtid, refresh = false) => {
@@ -1016,9 +1092,31 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     return post.id;
   },
 
+  updatePostText: async (postId, text, operationId) => {
+    const generation = storeGeneration;
+    const current = get().postsById[postId];
+    if (!current || current.audience?.kind !== Audience_Kind.PUBLIC) {
+      throw new Error('FEED_PROJECTION_UNVERIFIED');
+    }
+    const post = await socialUpdateMomentText(postId, text, operationId);
+    if (generation !== storeGeneration) throw new Error('MOMENTS_SESSION_STALE');
+    set((state) => {
+      const merged = ingestPosts(state, [post]);
+      return {
+        postsById: merged.postsById,
+        authorsById: merged.authorsById,
+        reactions: merged.reactions,
+        feedExplanations: merged.feedExplanations,
+      };
+    });
+    refreshProjectionBestEffort(get(), 'action:updatePost');
+  },
+
   deletePost: async (postId) => {
     const generation = storeGeneration;
-    await socialDeleteMoment(postId);
+    if (isPrivateMomentMutation(postId, get().postsById[postId])) {
+      await socialDeletePrivateMoment(postId);
+    } else await socialDeleteMoment(postId);
     if (generation !== storeGeneration) return;
     try {
       await usePrivateMomentsStore.getState().purgeMoment(postId);
@@ -1039,20 +1137,23 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     postId = postId.trim();
     if (!postId) return;
     commentReads.delete(postId);
+    commentHeadIds.delete(postId);
     if (activeCommentTarget?.postId === postId) activeCommentTarget = null;
     set((s) => {
       const { [postId]: _dropPost, ...postsById } = s.postsById;
+      const { [postId]: _dropPoll, ...pollCommands } = s.pollCommands;
       const { [postId]: _dropReaction, ...reactions } = s.reactions;
       const { [postId]: _dropExplanation, ...feedExplanations } = s.feedExplanations;
       const { [postId]: _dropComments, ...comments } = s.comments;
       const { [postId]: _dropLoading, ...commentsLoadingState } = s.commentsLoading;
       const { [postId]: _dropCursor, ...commentsCursorState } = s.commentsCursor;
       const { [postId]: _dropHasMore, ...commentsHasMoreState } = s.commentsHasMore;
-      void _dropPost; void _dropReaction; void _dropExplanation;
+      void _dropPost; void _dropPoll; void _dropReaction; void _dropExplanation;
       void _dropComments; void _dropLoading; void _dropCursor; void _dropHasMore;
       const filterIds = (ids: string[]) => ids.filter((id) => id !== postId);
       return {
         postsById,
+        pollCommands,
         reactions,
         feedExplanations,
         comments,
@@ -1065,12 +1166,6 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
         },
         userFeeds: Object.fromEntries(
           Object.entries(s.userFeeds).map(([k, v]) => [
-            k,
-            { ...v, postIds: filterIds(v.postIds) },
-          ]),
-        ),
-        circleFeeds: Object.fromEntries(
-          Object.entries(s.circleFeeds).map(([k, v]) => [
             k,
             { ...v, postIds: filterIds(v.postIds) },
           ]),
@@ -1113,13 +1208,31 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
         if (!current(read)) return;
         const page = resp.comments.map(publicCommentFromResource);
         set((s) => {
-          const prev = replace ? [] : (s.comments[postId] ?? []);
-          const seen = new Set(prev.map((c) => c.id));
-          const merged = [...prev, ...page.filter((c) => !seen.has(c.id))];
+          const retained = s.comments[postId] ?? [];
+          const byId = new Map(retained.map(comment => [comment.id, comment]));
+          const previousHead = commentHeadIds.get(postId);
+          const tail = replace && !anchor && resp.hasMore && previousHead
+            ? retained.filter(comment => !previousHead.has(comment.id)) : [];
+          const merged = replace ? [] : [...retained];
+          const indices = new Map(merged.map((comment, index) => [comment.id, index]));
+          for (const next of [...page, ...tail]) {
+            const existing = byId.get(next.id);
+            const comment = existing && equals(CommentSchema, existing, next) ? existing : next;
+            const index = indices.get(next.id);
+            if (index === undefined) {
+              indices.set(next.id, merged.length);
+              merged.push(comment);
+            } else if (page.includes(next)) merged[index] = comment;
+          }
+          if (replace || !previousHead) commentHeadIds.set(postId, new Set(page.map(comment => comment.id)));
+          const unchanged = retained.length === merged.length
+            && merged.every((comment, index) => comment === retained[index]);
+          const retainsTail = tail.some(comment => !page.some(next => next.id === comment.id));
           return {
-            comments: { ...s.comments, [postId]: merged },
-            commentsCursor: { ...s.commentsCursor, [postId]: resp.nextCursor },
-            commentsHasMore: { ...s.commentsHasMore, [postId]: resp.hasMore },
+            comments: unchanged && s.comments[postId] ? s.comments
+              : { ...s.comments, [postId]: unchanged ? retained : merged },
+            commentsCursor: retainsTail ? s.commentsCursor : { ...s.commentsCursor, [postId]: resp.nextCursor },
+            commentsHasMore: retainsTail ? s.commentsHasMore : { ...s.commentsHasMore, [postId]: resp.hasMore },
             commentsLoading: { ...s.commentsLoading, [postId]: false },
           };
         });
@@ -1147,49 +1260,172 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
 
   createComment: async (postId, content, replyToCommentId, mentions = []) => {
     const generation = storeGeneration;
+    const session = useSessionStore.getState();
+    const retained = useSocialCommentDraftsStore.getState().drafts[
+      commentDraftKey(session.currentUser?.actorPtid, session.sessionEpoch,
+        get().postsById[postId]?.publicFeedRef || postId)
+    ];
+    const operationId = retained?.draftId ? `comment:${retained.draftId}:${retained.revision ?? 0}` : undefined;
     const comment = await socialCreateComment(
       postId,
       content,
       replyToCommentId,
       mentions,
+      operationId,
     );
     if (generation !== storeGeneration) return;
     if (!comment) return;
-    set((s) => ({
-      comments: {
-        ...s.comments,
-        [postId]: [...(s.comments[postId] ?? []), comment],
-      },
-    }));
-    // Optimistically bump the on-card count so the user sees feedback
-    // before the next timeline refresh. The authoritative count is
-    // overwritten on the next `loadFeed` / `loadPost`.
+    // A read begun before this confirmed command cannot undo its result.
+    commentReads.delete(postId);
     set((s) => {
+      const duplicate = (s.comments[postId] ?? []).some(existing => existing.id === comment.id);
       const post = s.postsById[postId];
-      if (!post || !post.stats) return s;
-      const stats = { ...post.stats };
-      stats.commentsCount = (stats.commentsCount ?? 0n) + 1n;
       return {
-        postsById: { ...s.postsById, [postId]: { ...post, stats } as Post },
+        comments: duplicate ? s.comments : {
+          ...s.comments, [postId]: [...(s.comments[postId] ?? []), comment],
+        },
+        commentsLoading: { ...s.commentsLoading, [postId]: false },
+        postsById: !duplicate && post?.stats ? { ...s.postsById, [postId]: {
+          ...post, stats: { ...post.stats, commentsCount: post.stats.commentsCount + 1n },
+        } } : s.postsById,
       };
     });
+    refreshProjectionBestEffort(get(), 'action:createComment');
   },
 
   deleteComment: async (postId, commentId) => {
     const generation = storeGeneration;
     await socialDeleteComment(commentId);
     if (generation !== storeGeneration) return;
+    commentReads.delete(postId);
     set((s) => ({
       comments: {
         ...s.comments,
         [postId]: (s.comments[postId] ?? []).filter((c) => c.id !== commentId),
       },
+      commentsLoading: { ...s.commentsLoading, [postId]: false },
     }));
   },
+
+  setCommentLike: (postId, commentId, liked) => runFencedReaction(
+    `comment:${postId}:${commentId}`, ReactionKind.REACTION_LIKE, liked ? 'add' : 'remove', undefined,
+    async operationId => {
+      const generation = storeGeneration;
+      const target = (get().comments[postId] ?? []).find(comment => comment.id === commentId);
+      if (!target || target.isDeleted) throw new Error('FEED_PROJECTION_UNVERIFIED');
+      set(state => ({ commentReactionCommands: { ...state.commentReactionCommands, [commentId]: { pending: true } } }));
+      try {
+        const confirmed = await socialSetCommentLike(postId, commentId, liked, operationId);
+        if (generation !== storeGeneration) return;
+        commentReads.delete(postId);
+        set(state => ({
+          comments: { ...state.comments, [postId]: (state.comments[postId] ?? [])
+            .map(comment => comment.id === commentId ? { ...comment, ...confirmed } : comment) },
+          commentReactionCommands: { ...state.commentReactionCommands, [commentId]: { pending: false } },
+          commentsLoading: { ...state.commentsLoading, [postId]: false },
+        }));
+      } catch (error) {
+        if (generation !== storeGeneration) return;
+        set(state => ({ commentReactionCommands: { ...state.commentReactionCommands,
+          [commentId]: { pending: false, error: String(error) } } }));
+        throw error;
+      }
+    },
+  ),
 
   // -------------------------------------------------------------------------
   // Reactions
   // -------------------------------------------------------------------------
+
+  votePoll: (postId, options) => {
+    if (isPrivateMomentMutation(postId, get().postsById[postId])) {
+      return usePrivateMomentsStore.getState().votePoll(postId, options).then(() => undefined);
+    }
+    const retained = get().pollCommands[postId];
+    const same = retained?.options.length === options.length
+      && retained.options.every((option, index) => option === options[index]);
+    const unresolved = retained && !['committed', 'rejected'].includes(retained.state);
+    if (unresolved && !same) return Promise.reject(new Error('FEED_POLL_ADMISSION_PENDING'));
+    const existing = pollFlights.get(postId);
+    if (existing) return existing;
+    const post = get().postsById[postId];
+    if (!post || post.isDeleted || post.content.case !== 'pollPost' || !post.publicFeedRef) {
+      return Promise.reject(new Error('FEED_POLL_NOT_POLL'));
+    }
+    const generation = storeGeneration;
+    let command: PollCommand = {
+      operationId: unresolved && same ? retained.operationId : makeReactionOperationId(),
+      options: [...options], state: 'pending',
+    };
+    set(state => ({ pollCommands: { ...state.pollCommands, [postId]: command } }));
+    const flight = socialVotePoll(postId, command.options, command.operationId, commandId => {
+      if (generation !== storeGeneration || get().pollCommands[postId] !== command) return;
+      command = { ...command, operationId: commandId };
+      set(state => ({ pollCommands: { ...state.pollCommands, [postId]: command } }));
+    }).then(result => {
+      if (generation !== storeGeneration || get().pollCommands[postId] !== command) return;
+      set(state => {
+        const current = state.postsById[postId];
+        if (!current || current.isDeleted || current.content.case !== 'pollPost'
+          || current.publicFeedRef !== post.publicFeedRef) return {};
+        return {
+          postsById: { ...state.postsById, [postId]: { ...current,
+            content: { case: 'pollPost', value: { ...current.content.value, result } } } },
+          pollCommands: { ...state.pollCommands, [postId]: { ...command, state: 'committed' } },
+        };
+      });
+    }).catch(error => {
+      if (generation !== storeGeneration || get().pollCommands[postId] !== command) return;
+      const current = get().postsById[postId];
+      if (!current || current.isDeleted || current.publicFeedRef !== post.publicFeedRef) return;
+      set(state => ({ pollCommands: { ...state.pollCommands, [postId]: {
+        ...command, state: pollFailureState(error), error: String(error),
+      } } }));
+      throw error;
+    }).finally(() => {
+      if (pollFlights.get(postId) === flight) pollFlights.delete(postId);
+    });
+    pollFlights.set(postId, flight);
+    return flight;
+  },
+
+  retryPoll: (postId) => {
+    if (isPrivateMomentMutation(postId, get().postsById[postId])) {
+      return usePrivateMomentsStore.getState().retryReaction(postId, '', ReactionKind.REACTION_UNSPECIFIED)
+        .then(() => undefined);
+    }
+    const retained = get().pollCommands[postId];
+    if (!retained) return Promise.reject(new Error('FEED_POLL_TARGET_UNAVAILABLE'));
+    return get().votePoll(postId, retained.options);
+  },
+
+  reconcilePublicPollCommands: async () => {
+    const generation = storeGeneration;
+    const candidates = Object.entries(get().pollCommands).filter(([postId, command]) => {
+      const post = get().postsById[postId];
+      return !pollFlights.has(postId) && !['pending', 'committed', 'rejected'].includes(command.state)
+        && post && !post.isDeleted && post.content.case === 'pollPost' && Boolean(post.publicFeedRef);
+    }).map(([postId, command]) => ({ postId, command, ref: get().postsById[postId].publicFeedRef }));
+    if (!candidates.length) return;
+    const settlements = await readPublicPollCommands(candidates.map(({ command }) => command.operationId));
+    if (generation !== storeGeneration) return;
+    set(state => {
+      const pollCommands = { ...state.pollCommands };
+      let changed = false;
+      for (const { postId, command, ref } of candidates) {
+        const post = state.postsById[postId];
+        if (pollFlights.has(postId) || pollCommands[postId] !== command || !post
+          || post.isDeleted || post.publicFeedRef !== ref || post.content.case !== 'pollPost') continue;
+        const settlement = settlements.find(result => result.commandId === command.operationId
+          && result.targetPostRef === ref && result.options.length === command.options.length
+          && result.options.every((option, index) => option === command.options[index]));
+        if (!settlement) continue;
+        pollCommands[postId] = { ...command, state: settlement.state, error: settlement.error };
+        changed = true;
+      }
+      return changed ? { pollCommands } : {};
+    });
+  },
 
   refreshPostReactions: async (postId) => {
     const generation = storeGeneration;
@@ -1209,14 +1445,14 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     kind,
     'add',
     operationId,
-    async () => {
+    async commandId => {
       const generation = storeGeneration;
       try {
         const post = get().postsById[postId];
         if (isPrivateMomentMutation(postId, post)) {
           const result = await usePrivateMomentsStore
             .getState()
-            .reactToPost(postId, kind);
+            .setReaction(postId, kind, 'REACT');
           if (generation !== storeGeneration) return;
           set((state) => ({
             reactions: {
@@ -1226,7 +1462,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
           }));
           return;
         }
-        const resp = await socialReact(postId, kind);
+        const resp = await socialReact(postId, kind, commandId);
         if (generation !== storeGeneration) return;
         // The server returns the post-wide reaction summary list; trust
         // that as the new source of truth instead of doing a local diff.
@@ -1246,16 +1482,17 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     kind,
     'remove',
     operationId,
-    async () => {
+    async commandId => {
       const generation = storeGeneration;
       try {
         const post = get().postsById[postId];
         if (isPrivateMomentMutation(postId, post)) {
           const result = await usePrivateMomentsStore
             .getState()
-            .unreactToPost(
+            .setReaction(
               postId,
               kind ?? ReactionKind.REACTION_UNSPECIFIED,
+              'UNREACT',
             );
           if (generation !== storeGeneration) return;
           set((state) => ({
@@ -1266,7 +1503,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
           }));
           return;
         }
-        const resp = await socialUnreact(postId, kind);
+        const resp = await socialUnreact(postId, kind, commandId);
         if (generation !== storeGeneration) return;
         set((s) => ({
           reactions: { ...s.reactions, [postId]: resp.reactions ?? [] },
@@ -1283,20 +1520,36 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
   // Circles
   // -------------------------------------------------------------------------
 
-  listMyCircles: async () => {
+  listMyCircles: async (refresh = false) => {
     const generation = storeGeneration;
-    if (get().circlesLoading) return;
-    set({ circlesLoading: true });
-    try {
-      const resp = await socialCircleListMine();
-      if (generation !== storeGeneration) return;
-      set({ circles: resp.circles ?? [], circlesLoading: false });
-    } catch (err) {
-      if (generation !== storeGeneration) return;
-      log.warn(TAG, 'listMyCircles failed', { err: String(err) });
-      set({ circlesLoading: false });
-      throw err;
+    if (circlesRead) {
+      if (refresh) await circlesRead.catch(() => {});
+      else await circlesRead;
+      if (!refresh || generation !== storeGeneration) return;
     }
+    const version = circleCatalogVersion;
+    const assertScope = () => {
+      if (generation !== storeGeneration) throw new Error('MOMENTS_SESSION_STALE');
+      if (version !== circleCatalogVersion) throw new Error('CIRCLE_READ_SUPERSEDED');
+    };
+    set({ circlesLoading: true });
+    const read = loadAllSocialCircles(assertScope).then(circles => {
+      assertScope();
+      const ids = new Set(circles.map(circle => String(circle.id)));
+      set(s => ({
+        circles, circlesLoading: false,
+        circleMembers: Object.fromEntries(Object.entries(s.circleMembers).filter(([id]) => ids.has(id))),
+        circleMembersErrors: Object.fromEntries(Object.entries(s.circleMembersErrors).filter(([id]) => ids.has(id))),
+      }));
+    }).catch(err => {
+      if (generation === storeGeneration) {
+        log.warn(TAG, 'listMyCircles failed', { err: String(err) });
+        set({ circlesLoading: false });
+      }
+      throw err;
+    }).finally(() => { if (circlesRead === read) circlesRead = null; });
+    circlesRead = read;
+    await read;
   },
 
   createCircle: async (name, description) => {
@@ -1308,19 +1561,22 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     if (!resp.circle) {
       throw new Error('createCircle: server returned no circle');
     }
+    circleCatalogVersion += 1;
     set((s) => ({ circles: [resp.circle as Circle, ...s.circles] }));
     return String(resp.circle.id ?? '');
   },
 
   renameCircle: async (circleId, name, description) => {
     const generation = storeGeneration;
-    await socialCircleRename(circleId, name, description);
+    const response = await socialCircleRename(circleId, name, description);
     if (generation !== storeGeneration) return;
+    if (!response.circle || String(response.circle.id) !== circleId) {
+      throw new Error('CIRCLE_PROJECTION_INVALID');
+    }
+    circleCatalogVersion += 1;
     set((s) => ({
       circles: s.circles.map((c) =>
-        String(c.id) === circleId
-          ? ({ ...c, name, description: description ?? c.description } as Circle)
-          : c,
+        String(c.id) === circleId ? response.circle as Circle : c,
       ),
     }));
   },
@@ -1329,6 +1585,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     const generation = storeGeneration;
     await socialCircleDelete(circleId);
     if (generation !== storeGeneration) return;
+    invalidateCircleMembership(circleId);
     set((s) => ({
       circles: s.circles.filter((c) => String(c.id) !== circleId),
       circleMembers: Object.fromEntries(
@@ -1337,36 +1594,88 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     }));
   },
 
-  loadCircleMembers: async (circleId) => {
+  loadCircleMembers: async (circleId, refresh = false) => {
     const generation = storeGeneration;
-    const resp = await socialCircleListMembers(circleId);
-    if (generation !== storeGeneration) return;
-    set((s) => ({
-      circleMembers: { ...s.circleMembers, [circleId]: resp.members ?? [] },
-    }));
+    const previous = circleMemberReads.get(circleId);
+    if (previous) {
+      if (refresh) await previous.catch(() => {});
+      else await previous;
+      if (!refresh) return;
+    }
+    const version = circleMembershipVersions.get(circleId) ?? 0;
+    const assertScope = () => {
+      if (generation !== storeGeneration) throw new Error('MOMENTS_SESSION_STALE');
+      if (version !== (circleMembershipVersions.get(circleId) ?? 0)) throw new Error('CIRCLE_READ_SUPERSEDED');
+    };
+    assertScope();
+    const read = loadAllSocialCircleMembers(circleId, assertScope).then(members => {
+      assertScope();
+      if (!get().circles.some(circle => String(circle.id) === circleId)) return;
+      set(s => ({
+        circleMembers: { ...s.circleMembers, [circleId]: members },
+        circleMembersErrors: Object.fromEntries(Object.entries(s.circleMembersErrors).filter(([id]) => id !== circleId)),
+      }));
+    }).catch(error => {
+      if (generation === storeGeneration && version === (circleMembershipVersions.get(circleId) ?? 0)) set(s => ({
+        circleMembersErrors: { ...s.circleMembersErrors, [circleId]: String(error) },
+      }));
+      throw error;
+    }).finally(() => { if (circleMemberReads.get(circleId) === read) circleMemberReads.delete(circleId); });
+    circleMemberReads.set(circleId, read);
+    await read;
   },
 
   addCircleMember: async (circleId, actorPtid) => {
     const generation = storeGeneration;
     await socialCircleAddMembers(circleId, [actorPtid]);
     if (generation !== storeGeneration) return;
+    invalidateCircleMembership(circleId);
     // Refresh members so the UI reflects the canonical server state
     // (server may dedupe / reject already-present DIDs silently).
-    await get().loadCircleMembers(circleId);
+    await get().loadCircleMembers(circleId, true);
   },
 
   removeCircleMember: async (circleId, actorPtid) => {
     const generation = storeGeneration;
     await socialCircleRemoveMembers(circleId, [actorPtid]);
     if (generation !== storeGeneration) return;
-    set((s) => ({
-      circleMembers: {
-        ...s.circleMembers,
-        [circleId]: (s.circleMembers[circleId] ?? []).filter(
-          (m) => m.actorPtid !== actorPtid,
-        ),
-      },
-    }));
+    invalidateCircleMembership(circleId);
+    await get().loadCircleMembers(circleId, true);
+  },
+
+  saveCircle: async (circleId, name, description, memberPtids) => {
+    const generation = storeGeneration;
+    const assertScope = () => {
+      if (generation !== storeGeneration) throw new Error('MOMENTS_SESSION_STALE');
+    };
+    // Re-read the original membership before computing a retryable delta.
+    // Each existing Circle command commits independently; a failure preserves
+    // the editor draft and re-reads actual truth, never invents a full save.
+    await get().loadCircleMembers(circleId);
+    assertScope();
+    const existing = new Set((get().circleMembers[circleId] ?? []).map(member => member.actorPtid));
+    const wanted = new Set(memberPtids);
+    const removed = [...existing].filter(id => !wanted.has(id));
+    const added = [...wanted].filter(id => !existing.has(id));
+    try {
+      if (removed.length) {
+        await socialCircleRemoveMembers(circleId, removed); assertScope(); invalidateCircleMembership(circleId);
+      }
+      if (added.length) {
+        await socialCircleAddMembers(circleId, added); assertScope(); invalidateCircleMembership(circleId);
+      }
+      await get().renameCircle(circleId, name, description);
+      assertScope();
+    } finally {
+      if (generation === storeGeneration) {
+        await Promise.all([get().loadCircleMembers(circleId, true), get().listMyCircles(true)]);
+      }
+    }
+    assertScope();
+    const actual = new Set((get().circleMembers[circleId] ?? []).map(member => member.actorPtid));
+    if (actual.size !== wanted.size || [...wanted].some(id => !actual.has(id))) {
+      throw new Error('CIRCLE_MEMBERS_NOT_CONFIRMED');
+    }
   },
 
   // -------------------------------------------------------------------------
@@ -1378,7 +1687,15 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
 
   reset: () => {
     storeGeneration += 1;
+    reactionFlights.clear();
+    pollFlights.clear();
+    circlesRead = null;
+    circleMemberReads.clear();
+    circleCatalogVersion += 1;
+    circleMembershipVersions.clear();
+    resetPublicFeed();
     commentReads.clear();
+    commentHeadIds.clear();
     activeCommentTarget = null;
     set({ ...initialState });
   },

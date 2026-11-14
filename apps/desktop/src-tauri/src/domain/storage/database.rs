@@ -17,6 +17,20 @@ pub struct DatabaseOpenSpec {
 }
 
 impl DatabaseOpenSpec {
+    pub fn new_social_feed_main(user_scope: String) -> Self {
+        let app_name = desktop_app_name();
+        let key_ref = format!("social-feed/{app_name}/main/{user_scope}");
+        Self {
+            app_name,
+            domain: "social-feed".to_string(),
+            profile: "main".to_string(),
+            user_scope,
+            encryption_level: EncryptionLevel::L2,
+            key_ref,
+            schema_version: 1,
+        }
+    }
+
     pub fn new_chat_main(user_scope: String) -> Self {
         let app_name = desktop_app_name();
         let key_ref = if app_name == "desktop" {

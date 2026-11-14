@@ -1,8 +1,10 @@
 import { invoke } from '@tauri-apps/api/core';
 import {
   resolvePrivateMomentsPlatform,
+  normalizeReactionSummaries,
   type PrivateMomentMention,
 } from './privateMomentsNative';
+import { ReactionKind, type ReactionSummary } from '../gen/proto/domain/social/post_pb';
 
 export type PrivateCommentMention = PrivateMomentMention;
 
@@ -43,6 +45,9 @@ export interface PrivateCommentProjection {
   text: string;
   mentions: PrivateCommentMention[];
   reactionsCount: number;
+  reactions: ReactionSummary[];
+  reactionRevision: string;
+  isLiked: boolean;
   repliesCount: number;
   createdAtMillis?: number;
   updatedAtMillis?: number;
@@ -221,9 +226,9 @@ function normalizePrivateCommentMention(value: unknown): PrivateCommentMention {
   return { actorPtid, offset, length, display };
 }
 
-function sameMentions(
-  left: PrivateCommentMention[],
-  right: PrivateCommentMention[],
+export function samePrivateCommentMentions(
+  left: readonly PrivateCommentMention[],
+  right: readonly PrivateCommentMention[],
 ): boolean {
   return left.length === right.length && left.every((mention, index) => {
     const candidate = right[index];
@@ -297,6 +302,12 @@ export function normalizePrivateCommentProjection(
   const mentions = Array.isArray(value.mentions)
     ? value.mentions.map(normalizePrivateCommentMention)
     : [];
+  const reactions = normalizeReactionSummaries(value.reactions ?? []);
+  const reactionRevision = String(value.reaction_revision ?? value.reactionRevision ?? '0');
+  if (!/^(0|[1-9]\d*)$/.test(reactionRevision)
+    || BigInt(reactionRevision) > 0xffffffffffffffffn) {
+    throw contractError('private Comment reaction revision is invalid');
+  }
   if (
     !commentId
     || !contentId
@@ -320,6 +331,11 @@ export function normalizePrivateCommentProjection(
     text,
     mentions,
     reactionsCount: numberField(value.reactions_count ?? value.reactionsCount) ?? 0,
+    reactions,
+    reactionRevision,
+    isLiked: reactions.some(
+      summary => summary.kind === ReactionKind.REACTION_LIKE && summary.reactedByViewer,
+    ),
     repliesCount: numberField(value.replies_count ?? value.repliesCount) ?? 0,
     createdAtMillis: numberField(value.created_at_millis ?? value.createdAtMillis),
     updatedAtMillis: numberField(value.updated_at_millis ?? value.updatedAtMillis),
@@ -451,7 +467,7 @@ function normalizeIntentDraft(
     || draft.postId !== intent.postId
     || draft.replyToCommentId !== (intent.replyToCommentId ?? '')
     || draft.text !== intent.text
-    || !sameMentions(draft.mentions, intent.mentions ?? [])
+    || !samePrivateCommentMentions(draft.mentions, intent.mentions ?? [])
   ) {
     throw contractError('private Comment Native draft changed its local identity');
   }
