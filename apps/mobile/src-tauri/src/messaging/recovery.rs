@@ -83,16 +83,14 @@ impl RecoveryKdf for MobileRecoveryKdf {
     }
 }
 
-pub fn fetch_and_decode_latest(
+/// Fetch the actor's latest recovery revision without requiring the phrase.
+/// `Ok(None)` means the Station holds no revision (HTTP 404): no recovery
+/// path is possible on this account and the UI must not ask for a phrase.
+pub fn fetch_latest_revision(
     station_origin: &str,
     access_token: &str,
-    actor_ptid: &str,
-    recovery_phrase: &str,
-) -> Result<DecodedRecoveryRevision, String> {
-    if station_origin.trim().is_empty()
-        || access_token.trim().is_empty()
-        || actor_ptid.trim().is_empty()
-    {
+) -> Result<Option<ReadLatestRecoveryRevisionResponse>, String> {
+    if station_origin.trim().is_empty() || access_token.trim().is_empty() {
         return Err("messaging recovery scope is incomplete".to_string());
     }
     let request = ReadLatestRecoveryRevisionRequest {};
@@ -112,6 +110,9 @@ pub fn fetch_and_decode_latest(
         .send()
         .map_err(|error| format!("fetch messaging recovery revision: {error}"))?;
     let status = response.status();
+    if status == reqwest::StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
     if response
         .content_length()
         .is_some_and(|length| length > MAX_RECOVERY_REVISION_BYTES as u64)
@@ -138,8 +139,27 @@ pub fn fetch_and_decode_latest(
         || revision.encrypted_archive.is_empty()
         || revision.encrypted_archive_sha256.len() != 32
     {
-        return Err("messaging recovery revision is incomplete".to_string());
+        // Treat an empty/incomplete revision the same as missing: there is
+        // nothing a phrase could decode.
+        return Ok(None);
     }
+    Ok(Some(revision))
+}
+
+pub fn fetch_and_decode_latest(
+    station_origin: &str,
+    access_token: &str,
+    actor_ptid: &str,
+    recovery_phrase: &str,
+) -> Result<DecodedRecoveryRevision, String> {
+    if station_origin.trim().is_empty()
+        || access_token.trim().is_empty()
+        || actor_ptid.trim().is_empty()
+    {
+        return Err("messaging recovery scope is incomplete".to_string());
+    }
+    let revision = fetch_latest_revision(station_origin, access_token)?
+        .ok_or_else(|| "messaging recovery revision is incomplete".to_string())?;
     let phrase = Zeroizing::new(recovery_phrase.trim().to_string());
     messaging_core::recovery::decode_recovery_revision(
         &MobileRecoveryKdf,

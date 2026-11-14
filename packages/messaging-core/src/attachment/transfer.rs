@@ -138,6 +138,12 @@ impl AttachmentTransferControl {
     pub fn request_shutdown(&self) {
         self.inner.request_shutdown();
     }
+
+    pub fn is_transfer_active(&self, attachment_id: &str) -> Result<bool, String> {
+        self.inner
+            .is_transfer_active(attachment_id)
+            .map_err(|failure| core_failure_to_chat(failure).to_string())
+    }
 }
 
 impl Default for AttachmentTransferControl {
@@ -575,12 +581,13 @@ impl AttachmentTransferWorker {
         expected_plaintext_sha256: &[u8; 32],
         cache_ref: &str,
         now_unix_ms: i64,
-    ) -> Result<(), String> {
+    ) -> Result<AttachmentTransferProgress, String> {
         let descriptor = chat_descriptor_to_core(descriptor)?;
         self.inner
             .restore_download_cache(
                 attachment_id, &descriptor, expected_plaintext_sha256, cache_ref, now_unix_ms,
             )
+            .map(Into::into)
             .map_err(|failure| core_failure_to_chat(failure).to_string())
     }
 

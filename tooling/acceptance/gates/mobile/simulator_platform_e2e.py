@@ -81,6 +81,13 @@ class SimulatorPlatformGate(SimulatorCallbackRoutingGate):
                 spec.platform,
             )
 
+        assertions = self._assertions_from_platform_clients(client_results)
+        failed = [item["name"] for item in assertions if not item["passed"]]
+        if failed:
+            raise GateError(
+                "Mobile platform assertions failed: " + ", ".join(failed)
+            )
+
         return {
             **self._result_base("PASS"),
             "completionStatus": "DONE",
@@ -88,7 +95,44 @@ class SimulatorPlatformGate(SimulatorCallbackRoutingGate):
             "source": source_identity,
             "runtime": runtime_identity,
             "clients": client_results,
+            "assertions": assertions,
         }
+
+    def _assertions_from_platform_clients(
+        self,
+        client_results: Mapping[str, dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Derive explicit assertions from observed platform evidence."""
+        assertions: list[dict[str, Any]] = []
+        for client_id, result in sorted(client_results.items()):
+            permissions = result.get("permissions", {})
+            lifecycle = result.get("lifecycle", {})
+            audit = result.get("accessibilityAudit", {})
+            prefix = f"MS-AG07:{client_id}"
+            assertions.extend([
+                {
+                    "name": f"{prefix}:permission-inventory-complete-and-valid",
+                    "passed": set(permissions) == set(PERMISSION_KINDS)
+                    and all(
+                        item.get("status") in PERMISSION_STATUSES
+                        and isinstance(item.get("canRequest"), bool)
+                        for item in permissions.values()
+                    ),
+                },
+                {
+                    "name": f"{prefix}:runtime-active-with-monotonic-generation",
+                    "passed": lifecycle.get("phase") == "ACTIVE"
+                    and isinstance(lifecycle.get("generation"), int),
+                },
+                {
+                    "name": f"{prefix}:native-accessibility-tree-readable",
+                    "passed": isinstance(audit.get("nodeCount"), int)
+                    and audit.get("nodeCount", 0) > 0
+                    and isinstance(audit.get("readableNodeCount"), int)
+                    and audit.get("readableNodeCount", 0) > 0,
+                },
+            ])
+        return assertions
 
     def _exercise_platform_client(
         self,

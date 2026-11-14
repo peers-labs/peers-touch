@@ -14,7 +14,7 @@ body:has(.mobile-device-link-scanner),
   height: auto;
 }
 
-.mobile-device-link-scanner .auth-gate-card > .ant-card-body {
+.mobile-device-link-scanner .auth-gate-card > .auth-gate-card-body {
   display: flex;
   padding: 16px !important;
 }
@@ -30,7 +30,7 @@ body:has(.mobile-device-link-scanner),
 
 .mobile-device-link-identity > svg,
 .mobile-device-link-symbol {
-  color: var(--brand-primary);
+  color: var(--pt-accent);
   flex-shrink: 0;
 }
 
@@ -45,7 +45,7 @@ body:has(.mobile-device-link-scanner),
   letter-spacing: .16em;
   padding: 16px 20px;
   border-radius: 12px;
-  background: var(--brand-muted);
+  background: var(--pt-subtle);
   text-align: center;
   max-width: 100%;
   overflow-wrap: anywhere;
@@ -60,20 +60,7 @@ body:has(.mobile-device-link-scanner),
   padding-block: 12px;
 }
 
-.mobile-device-link-progress > svg {
-  flex-shrink: 0;
-  animation: mobile-device-link-progress 1s linear infinite;
-}
-
 .station-scan-entry {
   margin-bottom: 20px;
   min-height: 48px;
-}
-
-@keyframes mobile-device-link-progress {
-  to { transform: rotate(360deg); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .mobile-device-link-progress > svg { animation: none; }
 }

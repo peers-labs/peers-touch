@@ -44,7 +44,7 @@ use crate::state::AppState;
 use ed25519_dalek::Signer as _;
 use prost::Message;
 use reqwest::Method;
-use tauri::{State, Window};
+use tauri::{Manager, State, Window};
 use ulid::Ulid;
 
 const FRIEND_REQUEST_COMMAND_FORMAT_VERSION: u32 = 1;
@@ -70,6 +70,17 @@ fn token_from_state_proto(
     window: &Window,
 ) -> Result<String, AppResult<Vec<u8>>> {
     optional_token_from_state_proto(state, window)
+        .ok_or_else(|| AppResult::fail(ErrorCode::Unauthorized, "authentication required", None))
+}
+
+/// Same as token_from_state_proto for async commands that only hold an owned
+/// `Arc<AppState>` (resolved from AppHandle before spawn_blocking).
+fn token_from_arc_proto(
+    state: &Arc<AppState>,
+    window: &Window,
+) -> Result<String, AppResult<Vec<u8>>> {
+    session_resolver::token_for_window(state, window)
+        .filter(|token| !token.trim().is_empty())
         .ok_or_else(|| AppResult::fail(ErrorCode::Unauthorized, "authentication required", None))
 }
 
@@ -998,15 +1009,37 @@ pub fn social_unfollow(
 }
 
 #[tauri::command]
-pub fn social_get_followers(
+pub async fn social_get_followers(
     input: SocialGetFollowersInput,
-    state: State<'_, Arc<AppState>>,
+    app: tauri::AppHandle,
     window: Window,
 ) -> AppResult<Vec<u8>> {
-    let token = match token_from_state_proto(&state, &window) {
+    // Async shell: the Station HTTP round-trip must not run on the wry IPC
+    // main thread (a blocking command freezes the whole window until it
+    // returns). Resolve the local token off the request, then run the network
+    // call on the blocking pool.
+    let state: Arc<AppState> = app.state::<Arc<AppState>>().inner().clone();
+    let token = match token_from_arc_proto(&state, &window) {
         Ok(t) => t,
         Err(e) => return e,
     };
+    let client = state.station.client().clone();
+    tokio::task::spawn_blocking(move || social_get_followers_blocking(client, token, input))
+        .await
+        .unwrap_or_else(|_| {
+            AppResult::fail(
+                ErrorCode::Unavailable,
+                "social_get_followers task panicked",
+                None,
+            )
+        })
+}
+
+fn social_get_followers_blocking(
+    client: StationClient,
+    token: String,
+    input: SocialGetFollowersInput,
+) -> AppResult<Vec<u8>> {
     let mut query: Vec<(&str, String)> = Vec::new();
     if let Some(actor_ptid) = input.actor_ptid {
         if !actor_ptid.is_empty() {
@@ -1022,7 +1055,7 @@ pub fn social_get_followers(
         query.push(("limit", l.to_string()));
     }
     let resp: model::social::GetFollowersResponse = match get_proto(
-        state.station.client(),
+        &client,
         "/api/v1/social/relationships/followers",
         &token,
         Some(&query),
@@ -1034,15 +1067,33 @@ pub fn social_get_followers(
 }
 
 #[tauri::command]
-pub fn social_get_following(
+pub async fn social_get_following(
     input: SocialGetFollowingInput,
-    state: State<'_, Arc<AppState>>,
+    app: tauri::AppHandle,
     window: Window,
 ) -> AppResult<Vec<u8>> {
-    let token = match token_from_state_proto(&state, &window) {
+    let state: Arc<AppState> = app.state::<Arc<AppState>>().inner().clone();
+    let token = match token_from_arc_proto(&state, &window) {
         Ok(t) => t,
         Err(e) => return e,
     };
+    let client = state.station.client().clone();
+    tokio::task::spawn_blocking(move || social_get_following_blocking(client, token, input))
+        .await
+        .unwrap_or_else(|_| {
+            AppResult::fail(
+                ErrorCode::Unavailable,
+                "social_get_following task panicked",
+                None,
+            )
+        })
+}
+
+fn social_get_following_blocking(
+    client: StationClient,
+    token: String,
+    input: SocialGetFollowingInput,
+) -> AppResult<Vec<u8>> {
     let mut query: Vec<(&str, String)> = Vec::new();
     if let Some(actor_ptid) = input.actor_ptid {
         if !actor_ptid.is_empty() {
@@ -1058,7 +1109,7 @@ pub fn social_get_following(
         query.push(("limit", l.to_string()));
     }
     let resp: model::social::GetFollowingResponse = match get_proto(
-        state.station.client(),
+        &client,
         "/api/v1/social/relationships/following",
         &token,
         Some(&query),
@@ -1733,15 +1784,33 @@ pub fn social_friend_request_reject(
 }
 
 #[tauri::command]
-pub fn social_friend_request_list(
+pub async fn social_friend_request_list(
     input: SocialFriendRequestListInput,
-    state: State<'_, Arc<AppState>>,
+    app: tauri::AppHandle,
     window: Window,
 ) -> AppResult<Vec<u8>> {
-    let token = match token_from_state_proto(&state, &window) {
+    let state: Arc<AppState> = app.state::<Arc<AppState>>().inner().clone();
+    let token = match token_from_arc_proto(&state, &window) {
         Ok(t) => t,
         Err(e) => return e,
     };
+    let client = state.station.client().clone();
+    tokio::task::spawn_blocking(move || social_friend_request_list_blocking(client, token, input))
+        .await
+        .unwrap_or_else(|_| {
+            AppResult::fail(
+                ErrorCode::Unavailable,
+                "social_friend_request_list task panicked",
+                None,
+            )
+        })
+}
+
+fn social_friend_request_list_blocking(
+    client: StationClient,
+    token: String,
+    input: SocialFriendRequestListInput,
+) -> AppResult<Vec<u8>> {
     let mut query = Vec::new();
     if let Some(status) = input.status {
         query.push(("state", status.to_string()));
@@ -1749,7 +1818,7 @@ pub fn social_friend_request_list(
     query.push(("limit", input.limit.unwrap_or(50).clamp(1, 200).to_string()));
     query.push(("offset", input.offset.unwrap_or(0).to_string()));
     let resp: model::social::ListSocialFriendRequestsResponse = match get_proto(
-        state.station.client(),
+        &client,
         "/api/v1/social/friend-requests",
         &token,
         Some(&query),

@@ -146,6 +146,9 @@ export type StationTransportOperation =
     call_id: string;
     peer_actor_ptid: string;
   }
+  | { operationId: 'group_call_join'; group_ulid: string }
+  | { operationId: 'group_call_status'; group_ulid: string }
+  | { operationId: 'group_call_decline'; group_ulid: string; room_sid: string }
   | { operationId: 'turn_ice_servers' };
 
 export interface StationTransportResponse {
@@ -376,7 +379,11 @@ function operationAdmission(
     case 'presence_heartbeat':
     case 'presence_offline':
     case 'realtime_signal_send':
+    case 'group_call_join':
+    case 'group_call_decline':
       return 'write';
+    case 'group_call_status':
+      return 'read';
   }
   const exhaustive: never = operation;
   return exhaustive;

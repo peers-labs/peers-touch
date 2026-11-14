@@ -1,145 +1,67 @@
 # Module 5: Provider and Model Acceptance
 
-> Architecture: `peers-design.md`
-> Updated: 2026-10-18
+Architecture: [Peers Design](peers-design.md). Updated: 2026-10-30.
 
-## 1. Provider List
+## Shared management
 
-### AC-1.1 Mixed list
+- Valid live Dashboard administrator sessions can configure shared Providers,
+  models, write-only credentials, grants and the personal policy.
+- Actor JWTs, revoked administrator sessions and insufficient roles cannot
+  perform those mutations.
+- Concurrent configuration and grant writes reject stale revisions without
+  partial replacement.
+- Secrets are encrypted at rest, remain absent from read responses and fail
+  closed when the KEK is unavailable.
 
-Given Direct and CLI providers exist, Provider Settings renders one list with no
-persistent type tabs. Each row shows identity, type, and enabled state.
+## Authorized consumption
 
-### AC-1.2 Usable filter
+- No grant means no available shared model.
+- Actor-specific and model-specific grants expose exactly the allowed catalog.
+- Shared identity takes precedence; denial never uses a private same-named
+  Provider.
+- Storage UUIDs cannot bypass owner or grant checks.
+- Disablement, grant revocation and stale Provider revisions block subsequent
+  dispatches and resumed tool continuations.
+- One-shot applet completion resolves the Actor's Station default and applies
+  the same Provider dispatch authority.
 
-`Show usable only` defaults on, persists, and includes only Providers whose
-shared readiness projection is `ready`.
+## Personal policy and defaults
 
-### AC-1.3 Scroll ownership
+- Personal management is disabled by default and rejected by Station.
+- Enabling the policy permits only the current Actor's personal resources.
+- Defaults persist as a composite Provider/model pair with a CAS revision.
+- Switching accounts discards old reads, writes and optimistic rollback.
+- Duplicate model IDs remain distinct in default, composer, Agent and Cron
+  selection. Bare IDs resolve only when unique.
 
-At wide and narrow Settings sizes:
+## CLI installation and runtime
 
-- Provider list owns one vertical scroll container.
-- The scrollbar is the shared thin 6px treatment.
-- The Settings section host does not create a second Provider scrollbar.
-- No horizontal overflow exists.
+- Dashboard retains all four registered adapters when binaries are missing.
+- Option backgrounds show real installation progress. Failed jobs expose retry
+  and the official guide; unsupported TRAE installation remains manual.
+- Installation deduplicates by adapter; failed upgrades preserve the active
+  immutable version.
+- Direct calls and CLI invocations consume the effective owner's credentials.
+- Machine and managed executables use private Actor HOME, tool state, cache,
+  temporary files and workspaces.
+- Discovery has its effective-owner scope and Provider revision, preserves
+  valid catalogs on failure, and cannot create mutable CLI model records.
+- Cancellation and timeout terminate process groups and finish workers before
+  retry or shutdown.
 
-## 2. Direct Provider
+## UI and evidence
 
-### AC-2.1 Configuration
+Ordinary Desktop has authorized read-only shared Provider views, its personal
+default and policy-enabled personal editing. It exposes no shared management,
+installer or Federation Settings section.
 
-API key and Base URL save through Station and survive Provider reselection.
-Check reports authoritative success or failure.
+Dashboard AI and Federation pages mount only while active. Provider forms mount
+only for the selected Provider. Wide and narrow layouts have no horizontal
+overflow; option progress, recovery, official links and secret draft teardown
+require rendered observations.
 
-### AC-2.2 Custom model CRUD
-
-Add, edit, enable/disable, and remove remain available for Direct models. Each
-successful mutation refreshes Provider detail and Agent available models.
-
-### AC-2.3 No bulk mutation
-
-Direct Provider detail exposes no Enable All or Disable All operation.
-
-## 3. CLI Provider
-
-### AC-3.1 Dedicated schema
-
-Selecting a CLI Provider mounts `CliProviderDetail` only. API key, Base URL,
-custom model Add/Edit/Delete, model switches, and bulk actions are absent.
-
-### AC-3.2 Capability-driven fields
-
-Default model is shown. Startup args, environment, timeout, and Refresh appear
-only when their corresponding Station capability is true.
-
-Registered command, workspace policy, and runtime capability facts are read-only.
-
-### AC-3.3 Save and restore
-
-Save submits one complete `ProviderRuntimeConfig`. Restore Defaults resets the
-local form to `default_runtime_config`; Save persists it. Invalid environment
-syntax is rejected locally, and invalid/secret runtime config is rejected by
-Station.
-
-### AC-3.4 Enable persistence
-
-Disabling and re-enabling a CLI Provider preserves default model, startup args,
-environment, and timeout.
-
-### AC-3.5 Check
-
-Check is executed by Station against the registered binary. Missing binaries
-return unavailable/install guidance without any Desktop subprocess.
-
-## 4. CLI Model Discovery
-
-### AC-4.1 Real TRAE catalog
-
-For a Station host with `traecli 0.200.19`, Refresh executes
-`traecli debug models` and returns the supported visible models, including:
-
-- slug/display name;
-- description;
-- context window;
-- input/runtime capabilities;
-- default and supported reasoning levels.
-
-### AC-4.2 Shared catalog
-
-After successful discovery, the same actor-scoped catalog is visible in:
-
-- CLI Provider detail;
-- Agent available models;
-- composer selection;
-- runtime admission.
-
-### AC-4.3 Failure preservation
-
-Timeout, invalid output, unsupported output, or process failure does not replace
-the prior valid catalog.
-
-### AC-4.4 Actor isolation
-
-Actor A and Actor B may discover different model catalogs for the same Provider.
-One actor's refresh must not affect the other actor's Provider detail or runtime
-admission.
-
-## 5. Composite Model Identity
-
-### AC-5.1 Duplicate IDs
-
-Given `codex-cli/default` and `trae-cli/default` both exist:
-
-- choosing TRAE selects `trae-cli/default`;
-- the selected check appears only on the TRAE row;
-- Model Service saves both Provider and model;
-- Agent default/fallback remains on the configured pair;
-- Cron override resolves the configured pair.
-
-No consumer selects the first `default` by list order.
-
-### AC-5.2 Legacy bare ID
-
-A legacy bare model ID resolves only if exactly one available model matches.
-Ambiguous bare IDs fall back to the configured composite default.
-
-## 6. Security and Process Lifecycle
-
-- Registered argv is executed without shell parsing.
-- Discovery output is bounded.
-- Discovery and execution timeouts terminate the process group.
-- Environment cannot override Station-owned keys or carry secret-like keys.
-- Model metadata cannot leak base instructions or other unapproved CLI fields.
-
-## 7. Required Evidence
-
-- Station Agent package tests.
-- Desktop full unit/contract suite and TypeScript check.
-- Generated Go/Desktop/Mobile TypeScript contracts are current.
-- `git diff --check`.
-- Exact-source Native Settings screenshots at wide and narrow widths.
-- Native Check, Save/Restore, Refresh, disable/re-enable, duplicate-model
-  selection, and one real TRAE Agent turn.
-
-Static tests and direct CLI output prove contract behavior only. They do not
-upgrade Native product behavior to proven.
+Verification is scoped to affected source tests, frontend/native checks and
+real current-source product journeys. Unit regressions and direct CLI output
+are supporting evidence. Real installation, shared upstream calls, native
+account switching and administrator UI recovery remain unproven until exercised
+against the canonical current-source runtime.

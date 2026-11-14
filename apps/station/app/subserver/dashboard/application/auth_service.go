@@ -246,15 +246,22 @@ func (s *AuthService) ValidateToken(ctx context.Context, tokenStr string) (*doma
 		// 500.
 		return nil, domain.ErrUnauthorized
 	}
+	if subject.SessionID == "" {
+		return nil, domain.ErrUnauthorized
+	}
+	if _, err := s.sessionRepo.FindActiveBySession(ctx, subject.SessionID, adminID); err != nil {
+		return nil, domain.ErrUnauthorized
+	}
 
-	if _, err := s.adminRepo.FindActiveByID(ctx, adminID); err != nil {
+	admin, err := s.adminRepo.FindActiveByID(ctx, adminID)
+	if err != nil {
 		return nil, domain.ErrUnauthorized
 	}
 
 	return &domain.DashboardClaims{
 		AdminID:   adminID,
-		Username:  subject.Attributes[attrUsername],
-		Role:      subject.Attributes[attrRole],
+		Username:  admin.Username,
+		Role:      string(admin.Role),
 		SessionID: subject.SessionID,
 	}, nil
 }

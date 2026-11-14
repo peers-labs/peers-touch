@@ -513,7 +513,7 @@ export function AgentChatPage({
   onOpenProfile,
   onCloseProfile,
 }: {
-  onOpenOrchestration: () => void;
+  onOpenOrchestration?: () => void;
   profileOpen: boolean;
   onOpenProfile: () => void;
   onCloseProfile: () => void;
@@ -948,7 +948,7 @@ export function AgentChatPage({
   const openOrchestration = () => {
     topicsOpenerRef.current = null;
     setMobileAgentPickerOpen(false);
-    onOpenOrchestration();
+    onOpenOrchestration?.();
   };
 
   const openAgentProfile = (id: string) => {
@@ -1726,7 +1726,7 @@ export function AgentChatPage({
           searchRef={agentSearchRef}
           onExpandSearch={openAgentRoster}
           onCreateLocal={createLocalAgent}
-          onCreateOrchestrator={openOrchestration}
+          onCreateOrchestrator={onOpenOrchestration ? openOrchestration : undefined}
           onPick={pickAgent}
           onEdit={openAgentProfile}
           onDelete={requestAgentDelete}
@@ -2177,7 +2177,7 @@ export function AgentChatPage({
                 searchRef={agentSearchRef}
                 onExpandSearch={() => undefined}
                 onCreateLocal={createLocalAgent}
-                onCreateOrchestrator={openOrchestration}
+                onCreateOrchestrator={onOpenOrchestration ? openOrchestration : undefined}
                 onPick={(id) => {
                   pickAgent(id);
                   setMobileAgentPickerOpen(false);
@@ -2241,7 +2241,7 @@ function AgentCreateMenu({ triggerStyle, triggerIcon, onLocal, onOrchestrator, o
   triggerStyle: React.CSSProperties;
   triggerIcon: React.ReactNode;
   onLocal: () => void;
-  onOrchestrator: () => void;
+  onOrchestrator?: () => void;
   onOpenChange?: (open: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -2306,10 +2306,10 @@ function AgentCreateMenu({ triggerStyle, triggerIcon, onLocal, onOrchestrator, o
               <UserPlus size={14} />
               <span>Create Local</span>
             </button>
-            <button type="button" role="menuitem" className="pt-picker-menu-item" style={S.pickerMenuItem} onClick={run(onOrchestrator)}>
+            {onOrchestrator && <button type="button" role="menuitem" className="pt-picker-menu-item" style={S.pickerMenuItem} onClick={run(onOrchestrator)}>
               <Share2 size={14} />
               <span>Create Orchestrator</span>
-            </button>
+            </button>}
           </div>
         </>, document.body,
       )}
@@ -2347,7 +2347,7 @@ function AgentRosterRail({
   searchRef: React.RefObject<HTMLInputElement | null>;
   onExpandSearch: () => void;
   onCreateLocal: () => void;
-  onCreateOrchestrator: () => void;
+  onCreateOrchestrator?: () => void;
   onPick: (id: string) => void;
   onEdit: (id: string) => void;
   onDelete: (agent: ChatAgent) => void;

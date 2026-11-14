@@ -157,22 +157,11 @@ def prepare_prompt_fixture(runner: AgentNativeJourney) -> dict[str, str]:
     endpoint = runner.minimum_provider_bridge.start(
         runner.minimum_provider_fixture.port, marker,
     )
-    created = runner.invoke_readback_command("provider_create", {
-        "id": f"profile-fixture-{marker.lower()}",
-        "name": f"Profile fixture {marker}",
-        "description": "Suite-owned prompt receiver",
-        "logo": "",
-        "key_vaults": json.dumps({"api_key": runner.minimum_provider_fixture.api_key}),
-        "config_json": json.dumps({"base_url": endpoint}),
-        "runtime_kind": "direct",
-        "protocol": "openai",
-    })
-    provider_id = str(created["provider"]["id"])
-    runner.cli_provider_fixture = {"providerId": provider_id}
-    runner.invoke_readback_command("model_add", {
-        "provider_id": provider_id,
-        "data": {
-            "id": "profile-prompt", "display_name": f"Prompt receiver {marker}",
+    provider_id = f"profile-fixture-{marker.lower()}"
+    runner.dashboard.create_fixture(
+        provider_id, f"Profile fixture {marker}", endpoint,
+        runner.minimum_provider_fixture.api_key, {
+            "model_id": "profile-prompt", "display_name": f"Prompt receiver {marker}",
             "enabled": True,
             "context_window": 8192,
             "capabilities": model_capability_config({
@@ -181,7 +170,7 @@ def prepare_prompt_fixture(runner: AgentNativeJourney) -> dict[str, str]:
                 "image-input": False,
             }),
         },
-    })
+    )
     return {
         "providerId": provider_id,
         "modelId": "profile-prompt",

@@ -491,20 +491,18 @@ def validate_auth_ui_identity(repo_root: Path = REPO_ROOT) -> None:
         / "DraftRestoreOverlay.tsx"
     ).read_text(encoding="utf-8")
     mobile_css = (mobile_root / "src" / "styles.css").read_text(encoding="utf-8")
+    # North-star realignment: the prototype no longer carries a second phone
+    # skin. AccessGateView renders the same @peers-touch/ui components as the
+    # production host, and MobilePrototype only injects scenario state into the
+    # shared MobileApp inside a device frame.
     prototype_source = (
-        prototype_root / "src" / "pages" / "AuthGateScreen.tsx"
+        prototype_root / "src" / "app" / "AccessGateView.tsx"
     ).read_text(encoding="utf-8")
     prototype_shell = (
         prototype_root / "src" / "MobilePrototype.tsx"
     ).read_text(encoding="utf-8")
-    prototype_mobile_shell = (
-        prototype_root / "src" / "MobileShell.tsx"
-    ).read_text(encoding="utf-8")
-    prototype_recovery = (
-        prototype_root / "src" / "components" / "ExperienceRecovery.tsx"
-    ).read_text(encoding="utf-8")
-    prototype_css = (
-        prototype_root / "src" / "mobilePrototype.css"
+    prototype_app = (
+        prototype_root / "src" / "MobileApp.tsx"
     ).read_text(encoding="utf-8")
 
     required_mobile_tokens = (
@@ -521,10 +519,16 @@ def validate_auth_ui_identity(repo_root: Path = REPO_ROOT) -> None:
         raise ValueError(
             f"Mobile Auth identity contract is incomplete: {missing_mobile_tokens}"
         )
-    if access_source.index('<Card className="auth-gate-card"') > access_source.index(
-        '<section className="auth-gate-brand">'
-    ):
-        raise ValueError("Mobile Auth brand must render inside the dominant card")
+    # The gate body (including the brand section) is composed once and the
+    # standalone return wraps that same body in the dominant card, so verify
+    # composition rather than raw source ordering. The peers-ui landing
+    # replaced the antd Card with the same-named layout div.
+    if '<div className="auth-gate-card">' not in access_source:
+        raise ValueError("Mobile Auth standalone gate must keep the dominant card")
+    if '{gateBody}' not in access_source:
+        raise ValueError("Mobile Auth card must render the composed gate body")
+    if '<section className="auth-gate-brand"' not in access_source:
+        raise ValueError("Mobile Auth brand must render inside the composed gate body")
     if (
         "mobile.auth.brandKicker" in access_source
         or re.search(
@@ -589,28 +593,25 @@ def validate_auth_ui_identity(repo_root: Path = REPO_ROOT) -> None:
         raise ValueError(
             "Unavailable Mobile routes must own one lifecycle-backed recovery"
         )
-    required_prototype_route_tokens = (
-        'className="mp-route-state"',
-        'data-demo-recovery-owner="lifecycle"',
-        "data-demo-route-state={retrying ? 'preparing' : 'unavailable'}",
-        "mobile.route.unavailableBody",
-        "onClick={onRetry}",
-    )
-    if any(
-        token not in prototype_recovery
-        for token in required_prototype_route_tokens
-    ) or (
-        "SocialRuntimeNotice" in prototype_mobile_shell
-        or ".mp-runtime-notice" in prototype_css
+    # The north-star prototype deleted its hand-coded route-state demo
+    # (ExperienceRecovery): route recovery now has a single owner, the
+    # production MobileRouteBoundary, whose lifecycle tokens are asserted above.
+    # The shared-skin prototype must not reintroduce a detached runtime notice.
+    if (
+        "SocialRuntimeNotice" in prototype_shell
+        or "SocialRuntimeNotice" in prototype_app
     ):
         raise ValueError(
-            "Mobile prototype must keep lifecycle Retry inside one route state"
+            "Mobile prototype must not reintroduce a detached runtime notice"
         )
 
+    # The prototype AccessGateView consumes the same @peers-touch/ui design
+    # system as the production host, so re-auth anatomy is asserted against the
+    # shared component contract rather than a parallel mp-* skin.
     required_prototype_tokens = (
-        'className="mp-auth-logo"',
-        'data-session-expired={expiredSession ? \'true\' : \'false\'}',
-        "Session expired",
+        "from '@peers-touch/ui'",
+        "data-session-expired",
+        "mobile.auth.sessionExpiredTitle",
     )
     if any(token not in prototype_source for token in required_prototype_tokens):
         raise ValueError("Mobile Auth prototype is missing the shared re-auth anatomy")
@@ -624,34 +625,29 @@ def validate_auth_ui_identity(repo_root: Path = REPO_ROOT) -> None:
             "or detached session-revoked flow"
         )
 
-    for source, selector in (
-        (mobile_css, ".auth-gate-logo"),
-        (prototype_css, ".mp-auth-logo"),
+    # Production keeps the compact Auth logo and card anatomy; the prototype
+    # no longer owns a second stylesheet for them because the shared design
+    # system renders the same components.
+    logo_rule = css_rule_body(mobile_css, ".auth-gate-logo")
+    for declaration in (
+        "width: 44px",
+        "height: 44px",
+        "border-radius: 8px",
     ):
-        logo_rule = css_rule_body(source, selector)
-        for declaration in (
-            "width: 44px",
-            "height: 44px",
-            "border-radius: 8px",
-        ):
-            if declaration not in logo_rule:
-                raise ValueError(
-                    f"{selector} must preserve compact Mobile Auth {declaration}"
-                )
-
-    for source, selector in (
-        (mobile_css, ".auth-gate-card"),
-        (prototype_css, ".mp-auth-card"),
-    ):
-        card_rule = css_rule_body(source, selector)
-        if (
-            "width: min(100%, 400px)" not in card_rule
-            or "border-radius: 8px" not in card_rule
-            or "margin-top: auto" in card_rule
-        ):
+        if declaration not in logo_rule:
             raise ValueError(
-                f"{selector} must preserve the compact Mobile Auth card anatomy"
+                f".auth-gate-logo must preserve compact Mobile Auth {declaration}"
             )
+
+    card_rule = css_rule_body(mobile_css, ".auth-gate-card")
+    if (
+        "width: min(100%, 400px)" not in card_rule
+        or "border-radius: 8px" not in card_rule
+        or "margin-top: auto" in card_rule
+    ):
+        raise ValueError(
+            ".auth-gate-card must preserve the compact Mobile Auth card anatomy"
+        )
 
 
 def retired_mobile_chat_route_references(mobile_root: Path) -> list[str]:

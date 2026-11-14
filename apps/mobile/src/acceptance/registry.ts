@@ -506,6 +506,9 @@ export function createMobileAcceptanceHarness(): MobileAcceptanceNamespace {
     mobileAcceptanceActions.callResolutionState,
     registry,
   );
+  registerMobileAcceptanceAction('callSnapshot', mobileAcceptanceActions.callSnapshot, registry);
+  registerMobileAcceptanceAction('callMediaStats', mobileAcceptanceActions.callMediaStats, registry);
+  registerMobileAcceptanceAction('callRestartConnection', mobileAcceptanceActions.callRestartConnection, registry);
   registerMobileAcceptanceAction(
     'acceptCall',
     mobileAcceptanceActions.acceptCall,
@@ -516,6 +519,17 @@ export function createMobileAcceptanceHarness(): MobileAcceptanceNamespace {
     mobileAcceptanceActions.rejectCall,
     registry,
   );
+  registerMobileAcceptanceAction(
+    'debug.snapshot.read',
+    mobileAcceptanceActions['debug.snapshot.read'],
+    registry,
+  );
+  registerMobileAcceptanceAction('groupCallStart', mobileAcceptanceActions.groupCallStart, registry);
+  registerMobileAcceptanceAction('groupCallLeave', mobileAcceptanceActions.groupCallLeave, registry);
+  registerMobileAcceptanceAction('groupCallToggleMic', mobileAcceptanceActions.groupCallToggleMic, registry);
+  registerMobileAcceptanceAction('groupCallToggleCamera', mobileAcceptanceActions.groupCallToggleCamera, registry);
+  registerMobileAcceptanceAction('groupCallSnapshot', mobileAcceptanceActions.groupCallSnapshot, registry);
+  registerMobileAcceptanceAction('groupCallMediaStats', mobileAcceptanceActions.groupCallMediaStats, registry);
   registerMobileAcceptanceAction(
     'cleanup',
     mobileAcceptanceActions.cleanup,

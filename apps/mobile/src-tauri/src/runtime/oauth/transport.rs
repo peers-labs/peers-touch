@@ -8,6 +8,10 @@ use super::proto::common::v1::PeersResponse;
 use crate::error::{MobileError, MobileResult};
 use crate::station_origin::{normalize_station_origin, StationOriginError};
 
+use serde::Deserialize;
+
+use crate::runtime::oauth::OAuthProviderInfo;
+
 pub(crate) const PROTOBUF_CONTENT_TYPE: &str = "application/protobuf";
 const JSON_CONTENT_TYPE: &str = "application/json";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
@@ -21,6 +25,17 @@ pub(crate) struct StationOAuthTransport {
     client: reqwest::Client,
 }
 
+#[derive(Debug, Deserialize)]
+struct ProviderDirectoryEntry {
+    id: String,
+    #[serde(default)]
+    enabled: bool,
+    #[serde(default)]
+    status: String,
+    #[serde(default, rename = "has_credentials")]
+    has_credentials: bool,
+}
+
 impl StationOAuthTransport {
     pub(crate) fn new() -> MobileResult<Self> {
         let client = reqwest::Client::builder()
@@ -32,6 +47,46 @@ impl StationOAuthTransport {
                 MobileError::oauth(format!("mobile.auth.oauthTransportInit:{error}"))
             })?;
         Ok(Self { client })
+    }
+
+    /// Fetch the public OAuth provider directory. The Station reports
+    /// effective credential state (enabled + client id/secret present), which
+    /// Mobile uses to render only sign-in buttons that can actually start.
+    pub(crate) async fn providers(&self, origin: &str) -> MobileResult<Vec<OAuthProviderInfo>> {
+        let url = endpoint_url(origin, "/api/oauth/providers")?;
+        let response = self
+            .client
+            .get(url)
+            .header(ACCEPT, JSON_CONTENT_TYPE)
+            .send()
+            .await
+            .map_err(|error| {
+                MobileError::oauth(format!("mobile.auth.oauthTransportUnavailable:{error}"))
+            })?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(MobileError::oauth(format!(
+                "mobile.auth.oauthStationRejected:{}",
+                status.as_u16()
+            )));
+        }
+        let body = response.bytes().await.map_err(|error| {
+            MobileError::oauth(format!("mobile.auth.oauthResponseRead:{error}"))
+        })?;
+        if body.len() > MAX_RESPONSE_BYTES {
+            return Err(MobileError::oauth("mobile.auth.oauthResponseTooLarge"));
+        }
+        let providers: Vec<ProviderDirectoryEntry> = serde_json::from_slice(&body)
+            .map_err(|_| MobileError::oauth("mobile.auth.oauthInvalidResponse"))?;
+        Ok(providers
+            .into_iter()
+            .map(|entry| OAuthProviderInfo {
+                id: entry.id,
+                enabled: entry.enabled,
+                status: entry.status,
+                has_credentials: entry.has_credentials,
+            })
+            .collect())
     }
 
     pub(crate) async fn post<Req, Resp>(

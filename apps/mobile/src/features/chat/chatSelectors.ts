@@ -17,6 +17,7 @@ import { chatActionKey, defaultChatActionState } from './chatActionState';
 import type { FriendConversationSettings, ChatBackgroundId } from '../social/socialApiTypes';
 import type { CommandProjection } from '../../runtimes/commandRuntime';
 import type { MessagingConversationProjection } from '../../services/mobileCommands';
+import { useContactPreferences } from '../social/useContactPreferences';
 
 // ---------------------------------------------------------------------------
 // Shared conversation types
@@ -58,6 +59,7 @@ export function useConversationListProjection(
   chatActionStates: Record<string, ChatActionState>,
   friendSettings: Record<string, FriendConversationSettings>,
 ): ConversationListProjection {
+  const contactPreferences = useContactPreferences().contacts;
   const {
     sessions,
     currentUserPtid,
@@ -75,8 +77,12 @@ export function useConversationListProjection(
   })));
 
   const friendConversations = useMemo(
-    () => projectConversations({ sessions, currentUserPtid, peerOnline, peerProfiles }),
-    [currentUserPtid, peerOnline, peerProfiles, sessions],
+    () => projectConversations({ sessions, currentUserPtid, peerOnline, peerProfiles })
+      .map(conversation => ({
+        ...conversation,
+        peerName: contactPreferences[conversation.peerPtid]?.nickname || conversation.peerName,
+      })),
+    [contactPreferences, currentUserPtid, peerOnline, peerProfiles, sessions],
   );
   const groupConversations = useMemo(
     () => messagingConversations
@@ -107,11 +113,12 @@ export function useConversationListProjection(
       query,
       resolvePreference: (conv) =>
         conversationPreferenceState(conv, chatActionStates, friendSettings),
-      resolveSearchText: conversationSearchText,
+      resolveSearchText: conv => `${conversationSearchText(conv)} ${conv.kind === 'friend'
+        ? contactPreferences[conv.conversation.peerPtid]?.note ?? '' : ''}`,
       resolveUnread: conversationUnread,
       resolveUpdatedAt: conversationUpdatedAt,
     }),
-    [all, chatActionStates, friendSettings, query],
+    [all, chatActionStates, contactPreferences, friendSettings, query],
   );
 
   return { all, surfaceItems };

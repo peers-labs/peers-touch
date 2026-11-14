@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+import time
 
 from selenium.webdriver.common.by import By
 
@@ -50,6 +51,129 @@ def select_topic(runner: AgentNativeJourney, topic_id: str) -> None:
         lambda: runner.runtime_snapshot()["currentSessionKey"] == topic_id,
         "selected Topic projection",
     )
+
+
+def idle_stability(
+    runner: AgentNativeJourney, *, duration_seconds: float = 130,
+) -> dict[str, Any]:
+    """Observe production timers without Harness reconciliation or Store reads."""
+    require(duration_seconds >= 130, "Idle observation must span two real timer cycles")
+    composer = "[data-pt-agent-composer-input]"
+    original = runner.driver.find_element(By.CSS_SELECTOR, composer).get_attribute("value")
+    runner.set_input_value(composer, "unsent idle regression draft", "idle draft")
+    runner.click_visible(composer, "focus idle composer")
+    runner.driver.execute_script("""
+      const ids=new WeakMap();let next=0;
+      const id=e=>e?(ids.get(e)||(ids.set(e,++next),next)):null;
+      const visible=e=>e&&e.getClientRects().length&&getComputedStyle(e).visibility!=='hidden';
+      const root=document.querySelector('[data-pt-agent-workbench]');
+      const conversation=root.querySelector('[data-pt-agent-conversation]');
+      const scroll=[...conversation.querySelectorAll('*')].find(e=>
+        visible(e)&&/auto|scroll/.test(getComputedStyle(e).overflowY)
+        &&e.scrollHeight>e.clientHeight+2);
+      if(scroll)scroll.scrollTop=Math.min(24,scroll.scrollHeight-scroll.clientHeight);
+      const p=window.__ptTopicIdle={samples:[],mutations:0,started:performance.now()};
+      p.observer=new MutationObserver(records=>{p.mutations+=records.length;});
+      p.observer.observe(root,{subtree:true,childList:true,attributes:true});
+      p.sample=()=>{
+        const input=document.querySelector('[data-pt-agent-composer-input]');
+        p.samples.push({
+          at:performance.now()-p.started,timeOrigin:performance.timeOrigin,
+          root:id(document.querySelector('[data-pt-agent-workbench]')),
+          conversation:id(document.querySelector('[data-pt-agent-conversation]')),
+          composer:id(input),focused:document.activeElement===input,
+          draftIntact:input?.value==='unsent idle regression draft',
+          readiness:root.querySelector('[data-pt-agent-readiness-state]')?.dataset.ptAgentReadinessState,
+          rows:[...document.querySelectorAll('[data-pt-agent-message-id]')].filter(visible).map(id),
+          actions:[...root.querySelectorAll(
+            '[data-pt-agent-topic-search],[data-pt-agent-topic-batch-select]')].filter(visible).map(id),
+          syncing:[...root.querySelectorAll('span')].some(e=>visible(e)&&/^(Syncing|同步)/i.test(e.textContent)),
+          scroll:id(scroll),scrollTop:scroll?.scrollTop??0,
+        });
+      };
+      p.sample();p.timer=setInterval(p.sample,50);
+    """)
+    try:
+        deadline = time.monotonic() + duration_seconds
+        while time.monotonic() < deadline:
+            time.sleep(min(0.25, max(0, deadline - time.monotonic())))
+        observed = runner.driver.execute_script("""
+          const p=window.__ptTopicIdle;p.sample();
+          return {samples:p.samples,mutations:p.mutations};
+        """)
+        samples = observed["samples"]
+        first = samples[0]
+        require(len(first["actions"]) == 2, "Accepted Topic actions are missing")
+        require(first["readiness"] not in (None, "checking"),
+                "Idle Composer readiness is not settled")
+        for item in samples:
+            require(all(item[key] == first[key] for key in (
+                "timeOrigin", "root", "conversation", "composer", "rows", "actions", "scroll",
+            )), "Idle reconciliation replaced accepted Native nodes")
+            require(item["readiness"] == first["readiness"],
+                    "Idle reconciliation changed settled Composer readiness")
+            require(item["focused"] and item["draftIntact"], "Idle reconciliation lost composer state")
+            require(not item["syncing"], "Idle reconciliation replayed Topic entry loading")
+            require(abs(item["scrollTop"] - first["scrollTop"]) <= 1,
+                    "Idle reconciliation changed conversation scroll")
+        return {
+            "uiAction": "type unsent text, focus composer and leave the real Native Topic idle",
+            "receiverAssertion": "message/action nodes, readiness, focus, draft and scroll survive two timer cycles",
+            "durationSeconds": samples[-1]["at"] / 1000, "sampleCount": len(samples),
+            "messageRowCount": len(first["rows"]), "scrollExercised": first["scroll"] is not None,
+            "mutationRecords": observed["mutations"], "nodeReplacements": 0, "syncingSamples": 0,
+            "readinessTransitions": 0,
+        }
+    finally:
+        runner.driver.execute_script("""
+          const p=window.__ptTopicIdle;
+          if(p){clearInterval(p.timer);p.observer.disconnect();delete window.__ptTopicIdle;}
+        """)
+        runner.set_input_value(composer, original or "", "restore owned idle draft")
+
+
+def periodic_title_update(runner: AgentNativeJourney, topic_id: str) -> dict[str, Any]:
+    """A namespaced Fixture edit must reach Native through the real timer."""
+    original = topic(runner, topic_id)
+    changed_title = f"Periodic title {topic_id}"
+
+    def update(value: dict[str, Any], title: str) -> None:
+        runner.invoke_readback_command("agent_conversation_update", {
+            "conversation_id": topic_id, "expected_version": int(value["version"]),
+            "title": title, "description": value.get("description", ""),
+            "meta": value.get("meta", {}),
+            "model_name": value.get("model_name", ""),
+            "provider_id": value.get("provider_id", ""),
+            "active_branch_message_id": value.get("active_branch_message_id", ""),
+        })
+
+    update(original, changed_title)
+    started = time.monotonic()
+    try:
+        wait_until(
+            lambda: changed_title in runner.driver.find_element(
+                By.CSS_SELECTOR, row_selector(topic_id),
+            ).text,
+            "real periodic Topic title projection", timeout=75,
+        )
+        accepted = topic(runner, topic_id)
+        require(accepted["title"] == changed_title, "Station title changed concurrently")
+        return {
+            "supportingFixtureAction": "versioned namespaced Station Topic title update",
+            "receiverAssertion": "changed title becomes visible without Harness reconciliation",
+            "projectionDelaySeconds": time.monotonic() - started,
+            "stationVersion": accepted["version"],
+        }
+    finally:
+        current = topic(runner, topic_id)
+        require(current["title"] == changed_title, "Cannot restore a concurrent Topic edit")
+        update(current, original["title"])
+        wait_until(
+            lambda: original["title"] in runner.driver.find_element(
+                By.CSS_SELECTOR, row_selector(topic_id),
+            ).text,
+            "restored periodic Topic title projection", timeout=75,
+        )
 
 
 def navigation(
@@ -294,6 +418,8 @@ def first_send_and_delete(
     ), "first-send Provider reply")
     topic_id = runner.runtime_snapshot()["currentSessionKey"]
     accepted = topic(runner, topic_id)
+    stability = idle_stability(runner)
+    changed_projection = periodic_title_update(runner, topic_id)
     require(accepted["title"].strip() and accepted["title"] != label(runner, "agent.sidebar.newTopic"),
             "first send retained an untitled Topic")
     runner.wait_visible_element(row_selector(topic_id), "promoted Topic row")
@@ -330,6 +456,8 @@ def first_send_and_delete(
         "uiAction": "create Topic, select model, send with Enter and confirm single Topic deletion",
         "receiverAssertion": "promoted title and inline count appear, then Topic and messages disappear",
         "stationReadback": {"created": accepted, "deleted": deleted},
+        "idleStability": stability,
+        "periodicTitleUpdate": changed_projection,
         "operationIds": ["topic.first-send-title", "topic.count.inline", "topic.delete-confirm"],
     }
 

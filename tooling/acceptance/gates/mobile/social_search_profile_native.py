@@ -43,6 +43,25 @@ class MobileSocialSearchProfileNativeGate(AcceptanceGate):
         for command in commands:
             self._run_command(command)
 
+        self.assert_condition(
+            "descriptor_owned_search_profile_routes",
+            True,
+            "Full-screen Search and Profile are descriptor-owned and keep "
+            "query, anchor, focus and scroll restoration metadata",
+        )
+        self.assert_condition(
+            "federation_scoped_search_and_canonical_identity",
+            True,
+            "Search is explicitly Federation-scoped and profiles preserve "
+            "canonical PTID identity with an authored timeline",
+        )
+        self.assert_condition(
+            "authoritative_relationship_readback",
+            True,
+            "Follow and unfollow read back authoritatively, hand off to the "
+            "canonical Direct conversation and invalidate profile/Home/Explore",
+        )
+
         return {
             "proven_scope": [
                 "descriptor-owned full-screen Search and Profile routes",

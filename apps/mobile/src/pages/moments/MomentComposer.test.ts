@@ -211,7 +211,7 @@ describe('Moment composer media restoration', () => {
     expect(source).toContain('data-acceptance-id="social-composer-clear"');
     expect(source).toContain('if (!await discardDraft()) return;');
     expect(source).toContain(
-      "message.success(t('mobile.moments.composer.draftCleared'))",
+      "notifySuccess(t('mobile.moments.composer.draftCleared'))",
     );
   });
 
@@ -253,7 +253,7 @@ describe('Moment composer media restoration', () => {
     expect(targetSource).toContain("choice === 'CUSTOM_ALLOW'");
     expect(targetSource).toContain("choice === 'CUSTOM_DENY'");
     expect(targetSource).toContain("if (choice === 'CIRCLE') void refreshCircles()");
-    expect(targetSource).toContain('searchPeople(trimmed, federationId)');
+    expect(targetSource).toContain("searchPeople(trimmed, { kind: 'federation', federationId })");
     expect(targetSource).toContain(
       'className="moments-sheet-backdrop moments-audience-target-backdrop"',
     );

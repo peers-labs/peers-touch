@@ -1,11 +1,15 @@
 package cli
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"time"
+	"strings"
+
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/cli/environment"
 )
 
 const defaultBaseDir = "/var/lib/peers-touch/agent-workspaces"
@@ -16,19 +20,27 @@ type WorkspaceManager struct {
 }
 
 func NewWorkspaceManager(sourceRepo string) *WorkspaceManager {
-	base := os.Getenv("PEERS_AGENT_WORKSPACE_BASE")
-	if base == "" {
-		base = defaultBaseDir
-	}
 	return &WorkspaceManager{
-		BaseDir:    base,
+		BaseDir:    WorkspaceBaseDir(),
 		SourceRepo: sourceRepo,
 	}
 }
 
+// WorkspaceBaseDir returns the configured root for per-actor agent
+// workspaces. The same root owns managed CLI runtimes.
+func WorkspaceBaseDir() string {
+	if base := strings.TrimSpace(os.Getenv("PEERS_AGENT_WORKSPACE_BASE")); base != "" {
+		return base
+	}
+	return defaultBaseDir
+}
+
 func (m *WorkspaceManager) Create(actorPTID, sessionID string) (string, error) {
-	dir := filepath.Join(m.BaseDir, actorPTID, sessionID)
-	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
+	dir, err := m.workspaceDir(actorPTID, sessionID)
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
 		return "", fmt.Errorf("create workspace parent: %w", err)
 	}
 
@@ -39,7 +51,7 @@ func (m *WorkspaceManager) Create(actorPTID, sessionID string) (string, error) {
 			return "", fmt.Errorf("git worktree add: %s: %w", string(out), err)
 		}
 	} else {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return "", fmt.Errorf("create workspace dir: %w", err)
 		}
 	}
@@ -48,7 +60,10 @@ func (m *WorkspaceManager) Create(actorPTID, sessionID string) (string, error) {
 }
 
 func (m *WorkspaceManager) Cleanup(actorPTID, sessionID string) error {
-	dir := filepath.Join(m.BaseDir, actorPTID, sessionID)
+	dir, err := m.workspaceDir(actorPTID, sessionID)
+	if err != nil {
+		return err
+	}
 
 	if m.SourceRepo != "" {
 		cmd := exec.Command("git", "worktree", "remove", "--force", dir)
@@ -60,5 +75,28 @@ func (m *WorkspaceManager) Cleanup(actorPTID, sessionID string) error {
 }
 
 func (m *WorkspaceManager) SessionID() string {
-	return fmt.Sprintf("s-%d", time.Now().UnixMilli())
+	var id [16]byte
+	if _, err := rand.Read(id[:]); err != nil {
+		panic("cannot generate CLI session identity")
+	}
+	return "s-" + hex.EncodeToString(id[:])
+}
+
+func (m *WorkspaceManager) workspaceDir(actorPTID, sessionID string) (string, error) {
+	root, err := environment.ActorRoot(m.BaseDir, actorPTID)
+	if err != nil {
+		return "", err
+	}
+	if sessionID == "" || sessionID == "." || sessionID == ".." || strings.ContainsAny(sessionID, `/\`) {
+		return "", fmt.Errorf("CLI session identity is invalid")
+	}
+	return filepath.Join(root, "workspaces", sessionID), nil
+}
+
+func (m *WorkspaceManager) StateRoot(actorPTID, providerID string) (string, error) {
+	root, err := environment.ActorRoot(m.BaseDir, actorPTID)
+	if err != nil {
+		return "", err
+	}
+	return environment.ToolRoot(root, providerID), nil
 }

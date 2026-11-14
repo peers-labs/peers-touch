@@ -124,6 +124,35 @@ func providerConfiguration(provider, redirectURI string) (providerRuntimeConfig,
 	}, nil
 }
 
+// providerRuntimeHasCredentials reports whether the given provider has
+// non-empty client id and secret in the Station environment.
+func providerRuntimeHasCredentials(providerID string) bool {
+	prefix := "PEERS_OAUTH_" + strings.ToUpper(strings.TrimSpace(providerID))
+	return strings.TrimSpace(os.Getenv(prefix+"_CLIENT_ID")) != "" &&
+		strings.TrimSpace(os.Getenv(prefix+"_CLIENT_SECRET")) != ""
+}
+
+// runtimeCredentialsAvailable reports whether at least one enabled, active
+// provider has non-empty client credentials in the Station environment. The
+// static has-credentials config flag only declares intent; a start attempt
+// without environment credentials is guaranteed to fail, so access gates and
+// the providers API must gate on the effective state instead.
+func runtimeCredentialsAvailable() bool {
+	config := oauthOptions.Peers.Node.Server.Subserver.OAuth
+	for i := range config.Providers {
+		provider := &config.Providers[i]
+		if !provider.Enabled || provider.Status != "active" {
+			continue
+		}
+		prefix := "PEERS_OAUTH_" + strings.ToUpper(strings.TrimSpace(provider.ID))
+		if strings.TrimSpace(os.Getenv(prefix+"_CLIENT_ID")) != "" &&
+			strings.TrimSpace(os.Getenv(prefix+"_CLIENT_SECRET")) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func splitConfiguredValues(raw string) []string {
 	values := make([]string, 0)
 	for _, value := range strings.Split(raw, ",") {

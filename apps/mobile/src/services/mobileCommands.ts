@@ -66,7 +66,7 @@ export interface NativeMediaPickInput {
   actorPtid: string;
   sessionId: string;
   requestId: string;
-  surfaceKind: 'chat_attachment' | 'moment_media';
+  surfaceKind: 'chat_attachment' | 'moment_media' | 'profile_image';
   capability: 'photo_library' | 'camera' | 'document';
   deadlineMs: number;
   acceptedMediaKinds: Array<'image' | 'video' | 'file'>;
@@ -143,6 +143,45 @@ export async function discardNativeMomentMedia(
   await invoke('moment_media_discard', {
     input: stagedMomentMediaCommandInput(input),
   });
+}
+
+const CROCKFORD_BASE32 = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+export function createNativeMediaRequestId(): string {
+  const random = globalThis.crypto.getRandomValues(new Uint8Array(10));
+  let time = BigInt(Date.now());
+  let encodedTime = '';
+  for (let index = 0; index < 10; index += 1) {
+    encodedTime = CROCKFORD_BASE32[Number(time & 31n)] + encodedTime;
+    time >>= 5n;
+  }
+  let entropy = 0n;
+  for (const byte of random) entropy = (entropy << 8n) | BigInt(byte);
+  let encodedEntropy = '';
+  for (let index = 0; index < 16; index += 1) {
+    encodedEntropy = CROCKFORD_BASE32[Number(entropy & 31n)] + encodedEntropy;
+    entropy >>= 5n;
+  }
+  return encodedTime + encodedEntropy;
+}
+
+export interface NativeProfileImagePreview {
+  assetUrl: string;
+  accessHandle: string;
+}
+export async function previewNativeProfileImage(input: NativeMomentMediaInput): Promise<NativeProfileImagePreview> {
+  return invoke('profile_image_preview', { input });
+}
+export async function uploadNativeProfileImage(input: NativeMomentMediaInput): Promise<string> {
+  requireMobileMutationAdmission(mobileMutationScopeKey(
+    input.stationPeerId, input.actorPtid, input.deviceId, input.lifecycleGeneration,
+  ), 'profile');
+  return invoke('profile_image_upload', { input });
+}
+export async function discardNativeProfileImage(input: NativeMomentMediaInput): Promise<void> {
+  await invoke('profile_image_discard', { input });
+}
+export async function releaseNativeProfileImagePreview(accessHandle: string): Promise<void> {
+  await invoke('profile_image_preview_release', { accessHandle });
 }
 
 export interface MessagingAccountInput {
@@ -572,6 +611,19 @@ export async function messagingActivate(
 
 export async function messagingStatus(): Promise<MessagingRuntimeStatus> {
   return invoke<MessagingRuntimeStatus>('messaging_status');
+}
+
+export interface MessagingRecoveryPreflightResult {
+  recoveryAvailable: boolean;
+}
+
+export async function messagingRecoveryPreflight(
+  input: MessagingIdentityRecoveryInput,
+): Promise<MessagingRecoveryPreflightResult> {
+  return invoke<MessagingRecoveryPreflightResult>(
+    'messaging_recovery_preflight',
+    { input },
+  );
 }
 
 export async function messagingRecoverIdentity(
@@ -1340,6 +1392,7 @@ export async function messagingListThreadMessages(
 
 export async function messagingStageAttachment(
   input: MessagingAccountInput & {
+    conversationId: string;
     file: File;
     voiceNote?: MessagingVoiceNoteMetadata;
   },
@@ -1350,6 +1403,7 @@ export async function messagingStageAttachment(
       input: {
         stationPeerId: input.stationPeerId,
         actorPtid: input.actorPtid,
+        conversationId: input.conversationId,
         filename: input.file.name,
         mimeType: input.file.type || 'application/octet-stream',
         plaintextSize: input.file.size,
@@ -1373,7 +1427,7 @@ export async function messagingStageAttachment(
       });
       offset = end;
     }
-    return invoke<MessagingAttachmentStageProjection>('messaging_attachment_stage_complete', {
+    return await invoke<MessagingAttachmentStageProjection>('messaging_attachment_stage_complete', {
       input: {
         stationPeerId: input.stationPeerId,
         actorPtid: input.actorPtid,
@@ -1394,6 +1448,37 @@ export async function messagingDiscardAttachmentStage(
   input: MessagingAccountInput & { stageId: string },
 ): Promise<void> {
   await invoke('messaging_attachment_stage_discard', { input });
+}
+
+export async function messagingRestoreAttachmentStage(
+  input: MessagingAccountInput & { stageId: string },
+): Promise<{
+  stage: MessagingAttachmentStageProjection;
+  assetUrl: string;
+  accessHandle: string;
+}> {
+  return invoke('messaging_attachment_stage_restore', { input });
+}
+
+export async function messagingRecoverAttachmentComposer(
+  input: MessagingAccountInput & { conversationId: string; stageIds: readonly string[] },
+): Promise<{
+  stages: MessagingAttachmentStageProjection[];
+  adoptedMessage: {
+    messageId: string;
+    plaintext: string;
+    replyToMessageId: string;
+    threadRootMessageId: string;
+    attachmentIds: string[];
+  } | null;
+}> {
+  return invoke('messaging_attachment_composer_recover', { input });
+}
+
+export async function messagingReleaseAttachmentStagePreview(
+  input: MessagingAccountInput & { handle: string },
+): Promise<void> {
+  await invoke('messaging_attachment_stage_preview_release', { input });
 }
 
 export async function messagingSendMessage(
@@ -1720,6 +1805,13 @@ export interface OAuthScopeInput {
   stationPeerId: string;
 }
 
+export interface OAuthProviderInfo {
+  id: string;
+  enabled: boolean;
+  status: string;
+  hasCredentials: boolean;
+}
+
 export interface OAuthCandidateProjection {
   candidateId: string;
   actorPtid: string;
@@ -1859,6 +1951,10 @@ export async function accessCancel(
 
 export async function oauthStart(input: OAuthStartInput): Promise<OAuthPublicProjection> {
   return invoke<OAuthPublicProjection>('oauth_start', { input });
+}
+
+export async function oauthProviders(input: OAuthScopeInput): Promise<OAuthProviderInfo[]> {
+  return invoke<OAuthProviderInfo[]>('oauth_providers', { input });
 }
 
 export async function oauthStatus(input: OAuthScopeInput): Promise<OAuthPublicProjection> {

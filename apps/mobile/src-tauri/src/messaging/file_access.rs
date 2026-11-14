@@ -224,10 +224,7 @@ pub fn asset_response(
             .file_access_scope(owner)
             .map_err(|_| "FILE_SCOPE_UNAVAILABLE")?;
         let handle = request.uri().path().trim_start_matches('/');
-        let attachment_id = engine
-            .attachment_file_access
-            .attachment_id(&owner, handle)?;
-        engine.validate_attachment_handle(&owner, handle, &attachment_id)?;
+        engine.validate_attachment_asset_handle(&owner, handle)?;
         if let Some(query) = request.uri().query() {
             if query != "representation=preview" {
                 return Err("FILE_REPRESENTATION_INVALID".into());

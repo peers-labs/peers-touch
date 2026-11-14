@@ -1,6 +1,7 @@
 // @ts-nocheck -- Vitest is supplied by the repository test runner.
 
 import React from 'react';
+import { UIProvider } from '@peers-touch/ui';
 import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -9,6 +10,7 @@ import {
   clearAllScrollPositions,
   saveListAnchor,
 } from '../app/navigation/scrollRestoration';
+import { resetMobileNavigation } from '../app/navigation';
 import { createMomentsFeedStore } from '../features/social/momentsFeedStore';
 import {
   PostDetailOutcome,
@@ -108,7 +110,7 @@ describe('Moments feed-first interaction source contract', () => {
     'utf8',
   );
   const scopeHeaderSource = readFileSync(
-    new URL('./moments/MomentsScopeHeader.tsx', import.meta.url),
+    new URL('./moments/MomentsHeader.tsx', import.meta.url),
     'utf8',
   );
   const sortSheetSource = readFileSync(
@@ -140,21 +142,14 @@ describe('Moments feed-first interaction source contract', () => {
   });
 
   it('matches the confirmed header, scope, and bottom-sheet interaction model', () => {
-    expect(scopeHeaderSource).toContain(
-      'data-acceptance-id="social-circles-open"',
-    );
-    expect(scopeHeaderSource).toContain('className="moments-context-row"');
-    expect(sortSheetSource).toContain(
-      'className="moments-sheet-backdrop moments-sort-backdrop"',
-    );
-    expect(sortSheetSource).toContain(
-      'className="moments-bottom-sheet moments-sort-sheet"',
-    );
-    expect(sortSheetSource).toContain('onPointerDown={onClose}');
-    expect(sortSheetSource).toContain(
-      'onPointerDown={(event) => event.stopPropagation()}',
-    );
-    expect(sortSheetSource).not.toContain('common.action.close');
+    expect(scopeHeaderSource).toContain('<Segmented<MobileMomentsPaneId>');
+    expect(scopeHeaderSource).toContain("value: 'feed'");
+    expect(scopeHeaderSource).toContain("value: 'circles'");
+    expect(scopeHeaderSource).toContain('appearance="search"');
+    expect(scopeHeaderSource).toContain('onOpenExplore');
+    expect(sortSheetSource).toContain('<Drawer open side="bottom"');
+    expect(sortSheetSource).toContain('onDismiss={onClose}');
+    expect(sortSheetSource).toContain('onChange(sort); onClose();');
     expect(source).toContain('onClose={() => setShowNewPost(false)}');
   });
 
@@ -181,9 +176,8 @@ describe('Moments feed-first interaction source contract', () => {
     expect(moduleStyles).toMatch(
       /\.moments-feed\s*\{[\s\S]*?gap:\s*10px;[\s\S]*?padding:\s*10px 12px 20px;/,
     );
-    expect(moduleStyles).toMatch(
-      /\.moments-header-actions button,[\s\S]*?width:\s*44px;[\s\S]*?height:\s*44px;/,
-    );
+    expect(scopeHeaderSource).toContain('density="comfortable"');
+    expect(moduleStyles).not.toContain('.moments-header-actions');
     expect(moduleStyles).toMatch(
       /\.page-container\.moments-page\s*\{[\s\S]*?padding-bottom:\s*0;/,
     );
@@ -195,13 +189,17 @@ describe('Moments feed-first interaction source contract', () => {
 
 function renderMomentsPage(): string {
   return renderToStaticMarkup(
-    React.createElement(MomentsPage, {
+    React.createElement(UIProvider, null, React.createElement(MomentsPage, {
       activePostId: null,
       onOpenProfile: () => undefined,
       onOpenSearch: () => undefined,
-      onOpenCircles: () => undefined,
+      onOpenCircle: () => undefined,
+      onPaneChange: () => undefined,
+      onOpenNotifications: () => undefined,
+      onOpenGlobalSearch: () => undefined,
+      onImmersiveVisibilityChange: () => undefined,
       onBack: () => undefined,
-    }),
+    })),
   );
 }
 
@@ -361,6 +359,8 @@ describe('Moments page inline comment intent', () => {
   });
 });
 
+beforeEach(() => resetMobileNavigation());
+
 describe('Moments retry availability', () => {
   it('marks the projection available only after successful runtime reconciliation', async () => {
     const failedRetry = vi.fn(async () => false);
@@ -501,7 +501,7 @@ describe('Moments page bounded feed', () => {
     expect(initial).toContain('mobile.list.next');
     expect(initial).not.toContain('mobile.moments.feed.loadMore');
 
-    saveListAnchor('moments:feed:home', 'post-100');
+    saveListAnchor('moments:feed:home:', 'post-100');
     const tail = renderMomentsPage();
 
     expect(tail.match(/data-moment-id=/g)).toHaveLength(100);
@@ -511,7 +511,7 @@ describe('Moments page bounded feed', () => {
   });
 
   it('keeps the overlapping identity window reachable when the retained cache slides', () => {
-    saveListAnchor('moments:feed:home', 'post-100');
+    saveListAnchor('moments:feed:home:', 'post-100');
     const beforeSlide = renderMomentsPage();
     expect(beforeSlide).toContain('data-scroll-anchor-id="post-100"');
     expect(beforeSlide).toContain('data-scroll-anchor-id="post-199"');
@@ -529,7 +529,7 @@ describe('Moments page bounded feed', () => {
     expect(afterSlide).toContain('mobile.list.next');
     expect(afterSlide).not.toContain('mobile.moments.feed.loadMore');
 
-    saveListAnchor('moments:feed:home', 'post-120');
+    saveListAnchor('moments:feed:home:', 'post-120');
     const fetchedTail = renderMomentsPage();
     expect(fetchedTail).toContain('data-scroll-anchor-id="post-219"');
     expect(fetchedTail).toContain('mobile.moments.feed.loadMore');

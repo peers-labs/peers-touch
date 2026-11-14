@@ -68,7 +68,7 @@ tauri_artifact_path() {
 tauri_compute_fingerprint() {
   local desktop_dir="$1"
   local profile="$2"
-  local station_url="${PEERS_STATION_URL:-}"
+  local station_url="${PEERS_PROFILE_STATION_URL:-${PEERS_STATION_URL:-}}"
   local e2e_testing="${PT_DESKTOP_E2E:-false}"
 
   local files=()
@@ -306,7 +306,7 @@ ensure_desktop_rust_ready() {
   elif [[ "${RESTART:-}" == "1" ]]; then
     needs_restart=true
     echo "[INFO] RESTART=1 — forcing Rust BFF restart"
-  elif ! tauri_meta_matches "$meta_file" "$desired_fp" "$profile" "${PEERS_STATION_URL:-}"; then
+  elif ! tauri_meta_matches "$meta_file" "$desired_fp" "$profile" "${PEERS_PROFILE_STATION_URL:-${PEERS_STATION_URL:-}}"; then
     needs_restart=true
     echo "[INFO] Rust BFF config/env fingerprint mismatch — restarting"
   elif rust_source_changed "$pid_file" "$desktop_dir"; then
@@ -344,6 +344,7 @@ ensure_desktop_rust_ready() {
     cd "$desktop_dir"
     export PT_GATEWAY_PORT="$gw_port"
     export PT_PROFILE="$profile"
+    export PEERS_PROFILE_STATION_URL="${PEERS_PROFILE_STATION_URL:-}"
     export PEERS_STATION_URL="${PEERS_STATION_URL:-}"
     export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
     if [[ "$native_dev" == "1" ]]; then
@@ -360,7 +361,7 @@ TAURI_FINGERPRINT='${desired_fp}'
 TAURI_PROFILE='${profile}'
 TAURI_GATEWAY_PORT='${gw_port}'
 TAURI_VITE_PORT='${vite_port}'
-TAURI_STATION_URL='${PEERS_STATION_URL:-}'
+TAURI_STATION_URL='${PEERS_PROFILE_STATION_URL:-${PEERS_STATION_URL:-}}'
 TAURI_E2E_TESTING='${PT_DESKTOP_E2E:-false}'
 TAURI_PID='${TAURI_PID}'
 EOF

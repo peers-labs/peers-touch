@@ -175,6 +175,7 @@ class MixedClientSameStationGate(AcceptanceGate):
             ).hexdigest()
             staged = self.runtime.stage_attachment(
                 mobile_id,
+                conversation_id=direct_id,
                 filename="mixed-client.txt",
                 mime_type="text/plain",
                 bytes_base64=base64.b64encode(attachment_bytes).decode("ascii"),

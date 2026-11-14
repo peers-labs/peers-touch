@@ -4,6 +4,14 @@
 
 [总入口与共用政策](./README.md) · [源码全集](../component-catalog.md)
 
+作用域焦点服从 `UIProvider inputFocus`。explicit（Mobile）模式下，modal
+首次聚焦可读容器；关闭恢复非编辑控件，不唤起此前输入框的软键盘。
+Tab/Shift+Tab 仍可进入输入框并在 modal 内循环。automatic 模式保持既有
+桌面表单初始焦点。不得通过全局 focus 拦截或定时 blur 改写用户直接输入。
+
+BottomSheet 的 HTML 属性绑定在 dialog 根节点，内容由独立 body 滚动。
+表面身份、读屏属性与几何检查不得挂在可能超过视口的滚动内容上。
+
 - [ContextMenu](#ui.spec.contextmenu)
 - [Menu](#ui.spec.dropdownmenu)
 - [Popover](#ui.spec.popover)
@@ -591,7 +599,9 @@ closed→open→height-change→closed；gesture请求关闭仍判断dirty；拖
 
 ### 键盘、焦点、触摸与读屏
 
-modal focus trap；touchdrag有明确关闭按钮替代；back按dirty；reader标题/展开高度不逐像素announce。
+modal focus trap；打开时默认聚焦有标题关联的 SheetRoot，避免阅读/管理面自动唤起软键盘；
+只有任务显式声明 autofocus 时才直接进入输入。用户点击输入后保留正常键盘和焦点循环。
+touchdrag有明确关闭按钮替代；back按dirty；reader标题/展开高度不逐像素announce。
 
 ### 图形、几何与动效
 
@@ -699,4 +709,3 @@ panelId/title/position/bounds/pinned/restoreAction/taskView。这是语义字段
 反例至少包括本项所有禁止组合；极端数据使用本项边界，再叠加总入口的主题、文字放大、RTL、输入模式和 reduced-motion 条件。生命周期验证本项资源释放与身份切换，不只验证默认截图。
 
 specimen 当前为 **NOT_BUILT**；规范结构检查不等于视觉、交互、原生或业务 Journey PASS。业务事实与 receiver 侧结果仍需对应业务 Gate。
-

@@ -669,27 +669,28 @@ func (h *TurnHandlers) HandleQuickCompletion(
 	ctx context.Context,
 	req *model.QuickCompletionRequest,
 ) (*model.QuickCompletionResponse, error) {
-	if strings.TrimSpace(req.GetAgentId()) == "" || strings.TrimSpace(req.GetPrompt()) == "" {
-		return nil, errcode.New(
+	if strings.TrimSpace(req.GetPrompt()) == "" {
+		return nil, toHandlerError(errcode.New(
 			errcode.AgentInvalidRequest,
 			http.StatusBadRequest,
-			"agent_id and prompt are required",
+			"prompt is required",
 			nil,
-		)
+		))
 	}
 
+	providerID, modelID := req.GetProvider(), req.GetModel()
 	config, configErr := h.turnConfigFromRequest(ctx, &model.ExecuteTurnRequest{
-		AgentId: req.GetAgentId(),
+		AgentId: req.GetAgentId(), Provider: &providerID, Model: &modelID,
 	}, nil)
 	if configErr != nil {
-		return nil, configErr
+		return nil, toHandlerError(configErr)
 	}
 
 	content, err := h.turnService.QuickCompletion(ctx, config, req.GetPrompt())
 	if err != nil {
-		return nil, err
+		return nil, toHandlerError(err)
 	}
-	return &model.QuickCompletionResponse{Content: content}, nil
+	return &model.QuickCompletionResponse{Content: content, Provider: config.Provider, Model: config.Model}, nil
 }
 
 type turnStreamResult struct {

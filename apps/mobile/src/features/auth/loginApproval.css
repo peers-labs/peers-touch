@@ -1,8 +1,3 @@
-.mobile-login-approval-spinner {
-  color: var(--brand-primary);
-  animation: mobile-login-approval-spin 1s linear infinite;
-}
-
 .mobile-login-approval-code-block {
   display: flex;
   flex-direction: column;
@@ -16,26 +11,16 @@
   letter-spacing: .2em;
   padding: 14px 20px;
   border-radius: 12px;
-  background: var(--brand-muted);
+  background: var(--pt-subtle);
   text-align: center;
   max-width: 100%;
   overflow-wrap: anywhere;
 }
 
-.mobile-login-approval-fallback-toggle {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  padding: 8px 4px;
-  font-size: 13px;
-  color: var(--brand-secondary, #666);
-  text-decoration: underline;
-}
-
 .mobile-login-approval-fallback {
   width: 100%;
   padding-top: 12px;
-  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  border-top: 1px solid var(--pt-border);
 }
 
 .mobile-login-approval-dialog .mobile-login-approval-device {
@@ -50,12 +35,4 @@
   justify-content: flex-end;
   gap: 10px;
   margin-top: 16px;
-}
-
-@keyframes mobile-login-approval-spin {
-  to { transform: rotate(360deg); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .mobile-login-approval-spinner { animation: none; }
 }

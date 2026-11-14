@@ -673,6 +673,35 @@ input, textarea, [contenteditable="true"] {
   white-space: nowrap;
 }
 
+.pt-station-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: var(--pt-space-sm);
+  border-top: 1px solid var(--pt-border, rgba(0, 0, 0, 0.08));
+}
+
+.pt-station-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pt-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pt-station-source-tag {
+  display: inline-block;
+  margin-top: 2px;
+  margin-right: 6px;
+  padding: 0 6px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  border-radius: 8px;
+  color: var(--pt-accent, #2f6a50);
+  background: var(--pt-accent-soft, rgba(47, 106, 80, 0.1));
+}
+
 .pt-station-add {
   display: flex;
   gap: 6px;

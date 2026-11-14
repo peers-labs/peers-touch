@@ -21,6 +21,8 @@ import LogsPage from '../pages/LogsPage';
 import TransportPage from '../pages/TransportPage';
 import AccessGatesPage from '../pages/AccessGatesPage';
 import RelayAttachmentsPage from '../pages/RelayAttachmentsPage';
+import AIPage from '../pages/AIPage';
+import FederationPage from '../pages/FederationPage';
 
 interface Props {
   page: Page;
@@ -28,6 +30,8 @@ interface Props {
 
 export default function PageRouter({ page }: Props) {
   switch (page) {
+    case PAGES.AI:         return <AIPage />;
+    case PAGES.FEDERATION: return <FederationPage />;
     case PAGES.OVERVIEW:   return <OverviewPage />;
     case PAGES.ACTORS:     return <ActorsPage />;
     case PAGES.SESSIONS:   return <SessionsPage />;

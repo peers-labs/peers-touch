@@ -72,12 +72,13 @@ SELECTORS = {
     "contacts_subpage": '[data-chat-subpage="contacts"]',
     "contact_message": "[data-chat-contact-message]",
     "new_menu": "[data-chat-new-menu]",
-    "create_group_menu": "[data-chat-create-group-menu]",
+    # peers-ui unified Menu renders actions as role=menuitem buttons keyed by data-action-id.
+    "create_group_item": '[role="menuitem"][data-action-id="create-group"]',
     "create_group": "[data-chat-create-group]",
     "create_group_close": "[data-chat-create-group-close]",
     "create_group_contact": "[data-chat-create-group-contact]",
     "create_group_submit": "[data-chat-create-group-submit]",
-    "find_people_menu": "[data-chat-find-people-menu]",
+    "find_people_item": '[role="menuitem"][data-action-id="find-people"]',
     "find_people": "[data-chat-find-people]",
     "find_people_input": "[data-chat-find-people-input]",
     "find_people_search": "[data-chat-find-people-search]",
@@ -493,7 +494,7 @@ class NativeGroupMlsGate(AcceptanceGate):
         client = self.clients[actor]
         enter_chat_page(client)
         client.find_element(SELECTORS["new_menu"], 30).click()
-        client.find_element(SELECTORS["create_group_menu"], 10).click()
+        client.find_element(SELECTORS["create_group_item"], 10).click()
         client.find_element(SELECTORS["create_group"], 20)
         return client
 
@@ -749,7 +750,7 @@ class NativeGroupMlsGate(AcceptanceGate):
         contacts = identity_matrix["alice"]
 
         alice.find_element(SELECTORS["new_menu"], 10).click()
-        alice.find_element(SELECTORS["find_people_menu"], 10).click()
+        alice.find_element(SELECTORS["find_people_item"], 10).click()
         search_input = alice.find_element(SELECTORS["find_people_input"], 10)
         alice.execute_script(
             """

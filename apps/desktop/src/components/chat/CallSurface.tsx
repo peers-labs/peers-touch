@@ -100,6 +100,7 @@ function CallButton({
       title={label}
       aria-pressed={pressed}
       data-chat-call-display-mode-target={extra?.['data-chat-call-display-mode-target']}
+      data-chat-call-camera={extra?.['data-chat-call-camera']}
       style={{ width: size, height: size }}
       onClick={onClick}
     >
@@ -179,26 +180,24 @@ export function CallSurface() {
     };
   }, [hasMediaPlane]);
 
-  // Bind media streams to the <video>/<audio> elements whenever the
-  // snapshot's stream identity changes. Setting srcObject is
-  // idempotent for the same MediaStream instance, so this is safe
-  // to re-run on every render.
+  // Stream identity can stay unchanged while a camera or display transition
+  // mounts new elements. Bind after those transitions as well.
   useEffect(() => {
     if (!active) return;
-    if (localVideoRef.current && active.snapshot.localStream) {
-      localVideoRef.current.srcObject = active.snapshot.localStream;
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = active.snapshot.localStream ?? null;
     }
-    if (remoteVideoRef.current && active.snapshot.remoteStream) {
-      remoteVideoRef.current.srcObject = active.snapshot.remoteStream;
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = active.snapshot.remoteStream ?? null;
     }
-    if (remoteAudioRef.current && active.snapshot.remoteStream) {
-      // We render BOTH a <video> and an <audio> for the remote
-      // stream — voice-only calls have no video tracks, and
-      // muxing audio through the <video> only works once it's
-      // visible. Keeping a dedicated <audio> sidesteps both.
-      remoteAudioRef.current.srcObject = active.snapshot.remoteStream;
+    if (remoteAudioRef.current) {
+      // The dedicated audio element is the only audible remote outlet.
+      remoteAudioRef.current.srcObject = active.snapshot.remoteStream ?? null;
     }
-  }, [active?.snapshot.localStream, active?.snapshot.remoteStream, displayMode]);
+  }, [
+    active?.snapshot.localStream, active?.snapshot.remoteStream,
+    active?.snapshot.mediaKind, active?.snapshot.cameraOff, hasMediaPlane, displayMode,
+  ]);
 
   useEffect(() => {
     const expanded =
@@ -387,6 +386,7 @@ export function CallSurface() {
           label={snapshot.cameraOff ? t('chat.social.call.cameraOn') : t('chat.social.call.cameraOff')}
           pressed={snapshot.cameraOff}
           onClick={() => callP2p.toggleCamera(myDid, peerPtid, !snapshot.cameraOff)}
+          extra={{ 'data-chat-call-camera': 'true' }}
         >
           {snapshot.cameraOff ? <CameraOff size={15} /> : <Camera size={15} />}
         </CallButton>
@@ -449,7 +449,7 @@ export function CallSurface() {
               ref={remoteVideoRef}
               autoPlay
               playsInline
-              muted={false}
+              muted
             />
           ) : (
             <div className="sc-call__video-placeholder">

@@ -50,6 +50,29 @@ ADDITIONAL_OPERATIONS = {
     "layout.drawer.close-focus": ("layout", "workspace-narrow"),
 }
 
+# The approved management boundary supersedes these Desktop prototype actions.
+# Keep their historical baseline identifiable; never manufacture their proof.
+RETIRED_PROVIDER_OPERATIONS = {
+    "settings.provider-list.mixed", "settings.provider-create.kind-choice",
+    "settings.provider-create.direct", "settings.provider-create.cli",
+    "settings.provider-schema.selected-only", "settings.provider-cli.no-api-fields",
+    "settings.provider-cli.registered-adapter", "settings.provider-cli.fields",
+    "settings.provider-cli.advanced", "settings.provider-cli.no-command-editor",
+    "settings.provider-cli.check", "settings.provider-cli.restore",
+    "settings.provider-cli.save-toast", "settings.feedback.bottom-right",
+    "settings.providers.usable-only.default", "settings.providers.usable-only.persisted",
+    "settings.provider.enabled-projection", "settings.model.enabled-projection",
+}
+MANAGEMENT_OPERATIONS = {
+    "dashboard.provider.methods": "models-default",
+    "dashboard.provider.selected-schema": "models-default",
+    "dashboard.provider.cli-install": "models-default",
+    "dashboard.provider.cli-advanced": "models-default",
+    "dashboard.provider.cli-no-command-editor": "models-default",
+    "dashboard.provider.dm-create-consumed": "models-default",
+    "dashboard.provider.cli-discovery": "models-cli-discovery",
+    "dashboard.provider.availability-consumed": "models-disable-recovery",
+}
 GATE_BY_AREA = {
     "commands": "agent-slash-command-native-e2e",
     "attribution": "agent-context-projection-native-e2e",
@@ -64,12 +87,6 @@ OPERATION_TARGETS = {
     "topic.batch-select": ("topics", "topics-batch-delete"),
     "topic.batch-delete-confirm": ("topics", "topics-batch-delete"),
     "topic.batch-delete-cleanup": ("topics", "topics-batch-delete"),
-    "settings.provider-cli.check": ("models", "models-cli-discovery"),
-    "settings.provider-cli.restore": ("models", "models-cli-discovery"),
-    "settings.provider-cli.save-toast": ("models", "models-cli-discovery"),
-    "settings.feedback.bottom-right": ("models", "models-cli-discovery"),
-    "settings.provider.enabled-projection": ("models", "models-disable-recovery"),
-    "settings.model.enabled-projection": ("models", "models-disable-recovery"),
     "composer.settings-default-model": ("models", "models-default"),
     "approval.cancel": ("conversation", "conversation-tool-approval"),
     "approval.safe-focus": ("conversation", "conversation-tool-approval"),
@@ -141,6 +158,17 @@ def operation_contract() -> list[dict[str, str]]:
             })
     if len(rows) != 136 or len({row["operationId"] for row in rows}) != 136:
         raise ValueError("confirmed prototype must have 136 unique operations")
+    rows = [row for row in rows if row["operationId"] not in RETIRED_PROVIDER_OPERATIONS]
+    for operation, scenario_id in MANAGEMENT_OPERATIONS.items():
+        rows.append({
+            "operationId": operation,
+            "journey": "dashboard-management-native-consumption",
+            "featureId": "agent-chat-production",
+            "capabilityId": "agent-chat-production",
+            "gateId": gate_for_area("models"),
+            "scenarioId": scenario_id,
+            "origin": "management-boundary",
+        })
     for operation, (area, scenario) in ADDITIONAL_OPERATIONS.items():
         rows.append({
             "operationId": operation,
@@ -187,6 +215,8 @@ def coverage_report(
     return {
         "artifactKind": "agent-chat-operation-coverage",
         "baselineOperationCount": 136,
+        "retiredOperations": sorted(RETIRED_PROVIDER_OPERATIONS),
+        "activePrototypeOperationCount": 136 - len(RETIRED_PROVIDER_OPERATIONS),
         "operationCount": len(rows),
         "status": "passed" if not missing else "unproven",
         "missingOperations": missing,

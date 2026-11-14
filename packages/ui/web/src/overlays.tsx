@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 import type { DismissReason, MenuAction, OverlayPlacement } from '@peers-touch/ui-contracts';
 import { nextEnabledIndex, asActionTone } from '@peers-touch/ui-semantics';
 import { useOverlayHost } from './provider';
+import { useInputFocusPolicy } from './focus';
 
 /** Re-exported so consumers can type menu action arrays from the package entry
  *  without taking a direct dependency on @peers-touch/ui-contracts. */
@@ -46,10 +47,40 @@ function nearestClipFrame(anchor: HTMLElement, win: Window): Pick<DOMRect, 'left
   }
   return null;
 }
-interface OverlayLayerProps {
+
+/** The box a `position: fixed` popup is laid out relative to. Normally that is
+ *  the viewport, but ANY non-identity transform / filter / backdrop-filter /
+ *  perspective / paint-containment on an ancestor makes that ancestor's
+ *  padding box the containing block (the rounded phone frame in prototypes,
+ *  an animated route in production). getBoundingClientRect still returns
+ *  viewport coordinates, so anchoring math must be rebased onto this origin or
+ *  the popup escapes the frame. Returns viewport-space {origin, size}. */
+function fixedContainingBlock(el: HTMLElement, win: Window): { x: number; y: number; w: number; h: number } {
+  let node: HTMLElement | null = el.parentElement;
+  const { body, documentElement } = win.document;
+  while (node && node !== body && node !== documentElement) {
+    const s = win.getComputedStyle(node);
+    const contained = s.transform !== 'none' || s.filter !== 'none'
+      || (s.backdropFilter && s.backdropFilter !== 'none') || s.perspective !== 'none'
+      || /(^|\s)(transform|filter|perspective)(\s|,|$)/.test(s.willChange)
+      || s.contain.includes('paint') || s.contain === 'strict' || s.contain === 'content';
+    if (contained) {
+      const rect = node.getBoundingClientRect();
+      return {
+        x: rect.left + (parseFloat(s.borderLeftWidth) || 0),
+        y: rect.top + (parseFloat(s.borderTopWidth) || 0),
+        w: node.clientWidth,
+        h: node.clientHeight,
+      };
+    }
+    node = node.parentElement;
+  }
+  return { x: 0, y: 0, w: win.innerWidth, h: win.innerHeight };
+}
+interface OverlayLayerProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children' | 'inputMode'> {
   children: ReactNode;
   open: boolean;
-  kind: 'tooltip' | 'popover' | 'menu' | 'dialog' | 'drawer';
+  kind: 'tooltip' | 'popover' | 'menu' | 'dialog' | 'drawer' | 'sheet';
   anchor?: HTMLElement | null;
   anchorPoint?: {x:number;y:number};
   placement?: OverlayPlacement;
@@ -64,25 +95,32 @@ interface OverlayLayerProps {
 }
 function OverlayLayer({
   children, open, kind, anchor, anchorPoint, placement = 'bottom', inputMode = 'keyboard', onDismiss,
-  label, labelledBy, describedBy, className = '', style, dismissOutside = true,
+  label, labelledBy, describedBy, className = '', style, dismissOutside = true, ...rootAttributes
 }: OverlayLayerProps) {
   const host = useOverlayHost();
+  const inputFocus = useInputFocusPolicy();
   const id = useId();
   const root = useRef<HTMLDivElement>(null);
   const dismiss = useRef(onDismiss);
   dismiss.current = onDismiss;
-  const modal = kind === 'dialog' || kind === 'drawer';
+  const modal = kind === 'dialog' || kind === 'drawer' || kind === 'sheet';
   const [position, setPosition] = useState<CSSProperties>({});
   useLayoutEffect(() => {
     if (!open || !host.element) return;
-    const doc = host.element.ownerDocument;
+    const hostEl = host.element;
+    const doc = hostEl.ownerDocument;
     const win = doc.defaultView!;
     const previous = anchor ?? host.focusOrigin() ?? (doc.activeElement instanceof win.HTMLElement ? doc.activeElement : null);
     const unregister = kind === 'tooltip' ? () => {} : host.register({ id, modal });
     const positionPopup = () => {
       if (!anchor || !root.current || modal) return;
       if (!anchor.isConnected) { dismiss.current('outside'); return; }
-      const a = anchorPoint ? {left:anchorPoint.x,right:anchorPoint.x,top:anchorPoint.y,bottom:anchorPoint.y} : anchor.getBoundingClientRect();
+      // All math runs in the coordinate space the fixed popup is actually
+      // painted in: the viewport normally, or a transformed/filtered ancestor
+      // (phone frame, animated route) when one contains the portal host.
+      const cb = fixedContainingBlock(hostEl, win);
+      const va = anchorPoint ? {left:anchorPoint.x,right:anchorPoint.x,top:anchorPoint.y,bottom:anchorPoint.y} : anchor.getBoundingClientRect();
+      const a = { left: va.left - cb.x, right: va.right - cb.x, top: va.top - cb.y, bottom: va.bottom - cb.y };
       // Entrance transforms change painted bounds, not the layout footprint.
       const r = { width: root.current.offsetWidth, height: root.current.offsetHeight }, gap = 4;
       let left = a.left, top = a.bottom + gap;
@@ -96,37 +134,32 @@ function OverlayLayer({
         left = a.right + gap;
         top = edgeBottom ? a.bottom - r.height : a.top;
       }
-      // Keep inside the anchor's clipping frame (or the viewport when the
-      // app surface is the full window). Side panels only flip above the
-      // trigger for the start-aligned variants; bottom-aligned ones clamp
-      // toward the gap so they share the owner's bottom edge.
-      const clip = nearestClipFrame(anchor, win);
-      const minLeft = clip ? Math.max(gap, clip.left + gap) : gap;
-      const rightEdge = clip ? Math.min(win.innerWidth - gap, clip.right - gap) : win.innerWidth - gap;
-      const maxLeft = clip ? Math.min(win.innerWidth - r.width - gap, clip.right - r.width - gap)
-        : win.innerWidth - r.width - gap;
-      const maxTop = clip ? Math.min(win.innerHeight - r.height - gap, clip.bottom - r.height - gap)
-        : win.innerHeight - r.height - gap;
-      // Viewport wins over the clip frame vertically. The frame is a scroll
-      // container (e.g. the message stream) whose box can extend past the
-      // visible area and whose top can sit below the only space the popup
-      // fits in; the fixed popup is portaled out of that container, so it is
-      // not actually clipped by it. Flip above the trigger when opening below
-      // would leave the viewport, even if that crosses the frame top.
-      const viewMinTop = gap;
-      const viewMaxTop = win.innerHeight - r.height - gap;
-      if (top > viewMaxTop) {
+      // Clamp inside the anchor's clip frame when one exists (also rebased to
+      // the containing-block space); otherwise the containing block itself is
+      // the bound.
+      const vf = nearestClipFrame(anchor, win);
+      const clip = vf
+        ? { left: Math.max(0, vf.left - cb.x), right: Math.min(cb.w, vf.right - cb.x),
+            top: Math.max(0, vf.top - cb.y), bottom: Math.min(cb.h, vf.bottom - cb.y) }
+        : { left: 0, right: cb.w, top: 0, bottom: cb.h };
+      const minLeft = Math.max(gap, clip.left + gap);
+      const maxLeft = Math.min(cb.w - r.width - gap, clip.right - r.width - gap);
+      const maxTop = Math.min(cb.h - r.height - gap, clip.bottom - r.height - gap);
+      // Flip above the trigger when opening below would leave the visible box.
+      const minTop = gap;
+      const maxViewTop = cb.h - r.height - gap;
+      if (top > maxViewTop) {
         const above = a.top - r.height - gap;
-        if (!edgeBottom && above >= viewMinTop) top = above;
-        else top = Math.max(viewMinTop, Math.min(maxTop, viewMaxTop));
+        if (!edgeBottom && above >= minTop) top = above;
+        else top = Math.max(minTop, Math.min(maxTop, maxViewTop));
       }
-      if (top < viewMinTop) top = viewMinTop;
-      const finalTop = Math.max(viewMinTop, Math.min(top, viewMaxTop));
+      if (top < minTop) top = minTop;
+      const finalTop = Math.max(minTop, Math.min(top, maxViewTop));
       setPosition({
         left: Math.max(minLeft, Math.min(left, maxLeft)),
         top: finalTop,
-        maxWidth: Math.max(0, rightEdge - minLeft),
-        maxHeight: win.innerHeight - gap * 2 - finalTop,
+        maxWidth: Math.max(0, clip.right - gap - minLeft),
+        maxHeight: cb.h - gap * 2 - finalTop,
       });
     };
     positionPopup();
@@ -136,7 +169,9 @@ function OverlayLayer({
     win.addEventListener('resize', positionPopup);
     doc.addEventListener('scroll', positionPopup, true);
     if (kind !== 'tooltip' && (modal || inputMode === 'keyboard')) {
-      (root.current?.querySelector<HTMLElement>('[autofocus]') ??
+      (inputFocus === 'explicit' && modal ? root.current :
+        root.current?.querySelector<HTMLElement>('[autofocus]') ??
+        (kind === 'sheet' ? root.current : null) ??
         (modal ? root.current?.querySelector<HTMLElement>('input:not(:disabled),textarea:not(:disabled),select:not(:disabled)') : null) ??
         root.current?.querySelector<HTMLElement>(focusable) ?? root.current)?.focus();
     }
@@ -168,9 +203,9 @@ function OverlayLayer({
       doc.removeEventListener('pointerdown', pointerdown, true);
       if (kind !== 'tooltip' && previous?.isConnected && (modal || inputMode === 'keyboard')) host.restoreFocus(previous);
     };
-  }, [open, host, id, modal, anchor, anchorPoint, placement, kind, inputMode, dismissOutside]);
+  }, [open, host, id, modal, anchor, anchorPoint, placement, kind, inputMode, inputFocus, dismissOutside]);
   if (!open || !host.element) return null;
-  const content = <div ref={root} id={id} className={`pt-overlay pt-${kind} ${className}`}
+  const content = <div {...rootAttributes} ref={root} id={id} className={`pt-overlay pt-${kind} ${className}`}
     data-placement={placement}
     role={modal ? 'dialog' : kind === 'menu' ? 'menu' : kind === 'tooltip' ? 'tooltip' : undefined}
     aria-modal={modal || undefined} aria-label={label} aria-labelledby={labelledBy} aria-describedby={describedBy}
@@ -343,6 +378,54 @@ export function Drawer({ title, description, footer, children, width = 420, side
     {description}<div className="pt-dialog-body" style={contentStyle}>{children}</div>
     {footer && <footer className="pt-dialog-footer">{footer}</footer>}
   </OverlayLayer>;
+}
+
+/* ── Mobile bottom sheet ──────────────────────────────────────────────────
+ * The touch counterpart of Dialog: pinned to the bottom edge of the overlay
+ * host (the phone screen in prototype frames, the window in production),
+ * frosted north-star glass material, a drag grip instead of a close box, and
+ * full-width stacked quiet/danger actions. Like every overlay it portals into
+ * the nearest UIProvider host, so it never escapes a rounded app frame. */
+export interface BottomSheetAction {
+  id: string;
+  label: ReactNode;
+  leading?: ReactNode;
+  tone?: 'neutral' | 'danger';
+  availability?: import('@peers-touch/ui-contracts').Availability;
+  onActivate: () => void;
+}
+export interface BottomSheetProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title' | 'inputMode'> {
+  open: boolean;
+  onDismiss: (reason: DismissReason) => void;
+  title: ReactNode;
+  children?: ReactNode;
+  actions?: readonly BottomSheetAction[];
+  /** Accessible name when the visual title is not enough. */
+  label?: string;
+  className?: string;
+}
+export function BottomSheet({ open, onDismiss, title, children, actions, label, className = '', ...rootAttributes }: BottomSheetProps) {
+  const titleId = useId();
+  return (
+    <OverlayLayer {...rootAttributes} open={open} kind="sheet" labelledBy={titleId}
+      className={`pt-bottom-sheet ${className}`} onDismiss={onDismiss} label={label}>
+      <span className="pt-sheet-grip" aria-hidden="true" />
+      <h2 id={titleId} className="pt-sheet-title">{title}</h2>
+      {children && <div className="pt-sheet-body">{children}</div>}
+      {actions && actions.length > 0 && (
+        <div className="pt-sheet-actions">
+          {actions.map(action => (
+            <Button key={action.id} actionId={action.id} fullWidth emphasis="quiet"
+              leading={action.leading} availability={action.availability}
+              tone={action.tone === 'danger' ? 'danger' : 'neutral'}
+              className="pt-sheet-action" onActivate={action.onActivate}>
+              {action.label}
+            </Button>
+          ))}
+        </div>
+      )}
+    </OverlayLayer>
+  );
 }
 export interface ConfirmActionProps extends Omit<DialogProps, 'open' | 'onDismiss' | 'footer'> {
   children: ReactNode; confirmLabel: string; cancelLabel: string;

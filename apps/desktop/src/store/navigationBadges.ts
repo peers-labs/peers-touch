@@ -7,9 +7,14 @@ import {
 } from '@peers-touch/client-chat-core';
 
 import { useSocialChatStore } from './socialChat';
+import { useSessionStore } from './session';
 import { api } from '../services/desktop_api';
 import { log } from '../utils/logger';
 import { conversationKey, visibleConversationUnread } from './socialProjection';
+import {
+  readAllActorDomainValuesSync,
+  writeActorDomainValueSync,
+} from '../storage/desktopClientStorage';
 
 // ── Types ──
 
@@ -22,6 +27,13 @@ interface NavigationBadgeState {
 
   /** Aggregated total chat unread count (derived on reconcile). */
   chatUnreadTotal: number;
+
+  /**
+   * Group conversations carrying an unread @mention, keyed by actor PTID.
+   * Mention flags survive mute (a muted group still raises for @me) and
+   * restart, and are consumed when the conversation is opened.
+   */
+  mentionFlagsByActor: Record<string, string[]>;
 
   // ── Actions ──
 
@@ -40,6 +52,18 @@ interface NavigationBadgeState {
    */
   clearChatUnread: (sessionUlid: string) => void;
 
+  /** Whether the conversation currently carries an unread @mention flag. */
+  hasMention: (actorPtid: string, conversationUlid: string) => boolean;
+
+  /** Raise the @mention flag for one group conversation. */
+  markMention: (actorPtid: string, conversationUlid: string) => void;
+
+  /** Consume the @mention flag for one group conversation. */
+  clearMention: (actorPtid: string, conversationUlid: string) => void;
+
+  /** Load persisted @mention flags for the actor after session restore. */
+  hydrateMentionFlags: (actorPtid: string) => void;
+
   /**
    * Reconcile badge total from the socialChat store's authoritative data.
    * Called after cold sync, periodic refresh, or bootstrap completion.
@@ -54,18 +78,46 @@ interface NavigationBadgeState {
 
 function initialState(): Pick<
   NavigationBadgeState,
-  'chatSurfaceVisible' | 'chatUnreadBySessions' | 'chatUnreadTotal'
+  'chatSurfaceVisible' | 'chatUnreadBySessions' | 'chatUnreadTotal' | 'mentionFlagsByActor'
 > {
   return {
     chatSurfaceVisible: false,
     chatUnreadBySessions: {},
     chatUnreadTotal: 0,
+    mentionFlagsByActor: {},
   };
+}
+
+// ── Mention flag persistence ──
+
+const MENTION_FLAG_DOMAIN = 'chat.message-flag';
+const MENTION_FLAG_KEY = 'mention-unread';
+
+function persistMentionFlags(actorPtid: string, conversationUlids: string[]): void {
+  const actor = actorPtid.trim();
+  if (!actor) return;
+  writeActorDomainValueSync<string[]>(
+    actor,
+    MENTION_FLAG_DOMAIN,
+    MENTION_FLAG_KEY,
+    conversationUlids,
+  );
+}
+
+function readPersistedMentionFlags(actorPtid: string): string[] {
+  const actor = actorPtid.trim();
+  if (!actor) return [];
+  const value = readAllActorDomainValuesSync<string[]>(
+    actor,
+    MENTION_FLAG_DOMAIN,
+  ).get(MENTION_FLAG_KEY);
+  if (!Array.isArray(value)) return [];
+  return value.filter((ulid): ulid is string => typeof ulid === 'string' && ulid.length > 0);
 }
 
 // ── Store ──
 
-export const useNavigationBadgeStore = createDesktopStore<NavigationBadgeState>('navigationBadges', (set) => ({
+export const useNavigationBadgeStore = createDesktopStore<NavigationBadgeState>('navigationBadges', (set, get) => ({
   ...initialState(),
 
   setChatSurfaceVisible: (visible) => {
@@ -90,6 +142,49 @@ export const useNavigationBadgeStore = createDesktopStore<NavigationBadgeState>(
         chatUnreadTotal: sumChatUnreadCounters(chatUnreadBySessions),
       };
     });
+  },
+
+  hasMention: (actorPtid, conversationUlid) => {
+    const actor = actorPtid.trim();
+    if (!actor) return false;
+    return get().mentionFlagsByActor[actor]?.includes(conversationUlid) ?? false;
+  },
+
+  markMention: (actorPtid, conversationUlid) => {
+    const actor = actorPtid.trim();
+    if (!actor || !conversationUlid) return;
+    set((state) => {
+      const existing = state.mentionFlagsByActor[actor] ?? [];
+      if (existing.includes(conversationUlid)) return state;
+      const mentionFlagsByActor = {
+        ...state.mentionFlagsByActor,
+        [actor]: [...existing, conversationUlid],
+      };
+      persistMentionFlags(actor, mentionFlagsByActor[actor]);
+      return { mentionFlagsByActor };
+    });
+  },
+
+  clearMention: (actorPtid, conversationUlid) => {
+    const actor = actorPtid.trim();
+    if (!actor) return;
+    set((state) => {
+      const existing = state.mentionFlagsByActor[actor] ?? [];
+      if (!existing.includes(conversationUlid)) return state;
+      const next = existing.filter((ulid) => ulid !== conversationUlid);
+      const mentionFlagsByActor = { ...state.mentionFlagsByActor, [actor]: next };
+      persistMentionFlags(actor, next);
+      return { mentionFlagsByActor };
+    });
+  },
+
+  hydrateMentionFlags: (actorPtid) => {
+    const actor = actorPtid.trim();
+    if (!actor) return;
+    const persisted = readPersistedMentionFlags(actor);
+    set((state) => ({
+      mentionFlagsByActor: { ...state.mentionFlagsByActor, [actor]: persisted },
+    }));
   },
 
   reconcileChatBadge: () => {
@@ -137,7 +232,28 @@ export const useNavigationBadgeStore = createDesktopStore<NavigationBadgeState>(
       }
     }
 
-    set({ chatUnreadTotal: reconciled, chatUnreadBySessions });
+    // Drop @mention flags whose conversation has no RAW unread left.
+    // Visible (mute-filtered) unread cannot be used here: a muted group with
+    // an @mention intentionally keeps zero visible unread while the flag must
+    // survive. Opening the conversation marks it read (raw unread → 0 and
+    // clearMention), and this prune heals a missed clear on the next sync.
+    const priorMentionFlags = useNavigationBadgeStore.getState().mentionFlagsByActor;
+    const mentionFlagsByActor: Record<string, string[]> = {};
+    let mentionFlagsChanged = false;
+    for (const [actor, ulids] of Object.entries(priorMentionFlags)) {
+      const kept = ulids.filter((ulid) => (socialState.groupUnreadCounts[ulid] ?? 0) > 0);
+      mentionFlagsByActor[actor] = kept;
+      if (kept.length !== ulids.length) {
+        mentionFlagsChanged = true;
+        persistMentionFlags(actor, kept);
+      }
+    }
+
+    set({
+      chatUnreadTotal: reconciled,
+      chatUnreadBySessions,
+      ...(mentionFlagsChanged ? { mentionFlagsByActor } : {}),
+    });
 
     log.info('navigationBadges', 'reconciled chat badge', {
       friendTotal,
@@ -155,7 +271,11 @@ export const useNavigationBadgeStore = createDesktopStore<NavigationBadgeState>(
 
 let reconcileTimer: ReturnType<typeof setInterval> | null = null;
 let unsubscribeStore: (() => void) | null = null;
-const RECONCILE_INTERVAL_MS = 60_000;
+let unsubscribeSession: (() => void) | null = null;
+let unsubscribeSocial: (() => void) | null = null;
+// Federation runtime reconciliation runs at 30s so cross-Station badge state
+// stays fresh; the dock IPC dedup guard below keeps the shorter interval cheap.
+const RECONCILE_INTERVAL_MS = 30_000;
 // Last count already mirrored to the native dock. Without this guard every
 // badge-store write fired a native_dock_set_badge IPC even when the count was
 // identical (measured ~4 redundant calls/min at idle).
@@ -200,6 +320,43 @@ export function installNavigationBadgeProjection(): void {
   syncDockBadge();
   unsubscribeStore = useNavigationBadgeStore.subscribe(syncDockBadge);
 
+  // Rehydrate persisted @mention flags for the active actor and whenever the
+  // authenticated actor changes (cold restore, login, account switch). The
+  // session store is a leaf dependency; subscribing here (instead of the
+  // session store importing badge state) keeps the module graph acyclic.
+  const hydrateForCurrent = () => {
+    const actorPtid = useSessionStore.getState().currentUser?.actorPtid;
+    if (actorPtid) {
+      useNavigationBadgeStore.getState().hydrateMentionFlags(actorPtid);
+    }
+  };
+  hydrateForCurrent();
+  let lastActorPtid = useSessionStore.getState().currentUser?.actorPtid ?? null;
+  unsubscribeSession = useSessionStore.subscribe((state) => {
+    const nextPtid = state.currentUser?.actorPtid ?? null;
+    if (nextPtid !== lastActorPtid) {
+      lastActorPtid = nextPtid;
+      if (nextPtid) {
+        useNavigationBadgeStore.getState().hydrateMentionFlags(nextPtid);
+      }
+    }
+  });
+
+  // Opening a group consumes its @me marker (the group was muted-safe while
+  // parked; selecting it means the mention was seen). Clearing here keeps the
+  // dependency edge badge-store → social-store one-directional.
+  let lastActiveGroup: string | null = useSocialChatStore.getState().activeGroupUlid;
+  unsubscribeSocial = useSocialChatStore.subscribe((state) => {
+    const nextGroup = state.activeGroupUlid;
+    if (nextGroup && nextGroup !== lastActiveGroup) {
+      const actorPtid = state.currentUserPtid;
+      if (actorPtid) {
+        useNavigationBadgeStore.getState().clearMention(actorPtid, nextGroup);
+      }
+    }
+    lastActiveGroup = nextGroup;
+  });
+
   // Periodic reconciliation to catch missed events
   reconcileTimer = setInterval(() => {
     useNavigationBadgeStore.getState().reconcileChatBadge();
@@ -220,6 +377,14 @@ export function teardownNavigationBadgeProjection(): void {
   if (unsubscribeStore) {
     unsubscribeStore();
     unsubscribeStore = null;
+  }
+  if (unsubscribeSession) {
+    unsubscribeSession();
+    unsubscribeSession = null;
+  }
+  if (unsubscribeSocial) {
+    unsubscribeSocial();
+    unsubscribeSocial = null;
   }
   if (isTauriRuntime()) {
     void api.nativeDockSetBadge(0).catch(() => {});

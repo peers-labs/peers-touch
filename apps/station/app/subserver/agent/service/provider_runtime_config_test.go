@@ -20,7 +20,7 @@ func TestValidateProviderRuntimeConfigAcceptsRegisteredDefaultWithoutCatalogRows
 	err := ValidateProviderRuntimeConfig(provider, &model.ProviderRuntimeConfig{
 		DefaultModel:   "default",
 		StartupArgs:    []string{"--verbose"},
-		Environment:    map[string]string{"CODEX_PROFILE": "work"},
+		Environment:    map[string]string{"TZ": "UTC"},
 		TimeoutSeconds: 120,
 	})
 	if err != nil {

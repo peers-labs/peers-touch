@@ -652,6 +652,12 @@ impl StationDeviceTransport {
     }
 }
 
+/// Terminal Station response: the actor identity exists on another device and
+/// no recovery archive was provided. Retrying enrollment can never succeed;
+/// the worker parks the engine instead of hammering /device/enroll.
+pub const MOBILE_MESSAGING_IDENTITY_RECOVERY_REQUIRED: &str =
+    "MOBILE_MESSAGING_IDENTITY_RECOVERY_REQUIRED";
+
 impl DeviceEnrollmentTransport for StationDeviceTransport {
     fn enroll(
         &self,
@@ -680,7 +686,7 @@ impl DeviceEnrollmentTransport for StationDeviceTransport {
         );
         result.map_err(|error| match error {
             StationTransportError::HttpStatus { status: 409, .. } => {
-                format!("MOBILE_MESSAGING_IDENTITY_RECOVERY_REQUIRED: {error}")
+                format!("{MOBILE_MESSAGING_IDENTITY_RECOVERY_REQUIRED}: {error}")
             }
             other => other.to_string(),
         })

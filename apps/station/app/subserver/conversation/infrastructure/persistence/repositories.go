@@ -16,6 +16,7 @@ import (
 	domainevent "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/event"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/repository"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
+	"github.com/peers-labs/peers-touch/station/frame/core/facility/mediaaccess"
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
 	"google.golang.org/protobuf/proto"
 	"gorm.io/gorm"
@@ -227,6 +228,38 @@ func (r *authorityRepository) Save(
 	snapshot aggregate.Snapshot,
 ) error {
 	model := conversationModelFromSnapshot(snapshot)
+	if snapshot.Kind == valueobject.ConversationKindGroup {
+		var previous ConversationModel
+		if err := r.db.WithContext(ctx).Select("status", "membership_epoch", "authority_epoch").
+			Where("conversation_id = ?", model.ConversationID).Take(&previous).Error; err != nil {
+			return err
+		}
+		if previous.Status != model.Status || previous.MembershipEpoch != model.MembershipEpoch ||
+			previous.AuthorityEpoch != model.AuthorityEpoch {
+			scope := mediaaccess.ConversationScope{
+				ConversationID: string(snapshot.ID), Authority: string(snapshot.AuthorityStation),
+				Epoch:  uint64(snapshot.AuthorityEpoch),
+				Active: snapshot.Status == valueobject.ConversationStatusActive,
+			}
+			for _, device := range snapshot.Devices {
+				if !device.Active {
+					continue
+				}
+				for _, member := range snapshot.Members {
+					if member.Actor == device.Endpoint.Actor && member.Active() {
+						scope.Endpoints = append(scope.Endpoints, mediaaccess.Endpoint{
+							ActorPTID: string(member.Actor), DeviceID: string(device.Endpoint.Device),
+							Home: string(member.HomeStation),
+						})
+						break
+					}
+				}
+			}
+			if err := mediaaccess.ReconcileConversation(ctx, scope); err != nil {
+				return fmt.Errorf("conversation media ejection was not confirmed: %w", err)
+			}
+		}
+	}
 	result := r.db.WithContext(ctx).
 		Model(&ConversationModel{}).
 		Where("conversation_id = ?", model.ConversationID).

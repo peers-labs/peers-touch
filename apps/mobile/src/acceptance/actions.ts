@@ -80,6 +80,8 @@ import {
 import { wakeActiveMessagingSession } from '../runtimes/messagingRuntime';
 import { dispatchOpenContactChat } from '../features/social/contactCommands';
 import { mobileCallManager } from '../features/call/callState';
+import { readCallMediaPresentation } from '@peers-touch/client-chat-core';
+import { mobileGroupCallManager } from '../features/call/groupCallRuntime';
 import {
   openPrivateMomentMedia,
   publishPrivateMoment,
@@ -94,10 +96,12 @@ import {
   setPrivateMomentReaction,
   submitPrivateComment,
 } from '../runtimes/privateMomentsRuntime';
+import { collectMobileDebugSnapshot } from './debug/collectMobileDebugSnapshot';
 import {
   acceptSocialFriendRequest,
   applySocialFriendRequestProjectionCheckpoints,
   readSocialRuntimeProjection,
+  readSocialNotificationProjection,
   readFederationContexts,
   readCurrentSocialProfile,
   reconcileSocialRuntime,
@@ -425,8 +429,13 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     }
     const routeKind = chatSurfaceFixtureRouteKind(surfaceId);
     applyMobileNavigationIntent({
-      kind: 'primary',
-      routeId: 'tab:chat',
+      kind: 'messages',
+      pane: 'chats',
+    });
+    applyMobileNavigationIntent({
+      kind: 'messages.search', pane: 'chats',
+      query: surfaceId === 'chat.list-search' ? 'Alice' : surfaceId === 'chat.list-search-empty' ? 'Unknown person' : '',
+      open: surfaceId === 'chat.list-search' || surfaceId === 'chat.list-search-empty',
     });
     if (routeKind !== 'list') {
       applyMobileNavigationIntent({
@@ -452,8 +461,13 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     }
     const routeKind = contactsSurfaceFixtureRouteKind(surfaceId);
     applyMobileNavigationIntent({
-      kind: 'primary',
-      routeId: 'tab:contacts',
+      kind: 'messages',
+      pane: 'contacts',
+    });
+    applyMobileNavigationIntent({
+      kind: 'messages.search', pane: 'contacts',
+      query: surfaceId === 'contacts.local-search' ? 'Alexandria' : surfaceId === 'contacts.local-search-empty' ? 'Unknown teammate' : '',
+      open: surfaceId === 'contacts.local-search' || surfaceId === 'contacts.local-search-empty',
     });
     if (routeKind === 'profile') {
       applyMobileNavigationIntent({
@@ -463,13 +477,16 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
           actorPtid: 'ptid:acceptance-contact',
         },
       });
-    } else if (routeKind === 'people' || routeKind === 'group') {
+    } else if (routeKind === 'people') {
+      applyMobileNavigationIntent({
+        kind: 'detail.push',
+        route: { routeId: 'detail:find-people' },
+      });
+    } else if (routeKind === 'group') {
       applyMobileNavigationIntent({
         kind: 'overlay.open',
         route: {
-          routeId: routeKind === 'group'
-            ? 'overlay:create-group'
-            : 'overlay:add-friend',
+          routeId: 'overlay:create-group',
         },
       });
     }
@@ -815,6 +832,7 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     }
     const staged = await messagingStageAttachment({
       ...account,
+      conversationId: requireString(input?.conversationId, 'messaging.attachment.stage.conversationId'),
       file: new File([bytes.buffer], filename, { type: mimeType }),
     });
     return {
@@ -1285,6 +1303,7 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
   'social.projection.read': async () => ({
     ...readSocialRuntimeProjection(),
     moments: projectMomentsRuntimeDiagnostics(readCurrentActiveMomentsRuntime()),
+    notifications: readSocialNotificationProjection(),
   }),
 
   'moments.private.acceptance.prepareKeys': async () => {
@@ -1671,6 +1690,8 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
   'settings.profile.update': async (input) => {
     const updated = await updateCurrentSocialProfile({
       displayName: optionalText(input?.displayName),
+      avatar: optionalText(input?.avatar),
+      header: optionalText(input?.header),
       note: optionalText(input?.note),
       region: optionalText(input?.region),
       timezone: optionalText(input?.timezone),
@@ -1825,6 +1846,9 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
   },
 
   initiateCall: async (input) => {
+    if (input.mediaKind !== undefined && input.mediaKind !== 'audio' && input.mediaKind !== 'video') {
+      throw new Error('acceptance.mobile.invalidMediaKind');
+    }
     const runtime = await messagingStatus();
     if (
       input.callerDeviceId
@@ -1834,8 +1858,47 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     }
     return publicCallSnapshot(await mobileCallManager.startOutgoingCall(
       requirePtid(input.calleePtid, 'call.calleePtid'),
-      'audio',
+      input.mediaKind === 'video' ? 'video' : 'audio',
     ));
+  },
+
+  callSnapshot: async (input) => {
+    const snapshot = mobileCallManager.getSnapshot();
+    if (snapshot && snapshot.peerPtid !== input.peerPtid) {
+      throw new Error('acceptance.mobile.callPeerMismatch');
+    }
+    const tracks = (stream?: MediaStream) => stream?.getTracks().map((track) => ({
+      kind: track.kind, enabled: track.enabled, muted: track.muted, readyState: track.readyState,
+    })) ?? [];
+    return { snapshot: snapshot ? {
+      callId: snapshot.callId, state: snapshot.state, mediaKind: snapshot.mediaKind,
+      micMuted: snapshot.micMuted ?? false, cameraOff: snapshot.cameraOff ?? false,
+      endReason: snapshot.endReason,
+      localTracks: tracks(snapshot.localStream), remoteTracks: tracks(snapshot.remoteStream),
+    } : null };
+  },
+
+  callMediaStats: async (input) => {
+    const snapshot = mobileCallManager.getSnapshot();
+    if (snapshot?.peerPtid !== input.peerPtid) {
+      throw new Error('acceptance.mobile.callPeerMismatch');
+    }
+    return {
+      ...await mobileCallManager.getMediaStats(),
+      presentation: readCallMediaPresentation(document.querySelector('.mobile-call-surface'), {
+        localVideo: '.mobile-call-local-video',
+        remoteVideo: '.mobile-call-remote-video',
+        remoteAudio: 'audio',
+      }, { local: snapshot.localStream, remote: snapshot.remoteStream }),
+    };
+  },
+
+  callRestartConnection: async (input) => {
+    if (mobileCallManager.getSnapshot()?.peerPtid !== input.peerPtid) {
+      throw new Error('acceptance.mobile.callPeerMismatch');
+    }
+    await mobileCallManager.restartConnection();
+    return { requested: true };
   },
 
   callResolutionState: async (input) => {
@@ -1878,6 +1941,32 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       return { ...publicCallSnapshot(snapshot), conflict: true };
     }
   },
+
+  groupCallStart: async (input) => {
+    if (input.mediaKind !== 'audio' && input.mediaKind !== 'video') throw new Error('acceptance.mobile.invalidMediaKind');
+    await mobileGroupCallManager.joinGroupCall(requireString(input.groupUlid, 'groupCall.groupUlid'), input.mediaKind);
+    return { actorPtid: readMobileRuntimeScopeProjection().activeActorPtid ?? '', snapshot: mobileGroupCallManager.getSnapshot() };
+  },
+  groupCallLeave: async () => {
+    await mobileGroupCallManager.leaveGroupCall();
+    return { actorPtid: readMobileRuntimeScopeProjection().activeActorPtid ?? '', snapshot: mobileGroupCallManager.getSnapshot() };
+  },
+  groupCallToggleMic: async (input) => {
+    await mobileGroupCallManager.setMicEnabled(input.enabled);
+    return { actorPtid: readMobileRuntimeScopeProjection().activeActorPtid ?? '', snapshot: mobileGroupCallManager.getSnapshot() };
+  },
+  groupCallToggleCamera: async (input) => {
+    await mobileGroupCallManager.setCameraEnabled(input.enabled);
+    return { actorPtid: readMobileRuntimeScopeProjection().activeActorPtid ?? '', snapshot: mobileGroupCallManager.getSnapshot() };
+  },
+  groupCallSnapshot: async () => ({
+    actorPtid: readMobileRuntimeScopeProjection().activeActorPtid ?? '', snapshot: mobileGroupCallManager.getSnapshot(),
+  }),
+  groupCallMediaStats: async () => ({
+    actorPtid: readMobileRuntimeScopeProjection().activeActorPtid ?? '',
+    media: await mobileGroupCallManager.readMediaStats(),
+  }),
+  'debug.snapshot.read': async () => collectMobileDebugSnapshot(),
 
   cleanup: async () => {
     setEntrySurfaceFixture(null);
@@ -2111,6 +2200,9 @@ function publicRecoveryState(state: RecoveryState): PublicRecoveryState {
           : {
               reason: state.admission.reason,
               closedAt: state.admission.closedAt,
+              ...(state.admission.detail
+                ? { handlerError: state.admission.detail }
+                : {}),
             },
       };
     case 'session-mismatch':
@@ -2649,6 +2741,28 @@ function requireNavigationIntent(value: unknown): MobileNavigationIntent {
   }
   const input = value as Record<string, unknown>;
   switch (input.kind) {
+    case 'moments':
+      if (input.pane !== 'feed' && input.pane !== 'circles') {
+        throw new Error('acceptance.mobile.invalidInput:navigation.moments.pane');
+      }
+      return { kind: 'moments', pane: input.pane };
+    case 'moments.search':
+      if ((input.pane !== 'feed' && input.pane !== 'circles') ||
+          typeof input.query !== 'string' || typeof input.open !== 'boolean') {
+        throw new Error('acceptance.mobile.invalidInput:navigation.moments.search');
+      }
+      return { kind: 'moments.search', pane: input.pane, query: input.query, open: input.open };
+    case 'messages.search':
+      if ((input.pane !== 'chats' && input.pane !== 'contacts') ||
+          typeof input.query !== 'string' || typeof input.open !== 'boolean') {
+        throw new Error('acceptance.mobile.invalidInput:navigation.messages.search');
+      }
+      return { kind: 'messages.search', pane: input.pane, query: input.query, open: input.open };
+    case 'messages':
+      if (input.pane !== 'chats' && input.pane !== 'contacts') {
+        throw new Error('acceptance.mobile.invalidInput:navigation.messages.pane');
+      }
+      return { kind: 'messages', pane: input.pane };
     case 'primary':
       return {
         kind: 'primary',
@@ -2677,7 +2791,6 @@ function requirePrimaryRouteId(value: unknown): MobilePrimaryRouteId {
   if (
     value === 'tab:chat'
     || value === 'tab:moments'
-    || value === 'tab:contacts'
     || value === 'tab:settings'
   ) {
     return value;
@@ -2724,6 +2837,7 @@ function requireDetailRoute(value: unknown): MobileDetailRoute {
         ),
       };
     case 'detail:social-search':
+    case 'detail:find-people':
     case 'detail:social-circles':
       return { routeId: route.routeId };
     case 'detail:social-profile':
@@ -2762,7 +2876,7 @@ function requireOverlayRoute(value: unknown): MobileOverlayRoute {
     throw new Error('acceptance.mobile.invalidInput:navigation.overlay.route');
   }
   const routeId = (value as Record<string, unknown>).routeId;
-  if (routeId === 'overlay:add-friend' || routeId === 'overlay:create-group') {
+  if (routeId === 'overlay:create-group' || routeId === 'overlay:notifications') {
     return { routeId };
   }
   throw new Error('acceptance.mobile.invalidInput:navigation.overlay.routeId');
@@ -2771,6 +2885,7 @@ function requireOverlayRoute(value: unknown): MobileOverlayRoute {
 function requireSettingDetailId(value: unknown): MobileSettingDetailId {
   if (
     value === 'account-info'
+    || value === 'credentials'
     || value === 'notifications'
     || value === 'privacy-security'
     || value === 'safety-number'
@@ -2929,6 +3044,8 @@ function publicProfile(actorPtid: string, profile: PeerProfile) {
   return {
     actorPtid,
     profileRevision: profile.profileRevision.toString(),
+    avatar: profile.avatar,
+    header: profile.header,
     displayName: profile.displayName,
     note: profile.note,
     region: profile.region,

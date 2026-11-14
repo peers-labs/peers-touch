@@ -1,228 +1,67 @@
 # Provider Station Ownership — Data Model
 
-> **Status**: draft
-> **Version**: v1.0
-> **Created**: 2026-07-23 | **Updated**: 2026-09-03
-> **Owner**: Agent Team
+Status: accepted. Owner: Agent domain. Updated: 2026-10-30.
 
-> **Proto source of truth**: `model/domain/ai_chat/provider.proto`, `model/domain/ai_chat/ai_models.proto`.
-> DB schema and JSON APIs below are the implementation representation. Cross-platform type contracts are defined in proto; see `design.md §1.1`.
+The wire sources are `model/domain/agent/provider.proto` and
+`model/domain/agent/agent.proto`. Persistence types live under
+`apps/station/app/subserver/agent/infrastructure/persistence`.
 
----
+## Owner identity
 
-## 1. Station Database Schema
+Every Provider, model and credential record has `scope` and `actor_ptid`.
+`scope=station` requires an empty Actor owner. `scope=actor` requires a canonical
+PTID. An empty Actor never implicitly selects Station ownership.
 
-### 1.1 `agent_providers`
+`agent_providers` uses UUID storage identity and a logical `name`. Its unique
+owner key is `(scope, actor_ptid, name)`. It stores enablement, protocol,
+registered adapter metadata, typed runtime configuration, `version` and the
+independent `access_revision`.
 
-Per-actor provider configuration.
+`agent_models` uses `(scope, actor_ptid, provider_id, model_id)` as the unique
+owner key. Direct models are mutable owner-bound records. CLI catalogs are
+read-only runtime snapshots keyed by owner, logical Provider and Provider
+revision; successful discovery replaces one complete snapshot atomically.
 
-| Column | Type | Notes |
-|--------|------|-------|
-| id | varchar(36) PK | UUID |
-| actor_ptid | text NOT NULL | Canonical owner PTID |
-| provider_id | varchar(64) NOT NULL | Logical provider name (e.g. "trae-cli", "openai", "anthropic") |
-| display_name | varchar(128) | Human-readable name |
-| runtime_kind | varchar(16) NOT NULL | "http" \| "cli" \| "embedded" |
-| base_url | varchar(512) | API base URL (for HTTP providers) |
-| cli_command | varchar(256) | Registered CLI adapter identifier (NOT arbitrary command; Station validates against adapter registry) |
-| enabled | boolean NOT NULL DEFAULT true | |
-| config_json | jsonb | Provider-specific config (model defaults, timeout, etc.) |
-| version | bigint NOT NULL DEFAULT 1 | Monotonic version for optimistic locking |
-| created_at | timestamptz | |
-| updated_at | timestamptz | |
+The ownership migration assigns existing private records `scope=actor` without
+turning them into shared records. Storage UUID lookup must verify the resolved
+owner and logical identity before dispatch.
 
-Unique constraint: `(actor_ptid, provider_id)`
+## Credentials
 
-### 1.2 `agent_credential_pool`
+`agent_providers.key_vaults` stores an encrypted envelope, never a raw API key.
+The envelope uses the existing Station KEK provider and authenticates the
+Provider record, owner and logical identity as associated data.
 
-Per-actor credentials. Values encrypted at rest.
+The credential pool follows the same owner resolution. An Actor with permission
+to use a shared Provider cannot retrieve its credential. Administrator reads
+also return status only. Missing or unusable KEK fails closed before mutation.
+Credential changes invalidate the Provider configuration revision.
 
-| Column | Type | Notes |
-|--------|------|-------|
-| id | varchar(36) PK | UUID |
-| actor_ptid | text NOT NULL | Canonical owner PTID |
-| provider | varchar(64) NOT NULL | FK → provider_id |
-| api_key_encrypted | bytea NOT NULL | Encrypted API key |
-| status | varchar(16) NOT NULL DEFAULT 'active' | "active" \| "exhausted" \| "error" \| "cooldown" |
-| request_count | bigint NOT NULL DEFAULT 0 | Total requests made |
-| cooldown_until | timestamptz | When exhausted/error, retry after this time |
-| version | bigint NOT NULL DEFAULT 1 | Monotonic version |
-| created_at | timestamptz | |
-| updated_at | timestamptz | |
+## Policy and access
 
-Unique constraint: `(actor_ptid, provider)`
+`agent_provider_policy` contains one Station resource with
+`personal_providers_enabled=false` and an optimistic `revision`.
 
-### 1.3 `agent_models`
+`agent_provider_access_grants` belongs to a Provider storage record.
+Each grant chooses a specific `actor_ptid` or `all_actors`, and a specific
+`model_id` or `all_models`. Contradictory or empty selectors are invalid.
+An empty grant set permits no consumer use.
 
-Per-actor model list within a provider.
+Grant replacement and the Provider's `access_revision` update occur in one
+transaction using the observed revision. Access changes do not bump unrelated
+configuration versions; every dispatch validates current grants separately.
 
-| Column | Type | Notes |
-|--------|------|-------|
-| id | varchar(36) PK | UUID |
-| actor_ptid | text NOT NULL | Canonical owner PTID |
-| provider_id | varchar(64) NOT NULL | FK → provider_id |
-| model_id | varchar(128) NOT NULL | Model identifier (e.g. "gpt-4.1", "Test-O-New-Thinking") |
-| display_name | varchar(256) | |
-| enabled | boolean NOT NULL DEFAULT true | |
-| capabilities_json | jsonb | Canonical runtime capability flags, e.g. `{"streaming":true,"native-tools":true,"reasoning":false}` |
-| context_window | integer | Token limit |
-| version | bigint NOT NULL DEFAULT 1 | Monotonic version |
-| created_at | timestamptz | |
-| updated_at | timestamptz | |
+## Defaults and projections
 
-Unique constraint: `(actor_ptid, provider_id, model_id)`
+`agent_runtime_defaults` is the existing Actor-scoped default selection store.
+It persists `(default_provider_id, default_model_id)` and a CAS revision.
+Desktop caches this projection in the current Session and never writes an
+app-global `model-registry.json`.
 
----
+Authorized consumer projections carry Provider/model identity, capability,
+readiness and relevant revisions. They exclude credentials, commands, private
+directories, installation internals and grants. Personal management projections
+remain distinct and require the personal policy.
 
-## 2. Client Cache Schema (Local)
-
-Desktop Rust / Mobile stores a local projection (no credentials):
-
-```rust
-struct CachedProvider {
-    provider_id: String,
-    display_name: String,
-    runtime_kind: String,
-    enabled: bool,
-    version: u64,
-}
-
-struct CachedModel {
-    provider_id: String,
-    model_id: String,
-    display_name: String,
-    enabled: bool,
-    capabilities: ModelCapabilities,
-    context_window: u32,
-    version: u64,
-}
-
-struct CachedCredentialStatus {
-    provider_id: String,
-    configured: bool,     // has credential on Station
-    status: String,       // "active" | "exhausted" | "error" | "cooldown"
-}
-```
-
----
-
-## 3. API Contracts
-
-### 3.1 Provider Config CRUD
-
-```
-POST /sub-agent/agent/provider/list
--> { providers: [Provider...] }
-Note: Returns full Provider (including version) for optimistic lock support in UI.
-
-POST /sub-agent/agent/provider/create
-{ provider_id, display_name, base_url?, config_json? }
--> { provider: {..., version: 1} }
-Note: runtime_kind and cli_command are resolved server-side from the adapter registry.
-      Clients do not submit runtime_kind; Station derives it from provider_id registration.
-
-POST /sub-agent/agent/provider/update
-{ provider_id, version, changes: { enabled?, display_name?, base_url?, config_json? } }
--> 200: { provider: {..., version: N+1} }
--> 409: { error: "VERSION_CONFLICT", current_version: M }
-Note: runtime_kind is not client-mutable. To change provider type, delete and re-create.
-
-POST /sub-agent/agent/provider/delete
-{ provider_id, version }
--> 200: { deleted: true }
--> 409: { error: "VERSION_CONFLICT", current_version: M }
-```
-
-**Delete cascade rules:**
-- Deleting a provider also deletes its associated `agent_credential_pool` and `agent_models` records in the same transaction.
-- This is a hard delete, not a tombstone. Once deleted, the provider_id becomes available for re-creation.
-- Client must confirm deletion via UI (irreversible action removes credential and model config).
-- If the provider is referenced by an active turn, the delete is rejected with a typed error until the turn completes.
-
-### 3.2 Credential Management
-
-```
-POST /sub-agent/agent/credential/set
-{ provider_id, api_key }
-→ 200: { provider_id, status: "active", version: N }
-
-POST /sub-agent/agent/credential/delete
-{ provider_id, version }
-→ 200: { deleted: true }
-
-POST /sub-agent/agent/credential/status
-{ provider_id }
-→ { provider_id, configured: true, status: "active", version: N }
-```
-
-**Version semantics for credential/set:**
-- `credential/set` is a **full-replacement upsert** — no version required on set.
-- If no credential exists, creates one (version = 1).
-- If one exists, replaces it unconditionally (version increments). This is intentional: the user re-enters the full API key each time (per ADR-5), so partial-update conflicts are impossible.
-- `credential/delete` requires version to prevent accidental deletion of a just-reconfigured credential.
-
-Note: No endpoint returns the actual credential value.
-
-### 3.3 Model CRUD
-
-```
-POST /sub-agent/agent/model/list
-{ provider_id }
-→ { models: [CachedModel...] }
-Note: Returns the effective Station-owned model view: catalog models merged with
-      actor overrides plus actor-created custom models. A catalog model without
-      an override is returned with version = 0.
-
-POST /sub-agent/agent/model/create
-{ provider_id, model_id, display_name, enabled, context_window, capabilities: { flags: { "streaming": true, ... } } }
-→ 200: { model: CachedModel }
-
-POST /sub-agent/agent/model/fetch-remote
-{ provider_id }
-→ { models: [...newly discovered models...], version: N }
-
-POST /sub-agent/agent/model/update
-{ provider_id, model_id, version, enabled?, display_name?, context_window?, capabilities?: { flags: {...} } }
-→ 200: { model: {..., version: N+1} }
-→ 409: { error: "VERSION_CONFLICT", current_version: M }
-Note: Updating a catalog model at version = 0 materializes its first actor
-      override from authoritative catalog metadata and returns version = 1.
-```
-
-Capability keys are the canonical `RuntimeCapabilitySnapshot` IDs. A present
-`capabilities` message carries explicit overrides; `false` values are preserved
-so a user model override can disable a catalog capability.
-
-### 3.4 Turn Stream (unchanged path, for reference)
-
-```
-POST /sub-agent/agent/turn/stream
-Authorization: Bearer <jwt>
-Accept: text/event-stream
-{ conversation_id, agent_id, provider, model, user_input, ... }
-→ SSE stream
-```
-
----
-
-## 4. SSE Event Types
-
-| Event | Data fields | Semantics |
-|-------|-------------|-----------|
-| `text` | text, model? | Incremental text chunk |
-| `thinking` | text | Reasoning/thinking content |
-| `tool_call` | toolCallId, toolName, arguments | Tool invocation request |
-| `tool_result` | toolCallId, result | Tool execution result |
-| `done` | model, turn_id, usage? | Turn completed successfully |
-| `error` | error, code? | Turn failed; stream ends |
-
----
-
-## 5. Version Semantics
-
-- Version starts at 1 on record creation.
-- Every successful mutation increments version by 1.
-- Version is per-record (not global).
-- Client must read version before mutating.
-- Server MUST reject mutation where `request.version != record.current_version`.
-- On 409, client MUST re-fetch the record, then may re-submit with new version.
+All selectors use the composite `(provider_id, model_id)`. Bare model IDs resolve
+only when unique; list order cannot establish identity.

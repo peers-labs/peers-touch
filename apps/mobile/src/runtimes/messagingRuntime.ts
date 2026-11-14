@@ -19,6 +19,7 @@ import {
   messagingListConversations,
   messagingReconcile,
   messagingRecoverIdentity,
+  messagingRecoveryPreflight,
   type MessagingAccountInput,
   type MessagingMutationScopeInput,
   type MessagingReconcileResult,
@@ -287,6 +288,19 @@ async function reconcileStartupMessagingSession(): Promise<void> {
     reconcileInFlight = null;
     await reconcileActiveMessagingSession();
   }
+}
+
+export async function preflightActiveMessagingIdentityRecovery(): Promise<boolean> {
+  const session = admittedSession(useAuthStore.getState());
+  if (!session || !activeScope || !sameAccount(activeScope, accountInput(session))) {
+    throw new Error('mobile.messaging.identityRecoveryScopeMissing');
+  }
+  const result = await messagingRecoveryPreflight({
+    ...accountInput(session),
+    sessionId: session.sessionId,
+    lifecycleGeneration: session.lifecycleGeneration,
+  });
+  return result.recoveryAvailable;
 }
 
 export async function recoverActiveMessagingIdentity(): Promise<void> {

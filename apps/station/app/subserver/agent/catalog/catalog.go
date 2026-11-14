@@ -40,6 +40,7 @@ type CatalogProvider struct {
 	DefaultBaseURL   string         `yaml:"default_base_url"`
 	RuntimeKind      string         `yaml:"runtime_kind"`
 	CredentialEnvKey string         `yaml:"credential_env_key"`
+	BackendProtocols []string       `yaml:"backend_protocols"`
 	CLIArgv          []string       `yaml:"cli_argv"`
 	ModelCatalogArgv []string       `yaml:"model_catalog_argv"`
 	DefaultModel     string         `yaml:"default_model"`

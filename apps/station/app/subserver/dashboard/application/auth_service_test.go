@@ -122,6 +122,19 @@ func (r *fakeSessionRepo) ListActive(ctx context.Context) ([]domain.DashboardSes
 func (r *fakeSessionRepo) FindBySessionID(ctx context.Context, sid string) (*domain.DashboardSession, error) {
 	return nil, gorm.ErrRecordNotFound
 }
+func (r *fakeSessionRepo) FindActiveBySession(ctx context.Context, sid string, adminID uint64) (*domain.DashboardSession, error) {
+	for _, revoked := range r.revokeID {
+		if revoked == sid {
+			return nil, gorm.ErrRecordNotFound
+		}
+	}
+	for _, session := range r.created {
+		if session.SessionID == sid && session.AdminID == adminID && session.ExpiresAt.After(time.Now()) {
+			return session, nil
+		}
+	}
+	return nil, gorm.ErrRecordNotFound
+}
 
 type fakeAuditRepo struct {
 	records []string
@@ -150,6 +163,7 @@ var (
 
 func newAuthSvc(t *testing.T) (*AuthService, *fakeAdminRepo, *fakeSessionRepo) {
 	t.Helper()
+	t.Setenv("PEERS_AUTH_SECRET", "dashboard-auth-test-process-secret")
 	admins := newFakeAdminRepo()
 	sessions := &fakeSessionRepo{}
 	audit := &fakeAuditRepo{}

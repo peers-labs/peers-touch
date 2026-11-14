@@ -12,50 +12,6 @@ HARNESS = ROOT / "apps/desktop/src/acceptance/agent/harness.ts"
 
 
 class ChatModelScenariosTest(unittest.TestCase):
-    def test_availability_uses_composite_authority_selectors(self) -> None:
-        source = SCENARIOS.read_text(encoding="utf-8")
-        start = source.index("def disable_recovery(")
-        scenario = source[start:]
-
-        self.assertIn("data-pt-provider-enabled-toggle", scenario)
-        self.assertIn("data-pt-provider-model-provider", scenario)
-        self.assertIn("data-pt-provider-model-toggle", scenario)
-        self.assertIn("select_provider_settings(", scenario)
-        self.assertEqual(
-            scenario.count('runner.harness("reconcileChatSuiteModelProjection")'),
-            2,
-        )
-        self.assertIn("def toggle_provider(enabled: bool)", scenario)
-        self.assertIn('"Provider disable decision"', scenario)
-        self.assertIn('"Provider enable decision"', scenario)
-        self.assertIn('if outcome == "confirm":', scenario)
-        self.assertIn("toggle_provider(False)", scenario)
-        self.assertIn("toggle_provider(True)", scenario)
-        self.assertNotIn("document.querySelectorAll('strong')", scenario)
-
-    def test_provider_selection_filters_long_lists_through_product_search(self) -> None:
-        source = SCENARIOS.read_text(encoding="utf-8")
-        start = source.index("def select_provider_settings(")
-        end = source.index("\ndef settings_default(", start)
-        helper = source[start:end]
-
-        self.assertIn('provider.menu.searchPlaceholder', helper)
-        self.assertIn("runner.set_input_value(", helper)
-        self.assertIn("runner.click_visible(", helper)
-        self.assertNotIn("scrollIntoView", helper)
-
-        provider_source = PROVIDER_SCENARIOS.read_text(encoding="utf-8")
-        cli_start = provider_source.index("def cli_discovery(")
-        cli_scenario = provider_source[cli_start:]
-        self.assertIn(
-            'select_provider_settings(runner, provider_id, "registered CLI Provider")',
-            cli_scenario,
-        )
-        self.assertNotIn(
-            'click_visible(f\'[data-item-id="{provider_id}"]\'',
-            cli_scenario,
-        )
-
     def test_model_selection_filters_long_menus_through_product_search(self) -> None:
         source = SCENARIOS.read_text(encoding="utf-8")
         picker_start = source.index("def open_picker(")

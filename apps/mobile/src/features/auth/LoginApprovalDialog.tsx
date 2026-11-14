@@ -1,8 +1,6 @@
-import { Button, Modal, Typography } from 'antd';
+import { Button, Dialog, Text } from '@peers-touch/ui';
 
 import type { PendingLoginApproval } from '../../services/loginApproval';
-
-const { Text } = Typography;
 
 type Translate = (key: string, params?: Record<string, string | number>) => string;
 
@@ -37,13 +35,13 @@ export function LoginApprovalDialogContent({
 }: ContentProps) {
   return (
     <div data-pt-approval-dialog="open">
-      <Text type="secondary">{t('mobile.loginApproval.dialog.subtitle')}</Text>
+      <Text tone="secondary">{t('mobile.loginApproval.dialog.subtitle')}</Text>
       <section className="mobile-login-approval-device" data-pt-approval-device={current.deviceLabel}>
-        <Text strong>{current.deviceLabel || current.claimantDeviceId}</Text>
-        <Text type="secondary">{current.platform}</Text>
+        <strong>{current.deviceLabel || current.claimantDeviceId}</strong>
+        <Text tone="secondary">{current.platform}</Text>
       </section>
       <section className="mobile-login-approval-code-block">
-        <Text type="secondary">{t('mobile.loginApproval.comparison')}</Text>
+        <Text tone="secondary">{t('mobile.loginApproval.comparison')}</Text>
         <output
           className="mobile-login-approval-code"
           data-pt-approval-code={current.comparisonCode}
@@ -52,21 +50,23 @@ export function LoginApprovalDialogContent({
         </output>
       </section>
       {errorKey ? (
-        <Text type="danger" role="alert">
+        <Text tone="danger" role="alert">
           {t(errorKey)}
         </Text>
       ) : null}
       <div className="mobile-login-approval-actions">
         <Button
-          disabled={busy}
-          onClick={() => onDeny(current.approvalId, current.revision)}
+          actionId="login-approval-deny"
+          availability={busy ? { kind: 'disabled', reason: t('mobile.loginApproval.deciding') } : undefined}
+          onActivate={() => onDeny(current.approvalId, current.revision)}
         >
           {t('mobile.loginApproval.dialog.deny')}
         </Button>
         <Button
-          type="primary"
-          loading={busy}
-          onClick={() => onAllow(current.approvalId, current.revision)}
+          actionId="login-approval-allow"
+          emphasis="primary"
+          execution={busy ? 'pending' : 'idle'}
+          onActivate={() => onAllow(current.approvalId, current.revision)}
         >
           {t('mobile.loginApproval.dialog.allow')}
         </Button>
@@ -90,11 +90,12 @@ export function LoginApprovalDialog({
 }: Props) {
   const current = pending[0];
   return (
-    <Modal
+    <Dialog
       open={!!current}
       className="mobile-login-approval-dialog"
       title={t('mobile.loginApproval.dialog.title')}
-      onCancel={onDismiss}
+      onDismiss={onDismiss}
+      closeLabel={t('mobile.loginApproval.cancel')}
       footer={null}
     >
       {current ? (
@@ -107,6 +108,6 @@ export function LoginApprovalDialog({
           onDeny={onDeny}
         />
       ) : null}
-    </Modal>
+    </Dialog>
   );
 }

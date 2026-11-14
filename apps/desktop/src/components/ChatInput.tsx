@@ -257,7 +257,11 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   );
   const readinessDisplayState: ComposerReadinessDisplayState =
     selectedAgentSaveState === 'saving'
-    || (!capabilityReadinessSnapshot && capabilityReadinessLoading)
+    || (
+      !composerReadiness.canSend
+      && !capabilityReadinessSnapshot
+      && capabilityReadinessLoading
+    )
       ? 'checking'
       : composerReadiness.state;
   const readinessCanSend =

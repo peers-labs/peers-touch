@@ -180,6 +180,11 @@ export function sanitizeMessagingMessages(
       plaintextSize: attachment.plaintextSize,
       ciphertextSize: attachment.ciphertextSize,
       availabilityState: attachment.availabilityState,
+      voiceNote: attachment.voiceNote ? {
+        durationMs: attachment.voiceNote.durationMs,
+        codec: attachment.voiceNote.codec,
+        waveform: [...attachment.voiceNote.waveform],
+      } : undefined,
     })),
   }));
 }

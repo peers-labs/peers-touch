@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
-import { Button, Modal } from '@lobehub/ui';
-import { theme } from 'antd';
+import { Button, Dialog } from '@peers-touch/ui';
 import {
   chatAttachmentFileType,
   chatFilePreviewKind,
@@ -19,14 +18,20 @@ import { useMobileAttachmentAccess } from './MessageAttachment';
 import './attachmentDetail.css';
 
 export function AttachmentDetailHost() {
-  const id = useSyncExternalStore(mobileAttachmentAccess.subscribeSelection, mobileAttachmentAccess.selectedId);
+  // Selection is a client-only transient state; server rendering always starts
+  // without an open attachment, which also satisfies useSyncExternalStore's
+  // required getServerSnapshot.
+  const id = useSyncExternalStore(
+    mobileAttachmentAccess.subscribeSelection,
+    mobileAttachmentAccess.selectedId,
+    () => null,
+  );
   useEffect(() => () => mobileAttachmentAccess.close(), []);
   return id ? <AttachmentDetail key={id} id={id} /> : null;
 }
 
 function AttachmentDetail({ id }: { id: string }) {
   const { t } = useMobileI18n();
-  const { token } = theme.useToken();
   const { projection, error } = useMobileAttachmentAccess(id);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState('');
@@ -60,18 +65,31 @@ function AttachmentDetail({ id }: { id: string }) {
     }
   };
   return (
-    <Modal open className="mobile-chat-file-modal" title={filename} width="100%"
-      styles={{ body: { maxHeight: 'none', overflow: 'hidden', padding: 0 }, header: { justifyContent: 'flex-start' } }}
-      footer={null} destroyOnHidden onCancel={mobileAttachmentAccess.close}>
+    <Dialog
+      open
+      className="mobile-chat-file-modal"
+      title={<span className="mobile-chat-file-title">{filename}</span>}
+      width="100%"
+      closeLabel={t('common.action.close')}
+      onDismiss={mobileAttachmentAccess.close}
+      contentStyle={{
+        display: 'flex',
+        flex: 1,
+        flexDirection: 'column',
+        maxHeight: 'none',
+        overflow: 'hidden',
+        padding: '0 16px calc(env(safe-area-inset-bottom, 0px) + 16px)',
+      }}
+    >
       <div className="mobile-chat-file-detail" data-chat-file-detail={id}
         style={{
-          '--chat-preview-text': token.colorText,
-          '--chat-preview-secondary': token.colorTextSecondary,
-          '--chat-preview-border': token.colorBorderSecondary,
-          '--chat-preview-surface': token.colorBgContainer,
-          '--chat-preview-canvas': token.colorFillQuaternary,
-          '--chat-preview-hover': token.colorFillTertiary,
-          '--chat-preview-accent': token.colorPrimary,
+          '--chat-preview-text': 'var(--pt-text)',
+          '--chat-preview-secondary': 'var(--pt-secondary)',
+          '--chat-preview-border': 'var(--pt-border)',
+          '--chat-preview-surface': 'var(--pt-surface)',
+          '--chat-preview-canvas': 'var(--pt-subtle)',
+          '--chat-preview-hover': 'var(--pt-glass-tile)',
+          '--chat-preview-accent': 'var(--pt-accent)',
           '--chat-preview-control-size': '44px',
         } as CSSProperties}
         data-chat-file-name={filename} data-chat-file-type={mimeType || ''}
@@ -93,15 +111,15 @@ function AttachmentDetail({ id }: { id: string }) {
             size={Number(projection.plaintextSize)} filename={filename} /> : <span>{t(`chat.attachment.${stateKey}`)}</span>}
         </div>
         <div className="mobile-chat-file-actions">
-          {pending ? <Button data-chat-file-action="cancel" onClick={() => void mobileAttachmentAccess.cancel(id)}>{t('chat.attachment.cancelDownload')}</Button> : null}
-          {error || projection?.retryable || state === AttachmentAccessState.CANCELLED ? <Button data-chat-file-action="retry" onClick={() => void mobileAttachmentAccess.retry(id)}>{t('chat.attachment.retry')}</Button> : null}
-          {ready && ['office', 'pdf', 'image'].includes(kind) ? <Button data-chat-file-action="preview" disabled={busy} onClick={() => void action(AttachmentFileAction.PREVIEW)}>{t('chat.attachment.systemPreview')}</Button> : null}
-          <Button data-chat-file-action="open-external" disabled={!ready || busy} onClick={() => void action(AttachmentFileAction.OPEN_EXTERNAL)}>{t('chat.attachment.openExternal')}</Button>
-          <Button data-chat-file-action="save-copy" type="primary" disabled={!ready || busy} onClick={() => void action(AttachmentFileAction.SAVE_COPY)}>{t('chat.attachment.saveCopy')}</Button>
+          {pending ? <Button actionId="chat-file-cancel" data-chat-file-action="cancel" emphasis="secondary" onActivate={() => void mobileAttachmentAccess.cancel(id)}>{t('chat.attachment.cancelDownload')}</Button> : null}
+          {error || projection?.retryable || state === AttachmentAccessState.CANCELLED ? <Button actionId="chat-file-retry" data-chat-file-action="retry" emphasis="secondary" onActivate={() => void mobileAttachmentAccess.retry(id)}>{t('chat.attachment.retry')}</Button> : null}
+          {ready && ['office', 'pdf', 'image'].includes(kind) ? <Button actionId="chat-file-preview" data-chat-file-action="preview" availability={busy ? { kind: 'disabled', reason: t('chat.attachment.systemPreview') } : undefined} onActivate={() => void action(AttachmentFileAction.PREVIEW)}>{t('chat.attachment.systemPreview')}</Button> : null}
+          <Button actionId="chat-file-open-external" data-chat-file-action="open-external" availability={!ready || busy ? { kind: 'disabled', reason: t('chat.attachment.openExternal') } : undefined} onActivate={() => void action(AttachmentFileAction.OPEN_EXTERNAL)}>{t('chat.attachment.openExternal')}</Button>
+          <Button actionId="chat-file-save-copy" data-chat-file-action="save-copy" emphasis="primary" availability={!ready || busy ? { kind: 'disabled', reason: t('chat.attachment.saveCopy') } : undefined} onActivate={() => void action(AttachmentFileAction.SAVE_COPY)}>{t('chat.attachment.saveCopy')}</Button>
         </div>
         {feedback ? <div role="status" data-chat-file-action-result={feedback}>{t(`chat.attachment.${feedback}`)}</div> : null}
       </div>
-    </Modal>
+    </Dialog>
   );
 }
 

@@ -20,7 +20,7 @@ describe('Mobile chat presentation policy', () => {
       emoji: true,
       file: true,
       screenshot: false,
-      voice: false,
+      voice: true,
     });
     expect(canSubmitChatComposerDraft({
       text: '',

@@ -17,6 +17,7 @@ pub mod session_revocation;
 pub mod session_store;
 pub mod session_vault;
 pub(crate) mod station;
+pub(crate) mod station_candidates;
 pub(crate) mod station_discovery;
 pub(crate) mod station_registry;
 pub mod storage;

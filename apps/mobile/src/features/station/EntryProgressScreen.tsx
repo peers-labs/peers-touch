@@ -1,11 +1,8 @@
-import { Button, Spin, Typography } from 'antd';
-import { AlertTriangle, ArrowLeft, RefreshCw, Server } from 'lucide-react';
+import { Button, Icon, Spin } from '@peers-touch/ui';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import logo from '../../assets/logo.png';
 import { LanguageSwitcher } from '../../components/LanguageSwitcher';
-
-const { Text, Title } = Typography;
 
 export type EntryProgressKind = 'boot' | 'station-handshake' | 'runtime';
 
@@ -53,30 +50,35 @@ export function EntryProgressScreen({
       <section className={`entry-progress-panel ${failed ? 'failed' : ''}`} aria-live="polite">
         <img src={logo} alt="Peers" className="entry-progress-logo" />
         <span className="entry-progress-state-icon" aria-hidden="true">
-          {failed ? <AlertTriangle size={24} /> : <Spin size="default" />}
+          {failed ? <Icon iconId="warning" size={24} /> : <Spin active />}
         </span>
-        <Title level={1}>{t(titleKey)}</Title>
-        <Text type="secondary">{t(subtitleKey)}</Text>
+        <h1 className="entry-progress-title">{t(titleKey)}</h1>
+        <span className="entry-progress-subtitle">{t(subtitleKey)}</span>
         {stationLabel ? (
           <div className="entry-progress-station">
-            <Server size={17} aria-hidden="true" />
-            <Text strong>{stationLabel}</Text>
+            <Icon iconId="server" size={17} aria-hidden="true" />
+            <strong>{stationLabel}</strong>
           </div>
         ) : null}
-        <div className="entry-progress-actions">
+        <div
+          className="entry-progress-actions"
+          data-action-count={(onBack ? 1 : 0) + (onRetry ? 1 : 0)}
+        >
           {onBack ? (
             <Button
-              icon={<ArrowLeft size={16} />}
-              onClick={() => void onBack()}
+              actionId="entry.change-station"
+              leading={<Icon iconId="arrow-left" size={16} />}
+              onActivate={() => void onBack()}
             >
               {t('mobile.auth.changeStation')}
             </Button>
           ) : null}
           {onRetry ? (
             <Button
-              type={failed ? 'primary' : 'default'}
-              icon={<RefreshCw size={16} />}
-              onClick={() => void onRetry()}
+              actionId="entry.retry"
+              emphasis={failed ? 'primary' : 'secondary'}
+              leading={<Icon iconId="refresh-cw" size={16} />}
+              onActivate={() => void onRetry()}
             >
               {t('common.action.retry')}
             </Button>

@@ -18,5 +18,5 @@ The generic event-stream transport remains under
 | Document | Scope |
 |---|---|
 | [voice-video.md](./voice-video.md) | Direct voice/video signaling, media, and client lifecycle |
-| [group-calls.md](./group-calls.md) | Group call authority and participant lifecycle |
+| [group/](./group/README.md) | Group call authority, endpoint grants and shared Desktop/Mobile media lifecycle |
 | [prototype/](./prototype/README.md) | Calling product prototype |

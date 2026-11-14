@@ -97,6 +97,7 @@ pub struct AdmissionProjection {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SystemAction {
+    CopyText { text: String },
     OpenAppSettings,
     OpenExternalUrl { url: String },
     Share { text: String, url: Option<String> },

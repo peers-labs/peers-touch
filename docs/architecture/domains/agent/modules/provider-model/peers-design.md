@@ -1,141 +1,69 @@
 # Module 5: Provider and Model Infrastructure
 
-> Status: ACCEPTED
-> Updated: 2026-10-18
+Status: accepted. Updated: 2026-10-30.
 
-## 1. Product Contract
+## Product and authority
 
-Provider Settings presents one mixed Direct/CLI list and mounts exactly one
-selected schema.
+[Provider Control Plane](../../provider-control-plane.md) owns resource and
+authorization semantics. Dashboard manages shared Providers, credentials,
+models, grants, personal policy and CLI installation through Agent services.
 
-- Direct connects a model API and owns custom model CRUD.
-- CLI configures a Station-registered adapter and reads its discovered catalog.
-- Both can be enabled or disabled.
-- `Show usable only` is persisted and uses shared Provider readiness.
-- AI / Models owns only the global default model.
+Ordinary Desktop Settings shows authorized Provider/model data and readiness.
+AI / Models changes only the account's default model. Personal Provider editing
+appears only when Station enables the personal policy. Federation management
+is in Dashboard.
 
-CLI model CRUD, model toggles, bulk actions, executable-path inputs, and shell
-templates are not product capabilities.
+The management catalog retains TRAE CLI, Codex, Cursor and Claude Code even when
+uninstalled. Missing adapters show installation guidance, installation fills
+the option background with progress, and failures offer retry and the official
+guide. TRAE remains manual until an accepted installer exists.
 
-## 2. Ownership
+## Schemas
 
-```text
-Station
-  Provider catalog
-  actor-scoped Provider config and credentials
-  actor-scoped CLI runtime model catalog
-  Direct model records
-  CLI check/discovery/execution
-  runtime admission
+Dashboard mounts one selected Provider editor. Direct Providers own Base URL,
+write-only credentials and custom model CRUD. CLI Providers own only supported
+typed runtime fields, registered adapter facts and discovered model catalogs.
+CLI model CRUD, per-model switches, arbitrary executable inputs and shell
+templates are invalid.
 
-Desktop Rust
-  authenticated Station proxy only
+Desktop shared Provider detail is read only and exposes no credentials,
+commands, grants or installation internals. Policy-enabled personal detail
+uses a selected-only Direct or CLI schema; CLI runtime overrides remain
+capability driven.
 
-Desktop Web
-  Provider/model projections
-  selected-only Direct or CLI schema
-  user intent and local form draft
-```
+## Model identity and discovery
 
-Provider/model availability has one Station source consumed by Settings, Agent
-defaults, composer selection, and Cron overrides.
+Every model is identified by `(provider_id, model_id)`. Settings defaults,
+Agent profiles, composer and Cron selections compare that pair.
+Bare model IDs resolve only when unique.
 
-## 3. Contracts
+Direct models are effective-owner persistence records. CLI discovery atomically
+replaces one effective-owner, Provider-revision-bound snapshot. Failed discovery
+preserves the previous valid catalog. Provider detail and admission consume
+the same catalog; consumer visibility additionally applies grants.
 
-`model/domain/agent/provider.proto` defines:
+## Runtime and store coordination
 
-- `ProviderRuntimeConfig`
-- `ProviderAdapterCapabilities`
-- `ProviderModelInfo`
-- Provider check
-- Provider model discovery
-- legal Direct Provider/model CRUD
+Station resolves owner and revalidates enablement, model access, grants and
+snapshots immediately before dispatch. Shared installation is independent of
+Actor identity. Invocation state is always private to the requesting Actor.
 
-Desktop exposes `provider_check` and `model_discover` as thin commands. There is
-no Desktop-local CLI discovery or batch mutation command.
+Desktop `agent-capability` owns Provider/model/default bootstrap and
+reconciliation. Provider actions refresh their list, selected detail and
+`useAgentStore.availableModels`. The Station default is the only persistent
+default authority; Desktop stores only the current Session projection.
 
-## 4. Direct Schema
+Account changes clear projections and fence pending reads, writes and rollback
+effects. Dashboard authentication changes clear management state and secret
+drafts.
 
-Direct Provider detail may expose:
+## UI lifetime and security
 
-- enabled state;
-- API key and Base URL;
-- Station reachability check;
-- custom model create/edit/enable/remove;
-- model capability and context metadata.
+Settings retains its alive shell and selected-only lazy schemas. The Provider
+list owns one inner vertical scroll container. Dashboard mounts one active page
+and selected Provider editor; installation polling stops on navigation.
 
-Direct model mutation refreshes Provider detail and the shared Agent model
-projection.
-
-## 5. CLI Schema
-
-CLI Provider detail exposes:
-
-- enabled state and readiness check;
-- default model;
-- startup arguments, one argv entry per line when supported;
-- environment, one `KEY=VALUE` entry per line when supported;
-- timeout when supported;
-- restore defaults and explicit Save;
-- registered command, workspace policy, and capabilities as read-only facts;
-- read-only model catalog;
-- Refresh only when `model_discovery` is true.
-
-Station validates and persists one complete typed runtime config. Enable/disable
-must preserve that config.
-
-## 6. Model Discovery
-
-An explicit Refresh invokes Station discovery. Station executes registered argv,
-normalizes bounded output, and atomically replaces the actor-scoped runtime
-catalog. The same catalog feeds Provider detail and runtime admission.
-
-Discovery output includes description, context window, capabilities, and
-reasoning metadata. The UI must not convert discovered CLI models into mutable
-database records.
-
-## 7. Composite Identity
-
-Every selectable model is identified by `(provider_id, model_id)`.
-
-```typescript
-interface ModelRef {
-  provider: string;
-  model: string;
-}
-```
-
-Select option keys, selected-row checks, default fallback, Agent profile,
-composer, and Cron override all compare the pair. A bare model ID resolves only
-when unique.
-
-## 8. Store Coordination
-
-`useProviderStore` owns Provider administration and refreshes:
-
-1. Provider list.
-2. Selected Provider detail.
-3. `useAgentStore.availableModels`.
-
-`useAgentStore` owns the runtime model projection and stores
-`defaultProviderId/defaultModel` and
-`selectedProviderId/selectedModel` as pairs.
-
-## 9. UI Tree and Scroll Ownership
-
-- Settings page: alive shell.
-- Provider section: selected-only lazy schema.
-- Provider list: one inner vertical scroll owner with a thin scrollbar.
-- Settings section host: overflow hidden for Providers, so it does not create a
-  second scrollbar.
-- CLI Advanced content mounts only while expanded.
-
-## 10. Security
-
-- Credentials remain Station-owned.
-- Desktop never persists secrets to local Provider state.
-- CLI environment cannot override Station-owned variables or carry secret-like
-  keys.
-- Registered argv is structured; no whitespace splitting or shell evaluation is
-  used.
-- Discovery output and process lifetime are bounded.
+Credentials remain encrypted on Station and are never returned in read
+projections. CLI environments cannot override private state or carry secrets.
+Structured argv, bounded output and process-group termination protect
+execution lifetime.

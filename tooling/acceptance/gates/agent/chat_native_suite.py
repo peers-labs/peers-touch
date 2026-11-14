@@ -7,6 +7,7 @@ import json
 import re
 import sys
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -34,12 +35,14 @@ from tooling.acceptance.gates.agent.chat_composer_scenarios import attachments, 
 from tooling.acceptance.gates.agent.chat_provider_scenarios import (
     configuration, create_direct, cli_discovery,
 )
+from tooling.acceptance.gates.agent.chat_dashboard_session import ChatDashboardSession
 from tooling.acceptance.gates.agent.chat_conversation_scenarios import (
     configure_clarification_fixture, clarification, follow_up, send_stop, retry, tool_approval,
 )
 from tooling.acceptance.gates.agent.chat_topic_scenarios import (
     prepare_topics, navigation, rename_and_drafts, agent_drafts,
     first_send_and_delete, pin, batch_delete, delete_agent,
+    idle_stability,
 )
 from tooling.acceptance.gates.agent.chat_profile_scenarios import (
     create_profile,
@@ -82,7 +85,7 @@ TRACE_TASK_BY_AREA = {
 }
 
 
-def suite_contract(area: str) -> RuntimeReuseContract:
+def native_suite_contract(area: str) -> RuntimeReuseContract:
     if area in ("commands", "attribution"):
         task_id = "ADL-03" if area == "commands" else "ADL-04"
         text = (DEPTH_PLAN_ROOT / "tasks" / f"{task_id}.md").read_text()
@@ -100,6 +103,12 @@ def suite_contract(area: str) -> RuntimeReuseContract:
     if len(blocks) != 1:
         raise ValueError("Task Slice must contain exactly one JSON contract")
     return RuntimeReuseContract.from_dict(json.loads(blocks[0])["runtimeReuse"])
+
+
+def suite_contract(area: str) -> RuntimeReuseContract:
+    """The active management boundary adds one reused Dashboard browser."""
+    native = native_suite_contract(area)
+    return replace(native, max_client_launches=native.max_client_launches + 1)
 
 
 def suite_traceability(area: str, gate_id: str) -> dict[str, Any]:
@@ -332,6 +341,10 @@ def main() -> int:
                 fixture_epoch=runner.runtime_manifest["runId"],
             )
             ledger.record("provision", resource_id=runner.runtime_manifest["runId"])
+            runner.dashboard = ChatDashboardSession(runner)
+            runner.step("suite-start-dashboard", runner.dashboard.start)
+            ledger.record("client-launch", resource_id="dashboard-admin")
+            ledger.record("login", resource_id="dashboard-admin")
             runner.step("suite-start-native", runner.start)
             ledger.record("client-launch", resource_id=runner.client["id"])
             runner.step("suite-login", runner.login)
@@ -492,6 +505,7 @@ def main() -> int:
                 def topic_navigation() -> dict[str, Any]:
                     navigation_result.update(navigation(runner, agent_id, ids))
                     result = rename_and_drafts(runner, agent_id, ids)
+                    result["emptyIdleStability"] = idle_stability(runner)
                     result["navigation"] = navigation_result
                     result["agentDrafts"] = agent_drafts(runner, agent_id, ids[0])
                     result["firstSend"] = first_send_and_delete(runner, agent_id, fixture)

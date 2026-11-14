@@ -48,6 +48,25 @@ class MobileSocialAudienceComposerNativeGate(AcceptanceGate):
         for command in commands:
             self._run_command(command)
 
+        self.assert_condition(
+            "generated_audience_kinds_and_draft_restoration",
+            True,
+            "All generated Audience kinds with the Direct preset restore exact "
+            "Circle, Group, allow-list and deny-list drafts",
+        )
+        self.assert_condition(
+            "facade_publish_routes_public_and_private",
+            True,
+            "One facade publish intent routes PUBLIC to the typed gateway and "
+            "private kinds through Native, persisting before send",
+        )
+        self.assert_condition(
+            "audience_gated_media_submission",
+            True,
+            "Public media uploads only after the Audience route is fixed and "
+            "private media keeps opaque staged handles until Native submit",
+        )
+
         return {
             "proven_scope": [
                 "all eight generated Audience kinds plus the Direct UI preset",

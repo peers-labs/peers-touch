@@ -1,0 +1,264 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Catalog Publish and Package-Time Bootstrap Burn",
+    "subtitle": "The signed catalog is published first; make package fetches and verifies that envelope, burns addressing meta into the binary, and ships only when freshness gates pass. Embedded meta bootstraps first run; the live catalog stays the runtime authority.",
+    "output": "release-burn-flow.en.html",
+    "locale": "en",
+    "visual_preset": "editorial",
+    "quality_profile": "showcase",
+    "animation": "none"
+  },
+  "lanes": [
+    {
+      "id": "pipeline",
+      "label": "Publish + package"
+    },
+    {
+      "id": "artifact",
+      "label": "Shipped artifact"
+    },
+    {
+      "id": "client",
+      "label": "Partner client"
+    },
+    {
+      "id": "gate",
+      "label": "Fail-closed",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "p_publish",
+      "label": "Signed catalog",
+      "fromCol": 0,
+      "toCol": 0
+    },
+    {
+      "id": "p_build",
+      "label": "Package entry",
+      "fromCol": 1,
+      "toCol": 1
+    },
+    {
+      "id": "p_verify",
+      "label": "Fetch + verify",
+      "fromCol": 2,
+      "toCol": 2,
+      "variant": "emphasis"
+    },
+    {
+      "id": "p_burn",
+      "label": "Burn + distribute",
+      "fromCol": 3,
+      "toCol": 3
+    },
+    {
+      "id": "p_firstrun",
+      "label": "Zero-config first run",
+      "fromCol": 4,
+      "toCol": 4,
+      "variant": "emphasis"
+    },
+    {
+      "id": "p_runtime",
+      "label": "Runtime authority",
+      "fromCol": 5,
+      "toCol": 5
+    }
+  ],
+  "groups": [
+    {
+      "id": "g_pipeline",
+      "label": "L0/L1/L2 baked per flavor registry (D05/D06)",
+      "lane": "pipeline",
+      "fromCol": 1,
+      "toCol": 3
+    },
+    {
+      "id": "g_artifact",
+      "label": "Addressing only · no secrets",
+      "lane": "artifact",
+      "fromCol": 3,
+      "toCol": 3
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n_publish",
+      "lane": "pipeline",
+      "col": 0,
+      "type": "security",
+      "label": "Publish catalog",
+      "tag": "operator",
+      "sublabel": "station seed · seq N+1"
+    },
+    {
+      "id": "n_entry",
+      "lane": "pipeline",
+      "col": 1,
+      "type": "backend",
+      "label": "make package",
+      "sublabel": "flavor + channel"
+    },
+    {
+      "id": "n_fetch",
+      "lane": "pipeline",
+      "col": 2,
+      "type": "cloud",
+      "label": "Fetch snapshot",
+      "sublabel": "origin failover"
+    },
+    {
+      "id": "n_verify",
+      "lane": "pipeline",
+      "col": 2,
+      "type": "security",
+      "yOffset": 96,
+      "label": "Verify envelope",
+      "sublabel": "keyring · watermark"
+    },
+    {
+      "id": "n_gate",
+      "lane": "gate",
+      "col": 2,
+      "type": "external",
+      "label": "Build aborts",
+      "sublabel": "bad sig · stale"
+    },
+    {
+      "id": "n_derive",
+      "lane": "pipeline",
+      "col": 3,
+      "type": "backend",
+      "label": "Derive L4 pointer",
+      "sublabel": "origin from envelope"
+    },
+    {
+      "id": "n_burn",
+      "lane": "pipeline",
+      "col": 3,
+      "type": "backend",
+      "yOffset": 96,
+      "label": "Burn L3 + L4",
+      "sublabel": "via build.rs"
+    },
+    {
+      "id": "n_dmg",
+      "lane": "artifact",
+      "col": 3,
+      "type": "database",
+      "label": "Installer",
+      "sublabel": "no launch env vars"
+    },
+    {
+      "id": "n_embedded",
+      "lane": "client",
+      "col": 4,
+      "type": "frontend",
+      "label": "Embedded read",
+      "sublabel": "visible offline"
+    },
+    {
+      "id": "n_discover",
+      "lane": "client",
+      "col": 4,
+      "type": "frontend",
+      "yOffset": 96,
+      "label": "Discover, then login",
+      "sublabel": "live attestation"
+    },
+    {
+      "id": "n_refresh",
+      "lane": "client",
+      "col": 5,
+      "type": "cloud",
+      "label": "Signed refresh",
+      "sublabel": "current accepted"
+    },
+    {
+      "id": "n_authority",
+      "lane": "client",
+      "col": 5,
+      "type": "security",
+      "yOffset": 96,
+      "label": "Catalog wins",
+      "sublabel": "stale ≠ mutate"
+    }
+  ],
+  "edges": [
+    {
+      "from": "n_publish",
+      "to": "n_entry",
+      "label": "channel ready",
+      "role": "main"
+    },
+    {
+      "from": "n_entry",
+      "to": "n_fetch",
+      "role": "main"
+    },
+    {
+      "from": "n_fetch",
+      "to": "n_verify",
+      "label": "exact bytes",
+      "role": "main"
+    },
+    {
+      "from": "n_verify",
+      "to": "n_derive",
+      "label": "fresh",
+      "role": "main"
+    },
+    {
+      "from": "n_derive",
+      "to": "n_burn",
+      "role": "main"
+    },
+    {
+      "from": "n_burn",
+      "to": "n_dmg",
+      "label": "compile in",
+      "role": "main"
+    },
+    {
+      "from": "n_dmg",
+      "to": "n_embedded",
+      "label": "install",
+      "role": "main"
+    },
+    {
+      "from": "n_embedded",
+      "to": "n_discover",
+      "label": "auto",
+      "role": "main"
+    },
+    {
+      "from": "n_discover",
+      "to": "n_refresh",
+      "label": "post-launch",
+      "role": "branch",
+      "variant": "dashed"
+    },
+    {
+      "from": "n_refresh",
+      "to": "n_authority",
+      "role": "branch",
+      "variant": "dashed"
+    },
+    {
+      "from": "n_verify",
+      "to": "n_gate",
+      "label": "check fails",
+      "role": "error"
+    },
+    {
+      "from": "n_gate",
+      "to": "n_publish",
+      "label": "re-sign, repackage",
+      "role": "error"
+    }
+  ]
+}

@@ -174,6 +174,22 @@ fn station_list_result(
 }
 
 #[tauri::command]
+pub fn station_local_candidates() -> AppResult<StubPayload> {
+    station_local_candidates_result()
+}
+
+pub(crate) fn station_local_candidates_result() -> AppResult<StubPayload> {
+    // Read-only local environment projection. No disk, network or registry
+    // access; these origins stay unverified suggestions until signed discovery.
+    let candidates = crate::infrastructure::station_candidates::read_local_candidates();
+    let payload = serde_json::json!({ "candidates": candidates });
+    AppResult::success(StubPayload {
+        command: "station_local_candidates".to_string(),
+        status: serde_json::to_string(&payload).unwrap_or_default(),
+    })
+}
+
+#[tauri::command]
 pub fn station_set_active(
     input: StationSelectionInput,
     state: State<'_, Arc<AppState>>,

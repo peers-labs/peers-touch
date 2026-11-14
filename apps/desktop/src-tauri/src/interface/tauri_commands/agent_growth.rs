@@ -110,6 +110,7 @@ pub fn agent_quick_completion(
     let body = model::agent::QuickCompletionRequest {
         agent_id: input.agent_id,
         prompt: input.prompt,
+        ..Default::default()
     };
     match state.station.client().request_proto::<
         model::agent::QuickCompletionRequest,

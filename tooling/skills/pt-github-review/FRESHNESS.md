@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-11-14
-covered_docs_hash: c5a34d9d06420511071b4febe62757430c148ab5a68a11b1d31ec509b217b8cf
+covered_docs_hash: 59099018e34bffcfce986ab7863f6a14e783231e931282ec17d780f45281a3d5
 
 covered_docs:
   - AGENTS.md
@@ -1952,6 +1952,15 @@ additions; no review rule, fixture, or policy semantics changed, so only the
 `covered_docs_hash` is re-pinned.
 
 ## 2026-11-14 Social Initial Integration Review
+
+PR #184 integrates both existing rule sets after #185 and #186. Desktop
+reconciliation retains canonical selection identity, coalesced reads and cold
+bootstrap; Social retains logical-resource comments and scoped feedback while
+the shared primitives own rendering. Mobile build verification keeps immutable
+iOS assets and source identity checks together; bounded Desktop profile IDs
+move into the existing shared provisioner owner. No new runtime authority or
+review waiver is introduced. Focused regressions remain source evidence; Native
+and complete cross-platform proof remain separately unproven.
 
 Reviewed all nine covered documents changed since checkpoint `20c0ce119`.
 The seven Acceptance documents describe the existing Native Driver's scoped

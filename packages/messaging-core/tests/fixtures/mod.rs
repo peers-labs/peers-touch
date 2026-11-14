@@ -2,7 +2,8 @@ use messaging_core::contracts::{
     ActorReadReceiveCommit, ConversationMutationReceiveCommit, ConversationProjection,
     ConversationStateReceiveCommit, DeliveryReceiptReceiveCommit, DirectEditCommit,
     DirectReceiveCommit, InteractionReceiveCommit, PublicEventReceiveCommit, ReceiveCommitResult,
-    ServicePlaintextMessageContent, ServicePlaintextReceiveCommit, SkippedEndpointReceiveCommit,
+    RejectedItemReceiveCommit, ServicePlaintextMessageContent, ServicePlaintextReceiveCommit,
+    SkippedEndpointReceiveCommit,
 };
 use messaging_core::crypto::double_ratchet::DrSkippedMessageKey;
 use messaging_core::crypto::session::DirectSession;
@@ -202,6 +203,17 @@ impl MessagingRepository for TestRepo {
     fn commit_skipped_endpoint_payload(
         &self,
         commit: &SkippedEndpointReceiveCommit,
+    ) -> Result<ReceiveCommitResult, String> {
+        self.skipped_payloads
+            .lock()
+            .unwrap()
+            .push(commit.item_id.to_string());
+        Ok(ReceiveCommitResult::Committed)
+    }
+
+    fn commit_rejected_endpoint_payload(
+        &self,
+        commit: &RejectedItemReceiveCommit,
     ) -> Result<ReceiveCommitResult, String> {
         self.skipped_payloads
             .lock()

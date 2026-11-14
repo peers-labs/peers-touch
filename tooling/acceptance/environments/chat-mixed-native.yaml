@@ -110,6 +110,11 @@
     "sim-ios-peer"
   ],
   "gate_client_ids": {
+    "chat-lifecycle-group-live-e2e": [
+      "desktop-alice",
+      "desktop-bob",
+      "sim-ios-peer"
+    ],
     "station-access-session-class-suite-e2e": [
       "desktop-alice",
       "desktop-bob",
@@ -143,6 +148,7 @@
   "harness": {
     "namespace": "__PEERS_MOBILE_ACCEPTANCE__",
     "required_actions": [
+      "build.identity",
       "lifecycle.suspend",
       "lifecycle.resume",
       "lifecycle.restart",
@@ -167,9 +173,12 @@
       "getRealtimeDevice",
       "initiateCall",
       "callResolutionState",
+      "callSnapshot", "callMediaStats", "callRestartConnection",
       "acceptCall",
       "rejectCall",
-      "cleanup"
+      "cleanup",
+      "groupCallStart", "groupCallLeave", "groupCallToggleMic",
+      "groupCallToggleCamera", "groupCallSnapshot", "groupCallMediaStats"
     ],
     "policy": "Chat production actions only; Station endpoints and Appium authority remain parent-owned"
   },
@@ -178,13 +187,14 @@
       "macOS Desktop and iOS simulator mixed-client Chat convergence",
       "same-Station and cross-Station Direct and Group receiver behavior",
       "same-actor Desktop and Mobile continuity",
-      "cross-device durable call resolution"
+      "cross-device durable call resolution",
+      "Mobile incoming and outgoing single-call audio/video RTP, controls, ICE restart and release",
+      "three-actor Desktop and iOS group audio/video with RTP progress and permission withdrawal"
     ],
     "does_not_prove": [
       "Linux or Windows Desktop behavior",
       "Android Mobile behavior",
-      "physical-device behavior",
-      "group live calls"
+      "physical-device behavior"
     ]
   },
   "cleanup": {

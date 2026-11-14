@@ -100,7 +100,7 @@ func resolveFederationPeerEndpoint(
 		return handleRealtimeSignal, nil
 	case federationruntime.PeerRouteRealtimeCallResolution:
 		return handleRealtimeCallResolution, nil
-	case federationruntime.PeerRouteGroupCallAuthorityJoin:
+	case federationruntime.PeerRouteGroupCallAuthorityJoin, federationruntime.PeerRouteGroupCallEndpointControl:
 		instance := server.GetOptions().SubserverInstances["groupcall"]
 		provider, ok := instance.(groupCallPeerEndpointProvider)
 		if !ok || provider == nil {

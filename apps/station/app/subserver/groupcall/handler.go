@@ -3,6 +3,8 @@ package groupcall
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -31,6 +33,10 @@ func (s *subServer) Handlers() []server.Handler {
 			logIDWrapper,
 			s.jwtWrapper,
 		),
+		server.NewTypedHandler("groupcall-status", "/group-call/status", server.POST,
+			s.handleRoomStatus, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("groupcall-decline", "/group-call/decline", server.POST,
+			s.handleDeclineInvitation, logIDWrapper, s.jwtWrapper),
 		server.NewHTTPHandler(
 			"groupcall-webhook",
 			"/hooks/livekit",
@@ -73,30 +79,33 @@ func (s *subServer) handleJoin(ctx context.Context, req *JoinRequest) (*JoinResp
 			"group call join must originate from the caller's Home Station",
 		)
 	}
-	if authority == localStation {
-		return s.joinAtAuthority(ctx, req.GroupULID, actorPTID)
-	}
+	return s.issueHome(ctx, subject, req.GroupULID, authority, federationID, authorityEpoch)
+}
 
+func (s *subServer) issueAtAuthority(ctx context.Context, grant endpointGrant) (*JoinResponse, error) {
+	if grant.Authority == s.federation.LocalStationPeerID() {
+		return s.mintEndpointGrant(ctx, grant)
+	}
+	input := &realtime.GroupCallAuthorityJoinRequest{
+		ConversationId: grant.ConversationID, ActorPtid: grant.ActorPTID,
+		SourceHomeStationPeerId: grant.Home, FederationId: grant.FederationID,
+		AuthorityEpoch: grant.AuthorityEpoch, EndpointGrant: grant.wire(),
+	}
 	response := &realtime.GroupCallAuthorityJoinResponse{}
-	err = s.federation.CallPeer(ctx, federationruntime.PeerCall{
-		TargetStationPeerID: authority,
+	err := s.federation.CallPeer(ctx, federationruntime.PeerCall{
+		TargetStationPeerID: grant.Authority,
 		Route:               federationruntime.PeerRouteGroupCallAuthorityJoin,
-		Subject:             actorPTID,
+		Subject:             grant.ActorPTID,
 		Claims: map[string]string{
-			federationruntime.ClaimFederationID:        federationID,
-			federationruntime.ClaimConversationID:      req.GroupULID,
-			federationruntime.ClaimActorPTID:           actorPTID,
-			federationruntime.ClaimAuthorityEpoch:      strconv.FormatUint(authorityEpoch, 10),
-			federationruntime.ClaimSourceStationPeerID: localStation,
-			federationruntime.ClaimTargetStationPeerID: authority,
+			federationruntime.ClaimFederationID:           grant.FederationID,
+			federationruntime.ClaimConversationID:         grant.ConversationID,
+			federationruntime.ClaimActorPTID:              grant.ActorPTID,
+			federationruntime.ClaimAuthorityEpoch:         strconv.FormatUint(grant.AuthorityEpoch, 10),
+			federationruntime.ClaimSourceStationPeerID:    grant.Home,
+			federationruntime.ClaimTargetStationPeerID:    grant.Authority,
+			federationruntime.ClaimCanonicalRequestSHA256: groupRequestDigest(input),
 		},
-		Request: &realtime.GroupCallAuthorityJoinRequest{
-			ConversationId:          req.GroupULID,
-			ActorPtid:               actorPTID,
-			SourceHomeStationPeerId: localStation,
-			FederationId:            federationID,
-			AuthorityEpoch:          authorityEpoch,
-		},
+		Request:  input,
 		Response: response,
 	})
 	if err != nil {
@@ -111,7 +120,8 @@ func (s *subServer) handleJoin(ctx context.Context, req *JoinRequest) (*JoinResp
 	}
 	if strings.TrimSpace(response.GetUrl()) == "" ||
 		strings.TrimSpace(response.GetToken()) == "" ||
-		strings.TrimSpace(response.GetRoomName()) == "" {
+		response.GetRoomName() != roomName(grant.ConversationID) ||
+		response.GetGrantId() != grant.GrantID || response.GetParticipantIdentity() != grant.identity() {
 		return nil, server.InternalError(
 			"group call authority returned an incomplete join grant",
 		)
@@ -121,29 +131,17 @@ func (s *subServer) handleJoin(ctx context.Context, req *JoinRequest) (*JoinResp
 		URL:      response.GetUrl(),
 		Token:    response.GetToken(),
 		RoomName: response.GetRoomName(),
+		GrantID:  response.GetGrantId(), ParticipantIdentity: response.GetParticipantIdentity(),
 	}, nil
 }
 
-func (s *subServer) joinAtAuthority(
-	ctx context.Context,
-	groupULID string,
-	actorPTID string,
-) (*JoinResponse, error) {
-	room, err := s.provider.CreateRoom(ctx, groupULID)
+func groupRequestDigest(input proto.Message) string {
+	body, err := proto.MarshalOptions{Deterministic: true}.Marshal(input)
 	if err != nil {
-		return nil, server.InternalErrorWithCause("failed to create call room", err)
+		return ""
 	}
-
-	url, token, err := s.provider.GenerateToken(ctx, room, actorPTID)
-	if err != nil {
-		return nil, server.InternalErrorWithCause("failed to generate participant token", err)
-	}
-
-	return &JoinResponse{
-		URL:      url,
-		Token:    token,
-		RoomName: room,
-	}, nil
+	digest := sha256.Sum256(body)
+	return hex.EncodeToString(digest[:])
 }
 
 // FederationPeerHandler exposes the authority-only join capability through the
@@ -151,6 +149,9 @@ func (s *subServer) joinAtAuthority(
 func (s *subServer) FederationPeerHandler(
 	route federationruntime.PeerRoute,
 ) (server.EndpointHandler, error) {
+	if route == federationruntime.PeerRouteGroupCallEndpointControl {
+		return s.handleEndpointControl, nil
+	}
 	if route != federationruntime.PeerRouteGroupCallAuthorityJoin {
 		return nil, fmt.Errorf("groupcall does not own Federation peer route %q", route)
 	}
@@ -209,11 +210,16 @@ func (s *subServer) joinForFederatedAuthority(
 			"Federation group call request does not match Conversation authority",
 		)
 	}
-	grant, err := s.joinAtAuthority(
-		ctx,
-		input.GetConversationId(),
-		input.GetActorPtid(),
-	)
+	endpoint, err := grantFromWire(input.GetEndpointGrant(), grantAuthority)
+	if err != nil {
+		return nil, server.Forbidden("group call endpoint authorization is missing")
+	}
+	if endpoint.Authority != authority || endpoint.Home != memberHome ||
+		endpoint.ActorPTID != input.GetActorPtid() || endpoint.ConversationID != input.GetConversationId() ||
+		endpoint.FederationID != federationID || endpoint.AuthorityEpoch != authorityEpoch {
+		return nil, server.Forbidden("group call endpoint does not match authority scope")
+	}
+	grant, err := s.mintEndpointGrant(ctx, endpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -223,6 +229,7 @@ func (s *subServer) joinForFederatedAuthority(
 		Url:      grant.URL,
 		Token:    grant.Token,
 		RoomName: grant.RoomName,
+		GrantId:  grant.GrantID, ParticipantIdentity: grant.ParticipantIdentity,
 	}, nil
 }
 
@@ -251,6 +258,10 @@ func validateAuthorityJoinClaims(
 		return server.Forbidden(
 			"Federation claims do not match the group call authority request",
 		)
+	}
+	if claims.Custom[federationruntime.ClaimCanonicalRequestSHA256] == "" ||
+		claims.Custom[federationruntime.ClaimCanonicalRequestSHA256] != groupRequestDigest(input) {
+		return server.Forbidden("Federation endpoint grant digest does not match")
 	}
 	return nil
 }

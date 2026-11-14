@@ -3,7 +3,6 @@
  * Import this file once (in main.tsx) to trigger all self-registrations.
  */
 import { installWakeRecovery } from '../kernel/wakeRecovery';
-import './providers';
 import './model-service';
 import './voice';
 import './account';

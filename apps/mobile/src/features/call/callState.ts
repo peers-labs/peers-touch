@@ -1,6 +1,7 @@
 import type { MobileAuthSession } from '../auth/authSession';
 import type { RealtimeWireEvent } from '../social/socialWire';
-import { createCallId } from '@peers-touch/client-chat-core';
+import { createCallId, MediaReservation, readCallMediaStats } from '@peers-touch/client-chat-core';
+import { mobileMediaReservation } from './mediaReservation';
 import {
   messagingCallSignalOpen,
   messagingCallSignalSeal,
@@ -78,6 +79,11 @@ export class MobileCallManager {
   private ringTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private operationTail: Promise<void> = Promise.resolve();
+  private generation = 0;
+  private mediaRelease: (() => void) | null = null;
+  private pendingCaptures = 0;
+
+  constructor(private readonly reservation = new MediaReservation()) {}
 
   subscribe(listener: CallStateListener): () => void {
     this.listeners.add(listener);
@@ -89,18 +95,48 @@ export class MobileCallManager {
     return this.call ? { ...this.call.snapshot } : null;
   }
 
+  async getMediaStats() {
+    const call = this.call;
+    const connection = call?.peerConnection ?? null;
+    const stats = await readCallMediaStats(call?.snapshot.callId ?? '', connection);
+    if (this.call !== call || (call && call.peerConnection !== connection)) {
+      throw new DOMException('Call changed', 'AbortError');
+    }
+    return stats;
+  }
+
+  restartConnection(): Promise<void> {
+    return this.enqueue(async () => {
+      const call = this.call;
+      if (!call?.peerConnection || !['active_here', 'reconnecting'].includes(call.snapshot.state)) {
+        throw new Error('mobile.call.notActive');
+      }
+      this.enterReconnect(call);
+      const offer = await call.peerConnection.createOffer({ iceRestart: true });
+      this.assertCurrentCall(call);
+      await call.peerConnection.setLocalDescription(offer);
+      this.assertCurrentCall(call);
+      await this.sendSignal('OFFER', {
+        callId: call.snapshot.callId, sdp: offer.sdp ?? '',
+      });
+    });
+  }
+
   async activate(session: MobileAuthSession): Promise<void> {
     if (
       this.session
       && (
         this.session.stationPeerId !== session.stationPeerId
         || this.session.actorRef.ptid !== session.actorRef.ptid
+        || this.session.sessionId !== session.sessionId
       )
     ) {
       this.reset();
     }
     this.session = session;
+    const generation = this.generation;
     const status = await messagingStatus();
+    if (generation !== this.generation || this.session !== session) throw new DOMException('Call canceled', 'AbortError');
     if (
       !status.active
       || status.stationPeerId !== session.stationPeerId
@@ -138,11 +174,12 @@ export class MobileCallManager {
       this.requireIdle();
       const session = this.requireSession();
       const callId = createCallId();
+      this.mediaRelease = this.reservation.acquire('direct', callId);
       const signalingSessionId = deriveSignalingSessionId(
         session.actorRef.ptid,
         peerPtid,
       );
-      const localStream = await acquireMedia(mediaKind);
+      const localStream = await this.captureMedia(mediaKind);
       this.call = {
         direction: 'outgoing',
         signalingSessionId,
@@ -181,7 +218,9 @@ export class MobileCallManager {
       this.clearRingTimeout();
       try {
         await this.sendSignal('CALL_ACCEPT', { callId }, callId);
+        this.assertCurrentCall(call);
       } catch (error) {
+        if (this.call !== call) throw error;
         if (this.call?.snapshot.state !== 'handled_elsewhere') {
           this.armRingTimeout(callId);
         }
@@ -195,7 +234,7 @@ export class MobileCallManager {
       };
       this.emit();
       try {
-        const localStream = await acquireMedia(mediaKind);
+        const localStream = await this.captureMedia(mediaKind, call);
         call.snapshot = { ...call.snapshot, localStream };
         await this.ensurePeerConnection(call);
         this.attachLocalTracks(call);
@@ -281,6 +320,7 @@ export class MobileCallManager {
   }
 
   reset(): void {
+    this.generation += 1;
     this.clearRingTimeout();
     this.clearReconnectTimeout();
     this.releaseMedia();
@@ -291,7 +331,12 @@ export class MobileCallManager {
   }
 
   private enqueue<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.operationTail.then(operation, operation);
+    const generation = this.generation;
+    const current = () => {
+      if (generation !== this.generation) throw new DOMException('Call canceled', 'AbortError');
+      return operation();
+    };
+    const result = this.operationTail.then(current, current);
     this.operationTail = result.then(
       () => undefined,
       () => undefined,
@@ -342,6 +387,7 @@ export class MobileCallManager {
       kind: event.signalKind,
       payload: [...event.payload],
     });
+    if (this.session !== session) throw new DOMException('Call canceled', 'AbortError');
     const payload = parseSignalPayload(plaintext);
 
     switch (event.signalKind) {
@@ -375,7 +421,7 @@ export class MobileCallManager {
   ): Promise<void> {
     const callId = stringValue(payload.callId) || event.callId;
     if (!callId) throw new Error('mobile.call.callIdMissing');
-    if (this.call && !isTerminal(this.call.snapshot.state)) {
+    if ((this.call && !isTerminal(this.call.snapshot.state)) || this.reservation.isOccupied()) {
       await this.sendSignalFor(
         event.fromActorPtid,
         event.sessionUlid,
@@ -385,6 +431,7 @@ export class MobileCallManager {
       );
       return;
     }
+    this.mediaRelease = this.reservation.acquire('direct', callId);
     this.call = {
       direction: 'incoming',
       signalingSessionId: event.sessionUlid,
@@ -510,6 +557,7 @@ export class MobileCallManager {
     const response = await executeStationOperation(session, {
       operationId: 'turn_ice_servers',
     });
+    this.assertCurrentCall(call);
     if (response.status < 200 || response.status >= 300) {
       throw new Error(`mobile.call.iceServersUnavailable.${response.status}`);
     }
@@ -522,6 +570,7 @@ export class MobileCallManager {
     });
     call.peerConnection = peerConnection;
     peerConnection.onicecandidate = (iceEvent) => {
+      if (this.call !== call) return;
       if (!iceEvent.candidate) return;
       void this.enqueue(() => this.sendSignal('CANDIDATE', {
         callId: call.snapshot.callId,
@@ -533,6 +582,7 @@ export class MobileCallManager {
       });
     };
     peerConnection.ontrack = (trackEvent) => {
+      if (this.call !== call) { trackEvent.track.stop(); return; }
       const remoteStream = call.snapshot.remoteStream ?? new MediaStream();
       if (!remoteStream.getTracks().some((track) => track.id === trackEvent.track.id)) {
         remoteStream.addTrack(trackEvent.track);
@@ -541,6 +591,7 @@ export class MobileCallManager {
       this.emit();
     };
     peerConnection.onconnectionstatechange = () => {
+      if (this.call !== call) return;
       if (peerConnection.connectionState === 'connected') {
         this.clearReconnectTimeout();
         if (call.snapshot.state === 'reconnecting') {
@@ -583,6 +634,7 @@ export class MobileCallManager {
   ): Promise<void> {
     const call = this.call;
     if (!call) throw new Error('mobile.call.notActive');
+    if (payload.callId && payload.callId !== call.snapshot.callId) throw new DOMException('Call canceled', 'AbortError');
     const effectiveCallId = callId || call.snapshot.callId;
     await this.sendSignalFor(
       call.snapshot.peerPtid,
@@ -601,6 +653,7 @@ export class MobileCallManager {
     callId = '',
   ): Promise<void> {
     const session = this.requireSession();
+    const generation = this.generation;
     const payloadBase64 = await messagingCallSignalSeal({
       stationPeerId: session.stationPeerId,
       actorPtid: session.actorRef.ptid,
@@ -609,6 +662,7 @@ export class MobileCallManager {
       kind,
       plaintext: JSON.stringify(payload),
     });
+    if (generation !== this.generation) throw new DOMException('Call canceled', 'AbortError');
     const response = await executeStationOperation(session, {
       operationId: 'realtime_signal_send',
       recipient_ptid: peerPtid,
@@ -618,6 +672,7 @@ export class MobileCallManager {
       call_id: callId,
       device_id: callId ? this.requireDeviceId() : '',
     });
+    if (generation !== this.generation) throw new DOMException('Call canceled', 'AbortError');
     if ((response.status < 200 || response.status >= 300) && callId) {
       const resolution = await this.reconcileResolution(callId).catch(() => null);
       if (
@@ -704,8 +759,7 @@ export class MobileCallManager {
     }
     if (
       resolution.state === 'ACCEPTED'
-      && call.direction === 'incoming'
-      && winningDeviceId === this.deviceId
+      && (call.direction === 'outgoing' || winningDeviceId === this.deviceId)
       && call.snapshot.state === 'reconnecting'
       && call.peerConnection?.connectionState === 'connected'
     ) {
@@ -766,13 +820,43 @@ export class MobileCallManager {
 
   private releaseMedia(): void {
     const call = this.call;
-    if (!call) return;
-    call.snapshot.localStream?.getTracks().forEach((track) => track.stop());
-    call.snapshot.remoteStream?.getTracks().forEach((track) => track.stop());
-    call.peerConnection?.close();
-    call.peerConnection = null;
-    call.pendingCandidates = [];
-    call.remoteDescriptionApplied = false;
+    if (call) {
+      call.snapshot.localStream?.getTracks().forEach((track) => track.stop());
+      call.snapshot.remoteStream?.getTracks().forEach((track) => track.stop());
+      call.peerConnection?.close();
+      call.peerConnection = null;
+      call.pendingCandidates = [];
+      call.remoteDescriptionApplied = false;
+    }
+    if (this.pendingCaptures === 0) {
+      this.mediaRelease?.();
+      this.mediaRelease = null;
+    }
+  }
+
+  private async captureMedia(kind: CallMediaKind, call?: ActiveCall): Promise<MediaStream> {
+    const generation = this.generation;
+    this.pendingCaptures += 1;
+    try {
+      const stream = await acquireMedia(kind);
+      if (generation !== this.generation || (call && (this.call !== call || isTerminal(call.snapshot.state)))) {
+        stream.getTracks().forEach((track) => track.stop());
+        throw new DOMException('Call canceled', 'AbortError');
+      }
+      return stream;
+    } catch (error) {
+      if (!this.call || generation !== this.generation) {
+        this.mediaRelease?.();
+        this.mediaRelease = null;
+      }
+      throw error;
+    } finally {
+      this.pendingCaptures -= 1;
+    }
+  }
+
+  private assertCurrentCall(call: ActiveCall): void {
+    if (this.call !== call || isTerminal(call.snapshot.state)) throw new DOMException('Call canceled', 'AbortError');
   }
 
   private armRingTimeout(callId: string): void {
@@ -867,4 +951,4 @@ function acquireMedia(kind: CallMediaKind): Promise<MediaStream> {
   });
 }
 
-export const mobileCallManager = new MobileCallManager();
+export const mobileCallManager = new MobileCallManager(mobileMediaReservation);

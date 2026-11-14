@@ -1,7 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Button, Empty, Input, Modal, Spin, Typography } from 'antd';
-import { ArrowLeft, Trash2, UserPlus, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Button,
+  Empty,
+  Icon,
+  IconButton,
+  Spin,
+  Text,
+  TextArea,
+  TextField,
+} from '@peers-touch/ui';
 
+import { confirmDestructive } from '../../app/feedback/mobileFeedback';
 import { useMobileI18n } from '../../app/mobileI18n';
 import type { MobileDetailRoute } from '../../app/navigation';
 import { MobileNotice } from '../../components/MobileNotice';
@@ -12,7 +21,6 @@ import { useSocialStore } from '../../features/social/socialStore';
 import { requestSocialPeerProfile } from '../../features/social/socialRuntime';
 import type { CircleMember } from '../../gen/proto/domain/social/circle_pb';
 
-const { Text } = Typography;
 const EMPTY_CIRCLE_MEMBERS: readonly CircleMember[] = [];
 
 interface SocialCircleDetailPageProps {
@@ -54,6 +62,7 @@ export function SocialCircleDetailPage({
   const [name, setName] = useState(circle?.name ?? '');
   const [description, setDescription] = useState(circle?.description ?? '');
   const [actionError, setActionError] = useState('');
+  const committedCircle = useRef(circle);
 
   useEffect(() => {
     if (!circle) void refreshCircles();
@@ -64,8 +73,11 @@ export function SocialCircleDetailPage({
 
   useEffect(() => {
     if (!circle) return;
-    setName(circle.name);
-    setDescription(circle.description);
+    const previous = committedCircle.current;
+    if (previous === circle) return;
+    setName(draft => previous && draft !== previous.name ? draft : circle.name);
+    setDescription(draft => previous && draft !== previous.description ? draft : circle.description);
+    committedCircle.current = circle;
   }, [circle]);
 
   useEffect(() => {
@@ -83,18 +95,18 @@ export function SocialCircleDetailPage({
     }
   };
 
-  const confirmDelete = () => {
-    Modal.confirm({
+  const requestDelete = async () => {
+    const confirmed = await confirmDestructive({
       title: t('mobile.social.circles.deleteTitle'),
-      content: t('mobile.social.circles.deleteBody'),
-      okText: t('common.action.delete'),
-      cancelText: t('common.action.cancel'),
-      okButtonProps: { danger: true },
-      onOk: async () => {
+      description: t('mobile.social.circles.deleteBody'),
+      confirmLabel: t('common.action.delete'),
+      cancelLabel: t('common.action.cancel'),
+      onConfirm: async () => {
         await deleteCircle(circleId);
         onBack();
       },
     });
+    if (!confirmed) return;
   };
 
   return (
@@ -110,7 +122,7 @@ export function SocialCircleDetailPage({
           aria-label={t('common.action.back')}
           onClick={onBack}
         >
-          <ArrowLeft size={20} />
+          <Icon iconId="arrow-left" size={20} />
         </button>
         <h1 className="header-title compact">
           {circle?.name || t('mobile.social.circles.detail')}
@@ -120,33 +132,37 @@ export function SocialCircleDetailPage({
       <div className="mobile-detail-body circle-page-body">
         <section className="circle-editor-section">
           <label>
-            <Text type="secondary">{t('mobile.social.circles.nameLabel')}</Text>
-            <Input
+            <Text tone="secondary">{t('mobile.social.circles.nameLabel')}</Text>
+            <TextField
               value={name}
               data-acceptance-id="social-circle-name"
               maxLength={120}
               disabled={pending}
-              onChange={(event) => setName(event.target.value)}
+              onValueChange={setName}
             />
           </label>
           <label>
-            <Text type="secondary">{t('mobile.social.circles.descriptionLabel')}</Text>
-            <Input.TextArea
+            <Text tone="secondary">{t('mobile.social.circles.descriptionLabel')}</Text>
+            <TextArea
               value={description}
               data-acceptance-id="social-circle-description"
               maxLength={500}
               disabled={pending}
-              autoSize={{ minRows: 3, maxRows: 6 }}
-              onChange={(event) => setDescription(event.target.value)}
+              minimumRows={3}
+              maximumRows={6}
+              onValueChange={setDescription}
             />
           </label>
           <Button
-            type="primary"
-            block
+            actionId="social-circle-save"
+            emphasis="primary"
+            fullWidth
             data-acceptance-id="social-circle-save"
-            loading={pending}
-            disabled={!name.trim()}
-            onClick={() => void save()}
+            availability={pending || !name.trim()
+              ? { kind: 'disabled', reason: t('mobile.social.circles.nameLabel') }
+              : undefined}
+            execution={pending ? 'pending' : 'idle'}
+            onActivate={() => void save()}
           >
             {t('common.action.save')}
           </Button>
@@ -160,16 +176,20 @@ export function SocialCircleDetailPage({
           <div className="circle-section-heading">
             <span>
               <Text strong>{t('mobile.social.circles.members')}</Text>
-              <Text type="secondary">
+              <Text tone="secondary">
                 {t('mobile.social.circles.memberCount', { count: members.length })}
               </Text>
             </span>
             <Button
-              size="small"
-              icon={<UserPlus size={15} />}
+              actionId="social-circle-add-members"
+              emphasis="secondary"
+              density="compact"
+              leading={<Icon iconId="user-plus" size={15} />}
               data-acceptance-id="social-circle-add-members"
-              disabled={pending}
-              onClick={() => onOpenMembers({
+              availability={pending
+                ? { kind: 'disabled', reason: t('common.action.add') }
+                : undefined}
+              onActivate={() => onOpenMembers({
                 routeId: 'detail:social-circle-members',
                 circleId,
               })}
@@ -177,7 +197,7 @@ export function SocialCircleDetailPage({
               {t('common.action.add')}
             </Button>
           </div>
-          <Spin spinning={loadingMembers}>
+          <Spin active={loadingMembers}>
             <div className="circle-member-list">
               {members.map((member) => {
                 const profile = peerProfiles[member.actorPtid];
@@ -196,19 +216,23 @@ export function SocialCircleDetailPage({
                       size={40}
                     />
                     <span className="circle-row-copy">
-                      <Text strong ellipsis>
+                      <Text strong truncate>
                         {actorDisplayName(profile?.displayName || profile?.username, member.actorPtid)
                           || t('mobile.contacts.unknownUser')}
                       </Text>
-                      <Text type="secondary" ellipsis>{member.actorPtid}</Text>
+                      <Text tone="secondary" truncate>{member.actorPtid}</Text>
                     </span>
-                    <Button
-                      type="text"
-                      danger
-                      icon={<X size={16} />}
-                      aria-label={t('mobile.social.circles.removeMember')}
-                      disabled={pending}
-                      onClick={() => {
+                    <IconButton
+                      actionId="social-circle-remove-member"
+                      iconId="close"
+                      iconSize={16}
+                      label={t('mobile.social.circles.removeMember')}
+                      emphasis="quiet"
+                      tone="danger"
+                      availability={pending
+                        ? { kind: 'disabled', reason: t('mobile.social.circles.removeMember') }
+                        : undefined}
+                      onActivate={() => {
                         void removeMembers(circleId, [member.actorPtid])
                           .catch(() => undefined);
                       }}
@@ -218,23 +242,21 @@ export function SocialCircleDetailPage({
               })}
             </div>
             {!loadingMembers && members.length === 0 ? (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={t('mobile.social.circles.noMembers')}
-              />
+              <Empty description={t('mobile.social.circles.noMembers')} />
             ) : null}
           </Spin>
         </section>
 
         <section className="circle-danger-section">
-          <Text strong type="danger">{t('mobile.social.circles.danger')}</Text>
+          <Text strong tone="danger">{t('mobile.social.circles.danger')}</Text>
           <Button
-            block
-            danger
-            icon={<Trash2 size={16} />}
+            actionId="social-circle-delete"
+            tone="danger"
+            fullWidth
+            leading={<Icon iconId="delete" size={16} />}
             data-acceptance-id="social-circle-delete"
-            loading={pending}
-            onClick={confirmDelete}
+            execution={pending ? 'pending' : 'idle'}
+            onActivate={() => void requestDelete()}
           >
             {t('mobile.social.circles.delete')}
           </Button>

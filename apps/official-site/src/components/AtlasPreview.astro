@@ -37,6 +37,8 @@ const copy = zh
         ['applet-runtime', 'Applet 运行时架构', 'Lynx 沙箱、类型化 Bridge、带权限的 Host Capability Gateway 与 Station Service。'],
         ['contracts', '共享契约底座', 'Proto 是唯一语义真源，TS、Rust、Go 的 Binding 都由它派生，本身不是在线服务。'],
         ['deployment', '运行时与部署拓扑', 'Client 的安装形态、Station 与 Relay 的互斥角色、状态 Provider 与外部服务。'],
+        ['release-burn-flow', '发布与打包烧录流程', '签名目录先发布；打包时拉取验签并烧录寻址 meta，首跑零配置，线上目录始终是运行时权威。'],
+        ['bootstrap-meta-layers', '引导 Meta 分层与生命周期', 'L0–L5 分层：哪些编译进包、哪些启动时拉取；embedded 只管首跑引导，线上目录永远是权威。'],
       ],
       journeys: [
         ['journey-access-route', '可信接入与 Route 收敛', 'Direct 不通时可以切到 Circuit，但 Station Identity 与会话权威始终不变。'],
@@ -81,6 +83,8 @@ const copy = zh
         ['applet-runtime', 'Applet runtime architecture', 'Lynx sandbox, typed Bridge, permissioned Host Capability Gateway and Station service.'],
         ['contracts', 'Shared contract substrate', 'Proto owns semantics; TS, Rust and Go bindings are derived artifacts, not online services.'],
         ['deployment', 'Runtime and deployment topology', 'Client installs, exclusive Station/Relay roles, state providers and external services.'],
+        ['release-burn-flow', 'Catalog publish and package-time burn', 'The signed catalog is published first; packaging fetches, verifies and burns addressing meta, so first run needs no configuration while the live catalog stays authoritative.'],
+        ['bootstrap-meta-layers', 'Bootstrap meta layers and lifecycle', 'L0–L5 classification: what is compiled into the package versus fetched at launch; embedded meta only bootstraps, the live catalog always wins.'],
       ],
       journeys: [
         ['journey-access-route', 'Verified access and route convergence', 'Direct may fall back to Circuit without changing Station Identity or Session authority.'],
@@ -114,6 +118,8 @@ const DIAGRAM_VIEWBOX: Record<string, [number, number]> = {
   'applet-runtime': [1300, 472],
   contracts: [1018, 542],
   deployment: [1108, 546],
+  'release-burn-flow': [953, 1009],
+  'bootstrap-meta-layers': [1180, 626],
   'journey-access-route': [1085, 638],
   'journey-same-station': [1028, 668],
   'journey-device-messaging': [1085, 708],

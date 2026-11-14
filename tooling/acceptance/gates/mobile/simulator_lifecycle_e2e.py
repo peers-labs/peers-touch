@@ -151,6 +151,7 @@ def validate_navigation_projection(
 ) -> dict[str, Any]:
     if not isinstance(value, dict) or set(value) != {
         "primaryRouteId",
+        "messagePane",
         "detailKeys",
         "overlayRouteId",
     }:
@@ -164,6 +165,8 @@ def validate_navigation_projection(
         raise GateError("Mobile navigation projection contains sensitive data")
     if value["primaryRouteId"] != primary_route_id:
         raise GateError("Mobile primary navigation route is inconsistent")
+    if value["messagePane"] not in {"chats", "contacts"}:
+        raise GateError("Mobile message pane is inconsistent")
     if value["detailKeys"] != detail_keys:
         raise GateError("Mobile detail navigation stack is inconsistent")
     if value["overlayRouteId"] != overlay_route_id:
@@ -238,6 +241,12 @@ class SimulatorRuntimeLifecycleGate(
             },
             role="mobile-simulator-lifecycle-source-identity",
         )
+        assertions = self._assertions_from_lifecycle_clients(client_results)
+        failed = [item["name"] for item in assertions if not item["passed"]]
+        if failed:
+            raise GateError(
+                "Mobile lifecycle assertions failed: " + ", ".join(failed)
+            )
         return {
             **self._result_base("PASS"),
             "completionStatus": "DONE",
@@ -245,7 +254,64 @@ class SimulatorRuntimeLifecycleGate(
             "source": source_identity,
             "runtime": runtime_identity,
             "clients": client_results,
+            "assertions": assertions,
         }
+
+    def _assertions_from_lifecycle_clients(
+        self,
+        client_results: Mapping[str, dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Derive explicit assertions from observed lifecycle evidence."""
+        assertions: list[dict[str, Any]] = []
+        for client_id, result in sorted(client_results.items()):
+            initial = result.get("initial", {})
+            suspended = result.get("suspended", {})
+            resumed = result.get("resumed", {})
+            restarted = result.get("restarted", {})
+            navigation = result.get("navigation", {})
+            prefix = f"MS-AG04:{client_id}"
+            assertions.extend([
+                {
+                    "name": f"{prefix}:suspend-resume-phase-contract",
+                    "passed": initial.get("phase") == "ACTIVE"
+                    and suspended.get("phase") == "SUSPENDED"
+                    and resumed.get("phase") == "ACTIVE",
+                },
+                {
+                    "name": f"{prefix}:generation-advances-monotonically",
+                    "passed": isinstance(initial.get("generation"), int)
+                    and int(resumed.get("generation", -1))
+                    > int(initial.get("generation", -2))
+                    and int(restarted.get("generation", -2))
+                    > int(resumed.get("generation", -3)),
+                },
+                {
+                    "name": f"{prefix}:restart-restores-boot-order-and-launch-state",
+                    "passed": bool(restarted.get("bootOrder"))
+                    and restarted.get("bootOrder") == initial.get("bootOrder")
+                    and restarted.get("launchState")
+                    == initial.get("launchState"),
+                },
+                {
+                    "name": f"{prefix}:descriptor-navigation-routes-primary-and-overlay",
+                    "passed": navigation.get("contacts", {}).get("primaryRouteId")
+                    == "tab:chat"
+                    and navigation.get("contacts", {}).get("messagePane") == "contacts"
+                    and navigation.get("findPeople", {}).get("detailKeys")
+                    == ["detail:find-people"]
+                    and navigation.get("findPeople", {}).get("overlayRouteId")
+                    is None
+                    and navigation.get("createGroup", {}).get("overlayRouteId")
+                    == "overlay:create-group"
+                    and navigation.get("overlayClosed", {}).get("overlayRouteId")
+                    is None,
+                },
+                {
+                    "name": f"{prefix}:does-not-claim-physical-device",
+                    "passed": result.get("physicalDeviceClaimed") is False,
+                },
+            ])
+        return assertions
 
     def _exercise_lifecycle(
         self,
@@ -395,9 +461,9 @@ class SimulatorRuntimeLifecycleGate(
             "contacts": validate_navigation_projection(
                 session.call_action(
                     "navigation.apply",
-                    {"kind": "primary", "routeId": "tab:contacts"},
+                    {"kind": "messages", "pane": "contacts"},
                 ),
-                primary_route_id="tab:contacts",
+                primary_route_id="tab:chat",
                 detail_keys=[],
                 overlay_route_id=None,
             ),
@@ -405,13 +471,19 @@ class SimulatorRuntimeLifecycleGate(
                 session.call_action(
                     "navigation.apply",
                     {
-                        "kind": "overlay.open",
-                        "route": {"routeId": "overlay:add-friend"},
+                        "kind": "detail.push",
+                        "route": {"routeId": "detail:find-people"},
                     },
                 ),
-                primary_route_id="tab:contacts",
+                primary_route_id="tab:chat",
+                detail_keys=["detail:find-people"],
+                overlay_route_id=None,
+            ),
+            "peopleClosed": validate_navigation_projection(
+                session.call_action("navigation.apply", {"kind": "detail.pop"}),
+                primary_route_id="tab:chat",
                 detail_keys=[],
-                overlay_route_id="overlay:add-friend",
+                overlay_route_id=None,
             ),
             "createGroup": validate_navigation_projection(
                 session.call_action(
@@ -421,7 +493,7 @@ class SimulatorRuntimeLifecycleGate(
                         "route": {"routeId": "overlay:create-group"},
                     },
                 ),
-                primary_route_id="tab:contacts",
+                primary_route_id="tab:chat",
                 detail_keys=[],
                 overlay_route_id="overlay:create-group",
             ),
@@ -430,7 +502,7 @@ class SimulatorRuntimeLifecycleGate(
                     "navigation.apply",
                     {"kind": "overlay.close"},
                 ),
-                primary_route_id="tab:contacts",
+                primary_route_id="tab:chat",
                 detail_keys=[],
                 overlay_route_id=None,
             ),
@@ -473,7 +545,7 @@ class SimulatorRuntimeLifecycleGate(
                     "navigation.apply",
                     {"kind": "detail.push", "route": route},
                 ),
-                primary_route_id="tab:contacts",
+                primary_route_id="tab:chat",
                 detail_keys=expected_keys,
                 overlay_route_id=None,
             )
@@ -482,7 +554,7 @@ class SimulatorRuntimeLifecycleGate(
                 "navigation.apply",
                 {"kind": "detail.pop"},
             ),
-            primary_route_id="tab:contacts",
+            primary_route_id="tab:chat",
             detail_keys=[
                 "detail:contact-profile:ptid:acceptance-contact",
                 "detail:setting:privacy-security",

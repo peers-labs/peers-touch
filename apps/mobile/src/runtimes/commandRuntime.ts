@@ -215,9 +215,9 @@ function deliverRestoredDraft(envelope: MobileDraftEnvelopeV2): void {
     return;
   }
 
-  pendingDraftRestorations.set(key, envelope);
-  consumer(envelope);
+  // A rejected consumer must remain eligible for an explicit recovery choice.
   pendingDraftRestorations.delete(key);
+  consumer(envelope);
   observedDraftConsumers.add(key);
 }
 
@@ -247,6 +247,7 @@ export function registerDraftRestorationConsumer(
       observedDraftConsumers.add(key);
     } catch (error) {
       draftRestorationConsumers.delete(key);
+      pendingDraftRestorations.delete(key);
       throw error;
     }
   }
@@ -597,6 +598,7 @@ export function draftsRequiringRestoreDecision(
   return drafts.filter((draft) => {
     const key = envelopeRestorationKey(draft.envelope);
     return !draftRestorationConsumers.has(key)
+      && !pendingDraftRestorations.has(key)
       && !observedDraftConsumers.has(key);
   });
 }
@@ -652,15 +654,15 @@ function createDraftRestorationPort(): DraftRestorationPort {
         surfaceKind,
         targetId,
       );
+      const hadPendingRestoration = pendingDraftRestorations.delete(key);
       if (!envelope) {
         observedDraftConsumers.delete(key);
-        if (pendingDraftRestorations.has(key)) {
+        if (hadPendingRestoration) {
           throw new Error('mobile.reliability.draftMissing');
         }
         return null;
       }
       assertRestorableDraftEnvelope(envelope);
-      pendingDraftRestorations.delete(key);
       observedDraftConsumers.add(key);
       return envelope;
     },

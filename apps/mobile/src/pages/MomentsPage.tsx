@@ -22,14 +22,20 @@
  * binds runtime projections and intents to the Home/Explore surface.
  */
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Button, Typography } from 'antd';
-import { ArrowLeft } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Button, Empty, Icon, IconButton } from '@peers-touch/ui';
 
 import { useMobileI18n } from '../app/mobileI18n';
+import {
+  useMobileNavigationStore,
+  type MobileDetailRoute,
+  type MobileMomentsPaneId,
+  type MobileMomentsFeedScope,
+} from '../app/navigation';
 import { useMomentsSurfaceFixture } from '../acceptance/momentsSurfaceFixture';
 import { BoundedList } from '../components/BoundedList';
 import { MobileNotice } from '../components/MobileNotice';
+import { MobileNavigationHost } from '../components/MobileNavigationHost';
 import { useAuthStore } from '../features/auth/authStore';
 import { useSocialExperience } from '../features/social/useSocialExperience';
 import { resolveMomentPolicyState } from '../features/social/momentsFeedStore';
@@ -60,13 +66,10 @@ import {
   MomentsPolicyViolation,
   MomentsUnavailable,
 } from './moments/MomentsFeedStates';
-import {
-  MomentsScopeHeader,
-  type MomentsFeedScope,
-} from './moments/MomentsScopeHeader';
+import { MomentsHeader } from './moments/MomentsHeader';
+import { SocialCirclesContent } from './moments/SocialCirclesContent';
 import './moments/Moments.css';
 
-const { Text } = Typography;
 const MOMENTS_FEED_WINDOW_SIZE = 100;
 
 function momentPostKey(post: Post): string {
@@ -120,10 +123,12 @@ interface MomentsPageProps {
   readonly activeReadSource?: 'device' | 'station' | null;
   readonly onOpenProfile: (actorPtid: string, federationId: string) => void;
   readonly onOpenSearch: () => void;
-  readonly onOpenCircles: () => void;
+  readonly onOpenCircle: (route: Extract<MobileDetailRoute, { routeId: 'detail:social-circle' }>) => void;
+  readonly onPaneChange: (pane: MobileMomentsPaneId, scope?: MobileMomentsFeedScope) => void;
+  readonly onOpenNotifications: () => void;
+  readonly onOpenGlobalSearch: () => void;
   readonly onImmersiveVisibilityChange: (visible: boolean) => void;
   readonly onBack: () => void;
-  readonly searchEntry?: ReactNode;
 }
 
 export async function submitInlineCommentIntent(
@@ -150,10 +155,12 @@ export function MomentsPage({
   activeReadSource,
   onOpenProfile,
   onOpenSearch,
-  onOpenCircles,
   onImmersiveVisibilityChange,
   onBack,
-  searchEntry,
+  onOpenCircle,
+  onPaneChange,
+  onOpenNotifications,
+  onOpenGlobalSearch,
 }: MomentsPageProps) {
   const fixture = useMomentsSurfaceFixture();
   if (fixture.surfaceId) {
@@ -171,10 +178,12 @@ export function MomentsPage({
       activeReadSource={activeReadSource}
       onOpenProfile={onOpenProfile}
       onOpenSearch={onOpenSearch}
-      onOpenCircles={onOpenCircles}
       onImmersiveVisibilityChange={onImmersiveVisibilityChange}
       onBack={onBack}
-      searchEntry={searchEntry}
+      onOpenCircle={onOpenCircle}
+      onPaneChange={onPaneChange}
+      onOpenNotifications={onOpenNotifications}
+      onOpenGlobalSearch={onOpenGlobalSearch}
     />
   );
 }
@@ -185,15 +194,22 @@ function MomentsPageInner({
   activeReadSource,
   onOpenProfile,
   onOpenSearch,
-  onOpenCircles,
   onImmersiveVisibilityChange,
   onBack,
-  searchEntry,
+  onOpenCircle,
+  onPaneChange,
+  onOpenNotifications,
+  onOpenGlobalSearch,
 }: MomentsPageProps) {
   const { t } = useMobileI18n();
   const authSession = useAuthStore((state) => state.session);
   const { facade, projection } = useSocialExperience();
-  const [feedScope, setFeedScope] = useState<MomentsFeedScope>('home');
+  const pane = useMobileNavigationStore(state => state.momentsPane);
+  const feedScope = useMobileNavigationStore(state => state.momentsFeedScope);
+  const searchOpen = useMobileNavigationStore(state => state.momentsSearchOpen);
+  const query = useMobileNavigationStore(state => state.momentsQueries[pane]);
+  const setSearchOpen = useMobileNavigationStore(state => state.setMomentsSearchOpen);
+  const setQuery = useMobileNavigationStore(state => state.setMomentsQuery);
 
   // Feed state from the store
   const feedController = facade?.feeds?.[feedScope] ?? facade?.feed ?? null;
@@ -221,6 +237,20 @@ function MomentsPageInner({
     },
   };
   const runtimeFeedState = projectedFeedState;
+  const searchedPosts = useMemo(() => {
+    const q = query.trim().toLocaleLowerCase();
+    if (!q) return feed.posts;
+    return feed.posts.filter(post => {
+      const content = post.content;
+      const publicText = content.case === 'repostPost' ? content.value.comment
+        : content.value && 'text' in content.value ? content.value.text : '';
+      const privatePost = projection?.runtime.privateSocial?.postsById[post.id];
+      const privateContent = privatePost?.state === 'CONTENT_READY' ? privatePost.content : undefined;
+      const privateText = privateContent && 'text' in privateContent ? privateContent.text
+        : privateContent && 'comment' in privateContent ? privateContent.comment : '';
+      return [post.author?.displayName, publicText, privateText].join(' ').toLocaleLowerCase().includes(q);
+    });
+  }, [feed.posts, projection?.runtime.privateSocial?.postsById, query]);
   const isPolicyFilteredEmpty =
     feed.pageOutcome === TimelinePageOutcome.FILTERED_EMPTY;
 
@@ -388,9 +418,9 @@ function MomentsPageInner({
   const handleExploreSort = useCallback(
     (sort: TimelineSort) => {
       if (!facade) return;
-      void facade.feeds.explore.setSort(sort);
+      void facade.feeds[feedScope].setSort(sort);
     },
-    [facade],
+    [facade, feedScope],
   );
 
   const handlePrivateRecovery = useCallback(
@@ -504,6 +534,22 @@ function MomentsPageInner({
 
   // -- Render --
 
+  const renderHeader = (openCreate: () => void) => (
+    <MomentsHeader
+      pane={pane}
+      searchOpen={searchOpen}
+      query={query}
+      onPaneChange={onPaneChange}
+      onSearchOpenChange={setSearchOpen}
+      onQueryChange={value => setQuery(pane, value)}
+      onAdd={openCreate}
+      onOpenSearch={onOpenSearch}
+      onOpenGlobalSearch={onOpenGlobalSearch}
+      onOpenExplore={() => onPaneChange('feed', feedScope === 'explore' ? 'home' : 'explore')}
+      onOpenNotifications={onOpenNotifications}
+    />
+  );
+
   const routeDetailPostId = activePostId ?? undefined;
   if (routeDetailPostId !== undefined) {
     const activePost = feed.posts.find((post) => post.id === routeDetailPostId);
@@ -552,7 +598,7 @@ function MomentsPageInner({
                 aria-label={t('common.action.back')}
                 onClick={onBack}
               >
-                <ArrowLeft size={20} />
+                <Icon iconId="arrow-left" size={20} />
               </button>
               <h1 className="header-title compact">
                 {t('mobile.moments.detail.title')}
@@ -568,38 +614,33 @@ function MomentsPageInner({
     );
   }
 
-  return (
+  const feedContent = (
     <div
       className="page-container moments-page"
       data-acceptance-id="social-moments-page"
       data-feed-scope={feedScope}
       data-product-surface="moments.feed"
     >
-      <MomentsScopeHeader
-        searchEntry={searchEntry}
-        scope={feedScope}
-        exploreSort={facade?.feeds?.explore.sort() ?? TimelineSort.RECENT}
-        onChangeScope={(scope) => {
-          setReactionPickerPostId(null);
-          setFeedScope(scope);
-        }}
-        onOpenSearch={() => {
-          setReactionPickerPostId(null);
-          onOpenSearch();
-        }}
-        onOpenCircles={() => {
-          setReactionPickerPostId(null);
-          onOpenCircles();
-        }}
-        onOpenComposer={() => {
+      {renderHeader(() => {
           setReactionPickerPostId(null);
           setShowNewPost(true);
-        }}
-        onOpenSort={() => {
-          setReactionPickerPostId(null);
-          setShowSort(true);
-        }}
-      />
+      })}
+      <div className="mobile-moments-feed-tools">
+        <Button actionId="moments.feed.refresh" emphasis="quiet" density="comfortable"
+          leading={<Icon iconId="refresh-cw" size={16} />} onActivate={feed.refresh}>
+          {t('mobile.moments.feed.refresh')}
+        </Button>
+        <Button actionId="moments.feed.sort" emphasis="quiet" density="comfortable"
+          leading={<Icon iconId="sliders-horizontal" size={16} />}
+          onActivate={() => { setReactionPickerPostId(null); setShowSort(true); }}>
+          {t(feedScope === 'explore' ? 'mobile.moments.scope.explore' : 'mobile.moments.panes.feed')}
+          {' · '}{t(facade?.feeds?.[feedScope].sort() === TimelineSort.HOT
+            ? 'mobile.moments.sort.hot' : 'mobile.moments.sort.recent')}
+        </Button>
+        <IconButton actionId="moments.feed.top" density="comfortable" emphasis="quiet"
+          iconId="arrow-up" label={t('mobile.moments.feed.backToTop')}
+          onActivate={(event) => event.currentTarget.closest('.page-container')?.scrollTo({ top: 0, behavior: 'auto' })} />
+      </div>
 
       {noticeError ? (
         <MobileNotice onClose={() => setNoticeError('')}>
@@ -654,8 +695,14 @@ function MomentsPageInner({
           data-feed-failure={feed.failure.kind}
           role="alert"
         >
-          <Text type="secondary">{feed.failure.message}</Text>
-          <Button onClick={feed.retryFailure}>
+          <span className="moments-feed-state-copy">
+            {feed.failure.message}
+          </span>
+          <Button
+            actionId="moments-feed-retry-failure"
+            emphasis="secondary"
+            onActivate={feed.retryFailure}
+          >
             {t('mobile.moments.feed.retry')}
           </Button>
         </div>
@@ -673,11 +720,14 @@ function MomentsPageInner({
         ))}
 
       {/* Feed list — prototype card layout */}
+      {!isUnavailable && query.trim() && !searchedPosts.length && feed.posts.length ? (
+        <Empty description={t('mobile.moments.searchEmpty', { query: query.trim() })} />
+      ) : null}
       {!isUnavailable && feed.posts.length > 0 && (
         <div role="feed" aria-label={t('mobile.moments.title')}>
           <BoundedList
-            surfaceKey={`moments:feed:${feedScope}`}
-            items={feed.posts}
+            surfaceKey={`moments:feed:${feedScope}:${query}`}
+            items={searchedPosts}
             itemKey={momentPostKey}
             size={MOMENTS_FEED_WINDOW_SIZE}
           >
@@ -756,7 +806,11 @@ function MomentsPageInner({
                     feed.hasMore &&
                     feed.loadState === 'idle' && (
                       <div className="moments-feed-load-more">
-                        <Button type="text" onClick={feed.loadMore}>
+                        <Button
+                          actionId="moments-feed-load-more"
+                          emphasis="quiet"
+                          onActivate={feed.loadMore}
+                        >
                           {t('mobile.moments.feed.loadMore')}
                         </Button>
                       </div>
@@ -765,17 +819,17 @@ function MomentsPageInner({
                   {isRetainedTailWindow &&
                     feed.loadState === 'loading-more' && (
                       <div className="moments-feed-loading-more">
-                        <Text type="secondary">
+                        <span className="moments-feed-state-copy">
                           {t('mobile.moments.feed.loadingMore')}
-                        </Text>
+                        </span>
                       </div>
                     )}
 
                   {isRetainedTailWindow && !feed.hasMore && (
                     <div className="moments-feed-end">
-                      <Text type="secondary">
+                      <span className="moments-feed-state-copy">
                         {t('mobile.moments.feed.noMore')}
-                      </Text>
+                      </span>
                     </div>
                   )}
                 </div>
@@ -791,13 +845,19 @@ function MomentsPageInner({
           onClose={() => setMediaSelection(null)}
         />
       )}
-      {showSort && facade?.feeds?.explore && (
+      {showSort && facade?.feeds?.[feedScope] && (
         <ExploreSortSheet
-          value={facade.feeds.explore.sort()}
+          value={facade.feeds[feedScope].sort()}
           onChange={handleExploreSort}
           onClose={() => setShowSort(false)}
         />
       )}
     </div>
   );
+  return <MobileNavigationHost primary={{
+    key: pane === 'circles' ? 'tab:moments:circles' : `tab:moments:feed:${feedScope}`,
+    content: pane === 'circles' ? <SocialCirclesContent
+      query={query} header={renderHeader} onOpenCircle={onOpenCircle}
+    /> : feedContent,
+  }} />;
 }

@@ -21,9 +21,11 @@ import (
 
 	"gorm.io/gorm"
 
+	agentservice "github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/infrastructure"
+	federationdomain "github.com/peers-labs/peers-touch/station/app/subserver/federation/domain"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
@@ -58,13 +60,15 @@ type subServer struct {
 	db *gorm.DB
 
 	// Application services (DDD application layer)
-	authSvc      *application.AuthService
-	overviewSvc  *application.OverviewService
-	actorsSvc    *application.ActorService
-	chatDebugSvc *application.ChatDebugService
-	storageSvc   *application.StorageService
-	nodesSvc     *application.NodesService
-	ossSvc       *application.OSSService
+	authSvc       *application.AuthService
+	overviewSvc   *application.OverviewService
+	actorsSvc     *application.ActorService
+	chatDebugSvc  *application.ChatDebugService
+	storageSvc    *application.StorageService
+	nodesSvc      *application.NodesService
+	ossSvc        *application.OSSService
+	aiSvc         agentservice.ProviderManagementPort
+	federationSvc federationdomain.ManagementPort
 
 	// Infrastructure repositories (DDD infrastructure layer)
 	auditRepo infrastructure.AuditRepository
@@ -210,6 +214,16 @@ func (s *subServer) Start(ctx context.Context, opts ...option.Option) error {
 		// SubserverInstances is populated by BaseServer.init() before Start.
 		for _, sub := range serverOpts.SubserverInstances {
 			s.subservers = append(s.subservers, sub)
+			if provider, ok := sub.(interface {
+				ProviderManagement() agentservice.ProviderManagementPort
+			}); ok {
+				s.aiSvc = provider.ProviderManagement()
+			}
+			if provider, ok := sub.(interface {
+				FederationManagement() federationdomain.ManagementPort
+			}); ok {
+				s.federationSvc = provider.FederationManagement()
+			}
 		}
 	}
 
@@ -285,6 +299,8 @@ func (s *subServer) Handlers() []server.Handler {
 
 	h := &dashboardHandler{sub: s}
 	handlers := h.handlers()
+	handlers = append(handlers, h.aiHandlers()...)
+	handlers = append(handlers, h.federationHandlers()...)
 
 	// Append embedded static file serving handlers (SPA, assets, favicon).
 	handlers = append(handlers, staticFileHandlers()...)

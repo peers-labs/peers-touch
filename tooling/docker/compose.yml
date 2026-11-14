@@ -64,17 +64,32 @@ services:
         BUILD_TIME: ${PEERS_TOUCH_BUILD_TIME:-unknown}
         SOCIAL_ACCEPTANCE: ${PT_SOCIAL_ACCEPTANCE_BUILD:-0}
     profiles: [station]
+    # Reap orphaned CLI descendants after timeout or process-group teardown.
+    init: true
     logging: *json-logging
     environment:
       PEERS_NODE_ROLE: station
+      # Stable envelope key supplied by the deployment secret store.
+      # File paths must point inside an existing persistent or secret mount.
+      PT_SECRET_KEK: ${PT_SECRET_KEK:-}
+      PT_SECRET_KEK_FILE: ${PT_SECRET_KEK_FILE:-}
       PEERS_AUTH_SECRET: ${PEERS_AUTH_SECRET:?PEERS_AUTH_SECRET is required}
       PEERS_OAUTH_BRIDGE_SECRET: ${PEERS_OAUTH_BRIDGE_SECRET:-}
-      # Non-secret, deploy-rendered list of Class B secret NAMES the entrypoint
-      # must verify non-empty at startup. Empty (local/compose) disables the gate.
-      PEERS_REQUIRED_SECRET_KEYS: ${PEERS_REQUIRED_SECRET_KEYS:-}
+      # Native (Mobile) Station-direct OAuth provider credentials. Empty by
+      # default; the access gate advertises provider sign-in only when the
+      # client id and secret for a provider are present.
+      PEERS_OAUTH_GITHUB_CLIENT_ID: ${PEERS_OAUTH_GITHUB_CLIENT_ID:-}
+      PEERS_OAUTH_GITHUB_CLIENT_SECRET: ${PEERS_OAUTH_GITHUB_CLIENT_SECRET:-}
+      PEERS_OAUTH_GITHUB_REDIRECT_URIS: ${PEERS_OAUTH_GITHUB_REDIRECT_URIS:-}
+      PEERS_OAUTH_GOOGLE_CLIENT_ID: ${PEERS_OAUTH_GOOGLE_CLIENT_ID:-}
+      PEERS_OAUTH_GOOGLE_CLIENT_SECRET: ${PEERS_OAUTH_GOOGLE_CLIENT_SECRET:-}
+      PEERS_OAUTH_GOOGLE_REDIRECT_URIS: ${PEERS_OAUTH_GOOGLE_REDIRECT_URIS:-}
       # Canonical Station-owned durable files, including Messaging attachment
       # blobs, must resolve inside the named peers_data volume.
       PEERS_DATA_DIR: /app/data
+      # Shared managed CLI installations and private actor invocation state
+      # live under the persistent volume.
+      PEERS_AGENT_WORKSPACE_BASE: /app/data/agent-workspaces
       # DSN points at the project's bridge-internal postgres service. Never
       # at the host. POSTGRES_DB / PEERS_DB_PASSWORD come from .env.<project>.
       PEERS_DB_DSN: host=postgres user=${POSTGRES_USER:-peers} password=${PEERS_DB_PASSWORD} dbname=${POSTGRES_DB:-peers_touch} port=5432 sslmode=disable TimeZone=Asia/Shanghai
@@ -269,7 +284,10 @@ services:
   # file. If missing, the container starts but rejects all requests —
   # group calls are unavailable while 1v1 and chat remain functional.
   livekit:
-    image: livekit/livekit-server:v1.13
+    image: ${PEERS_LIVEKIT_IMAGE:-peers-touch/livekit:1.13.0-admission1}
+    build:
+      context: ../..
+      dockerfile: tooling/docker/livekit.Dockerfile
     profiles: [livekit]
     environment:
       LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-}: ${LIVEKIT_API_SECRET:-}"

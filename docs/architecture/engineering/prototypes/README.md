@@ -75,6 +75,11 @@
 > 状态取值：`drafting`（搭建中）· `pending-review`（待确认）· `confirmed`（已确认，可落地）· `landed`（已落地）· `superseded`（已废弃）。
 > 登记表的一级维度是原型站点；`frontend-eles` 承载共享元素/风格，applet、通话、聊天等仍挂在所属产品站点下。
 
+Desktop Shell 与 Station Dashboard 内新增的模型服务生命周期候选保持
+`drafting`，不增加独立入口卡片，也不提升既有原型确认状态。
+对应设计、运行深链与缺失证明见
+[CLI 账号连接线框](../../domains/agent/provider-cli-authentication/wireflow.md)。
+
 ---
 
 ## 4. 原型确认门

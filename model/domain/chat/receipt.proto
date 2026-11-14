@@ -18,6 +18,30 @@ message DeviceConsumptionReceipt {
   google.protobuf.Timestamp consumed_at = 8;
 }
 
+// Device-local disposition of an inbox item that failed deterministic
+// validation and was quarantined so the contiguous device lane can ack past
+// it. This receipt is never submitted to the authority Station; it anchors
+// the local dead-letter record for later inspection or reprocessing.
+enum DeviceInboxItemRejectReason {
+  DEVICE_INBOX_ITEM_REJECT_REASON_UNSPECIFIED = 0;
+  DEVICE_INBOX_ITEM_REJECT_REASON_PAYLOAD_INVALID = 1;
+  DEVICE_INBOX_ITEM_REJECT_REASON_INTEGRITY_FAILED = 2;
+  DEVICE_INBOX_ITEM_REJECT_REASON_RECIPIENT_MISMATCH = 3;
+}
+
+message DeviceRejectedItemReceipt {
+  string receipt_id = 1;
+  string item_id = 2;
+  string conversation_id = 3;
+  string event_id = 4;
+  CryptoEndpoint consumer = 5;
+  int64 lane_sequence = 6;
+  bytes payload_sha256 = 7;
+  DeviceInboxItemRejectReason reason = 8;
+  string detail = 9;
+  google.protobuf.Timestamp rejected_at = 10;
+}
+
 message ActorReadCursor {
   string conversation_id = 1;
   string reader_ptid = 2;

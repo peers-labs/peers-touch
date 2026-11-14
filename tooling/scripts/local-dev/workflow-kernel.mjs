@@ -6,6 +6,28 @@ import {
   renderPreEditContext,
 } from '../architecture/module-governance.mjs';
 import { resolveProjectRoot } from './workflow-state-inspector.mjs';
+import {
+  bindSessionWorktree,
+  detectWorktreeDrift,
+  readSessionBinding,
+  resolveInvocationWorktree,
+} from './worktree-session-binding.mjs';
+
+// Only tools that mutate files or execute commands can perform work in the
+// wrong worktree. Pure read tools stay unguarded so diagnosis is never blocked.
+// The adapter derives these facts; raw tool name/input never reach the kernel.
+function isMutatingTool(event) {
+  if (event.event !== 'PRE_TOOL_USE') return false;
+  if (event.mutatingTool === true) return true;
+  // Fall back to declared edit paths when the tool name is absent.
+  return (event.willEditFilepaths ?? []).length > 0;
+}
+
+function mutatingTargetPaths(event) {
+  return Array.isArray(event.mutationFilepaths)
+    ? event.mutationFilepaths
+    : [];
+}
 
 function unique(values) {
   return [...new Set(values.filter(Boolean))];
@@ -116,6 +138,55 @@ export async function evaluateWorkflowEvent(event, options = {}) {
       additionalContext: null,
     };
   }
+
+  // SessionStart: silently bind the session to its single worktree. Logging
+  // and binding only; never block startup on an ambiguous workspace.
+  if (event.event === 'SESSION_START' && options.worktreeStateRoot) {
+    bindSessionWorktree({
+      stateRoot: options.worktreeStateRoot,
+      workspaceRoots: event.workspaceRoots ?? [],
+      source: 'session-start',
+    });
+  }
+
+  // PreToolUse: hard-block mutating tools that escape the bound worktree.
+  if (
+    event.event === 'PRE_TOOL_USE'
+    && options.worktreeStateRoot
+    && isMutatingTool(event)
+  ) {
+    const binding = readSessionBinding(options.worktreeStateRoot);
+    if (binding) {
+      const invocationRoot = resolveInvocationWorktree({
+        toolWorkingDirectory:
+          event.toolWorkingDirectory
+          ?? event.repositoryWorkingDirectory
+          ?? event.installationRoot,
+        targetFilepaths: [
+          ...(event.willEditFilepaths ?? []),
+          ...mutatingTargetPaths(event),
+        ],
+        installationRoot: event.installationRoot,
+      });
+      const drift = detectWorktreeDrift({ binding, invocationRoot });
+      if (drift) {
+        const invoked = drift.invokedRoot.join(', ');
+        return {
+          action: 'DENY',
+          code: 'WORKTREE_DRIFT_BLOCKED',
+          denyReason:
+            `Worktree drift blocked: this session is bound to `
+            + `${drift.boundName} (${drift.boundRoot}), but the tool targets `
+            + `${invoked}. Do not create or switch worktrees unless the user `
+            + `explicitly instructs it; rebind through the machine-dev session `
+            + 'entrypoint only.',
+          executionRoot: null,
+          additionalContext: null,
+        };
+      }
+    }
+  }
+
   const executionRoot = selectExecutionRoot(event);
   if (executionRoot === null) {
     return {

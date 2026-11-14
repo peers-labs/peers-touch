@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -46,12 +45,9 @@ func TestCredentialSetMaterializesCatalogProviderAndUpdatesCredential(t *testing
 		t.Fatalf("provider base URL = %q", provider.BaseURL)
 	}
 
-	var vault map[string]string
-	if err := json.Unmarshal([]byte(provider.KeyVaults), &vault); err != nil {
-		t.Fatalf("decode key vault: %v", err)
-	}
-	if vault["api_key"] != request.APIKey {
-		t.Fatal("structured key vault did not preserve the credential")
+	key, err := providerCredentialAPIKey(&provider)
+	if err != nil || key != request.APIKey || strings.Contains(provider.KeyVaults, request.APIKey) {
+		t.Fatal("encrypted credential did not preserve its owner-bound value")
 	}
 
 	request.APIKey = "replacement-key"
@@ -98,6 +94,7 @@ func TestCredentialSetRejectsUnknownProviderWithoutCreatingRecord(t *testing.T) 
 
 func openCredentialConfigTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
+	t.Setenv("PT_SECRET_KEK", "provider-focused-test-key-material")
 	dsn := "file:" + uuid.NewString() + "?mode=memory&cache=shared"
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {

@@ -26,7 +26,9 @@ from tooling.acceptance.gates.chat.mixed_native_runtime import (
 )
 from tooling.acceptance.gates.chat.native_support import (
     cleanup_preserving_primary_failure,
+    media_harness,
     runtime_station_service,
+    send_text,
     wait_until,
 )
 
@@ -46,6 +48,16 @@ REQUIRED_ASSERTIONS = {
     "reject_before_accept",
     "duplicate_accept_409",
     "reconnect_after_resolution",
+    "mobile_incoming_audio_rtp",
+    "mobile_outgoing_audio_rtp",
+    "mobile_incoming_video_rtp",
+    "mobile_outgoing_video_rtp",
+    "mobile_call_media_controls",
+    "mobile_call_ice_restart",
+    "mobile_call_resources_released",
+    "native_call_media_presentation",
+    "desktop_camera_remount",
+    "chat_usable_during_mobile_call",
 }
 
 class CallResolutionGate(AcceptanceGate):
@@ -541,6 +553,199 @@ class CallResolutionGate(AcceptanceGate):
         )
         return evidence
 
+    def mobile_click(self, selector: str) -> None:
+        result = self.runtime._required_mobile_binding().semantic_click("sim-ios", selector)
+        if result.get("activated") is not True:
+            raise GateError(f"Mobile call control unavailable: {selector}")
+        self.steps.append({
+            "step": "call.mobile_ui_action", "client": "sim-ios",
+            "selector": selector, "status": "pass",
+        })
+
+    def media_snapshot(self, client_id: str) -> dict[str, Any]:
+        peer = "sim-ios" if client_id == "desktop-alice" else "desktop-alice"
+        result = self.runtime.call_action(client_id, "callSnapshot", {"peerPtid": self.ptids[peer]})
+        snapshot = result.get("snapshot") if isinstance(result, dict) else None
+        if not isinstance(snapshot, dict):
+            raise GateError(f"{client_id} has no live call projection")
+        return snapshot
+
+    def media_stats(self, client_id: str) -> dict[str, Any]:
+        peer = "sim-ios" if client_id == "desktop-alice" else "desktop-alice"
+        result = self.runtime.call_action(client_id, "callMediaStats", {"peerPtid": self.ptids[peer]})
+        if not isinstance(result, dict):
+            raise GateError(f"{client_id} has no RTP observation")
+        return result
+
+    def progressing_media(self, call_id: str, kind: str) -> dict[str, Any]:
+        actors = ("desktop-alice", "sim-ios")
+        baseline = {actor: self.media_stats(actor) for actor in actors}
+        kinds = ("audio", "video") if kind == "video" else ("audio",)
+
+        def read() -> dict[str, Any] | None:
+            current = {actor: self.media_stats(actor) for actor in actors}
+            snapshots = {actor: self.media_snapshot(actor) for actor in actors}
+            for actor in actors:
+                value, previous, snapshot = current[actor], baseline[actor], snapshots[actor]
+                if value.get("callId") != call_id or previous.get("callId") != call_id \
+                        or snapshot.get("callId") != call_id \
+                        or value.get("connectionState") != "connected" \
+                        or snapshot.get("state") not in {"active", "active_here"}:
+                    return None
+                presentation = value.get("presentation", {})
+                prior_presentation = previous.get("presentation", {})
+                audio = presentation.get("remoteAudio", [])
+                prior_audio = prior_presentation.get("remoteAudio", [])
+                if presentation.get("audibleRemoteCount") != 1 or len(audio) != 1 \
+                        or len(prior_audio) != 1 or not audio[0].get("bound") \
+                        or audio[0].get("muted") is not False or audio[0].get("paused") is not False \
+                        or audio[0].get("currentTime", 0) <= prior_audio[0].get("currentTime", 0):
+                    return None
+                for role in ("localVideo", "remoteVideo"):
+                    videos = presentation.get(role, [])
+                    prior_videos = prior_presentation.get(role, [])
+                    if kind != "video":
+                        if videos:
+                            return None
+                        continue
+                    if len(videos) != 1 or len(prior_videos) != 1:
+                        return None
+                    video = videos[0]
+                    if not video.get("bound") or video.get("muted") is not True \
+                            or video.get("paused") is not False or video.get("readyState", 0) < 2 \
+                            or any(video.get(field, 0) <= 0 for field in
+                                   ("videoWidth", "videoHeight", "width", "height")) \
+                            or video.get("currentTime", 0) <= prior_videos[0].get("currentTime", 0):
+                        return None
+                for media_kind in kinds:
+                    now = value.get("media", {}).get(media_kind, {})
+                    before = previous.get("media", {}).get(media_kind, {})
+                    if any(now.get(field, 0) <= before.get(field, 0)
+                           for field in ("bytesSent", "bytesReceived", "packetsSent", "packetsReceived")):
+                        return None
+                    if media_kind == "video" and any(now.get(field, 0) <= before.get(field, 0)
+                                                     for field in ("framesEncoded", "framesDecoded")):
+                        return None
+                    for side in ("local", "remote"):
+                        if not any(track.get("kind") == media_kind and track.get("readyState") == "live"
+                                   for track in snapshot.get(f"{side}Tracks", [])):
+                            return None
+            return {"before": baseline, "after": current, "snapshots": snapshots}
+
+        return wait_until(read, f"Mobile {kind} bidirectional RTP progress", STEP_TIMEOUT)
+
+    def prove_mobile_media(self, direction: str, kind: str, conversation_id: str) -> dict[str, Any]:
+        mobile_binding = self.runtime._required_mobile_binding()
+        desktop = self.runtime.desktop_session("desktop-alice")
+        if desktop is None:
+            raise GateError("Mobile media proof has no owning Desktop client")
+        self.runtime.call_action("sim-ios", "navigation.apply", {
+            "kind": "detail.push",
+            "route": {"routeId": "detail:chat-conversation", "sessionUlid": conversation_id},
+        })
+        if direction == "incoming":
+            media_harness(desktop, self.runtime_binding, "callStart", {
+                "peerPtid": self.ptids["sim-ios"], "mediaKind": kind,
+            })
+            wait_until(lambda: self.media_snapshot("sim-ios").get("state") == "ringing_all_devices",
+                       "Mobile real incoming call", STEP_TIMEOUT)
+            call_id = self.media_snapshot("sim-ios")["callId"]
+            self.mobile_click('[data-action-id="direct-call.accept"]')
+            self.prove_loser_handled_elsewhere(call_id, "desktop-bob", self.device_ids["sim-ios"])
+        else:
+            self.mobile_click(f'[data-direct-call-start="{kind}"]')
+            wait_until(lambda: self.media_snapshot("desktop-alice").get("state") == "incoming",
+                       "Desktop real Mobile-origin call", STEP_TIMEOUT)
+            call_id = self.media_snapshot("sim-ios")["callId"]
+            media_harness(desktop, self.runtime_binding, "callAccept", {"peerPtid": self.ptids["sim-ios"]})
+
+        media = self.progressing_media(call_id, kind)
+        self.assert_condition("native_call_media_presentation", True, compact_json(media))
+        surface = mobile_binding.semantic_observe("sim-ios", ".mobile-call-surface.active")
+        self.assert_condition(f"mobile_{direction}_{kind}_rtp", surface.get("matched") is True, compact_json(media))
+        phase = f"{direction}-{kind}"
+        captures = self.report.runtime.setdefault("mobileCaptures", [])
+        captures.append({
+            "phase": phase, "screenshot": mobile_binding.capture_screenshot("sim-ios", phase).to_dict(),
+            "dom": mobile_binding.capture_web_dom("sim-ios", phase).to_dict(),
+        })
+
+        controls: list[dict[str, Any]] = []
+        for control, flag, track_kind in (
+            ("microphone", "micMuted", "audio"), ("camera", "cameraOff", "video"),
+        ):
+            if control == "camera" and kind != "video":
+                continue
+            for disabled in (True, False):
+                self.mobile_click(f'[data-action-id="direct-call.{control}"]')
+                snapshot = wait_until(
+                    lambda: value if (value := self.media_snapshot("sim-ios")).get(flag) is disabled else None,
+                    f"Mobile {control} {'off' if disabled else 'on'}", STEP_TIMEOUT,
+                )
+                tracks = [track for track in snapshot.get("localTracks", []) if track.get("kind") == track_kind]
+                self.assert_condition("mobile_call_media_controls",
+                                      bool(tracks) and all(track.get("enabled") is (not disabled) for track in tracks),
+                                      compact_json(snapshot))
+                controls.append(snapshot)
+
+        if kind == "video":
+            for disabled in (True, False):
+                clicked = desktop.execute_script("""
+                    const button = document.querySelector('[data-chat-call-camera]');
+                    if (!(button instanceof HTMLElement)) return false;
+                    button.click();
+                    return true;
+                """)
+                if clicked is not True:
+                    raise GateError("Desktop camera control unavailable")
+                snapshot = wait_until(
+                    lambda: value if (value := self.media_snapshot("desktop-alice")).get("cameraOff") is disabled else None,
+                    f"Desktop camera {'off' if disabled else 'on'}", STEP_TIMEOUT,
+                )
+                controls.append(snapshot)
+            remounted = self.progressing_media(call_id, kind)
+            self.assert_condition("desktop_camera_remount", True, compact_json(remounted))
+
+        restart = self.runtime.call_action("sim-ios", "callRestartConnection", {"peerPtid": self.ptids["desktop-alice"]})
+        recovered = self.progressing_media(call_id, kind)
+        self.assert_condition("mobile_call_ice_restart", restart.get("requested") is True, compact_json(recovered))
+        text = f"mobile-live-call-{direction}-{kind}-{time.time_ns()}"
+        sent = send_text(desktop, text)
+        message_id = str(sent.get("messageUlid") or "")
+        if not message_id:
+            raise GateError("Native chat UI did not submit a message during the Mobile call")
+        received = self.runtime.wait_for_message(
+            "sim-ios", conversation_id, message_id,
+            lambda message: message.get("plaintext") == text,
+            kind="direct", timeout_seconds=STEP_TIMEOUT, description="Mobile receiver text during active call",
+        )
+        self.assert_condition("chat_usable_during_mobile_call",
+                              self.media_snapshot("sim-ios").get("state") == "active_here"
+                              and received.get("messageId") == message_id, compact_json(received))
+        self.mobile_click('[data-action-id="direct-call.end"]')
+
+        def both_released() -> dict[str, Any] | None:
+            values = {actor: self.media_snapshot(actor) for actor in ("desktop-alice", "sim-ios")}
+            return values if all(
+                value.get("state") == "ended"
+                and not value.get("localTracks") and not value.get("remoteTracks")
+                for value in values.values()
+            ) else None
+
+        released = wait_until(
+            both_released,
+            "both native call media resources released", STEP_TIMEOUT,
+        )
+        mobile_stats = self.media_stats("sim-ios")
+        self.assert_condition("mobile_call_resources_released",
+                              mobile_stats.get("connectionState") == "closed", compact_json(released))
+        self.mobile_click('[data-action-id="direct-call.close"]')
+        return {
+            "callId": call_id, "direction": direction, "kind": kind, "media": media,
+            "controls": controls, "recovered": recovered, "received": received,
+            "released": released, "mobileAfterRelease": mobile_stats,
+        }
+
     # -- Main gate execution ---------------------------------------------------
 
     def run(self) -> dict[str, Any]:
@@ -654,6 +859,21 @@ class CallResolutionGate(AcceptanceGate):
                 ),
                 "sim-ios",
             )
+
+            self.runtime.call_action("desktop-alice", "callEnd", {"peerPtid": self.ptids["desktop-bob"]})
+            wait_until(lambda: self.media_snapshot("desktop-alice").get("state") == "ended",
+                       "arbitration call ended before media scenarios", STEP_TIMEOUT)
+            media_journeys = []
+            self.report.runtime["mobileMediaJourneys"] = media_journeys
+            for direction in ("incoming", "outgoing"):
+                for kind in ("audio", "video"):
+                    media_journeys.append(self.step(
+                        f"call.mobile_{direction}_{kind}",
+                        lambda direction=direction, kind=kind: self.prove_mobile_media(
+                            direction, kind, direct_conversation_id,
+                        ),
+                        "sim-ios",
+                    ))
 
             for actor in CLIENTS:
                 client = self.runtime.desktop_session(actor)

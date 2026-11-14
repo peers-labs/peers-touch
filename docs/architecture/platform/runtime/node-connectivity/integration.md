@@ -1,8 +1,8 @@
 # Node Connectivity - Integration
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-10-10 | **Updated**: 2026-10-14
+> **Version**: v1.4
+> **Created**: 2026-10-10 | **Updated**: 2026-11-13
 > **Owner**: Architecture Team
 
 ## 1. Preserved Domain Boundaries
@@ -157,3 +157,64 @@ product claims require actual native Journeys and formal exact-source evidence;
 source/build checks remain source evidence. Candidate Plan authoring does not
 replace an existing PlanMount or create execution/evidence state. Runtime,
 storage migration and delivery use their separately authorized owning controls.
+
+## 8. Station Candidate Catalog Cutover (NCP-D22..D24)
+
+### 8.1 Impact surface
+
+| Surface | Change |
+|---|---|
+| `infrastructure/station_registry.rs` | remove `discovery_seed` field, env read and getter; registry represents verified entries only |
+| `infrastructure/station_candidates.rs` (new) | read and normalize `PEERS_PROFILE_STATION_URL` / `PEERS_STATION_URL`, tag the source tier, drop malformed origins; no I/O |
+| `interface/tauri_commands/station.rs` | add read-only `station_local_candidates`; existing `station_add` remains the local-candidate activation path |
+| `application/auth/service.rs` | remove the `discovery_seed` origin extension; identity migration reads verified registry routes only |
+| `services/stationCandidates.ts` (new) | sole merge/dedup/order owner over local candidates, registry entries and the X Config projection |
+| `pages/login/StationSwitcher.tsx` | render verified and suggestion sections with distinct states and source labels; activate suggestions through the matching discovery command |
+| `services/stationDefault.ts` | remove the unwired auto-apply functions; keep the explicit-choice marker |
+| `tooling/devctl/desktop.mjs` | export `PEERS_PROFILE_STATION_URL` from the resolved Profile; stop deriving `PEERS_STATION_URL` from the Profile value; pass externally supplied values through |
+| Mobile Rust/runtime | same candidate contract and deprivileged env semantics; sequenced after Desktop |
+
+### 8.2 Retained uses of `PEERS_STATION_URL`
+
+The variable stays for non-product-trust plumbing: the Vite development proxy
+(`apps/desktop/vite.config.ts`), Rust/Vite build-meta scripts under
+`tooling/scripts/`, and E2E/Acceptance harness environment setup. These call
+sites determine dev proxy targets or harness-side Station resolution; they do
+not write registry identity material and are outside the NCP-D23 removal.
+
+### 8.3 Acceptance and harness migration
+
+Closures that read `process.env.PEERS_STATION_URL ?? 'persisted-active'`
+(`tooling/acceptance/closures/task-workbench/`) and applet E2E launchers must
+take one of two explicit positions after the cutover:
+
+1. pre-provision a verified registry entry for the target Station and rely on
+   active-id restoration; or
+2. drive the candidate catalog: assert the injected row appears first, then
+   activate it through the canonical discovery command.
+
+A harness must never be granted a path that skips signed discovery. The
+harness-side Node environment variable convention itself is unchanged.
+
+### 8.4 Adjacent legacy cleanup
+
+`PEERS_STATION_MODE` has no runtime reader and is only consumed by the orphan
+`tooling/scripts/local-dev/desktop-dev.sh`, which `make`/devctl do not call.
+Its retirement and that script's deprecation are tracked as adjacent cleanup,
+not as part of the candidate catalog contract, so the behavior change stays
+surgical.
+
+### 8.5 Verification contract
+
+- Rust unit tests: local candidate normalization, source tagging, malformed
+  origin rejection, and proof that neither local variable extends auth origins
+  or writes the registry.
+- Renderer unit tests: tier precedence, origin dedup label ownership,
+  verified-origin suppression, within-tier stability and nonactionable cloud
+  rows.
+- Exact-source Desktop Journey: clean Profile storage shows the Profile Station
+  as the first suggestion with no preselection; activating it runs signed
+  discovery; restart restores it as the active Station without a click; X Config
+  unavailable leaves the local catalog usable.
+- Regression: existing identity-migration tests pass with the seed fallback
+  removed; Mobile parity is delivered and proven in its own phase.

@@ -1,6 +1,6 @@
 # 通话面：1:1 HUD 托盘、来电、群通话（迁移增量 14，增量 19 重构）
 
-> **Status**: draft · **Created**: 2026-10-31 · **Updated**: 2026-10-31（增量 19）
+> **Status**: draft · **Created**: 2026-10-31 · **Updated**: 2026-11-08（增量 58，移动端对齐）
 > · **Owner**: Client Platform · UI System
 > **旧来源**：`CallSurface.tsx`（outgoing/active 状态机、compact tray、设备切换、
 > reconnecting、结束原因 toast）、`IncomingCallModal`（居中来电、多设备同响）、
@@ -40,6 +40,12 @@
 - **来电演示入口**：单人会话详情侧拉页「来电演示（本地原型）」段三个明确标注的
   模拟按钮（语音 / 视频 / 多设备同响）。真实来电由信令推送（旧实现是全局 SSE，
   可在浏览别的会话时弹出），原型无信令后端，用显式演示入口而非随机/定时器弹窗。
+- **移动端对齐（ma-call，增量 58）**：手机产品面暂无 incoming 面，1:1 呼出严格复用上述
+  角色语法——状态机 `outgoing（振铃 1.6s）→ connecting（接通 0.9s）→ active`，与桌面同参
+  定时器自动推进，**主叫侧不渲染「接听」**；接通前控制区只有一枚红色 phone-off「取消」
+  （终止呼出、回 idle），active 后才出静音/摄像头与红色「挂断」。`call/accept` 在手机侧同样是
+  「被叫接听」信令事件（定时器模拟、无 UI 入口），不是主叫按钮。门禁 check-call-states 断言
+  outgoing 零「接听」钮、唯一控件为「取消」，并零点击自动进 connecting/active。
 
 ## 2. 旧设计审计与本增量修正
 

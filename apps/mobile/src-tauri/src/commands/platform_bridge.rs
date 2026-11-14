@@ -19,6 +19,36 @@ use crate::platform::lifecycle_bridge::{
 use crate::platform::media_picker::{
     self, MediaPickInput, MediaPickProjection, StagedMomentMediaInput,
 };
+use crate::platform::media_picker::{ProfileImageInput, ProfileImagePreview, ProfileImageRuntime};
+
+#[command]
+pub fn profile_image_preview<R: Runtime>(
+    app: AppHandle<R>, storage: State<'_, SecureStorage>, runtime: State<'_, ProfileImageRuntime>,
+    webview: tauri::Webview<R>, input: ProfileImageInput,
+) -> MobileResult<ProfileImagePreview> {
+    media_picker::preview_profile_image(&app, &storage, &runtime, webview.label(), input)
+}
+
+#[command]
+pub async fn profile_image_upload<R: Runtime>(
+    app: AppHandle<R>, storage: State<'_, SecureStorage>, input: ProfileImageInput,
+) -> MobileResult<String> {
+    media_picker::upload_profile_image(&app, &storage, input).await
+}
+
+#[command]
+pub fn profile_image_discard<R: Runtime>(
+    app: AppHandle<R>, storage: State<'_, SecureStorage>, input: ProfileImageInput,
+) -> MobileResult<()> {
+    media_picker::discard_profile_image(&app, &storage, input)
+}
+
+#[command]
+pub fn profile_image_preview_release<R: Runtime>(
+    runtime: State<'_, ProfileImageRuntime>, webview: tauri::Webview<R>, access_handle: String,
+) {
+    runtime.release(webview.label(), &access_handle);
+}
 use crate::platform::network_bridge::{
     self, NativeNetworkIngestResult, NativeNetworkPlatform, NativeNetworkSignal, NetworkState,
     NetworkType,
@@ -155,6 +185,12 @@ fn native_action_fields(
     action: &SystemAction,
 ) -> MobileResult<(&'static str, Option<&str>, Option<&str>)> {
     match action {
+        SystemAction::CopyText { text } => {
+            if text.is_empty() || text.len() > 64 * 1024 {
+                return Err(crate::error::MobileError::invalid_input("clipboard text is empty or exceeds the Mobile contract"));
+            }
+            Ok(("copy_text", Some(text.as_str()), None))
+        }
         SystemAction::OpenAppSettings => Ok(("open_app_settings", None, None)),
         SystemAction::OpenExternalUrl { url } => {
             validate_external_url(url)?;

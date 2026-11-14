@@ -16,7 +16,7 @@ const storedPreferences: DevicePreferences = {
 };
 
 describe('deviceSettingsRuntime', () => {
-  it('applies committed theme, font, and density to the document owner', () => {
+  it('records the theme preference but pins rendered color scheme to light', () => {
     const root: DeviceSettingsDocumentRoot = {
       dataset: {},
       style: {},
@@ -26,17 +26,19 @@ describe('deviceSettingsRuntime', () => {
 
     expect(root.dataset).toEqual({
       mobileTheme: 'dark',
-      mobileColorScheme: 'dark',
+      mobileColorScheme: 'light',
       mobileFontSize: 'large',
       mobileCompact: 'true',
     });
-    expect(root.style.colorScheme).toBe('dark');
+    expect(root.style.colorScheme).toBe('light');
 
     applyDevicePreferences({
       ...storedPreferences,
       theme: 'system',
-    }, root, false);
+    }, root, true);
+    expect(root.dataset.mobileTheme).toBe('system');
     expect(root.dataset.mobileColorScheme).toBe('light');
+    expect(root.style.colorScheme).toBe('light');
   });
 
   it('commits defaults only after a successful read with no stored value', async () => {

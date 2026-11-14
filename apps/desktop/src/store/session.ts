@@ -4,6 +4,8 @@ import { markLocalIdentityAction } from '../services/identity_event';
 import { runIdentityPipeline } from '../services/identityPipeline';
 import { sessionIdentityScope } from '../kernel/sessionIdentity';
 import { avatarAssets } from '../services/avatarAssets';
+import { readPersistedAvatarLastGood } from '../services/avatarLastGoodPersistence';
+import { clearPrivateMediaLocalPreviews } from '../services/privateMediaLocalPreview';
 import {
   accessSubmissionDescriptor,
   completeAccessSubmission,
@@ -103,6 +105,21 @@ function commitAuthenticatedSession(
   set((state) => {
     const sessionEpoch = state.sessionEpoch + 1;
     if (user) {
+      // Prime cross-process avatar last-good (self + previously seen peers)
+      // BEFORE binding the session, so bindSession seeds a paint-ready image
+      // and the first authenticated frame — conversation rows included —
+      // never shows the neutral placeholder. Applies to every authenticated
+      // edge (restore, password, OAuth), not only restore. The live
+      // resolution replaces each degraded image atomically.
+      avatarAssets.primePersistentLastGood(
+        readPersistedAvatarLastGood(user.actorPtid).map((entry) => ({
+          actorPtid: entry.actorPtid,
+          identity: entry.identity,
+          src: entry.src,
+          localPath: entry.localPath,
+          revision: entry.revision,
+        })),
+      );
       avatarAssets.bindSession({
         epoch: sessionEpoch,
         actorPtid: user.actorPtid,
@@ -115,6 +132,9 @@ function commitAuthenticatedSession(
     }
     return { currentUser: user, authenticated: Boolean(user), restoring, sessionEpoch, stationPeerId };
   });
+  // NOTE: persisted @mention flags are rehydrated by the navigation badge
+  // projection itself, which subscribes to the authenticated actor. Keep the
+  // session store free of an import edge back to badge state (import cycle).
 }
 
 // ── Helpers (exported for tests; mapping mirrors `restoreSession`) ──
@@ -174,6 +194,7 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
 
   reset: () => set((state) => {
     avatarAssets.unbindSession();
+    clearPrivateMediaLocalPreviews();
     return {
       ...initialState,
       sessionEpoch: state.sessionEpoch + 1,
@@ -279,6 +300,7 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
         }
         set((state) => {
           avatarAssets.unbindSession();
+          clearPrivateMediaLocalPreviews();
           return {
             currentUser: null,
             authenticated: false,

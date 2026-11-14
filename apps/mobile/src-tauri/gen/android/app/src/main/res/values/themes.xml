@@ -1,6 +1,12 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
+    <!-- Base application theme. Native chrome follows the north-star light
+         paper/ink grammar: neutral paper status/navigation bars with dark
+         system icons (windowLightStatusBar), replacing the stock Material
+         purple template. Mobile dark mode is not shipped this release. -->
     <style name="Theme.peers_touch_mobile" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <!-- Customize your theme here. -->
+        <item name="android:statusBarColor">@color/northstar_canvas</item>
+        <item name="android:navigationBarColor">@color/northstar_canvas</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowBackground">@color/northstar_canvas</item>
     </style>
 </resources>

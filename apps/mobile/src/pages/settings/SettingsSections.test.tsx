@@ -1,12 +1,17 @@
 import { create } from '@bufbuild/protobuf';
 import { readFileSync } from 'node:fs';
+import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
+import { UIProvider } from '@peers-touch/ui';
 
 import {
   NotificationCategory,
   NotificationPreferenceSchema,
 } from '../../gen/proto/domain/notification/notification_pb';
+
+const renderSection = (node: ReactNode) =>
+  renderToStaticMarkup(<UIProvider theme="light">{node}</UIProvider>);
 
 const i18nMocks = vi.hoisted(() => ({
   setLanguage: vi.fn(async () => true),
@@ -71,7 +76,7 @@ describe('Settings truthful unavailable and permission states', () => {
   } as const;
 
   it('preserves every native permission status and only exposes requestable actions', () => {
-    const markup = renderToStaticMarkup(
+    const markup = renderSection(
       <PermissionsSection
         permissions={[
           { kind: 'camera', status: 'not_determined', canRequest: true },
@@ -101,7 +106,7 @@ describe('Settings truthful unavailable and permission states', () => {
   });
 
   it('renders ownerless notifications as unavailable and owner-backed privacy controls', () => {
-    const markup = renderToStaticMarkup(
+    const markup = renderSection(
       <>
         <NotificationsSection controller={unavailableNotificationController} />
         <PrivacySection
@@ -159,7 +164,7 @@ describe('Settings truthful unavailable and permission states', () => {
   });
 
   it('distinguishes unavailable, empty, and owner-backed blocked-user states', () => {
-    const unavailable = renderToStaticMarkup(
+    const unavailable = renderSection(
       <BlockedUsersSection
         users={[]}
         status="unavailable"
@@ -169,7 +174,7 @@ describe('Settings truthful unavailable and permission states', () => {
         onUnblock={vi.fn(async () => undefined)}
       />,
     );
-    const empty = renderToStaticMarkup(
+    const empty = renderSection(
       <BlockedUsersSection
         users={[]}
         status="ready"
@@ -179,7 +184,7 @@ describe('Settings truthful unavailable and permission states', () => {
         onUnblock={vi.fn(async () => undefined)}
       />,
     );
-    const populated = renderToStaticMarkup(
+    const populated = renderSection(
       <BlockedUsersSection
         users={[{
           targetPtid: 'ptid:bob',
@@ -207,7 +212,7 @@ describe('Settings truthful unavailable and permission states', () => {
   });
 
   it('keeps device controls disabled when persisted preferences are unavailable', () => {
-    const markup = renderToStaticMarkup(
+    const markup = renderSection(
       <DevicePrefsSection
         prefs={null}
         loading={false}
@@ -223,7 +228,7 @@ describe('Settings truthful unavailable and permission states', () => {
   });
 
   it('shows failed language persistence without projecting another selection', () => {
-    const markup = renderToStaticMarkup(<LanguageSection />);
+    const markup = renderSection(<LanguageSection />);
 
     expect(markup).toContain('mobile.settings.language.saveFailed');
     expect(markup).toContain('common.action.retry');
@@ -231,7 +236,7 @@ describe('Settings truthful unavailable and permission states', () => {
   });
 
   it('renders generated Notification preference readback without privacy defaults', () => {
-    const markup = renderToStaticMarkup(
+    const markup = renderSection(
       <NotificationPreferenceControls
         controller={{
           preferences: [
@@ -275,7 +280,7 @@ describe('Settings truthful unavailable and permission states', () => {
   });
 
   it('exposes native notification permission-required state beside preferences', () => {
-    const markup = renderToStaticMarkup(
+    const markup = renderSection(
       <NotificationPreferenceControls
         controller={unavailableNotificationController}
         permission={{
@@ -297,7 +302,7 @@ describe('Settings truthful unavailable and permission states', () => {
   });
 
   it('renders Station trust from verified identity, not reachability', () => {
-    const markup = renderToStaticMarkup(
+    const markup = renderSection(
       <StationSection
         stationLabel="Station"
         stationUrl="https://station.example"

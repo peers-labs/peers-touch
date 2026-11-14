@@ -482,9 +482,12 @@ export const capabilityCatalogue: readonly CapabilityRecord[] = [
       "kind=text/number/password/pin/multiline；必选，不用一个type万能接口。",
       "editing=editable/readOnly/disabled；默认 editable；readOnly允许阅读复制，disabled解释原因。",
       "commit=explicit/blur；默认 explicit，IME期间禁止提交。",
-      "validation=untouched/checking/valid/invalid；默认 untouched，与transport分离。"
+      "validation=untouched/checking/valid/invalid；默认 untouched，与transport分离。",
+      "appearance=field/search；search共享主题accent焦点，reveal仅在原位展开时淡入。",
+      "FieldFrame.appearance=composer；一个外框包含工具、embedded TextArea和发送；唯一焦点边界。",
+      "TextArea.autoGrow=false/true；true由控件测量内容与宽度，minimumRows/maximumRows控制展开和滚动。"
     ],
-    "geometryAndMotion": "同意图一个外框和focus ring；前后缀同轨；多行自适应高度有上限；密码眼睛为具名IconButton；输入不加位移动画。",
+    "geometryAndMotion": "同意图一个外框和focus ring；composer为12px圆角、6px内距，embedded输入不画第二个边框或ring，发送保留primary语义；autoGrow以实际字体/内容/宽度计算行限，上下限服从控件最小高度，超限内部滚动；comfortable embedded输入至少44px触控高度；search原位160ms ease-out淡入，焦点32% accent边框、2px 9% accent光晕，140ms cubic-bezier(.22,1,.36,1)；减弱动效关闭动画和过渡；comfortable/触控输入16px防iOS缩放；不加位移动画。",
     "extremeData": "空与0、负数/指数/小数精度、中文IME、emoji组合字符、长URL、粘贴带空格、200%字；PIN长度不写死为6。",
     "publicContractFields": "各kind独立value类型；fieldId/label/draft/validation/readOnly；number有min/max/step/precision；pin有length/alphabet；onEdit/onCommit"
   },
@@ -650,7 +653,7 @@ export const capabilityCatalogue: readonly CapabilityRecord[] = [
       "execution=idle/pending/failed；默认 idle。",
       "availability=editable/locked；默认 editable，locked有原因。"
     ],
-    "geometryAndMotion": "intrinsic 36×20 track / 16 thumb，在 stretch 父容器内保持尺寸不拉伸；on 用角色墨色 token（--pt-switch-on，皮肤可覆写，默认 primary 中性墨），色相只留给语义事实；surface-out 140ms thumb 位移，reduced 静态；触摸命中≥24。",
+    "geometryAndMotion": "intrinsic 36×20 track / 16 thumb，在 stretch 父容器内保持尺寸不拉伸；on 用角色墨色 token（--pt-switch-on，皮肤可覆写，默认 primary 中性墨），色相只留给语义事实；surface-out 140ms thumb 位移，reduced 静态；按钮为透明命中盒、track span 承载视觉 pill，coarse pointer 下命中盒放大到 44×44，视觉轨道几何不变。",
     "extremeData": "远端旧值、极慢保存、离线、连续点击、账号切换与受策略锁定。",
     "publicContractFields": "settingId/confirmedValue/desiredValue/execution/lockedReason/onToggle"
   },
@@ -1401,7 +1404,8 @@ export const capabilityCatalogue: readonly CapabilityRecord[] = [
     "variantAxes": [
       "purpose=insert/reaction；默认 insert；reaction受业务集合限制。",
       "source=unicode/approved-custom；默认 unicode。",
-      "skinTone=default/selected；默认 default，持久偏好本地。"
+      "skinTone=default/selected；默认 default，持久偏好本地。",
+      "presentation=list/palette；默认 list；palette用44px格子，短名称可访问，recent由actor-scope owner提供。"
     ],
     "geometryAndMotion": "网格固定命中区，glyph可文本后备；无hover放大；recent与category不跳。",
     "extremeData": "ZWJ组合、肤色、旗帜、平台缺字、搜索多语言、禁用custom和巨大emoji集。",
@@ -4133,6 +4137,32 @@ export const capabilityCatalogue: readonly CapabilityRecord[] = [
     "geometryAndMotion": "严格quiet zone/contrast，尺寸按真实扫描打样；无圆角/gradient破坏modules；状态不盖码。",
     "extremeData": "高DPI、低亮度、长payload、小屏、到期扫码与截图旧码。",
     "publicContractFields": "sessionId/purpose/payloadView/expiry/status/refreshAction/alternativePath"
+  },
+  {
+    "id": "ui.spec.call-control",
+    "title": "CallControl",
+    "category": "media",
+    "owner": "Client Platform / UI System",
+    "specRef": "docs/architecture/platform/client/ui-system/specs/media.md#ui.spec.call-control",
+    "exports": ["CallControl"],
+    "implementationRefs": ["packages/ui/web/src/media.tsx", "packages/ui/web/src/styles.css"],
+    "specimenRef": "packages/prototypes/shared/ui-system/ElementSamples.tsx#CallControl",
+    "platformSupport": [
+      { "renderer": "web", "status": "implemented" },
+      { "renderer": "lynx", "status": "unsupported", "reason": "No native Lynx media control adapter" }
+    ],
+    "evidenceStatus": "UNPROVEN",
+    "implementationStatus": "PRESENTATION_IMPLEMENTED",
+    "ownerBoundary": "Call runtime owns media state; shared UI owns target, caption and focus",
+    "anatomy": "IconButton/Caption/ExecutionSlot/UnavailableReason",
+    "statePolicy": "Selection reflects confirmed media state; pending and unavailable use action contracts",
+    "invalidCombinations": "Local private button chrome, inaccessible captions, optimistic media success",
+    "lifecycleAndCleanup": "No media ownership; unmount retains no tracks or timers",
+    "accessibility": "One named 64px target; selected aria-pressed; keyboard focus; caption is decorative",
+    "variantAxes": ["selected=true/false", "tone=neutral/danger", "execution=idle/pending"],
+    "geometryAndMotion": "64px circle, 10px caption gap; no layout movement on state change",
+    "extremeData": "Long bilingual captions, pending cleanup, denied permission, coarse pointer",
+    "publicContractFields": "actionId/label/iconId/selected/availability/execution/onActivate"
   },
   {
     "id": "ui.spec.video",

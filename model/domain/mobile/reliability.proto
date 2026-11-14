@@ -78,6 +78,11 @@ message ChatDraftPayload {
   string text = 1;
   string reply_to_message_id = 2;
   repeated EncryptedBlobReference attachment_refs = 3;
+  // Native device-local stages; never interpret these as encrypted object IDs.
+  repeated string staged_attachment_ids = 4;
+  string thread_root_message_id = 5;
+  // A submitted draft restores its pending projection, not a second send.
+  string pending_message_id = 6;
 }
 
 message MomentDraftPayload {

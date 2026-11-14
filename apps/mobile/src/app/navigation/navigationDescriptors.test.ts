@@ -10,6 +10,7 @@ import {
 import {
   activeMobileDetailRoute,
   navigationLocationKey,
+  primaryNavigationLocationKey,
   resetMobileNavigation,
   useMobileNavigationStore,
 } from './navigationStore';
@@ -20,15 +21,19 @@ describe('Mobile navigation descriptor lifetimes', () => {
   });
 
   it('keeps every primary tab on-visit with no retained page tree', () => {
-    expect(primaryTabDescriptors).toHaveLength(4);
+    expect(primaryTabDescriptors.map(({ routeId }) => routeId)).toEqual([
+      'tab:chat', 'tab:moments', 'tab:settings',
+    ]);
     expect(primaryTabDescriptors.every((descriptor) => (
       descriptor.layout === 'primary' && descriptor.keepAlive === false
     ))).toBe(true);
-    expect(detailDescriptors).toHaveLength(11);
+    expect(detailDescriptors).toHaveLength(12);
     expect(detailDescriptors.every((descriptor) => (
       descriptor.layout === 'detail' && descriptor.keepAlive === false
     ))).toBe(true);
-    expect(overlayDescriptors).toHaveLength(2);
+    expect(overlayDescriptors.map(route => route.routeId)).toEqual([
+      'overlay:notifications', 'overlay:create-group',
+    ]);
     expect(overlayDescriptors.every((descriptor) => (
       descriptor.layout === 'overlay' && descriptor.keepAlive === false
     ))).toBe(true);
@@ -67,14 +72,15 @@ describe('Mobile navigation descriptor lifetimes', () => {
   });
 
   it('owns primary and detail route identity independently of business stores', () => {
-    useMobileNavigationStore.getState().navigatePrimary('tab:contacts');
+    useMobileNavigationStore.getState().navigateMessages('contacts');
     useMobileNavigationStore.getState().pushDetail({
       routeId: 'detail:chat-conversation',
       sessionUlid: 'session-1',
     });
 
     const state = useMobileNavigationStore.getState();
-    expect(state.primaryRouteId).toBe('tab:contacts');
+    expect(state.primaryRouteId).toBe('tab:chat');
+    expect(state.messagePane).toBe('contacts');
     expect(activeMobileDetailRoute(state)).toEqual({
       routeId: 'detail:chat-conversation',
       sessionUlid: 'session-1',
@@ -85,7 +91,8 @@ describe('Mobile navigation descriptor lifetimes', () => {
 
     state.popDetail();
     expect(useMobileNavigationStore.getState()).toMatchObject({
-      primaryRouteId: 'tab:contacts',
+      primaryRouteId: 'tab:chat',
+      messagePane: 'contacts',
       detailStack: [],
     });
   });
@@ -96,7 +103,7 @@ describe('Mobile navigation descriptor lifetimes', () => {
       groupUlid: 'group-1',
     });
     useMobileNavigationStore.getState().openOverlay({
-      routeId: 'overlay:add-friend',
+      routeId: 'overlay:notifications',
     });
 
     useMobileNavigationStore.getState().navigatePrimary('tab:moments');
@@ -182,9 +189,9 @@ describe('Mobile navigation descriptor lifetimes', () => {
 
   it('owns one selected-only overlay and clears it before detail navigation', () => {
     const navigation = useMobileNavigationStore.getState();
-    navigation.openOverlay({ routeId: 'overlay:add-friend' });
+    navigation.openOverlay({ routeId: 'overlay:notifications' });
     expect(useMobileNavigationStore.getState().overlayRoute).toEqual({
-      routeId: 'overlay:add-friend',
+      routeId: 'overlay:notifications',
     });
 
     useMobileNavigationStore.getState().openOverlay({
@@ -201,7 +208,7 @@ describe('Mobile navigation descriptor lifetimes', () => {
     expect(useMobileNavigationStore.getState().overlayRoute).toBeNull();
 
     useMobileNavigationStore.getState().openOverlay({
-      routeId: 'overlay:add-friend',
+      routeId: 'overlay:notifications',
     });
     useMobileNavigationStore.getState().closeOverlay();
     expect(useMobileNavigationStore.getState().overlayRoute).toBeNull();
@@ -209,6 +216,18 @@ describe('Mobile navigation descriptor lifetimes', () => {
       routeId: 'detail:contact-profile',
       actorPtid: 'ptid:contact-2',
     });
+  });
+
+  it('pushes Find People as a detail and returns to its original messages pane', () => {
+    const navigation = useMobileNavigationStore.getState();
+    navigation.navigateMessages('chats');
+    navigation.pushDetail({ routeId: 'detail:find-people' });
+    expect(activeMobileDetailRoute(useMobileNavigationStore.getState()))
+      .toEqual({ routeId: 'detail:find-people' });
+    expect(useMobileNavigationStore.getState().overlayRoute).toBeNull();
+    expect(navigationLocationKey({ routeId: 'detail:find-people' })).toBe('detail:find-people');
+    navigation.popDetail();
+    expect(useMobileNavigationStore.getState()).toMatchObject({ messagePane: 'chats', detailStack: [] });
   });
 
   it('resets primary, detail, and overlay navigation atomically', () => {
@@ -219,15 +238,41 @@ describe('Mobile navigation descriptor lifetimes', () => {
       settingId: 'notifications',
     });
     useMobileNavigationStore.getState().openOverlay({
-      routeId: 'overlay:add-friend',
+      routeId: 'overlay:notifications',
     });
 
     useMobileNavigationStore.getState().reset();
 
     expect(useMobileNavigationStore.getState()).toMatchObject({
       primaryRouteId: 'tab:chat',
+      messagePane: 'chats',
+      messageSearchOpen: false,
+      messageQueries: { chats: '', contacts: '' },
       detailStack: [],
       overlayRoute: null,
     });
+  });
+
+  it('retains the selected pane and independent search contexts through detail and tab return', () => {
+    const navigation = useMobileNavigationStore.getState();
+    navigation.setMessageQuery('chats', 'group');
+    navigation.navigateMessages('contacts');
+    navigation.setMessageQuery('contacts', 'Alice');
+    navigation.setMessageSearchOpen(true);
+    navigation.pushDetail({ routeId: 'detail:contact-profile', actorPtid: 'Alice' });
+    navigation.pushDetail({ routeId: 'detail:chat-conversation', sessionUlid: 'direct' });
+    navigation.popDetail();
+    navigation.popDetail();
+    expect(primaryNavigationLocationKey(useMobileNavigationStore.getState())).toBe('tab:chat:contacts');
+    expect(useMobileNavigationStore.getState()).toMatchObject({
+      messagePane: 'contacts', messageSearchOpen: true,
+      messageQueries: { chats: 'group', contacts: 'Alice' },
+    });
+    navigation.navigatePrimary('tab:moments');
+    navigation.navigatePrimary('tab:chat');
+    expect(primaryNavigationLocationKey(useMobileNavigationStore.getState())).toBe('tab:chat:contacts');
+    navigation.navigateMessages('chats');
+    expect(primaryNavigationLocationKey(useMobileNavigationStore.getState())).toBe('tab:chat:chats');
+    expect(useMobileNavigationStore.getState().messageQueries).toEqual({ chats: 'group', contacts: 'Alice' });
   });
 });

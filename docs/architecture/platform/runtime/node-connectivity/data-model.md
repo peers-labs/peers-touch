@@ -1,8 +1,8 @@
 # Node Connectivity - Data Model
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-10-10 | **Updated**: 2026-10-14
+> **Version**: v1.3
+> **Created**: 2026-10-10 | **Updated**: 2026-11-13
 > **Owner**: Architecture Team
 
 ## 1. Contract Roots
@@ -338,6 +338,105 @@ Station route and retains its own URL/security policy.
 Bounded `data:image/*;base64` values use `InlineResourceData`; they remain
 non-network resources and are never coerced into either route-relative or
 HTTP(S) external identity.
+
+## 5.2 Station Candidate Catalog
+
+The candidate catalog is a derived read model over local process inputs and the
+accepted X Config projection. It introduces no new persisted identity store and
+no protobuf contract: local inputs are environment strings and cloud candidates
+already conform to the `StationSuggestion` contract in the control-plane
+data model.
+
+### Local inputs (Rust, ephemeral)
+
+```text
+StationCandidateSource (closed enum)
+  ENVIRONMENT   # PEERS_PROFILE_STATION_URL, dev-controller Profile channel
+  INJECTED      # PEERS_STATION_URL, shell / operator / harness process input
+  XCONFIG       # accepted signed snapshot direct-Station seeds
+
+LocalStationCandidate
+  source: StationCandidateSource
+  raw_origin: String
+  normalized_origin: String        # same normalization as registry origins
+  // Constructed by env read + normalization only. No disk, network or
+  // secure-store access. Malformed/empty origins produce no candidate.
+```
+
+The Rust candidate reader owns the two local tiers only. The X Config tier
+stays inside the existing X Config projection; the renderer maps its
+`StationSuggestion` rows to the same source enum. `discovery_seed` is removed
+from `StationRegistry`: the registry persists verified entries and never
+represents unverified process input.
+
+### Renderer catalog (single aggregation owner)
+
+```text
+StationCandidate
+  id: String                       # source + normalized origin, or cloud seed id
+  source: StationCandidateSource
+  state: VERIFIED | SUGGESTION
+  canonical_origin: String
+  display_name: String
+  seed_id?: String                 # X Config only; local tiers use station_add
+  actionable: boolean
+
+StationCandidateCatalog
+  verified: StationCandidate[]     # derived from stations.json entries
+  suggestions: StationCandidate[]  # proximity-ordered, deduped, non-persisted
+  active_station_peer_id: String?
+```
+
+Merge rules are pure and unit-tested in the renderer service:
+
+1. tier precedence `ENVIRONMENT > INJECTED > XCONFIG`;
+2. dedup key is the normalized canonical origin; the first tier that supplies
+   an origin owns its source label;
+3. an origin already present in the verified registry is excluded from
+   `suggestions`;
+4. within-tier order is local declaration order for env tiers and
+   `source_sequence` for X Config;
+5. stale or non-actionable X Config rows stay visible with `actionable=false`.
+
+### Persistence boundary
+
+```text
+Persisted (existing stores only)
+  stations.json
+    entries[]                    # identity-verified routes only
+    active_station_peer_id       # last explicit selection; restored at launch
+    lifecycle_generations[]      # removal tombstones (existing contract)
+  renderer localStorage
+    pt.station.userChoice.v1      # explicit-action marker (existing)
+
+Not persisted (re-derived every launch)
+  LocalStationCandidate[]         # environment reads
+  suggestions[]                   # X Config projection
+  ordering / dedup result
+```
+
+No candidate-tier data is written to disk. The only durable selection record is
+the verified registry's active id; therefore "remember the last selection"
+requires no new store and survives renderer storage reset.
+
+### Candidate lifecycle
+
+```text
+SUGGESTION (any source)
+  -- user activates + signed discovery succeeds --> VERIFIED (stations.json)
+  -- user sets active ------------------------------> ACTIVE (active id persisted)
+  -- discovery fails -------------------------------> remains SUGGESTION, inline error
+VERIFIED
+  -- user removes ---------------------------------> tombstoned generation; active cleared
+ACTIVE
+  -- route signed refresh --------------------------> stays ACTIVE, route_revision advances
+  -- user removes ---------------------------------> back to unpicked SUGGESTION catalog
+```
+
+Cloud refresh can only add, update or remove `SUGGESTION` rows. It never
+creates a `VERIFIED` entry, changes `active_station_peer_id`, or reorders
+verified entries. With no active id and no explicit-choice marker the catalog
+opens with nothing selected.
 
 ## 6. Durable Events And Device Isolation
 

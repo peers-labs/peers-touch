@@ -4,8 +4,8 @@ use crate::contracts::{
     DirectReceiveCommit, InteractionReceiveCommit, MemberAuthorityReceiveCommit,
     MlsApplicationReceiveCommit, MlsRetirementReceiveCommit, MlsSenderTransitionReceiveCommit,
     MlsTransitionReceiveCommit, PendingMlsKeyPackage, PendingMlsTransitionState,
-    PublicEventReceiveCommit, ReceiveCommitResult, ServicePlaintextReceiveCommit,
-    SkippedEndpointReceiveCommit,
+    PublicEventReceiveCommit, ReceiveCommitResult, RejectedItemReceiveCommit,
+    ServicePlaintextReceiveCommit, SkippedEndpointReceiveCommit,
 };
 use crate::crypto::double_ratchet::DrSkippedMessageKey;
 use crate::crypto::session::DirectSession;
@@ -383,6 +383,16 @@ pub trait MessagingRepository: Send + Sync {
     fn commit_skipped_endpoint_payload(
         &self,
         commit: &SkippedEndpointReceiveCommit,
+    ) -> Result<ReceiveCommitResult, String>;
+
+    /// Dead-letter commit for an item that failed deterministic content
+    /// validation: rejection record, consumption marker and lane cursor
+    /// advance, with no authority-chain advance and no projection. The drain
+    /// acks the item afterwards so one poison conversation never blocks the
+    /// device lane for other conversations.
+    fn commit_rejected_endpoint_payload(
+        &self,
+        commit: &RejectedItemReceiveCommit,
     ) -> Result<ReceiveCommitResult, String>;
 
     // --- Prekeys ---

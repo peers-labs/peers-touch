@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const selectedAgent = vi.hoisted(() => ({
   id: 'agent-canonical-id',
@@ -38,11 +38,12 @@ const syncMessages = vi.hoisted(() => vi.fn());
 const syncTurnQueue = vi.hoisted(() => vi.fn());
 const selectSession = vi.hoisted(() => vi.fn());
 const ensureDraftTopic = vi.hoisted(() => vi.fn());
+const subscribe = vi.hoisted(() => vi.fn());
 
 vi.mock('../store/agent', () => ({
   useAgentStore: {
     getState: () => agentState,
-    subscribe: vi.fn(),
+    subscribe,
   },
 }));
 
@@ -89,6 +90,8 @@ import { agentTopicRuntime } from './agentTopicRuntime';
 describe('agentTopicRuntime', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    agentState.agents = [selectedAgent];
+    agentState.selectedAgent = selectedAgent.name;
     loadTopicsForAgent.mockResolvedValue([firstTopic]);
     bootstrapSession.mockResolvedValue(undefined);
     syncMessages.mockResolvedValue(undefined);
@@ -97,15 +100,37 @@ describe('agentTopicRuntime', () => {
     ensureDraftTopic.mockReturnValue(firstTopic);
   });
 
+  afterEach(() => {
+    agentTopicRuntime.teardown?.();
+  });
+
   it('preserves and synchronizes the current canonical Agent session during reconcile', async () => {
     await agentTopicRuntime.reconcile?.('test');
 
     expect(loadTopicsForAgent).toHaveBeenCalledWith(selectedAgent.id, 'test');
     expect(mergeSessions).toHaveBeenCalledWith([firstTopic]);
-    expect(bootstrapSession).toHaveBeenCalledOnce();
+    expect(bootstrapSession).not.toHaveBeenCalled();
     expect(syncMessages).toHaveBeenCalledOnce();
     expect(syncTurnQueue).toHaveBeenCalledWith(currentSession.key);
     expect(selectSession).not.toHaveBeenCalled();
+  });
+
+  it('bootstraps the cached history only on cold entry', async () => {
+    await agentTopicRuntime.bootstrap('actor');
+    expect(bootstrapSession).toHaveBeenCalledOnce();
+    expect(syncMessages).toHaveBeenCalledOnce();
+  });
+
+  it('coalesces concurrent topic reconciliation into one authoritative history read', async () => {
+    let accept!: (topics: typeof firstTopic[]) => void;
+    loadTopicsForAgent.mockReturnValueOnce(new Promise((resolve) => { accept = resolve; }));
+    const first = agentTopicRuntime.reconcile?.('periodic');
+    const second = agentTopicRuntime.reconcile?.('agent-selection');
+    accept([firstTopic]);
+    await Promise.all([first, second]);
+    expect(loadTopicsForAgent).toHaveBeenCalledOnce();
+    expect(syncMessages).toHaveBeenCalledOnce();
+    expect(bootstrapSession).not.toHaveBeenCalled();
   });
 
   it('does not create a draft when authoritative topic loading fails', async () => {
@@ -117,5 +142,37 @@ describe('agentTopicRuntime', () => {
     expect(mergeSessions).not.toHaveBeenCalled();
     expect(ensureDraftTopic).not.toHaveBeenCalled();
     expect(selectSession).not.toHaveBeenCalled();
+  });
+
+  it('does not reload history when selected Agent metadata changes', () => {
+    agentTopicRuntime.install?.();
+    const listener = subscribe.mock.calls[0][0];
+    listener(
+      { ...agentState, agents: [{ ...selectedAgent, title: 'Updated by Station' }] },
+      agentState,
+    );
+    expect(loadTopicsForAgent).not.toHaveBeenCalled();
+  });
+
+  it('discards a pending topic read after runtime teardown', async () => {
+    let accept!: (topics: typeof firstTopic[]) => void;
+    loadTopicsForAgent.mockReturnValueOnce(new Promise((resolve) => { accept = resolve; }));
+    const pending = agentTopicRuntime.reconcile?.('periodic');
+    agentTopicRuntime.teardown?.();
+    accept([firstTopic]);
+    await pending;
+    expect(mergeSessions).not.toHaveBeenCalled();
+    expect(syncMessages).not.toHaveBeenCalled();
+  });
+
+  it('discards a pending topic read after the selected Agent changes', async () => {
+    let accept!: (topics: typeof firstTopic[]) => void;
+    loadTopicsForAgent.mockReturnValueOnce(new Promise((resolve) => { accept = resolve; }));
+    const pending = agentTopicRuntime.reconcile?.('periodic');
+    agentState.selectedAgent = 'another Agent';
+    accept([firstTopic]);
+    await pending;
+    expect(mergeSessions).not.toHaveBeenCalled();
+    expect(syncMessages).not.toHaveBeenCalled();
   });
 });

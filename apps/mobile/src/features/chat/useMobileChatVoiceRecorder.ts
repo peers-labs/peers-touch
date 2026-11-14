@@ -35,6 +35,8 @@ export function useMobileChatVoiceRecorder({
   const startedAtRef = useRef(0);
   const timerRef = useRef<number | null>(null);
   const cancelledRef = useRef(false);
+  const captureGenerationRef = useRef(0);
+  const startingRef = useRef(false);
   const [recording, setRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
 
@@ -50,6 +52,8 @@ export function useMobileChatVoiceRecorder({
   }, []);
 
   const stopRecording = useCallback((cancelled: boolean) => {
+    captureGenerationRef.current += 1;
+    startingRef.current = false;
     cancelledRef.current = cancelled;
     const recorder = recorderRef.current;
     if (recorder?.state !== 'inactive') {
@@ -61,22 +65,29 @@ export function useMobileChatVoiceRecorder({
   }, [releaseCapture]);
 
   const startRecording = useCallback(async () => {
-    if (disabled || recording) return;
+    if (disabled || recording || startingRef.current) return;
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       onUnsupported();
       return;
     }
+    const generation = ++captureGenerationRef.current;
+    startingRef.current = true;
     try {
       const permission = await requestPermission('microphone');
+      if (generation !== captureGenerationRef.current) return;
       if (permission.status !== 'granted') {
         onDenied();
         return;
       }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (generation !== captureGenerationRef.current) {
+        stream.getTracks().forEach(track => track.stop());
+        return;
+      }
+      streamRef.current = stream;
       const recorder = new MediaRecorder(stream);
       chunksRef.current = [];
       cancelledRef.current = false;
-      streamRef.current = stream;
       recorderRef.current = recorder;
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) chunksRef.current.push(event.data);
@@ -116,8 +127,11 @@ export function useMobileChatVoiceRecorder({
       recorder.start();
       setRecording(true);
     } catch {
+      if (generation !== captureGenerationRef.current) return;
       releaseCapture();
       onDenied();
+    } finally {
+      if (generation === captureGenerationRef.current) startingRef.current = false;
     }
   }, [
     disabled,
@@ -130,6 +144,8 @@ export function useMobileChatVoiceRecorder({
   ]);
 
   useEffect(() => () => {
+    captureGenerationRef.current += 1;
+    startingRef.current = false;
     cancelledRef.current = true;
     const recorder = recorderRef.current;
     if (recorder && recorder.state !== 'inactive') recorder.stop();

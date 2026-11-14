@@ -104,7 +104,8 @@ class MobileSocialThreadMediaNativeGate(AcceptanceGate):
             comments,
             (
                 "INITIAL_COMMENT_COUNT = 10",
-                "privateRoute ? null : (facade?.feed ?? null)",
+                "usePrivateThread = privateRoute && !sourceId",
+                "usePrivateThread ? null : (facade?.feed ?? null)",
                 ".readPrivateComments(",
                 ".submitPrivateComment({",
             ),

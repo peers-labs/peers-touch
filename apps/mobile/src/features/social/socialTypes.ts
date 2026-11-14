@@ -163,6 +163,10 @@ export interface TypingEntry {
   lastUpdate: number;
 }
 
+export type PeopleSearchScope =
+  | { readonly kind: 'station' }
+  | { readonly kind: 'federation'; readonly federationId: string };
+
 export interface ActorSearchResult {
   id: string;
   ptid: string;

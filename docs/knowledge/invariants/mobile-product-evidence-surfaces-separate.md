@@ -1,75 +1,70 @@
 ---
 kind: invariant
-title: Mobile product surface and evidence harness views must stay decoupled
+title: Mobile renders ONE product surface; evidence injects state, never a second skin
 status: active
 owns:
   - packages/prototypes/mobile/chat/src/app/
   - packages/prototypes/mobile/chat/src/MobileApp.tsx
   - packages/prototypes/mobile/chat/src/MobilePrototype.tsx
-  - packages/prototypes/mobile/chat/src/MobileShell.tsx
   - packages/prototypes/mobile/chat/scripts/
   - tooling/scripts/review/mobile-surface-boundary.mjs
 related:
   - docs/knowledge/invariants/app-layer-must-not-restyle-primitives.md
   - docs/knowledge/playbooks/ui-primitive-promotion.md
 detected: 2026-11-04
+updated: 2026-11-06
 owner: Client Platform / UI System
 review-cadence: on-change
 ---
 
-# Mobile product surface and evidence harness views must stay decoupled
+# Mobile renders ONE product surface; evidence injects state, never a second skin
 
-`packages/prototypes/mobile/chat` hosts TWO mobile surfaces with deliberately
-different, machine-locked contracts. They are not two versions of one UI to be
-merged; they are two consumers of the same peers-ui library.
+`packages/prototypes/mobile/chat` renders exactly one mobile product UI.
+Evidence is a **state injection** concern, not a parallel set of views.
 
-## The two surfaces
+## Architecture
 
 - **Product surface** — `src/app/**` + `src/MobileApp.tsx`
   - reducer-driven Chinese product UI (`model.ts` / `state.ts` / `screens.tsx`),
-    `ma-*` DOM, in-frame sheets/call.
-  - asserted by `tooling/scripts/ui-system/suites/boards.suite.json`.
-- **Evidence harness** — `MobilePrototype` / `MobileShell` / `socialDemo` /
-  `callPrototype` / `pages/**` / `components/**`
-  - URL `?scenario=` injection of controlled failure states, `mp-*` DOM,
-    English control labels, evidence-only outcomes.
-  - asserted by `scripts/check-layout.mjs` and `scripts/check-call-states.py`.
+    `ma-*` layout + `@peers-touch/ui` primitives, in-frame sheets/call.
+  - shares data and interaction grammar with the desktop north-star prototype
+    (`shared/ui-system/chat-data`, `moments-data`, `identity-tone`).
+- **Evidence host** — `MobilePrototype.tsx` (thin)
+  - URL `?scenario=` selects a `ProductScenario`; it renders
+    `<MobileApp scenario=…/>` inside a device frame. Scenarios only seed
+    `AppState` (`default / journey / station-offline / long-content /
+    long-lists`) — there is no separate DOM, language, or IA.
+  - the standalone dev port (`:3108`) shows the scenario controls; the shared
+    board (`MobileFrame`) always renders the plain product with no
+    产品面/取证台 toggle.
 
-The contracts genuinely differ: the call surface alone has seven forced
-evidence states (`incoming`, `active_here`, `reconnecting`,
-`handled_elsewhere` …) with 44px `.mp-call-control` targets and English
-aria-labels, versus the product's three-state `.ma-call` reducer flow in
-Chinese. Forcing one component to serve both produces a mode/language/dual-DOM
-prop explosion — that is the pit this invariant prevents.
+The earlier two-skin split (English `mp-*` MobileShell / pages / demo seeds
+alongside the Chinese product) was deleted on 2026-11-06: presenting two
+different chat products in one phone frame contradicted desktop/mobile parity
+and doubled every change.
 
 ## Hard rules
 
-1. Product `app/**` must never import an evidence-harness module
-   (`MobilePrototype`, `MobileShell`, `*Demo`, `callPrototype`, `pages/**`,
-   `components/**`, `mobilePrototype.css`).
-2. The evidence harness must not import product views/state
-   (`app/screens`, `app/primitives`, `app/CallScreen`, `app/MobileAppView`,
-   `app/state`).
-3. The ONLY sanctioned cross-surface sharing is:
-   - `@peers-touch/ui` primitives and tokens (the real reuse seam), and
-   - pure, React/UI-free domain entities in `src/app/model.ts`
-     (types + seed/selectors), which the harness MAY import.
-4. Widening what the harness may import from `app/` is an explicit architecture
-   decision, not an accidental convenience import.
+1. There is one view layer: `src/app/**`. The former `MobileShell.tsx`,
+   `pages/**`, `components/**`, `data.ts`, `*Demo.ts`, `callPrototype.ts`,
+   `types.ts`, `i18n.ts` must never be reintroduced.
+2. `MobilePrototype.tsx` may only mount `MobileApp` and read `app/model`
+   scenario vocabulary; it must not define screens or own product chrome.
+   `mobilePrototype.css` styles only the workbench/device frame.
+3. A new controlled evidence condition is added as a **state variant**
+   (`ProductScenario` / `AppState`), expressed by the existing product UI —
+   never by forking a component.
 
-Enforced by `tooling/scripts/review/mobile-surface-boundary.mjs` (runs in
-`tooling/scripts/review/run.sh`). When a genuinely shared headless behavior
-appears (a third consumer, or identical transition semantics needed on both
-sides), extract it to a neutral headless module both import — do not couple
-the views.
+Enforced by `tooling/scripts/review/mobile-surface-boundary.mjs` and
+`scripts/check-residual-parity.mjs` (source + runtime single-skin guard).
 
 ## How to verify
 
 - [ ] `node tooling/scripts/review/mobile-surface-boundary.mjs` exits 0.
-- [ ] A temporary cross-import (e.g. `app/MobileAppView.tsx` importing
-      `../MobileShell`) makes the same command exit 1; remove it to restore.
-- [ ] `node tooling/scripts/ui-system/evaluate-specimens.mjs --suite
-      tooling/scripts/ui-system/suites/boards.suite.json --base <prototype>`
-      stays OBSERVED (product ma-* contract), and
-      `packages/prototypes/mobile/chat/scripts/check-call-states.py` still
-      passes on its own dev port (evidence mp-* contract untouched).
+- [ ] `PROTOTYPE_URL=http://localhost:3108 node
+      packages/prototypes/mobile/chat/scripts/check-layout.mjs` passes
+      (product geometry across 390/554/1440).
+- [ ] `check-long-lists.mjs`, `check-call-states.py`,
+      `check-residual-parity.mjs` pass against the same product surface.
+- [ ] The shared board 手机原型 shows only MobileApp — no view toggle, exactly
+      three `.pt-mobile-tabbar` tabs, zero `mp-*` product nodes.

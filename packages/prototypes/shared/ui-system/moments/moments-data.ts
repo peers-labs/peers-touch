@@ -150,6 +150,11 @@ const SKY_2 = '#bcd0e0';
 const OLIVE_1 = '#8a8456';
 const OLIVE_2 = '#c3bd8e';
 
+/** Viewer profile hero cover — the same chromatic plant-art family as moment
+ *  images (mint gradient + herb glyph), so identity branding stays single-
+ *  sourced with the feed artwork instead of forking a second illustration. */
+export const VIEWER_COVER = artwork(MINT_1, MINT_2, '\u{1F33F}');
+
 export const MOMENT_SEEDS: Moment[] = [
   {
     id: 'mo-1', author: '林晚', tone: '#2f7f8b', source: 'local', reason: 'circle',

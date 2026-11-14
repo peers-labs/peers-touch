@@ -15,7 +15,9 @@ use crate::proto::chat::{
 };
 use crate::store::MessagingRepository;
 
-use super::ClaimedItemConsumer;
+use super::{
+    mark_item_rejection, ClaimedItemConsumer, ConsumeError, ItemRejectionCode,
+};
 use prost::Message;
 use std::sync::Arc;
 
@@ -41,7 +43,11 @@ impl<R: MessagingRepository> PublicEventProcessor<R> {
         })
     }
 
-    fn process(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
+    fn process(
+        &self,
+        item: &DurableDeviceInboxItem,
+        consumer_epoch: u64,
+    ) -> Result<(), ConsumeError> {
         let now = (self.clock)();
         self.store.persist_claimed_item(
             &item.item_id,
@@ -59,26 +65,41 @@ impl<R: MessagingRepository> PublicEventProcessor<R> {
         {
             return Ok(());
         }
-        if DeviceInboxPayloadType::try_from(item.payload_type)
-            .map_err(|_| "messaging public-event queue payload type is invalid".to_string())?
-            != DeviceInboxPayloadType::ConversationEvent
+        if DeviceInboxPayloadType::try_from(item.payload_type).map_err(|_| {
+            ConsumeError::rejected(
+                ItemRejectionCode::PayloadInvalid,
+                "messaging public-event queue payload type is invalid",
+            )
+        })? != DeviceInboxPayloadType::ConversationEvent
         {
-            return Err(
-                "messaging public-event processor received wrong queue payload type".to_string(),
-            );
+            return Err(ConsumeError::rejected(
+                ItemRejectionCode::PayloadInvalid,
+                "messaging public-event processor received wrong queue payload type",
+            ));
         }
         let delivery =
-            verify_device_event_delivery(item, &self.endpoint.ptid, &self.endpoint.device_id)?;
-        if PreparedEndpointPayloadKind::try_from(delivery.payload_kind)
-            .map_err(|_| "messaging public-event payload kind is invalid".to_string())?
-            != PreparedEndpointPayloadKind::PublicEvent
+            verify_device_event_delivery(item, &self.endpoint.ptid, &self.endpoint.device_id)
+                .map_err(|error| {
+                    ConsumeError::rejected(ItemRejectionCode::IntegrityFailed, error)
+                })?;
+        if PreparedEndpointPayloadKind::try_from(delivery.payload_kind).map_err(|_| {
+            ConsumeError::rejected(
+                ItemRejectionCode::PayloadInvalid,
+                "messaging public-event payload kind is invalid",
+            )
+        })? != PreparedEndpointPayloadKind::PublicEvent
         {
-            return Err("messaging public-event processor received non-marker payload".to_string());
+            return Err(ConsumeError::rejected(
+                ItemRejectionCode::PayloadInvalid,
+                "messaging public-event processor received non-marker payload",
+            ));
         }
-        let event = delivery
-            .event
-            .as_ref()
-            .ok_or_else(|| "messaging public-event delivery has no event".to_string())?;
+        let event = delivery.event.as_ref().ok_or_else(|| {
+            ConsumeError::rejected(
+                ItemRejectionCode::PayloadInvalid,
+                "messaging public-event delivery has no event",
+            )
+        })?;
         let committed_at_unix_ms = event
             .committed_at
             .as_ref()
@@ -90,7 +111,7 @@ impl<R: MessagingRepository> PublicEventProcessor<R> {
             })
             .unwrap_or(now);
 
-        match event.payload.as_ref() {
+        let processed: Result<(), String> = match event.payload.as_ref() {
             Some(conversation_event::Payload::MessageCommitted(message)) => self
                 .process_message_committed(
                     item,
@@ -147,8 +168,14 @@ impl<R: MessagingRepository> PublicEventProcessor<R> {
             Some(conversation_event::Payload::MemberAuthorityCommitted(fact)) => {
                 self.process_member_authority(item, event, fact, &delivery, consumer_epoch, now)
             }
-            _ => Err("messaging public-event payload type is unsupported".to_string()),
-        }
+            _ => Err(mark_item_rejection(
+                ItemRejectionCode::PayloadInvalid,
+                "messaging public-event payload type is unsupported",
+            )),
+        };
+        // Downstream semantic/store failures stay retryable unless the store
+        // explicitly marked a deterministic projection rejection.
+        processed.map_err(ConsumeError::from)
     }
 
     fn process_message_committed(
@@ -577,7 +604,11 @@ impl<R: MessagingRepository> PublicEventProcessor<R> {
 }
 
 impl<R: MessagingRepository> ClaimedItemConsumer for PublicEventProcessor<R> {
-    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(
+        &self,
+        item: &DurableDeviceInboxItem,
+        consumer_epoch: u64,
+    ) -> Result<(), ConsumeError> {
         self.process(item, consumer_epoch)
     }
 }

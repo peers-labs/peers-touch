@@ -195,6 +195,7 @@ CREATE TABLE IF NOT EXISTS messaging_pending_messages (
     next_attempt_at_unix_ms INTEGER NOT NULL,
     last_error_code TEXT NOT NULL,
     created_at_unix_ms INTEGER NOT NULL,
+    mentions_json TEXT NOT NULL DEFAULT '',
     PRIMARY KEY(conversation_id, message_id)
 );
 CREATE INDEX IF NOT EXISTS idx_messaging_pending_messages_thread
@@ -318,6 +319,24 @@ CREATE TABLE IF NOT EXISTS messaging_consumption_markers (
     payload_sha256 BLOB NOT NULL CHECK(length(payload_sha256) = 32),
     consumed_at_unix_ms INTEGER NOT NULL
 );
+-- Local dead-letter ledger for inbox items that failed deterministic content
+-- validation. The raw payload stays in messaging_inbox_items and the lane
+-- cursor advances normally (normal ack), so a poison conversation cannot
+-- head-of-line-block every other conversation; the record keeps the reason
+-- and receipt for inspection or later reprocessing.
+CREATE TABLE IF NOT EXISTS messaging_rejected_items (
+    item_id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,
+    lane_sequence INTEGER NOT NULL,
+    consumer_epoch INTEGER NOT NULL,
+    payload_sha256 BLOB NOT NULL CHECK(length(payload_sha256) = 32),
+    reject_code TEXT NOT NULL,
+    reject_detail TEXT NOT NULL DEFAULT '',
+    receipt_id TEXT NOT NULL,
+    receipt_bytes BLOB NOT NULL,
+    rejected_at_unix_ms INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS messaging_lane_cursor (
     id INTEGER PRIMARY KEY CHECK(id = 1),
     lane_sequence INTEGER NOT NULL,
@@ -357,6 +376,7 @@ CREATE TABLE IF NOT EXISTS messaging_message_projections (
     hidden_for_actor INTEGER NOT NULL DEFAULT 0,
     moderated INTEGER NOT NULL DEFAULT 0,
     moderation_reason_code TEXT,
+    mentions_json TEXT NOT NULL DEFAULT '',
     PRIMARY KEY(conversation_id, event_id)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_messaging_projection_message
@@ -591,6 +611,22 @@ const ADDITIVE_COLUMN_MIGRATIONS: &[(&str, &str, &str)] = &[
         "required_device_count",
         "ALTER TABLE messaging_command_attempts \
          ADD COLUMN required_device_count INTEGER NOT NULL DEFAULT 0",
+    ),
+    (
+        // @mentions: compact JSON of the in-ciphertext mention set so retries
+        // re-encode the same private body. Empty string = no mentions.
+        "messaging_pending_messages",
+        "mentions_json",
+        "ALTER TABLE messaging_pending_messages \
+         ADD COLUMN mentions_json TEXT NOT NULL DEFAULT ''",
+    ),
+    (
+        // @mentions: denormalized mention set for the read/projection path so
+        // renderers and the local mention-notification gate need not re-decode.
+        "messaging_message_projections",
+        "mentions_json",
+        "ALTER TABLE messaging_message_projections \
+         ADD COLUMN mentions_json TEXT NOT NULL DEFAULT ''",
     ),
 ];
 

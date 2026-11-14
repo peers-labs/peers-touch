@@ -68,7 +68,9 @@ func newToolDispatchFixtureWithDB(t *testing.T, db *gorm.DB) toolDispatchFixture
 	); err != nil {
 		t.Fatalf("migrate tool dispatch models: %v", err)
 	}
-
+	// Provider control-plane schema and KEK env required by the runtime
+	// authority resolver seeded below.
+	ensureProviderAuthorityTestSchema(t, db)
 	now := time.Now().UTC()
 	dispatch := NewToolDispatchService()
 	dispatch.now = func() time.Time { return now }

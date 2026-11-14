@@ -54,6 +54,19 @@ CONTEXT_GATE_INHERITED_ENV_KEYS = (
     "TZ",
     "WINDIR",
 )
+# Destructive reset authority is parent-owned: a context Gate child never
+# inherits these descriptors, while the parent must re-project its own live
+# lease for reverse-order provisioner cleanup.
+MACHINE_LEASE_ENV_KEYS = (
+    "PT_MACHINE_LEASE_FD",
+    "PT_MACHINE_LEASE_ID",
+    "PT_MACHINE_LEASE_KIND",
+    "PT_MACHINE_LEASE_RESOURCE_ID",
+    "PT_MACHINE_LEASE_RESET_SCOPE",
+    "PT_MACHINE_LEASE_WORKSPACE_ID",
+    "PT_MACHINE_LEASE_SOURCE_BRANCH",
+    "PT_MACHINE_LEASE_SOURCE_HEAD",
+)
 DEVELOPMENT_WORK_ITEM_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
@@ -476,14 +489,7 @@ def run_environment(environment: dict[str, str]):
         "PT_ACCEPTANCE_RUNTIME_CELL",
         "PT_ACCEPTANCE_SSH_CONNECTIONS",
         AGGREGATE_SOURCE_ENV,
-        "PT_MACHINE_LEASE_FD",
-        "PT_MACHINE_LEASE_ID",
-        "PT_MACHINE_LEASE_KIND",
-        "PT_MACHINE_LEASE_RESOURCE_ID",
-        "PT_MACHINE_LEASE_RESET_SCOPE",
-        "PT_MACHINE_LEASE_WORKSPACE_ID",
-        "PT_MACHINE_LEASE_SOURCE_BRANCH",
-        "PT_MACHINE_LEASE_SOURCE_HEAD",
+        *MACHINE_LEASE_ENV_KEYS,
     )
     previous = {key: os.environ.get(key) for key in keys}
     for key in keys:
@@ -3080,6 +3086,7 @@ def main() -> int:
             runtime_cell_manifest_path = None
             runtime_secrets: tuple[str, ...] = ()
             authority_environment: dict[str, str] = {}
+            cleanup_authority_environment: dict[str, str] = {}
             output_text = ""
             exit_code: int | None = None
             owner_interrupted = False
@@ -3375,6 +3382,16 @@ def main() -> int:
                             repo_root=REPO_ROOT,
                         )
                     if gate.get("ephemeralCapabilities"):
+                        # The context Gate child must not receive destructive
+                        # reset descriptors (GateProcessLauncher rejects ambient
+                        # descriptor inheritance). Preserve the parent-held
+                        # lease separately so reverse-order provisioner cleanup
+                        # still satisfies the canonical reset authority check.
+                        cleanup_authority_environment = {
+                            key: gate_env[key]
+                            for key in MACHINE_LEASE_ENV_KEYS
+                            if key in gate_env
+                        }
                         gate_env = context_gate_subprocess_environment(
                             gate_run,
                             os.environ,
@@ -3713,7 +3730,14 @@ def main() -> int:
                     )
                 if provisioner is not None and resource_cleanup_allowed:
                     try:
-                        with run_environment(gate_run.subprocess_environment(gate_env)):
+                        cleanup_environment = gate_run.subprocess_environment(
+                            gate_env
+                        )
+                        # Re-project only the parent-held lease that the
+                        # context Gate child was deliberately denied; the live
+                        # FD and verify-held validation remain fail-closed.
+                        cleanup_environment.update(cleanup_authority_environment)
+                        with run_environment(cleanup_environment):
                             cleanup_completed_resources = execute_stage(
                                 execution, "environment-cleanup", provisioner.cleanup,
                                 phase="cleanup",

@@ -2,27 +2,38 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FederationCatalogEntry } from '../services/desktop_api';
 
 const mocks = vi.hoisted(() => ({
+  profileGet: vi.fn(),
   federationCatalogSearch: vi.fn(),
   federationListContexts: vi.fn(),
 }));
 
 vi.mock('../services/desktop_api', () => ({
   api: {
+    profileGet: mocks.profileGet,
     federationCatalogSearch: mocks.federationCatalogSearch,
     federationListContexts: mocks.federationListContexts,
   },
 }));
 
+const session = vi.hoisted(() => ({ sessionEpoch: 1 }));
+vi.mock('./session', () => ({ useSessionStore: { getState: () => session } }));
+
 import { resolveFederationStationName, useFederationStore } from './federation';
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
 
 describe('federation actor Station directory', () => {
   beforeEach(() => {
+    session.sessionEpoch++;
+    mocks.profileGet.mockReset();
     mocks.federationCatalogSearch.mockReset();
     mocks.federationListContexts.mockReset();
-    useFederationStore.setState({
-      federations: [],
-      actorStationEntries: {},
-    });
+    useFederationStore.getState().clearSession();
   });
 
   it('loads only the context projection exposed to ordinary clients', async () => {
@@ -142,5 +153,47 @@ describe('federation actor Station directory', () => {
         },
       })).toBe('');
     }
+  });
+
+  it('discards old profile and context responses across an account change', async () => {
+    const profile = deferred<unknown>();
+    const contexts = deferred<unknown>();
+    mocks.profileGet.mockReturnValue(profile.promise);
+    mocks.federationListContexts.mockReturnValue(contexts.promise);
+    const reads = Promise.all([
+      useFederationStore.getState().refreshSelf(),
+      useFederationStore.getState().refreshFederationContexts(),
+    ]);
+    session.sessionEpoch++;
+    useFederationStore.getState().clearSession();
+    profile.resolve({ ptid: 'old-actor' });
+    contexts.resolve({ contexts: [{ federationId: 'old-federation' }] });
+    await reads;
+    expect(useFederationStore.getState().self).toBeNull();
+    expect(useFederationStore.getState().federations).toEqual([]);
+  });
+
+  it('discards old failures after same-session teardown', async () => {
+    const read = deferred<unknown>();
+    mocks.federationListContexts.mockReturnValue(read.promise);
+    const pending = useFederationStore.getState().refreshFederationContexts();
+    useFederationStore.getState().clearSession();
+    read.reject(new Error('old session failure'));
+    await pending;
+    expect(useFederationStore.getState().lastError).toBeNull();
+  });
+
+  it('does not retain catalog identities from a replaced account', async () => {
+    const read = deferred<unknown>();
+    mocks.federationCatalogSearch.mockReturnValue(read.promise);
+    const pending = useFederationStore.getState().resolveActorStations([{
+      actorPtid: 'ptid:bob', federationId: 'old', username: 'bob',
+    }]);
+    session.sessionEpoch++;
+    read.resolve({ entries: [{
+      actorPtid: 'ptid:bob', homeStationPeerId: 'old-station', homeStationName: 'Old',
+    }] });
+    await pending;
+    expect(useFederationStore.getState().actorStationEntries).toEqual({});
   });
 });

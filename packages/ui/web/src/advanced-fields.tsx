@@ -8,6 +8,7 @@ import { Select, RadioGroup } from './selection';
 import { Alert } from './feedback';
 import { Icon } from './icon';
 import { sanitizeDocument } from './content';
+import { restoreNavigationFocus } from './focus';
 
 export interface SearchFieldProps extends Omit<TextFieldProps,'value'|'onChange'|'onEnter'> {
   query:string;onQueryChange:(value:string)=>void;onSearch:(value:string)=>void;label:string;
@@ -15,7 +16,7 @@ export interface SearchFieldProps extends Omit<TextFieldProps,'value'|'onChange'
 }
 export function SearchField({query,onQueryChange,onSearch,label,pending,scope,submitLabel='Search',...props}:SearchFieldProps) {
   return <div className="pt-query" role="search" aria-label={label}>
-    <Field><TextField {...props} value={query} aria-label={label} onChange={event=>onQueryChange(event.target.value)}
+    <Field><TextField appearance="search" {...props} value={query} aria-label={label} onChange={event=>onQueryChange(event.target.value)}
       onEnter={()=>{if(!props.disabled&&!pending)onSearch(query);}}
       leading={scope??props.leading} trailing={<Button actionId="search.submit" behavior="action" emphasis="quiet"
         availability={props.disabled?{kind:'disabled',reason:'Search unavailable'}:undefined}
@@ -28,7 +29,7 @@ export function Autocomplete({projection,onQueryChange,onSelect,label,placeholde
   const [open,setOpen]=useState(false),[active,setActive]=useState(-1),id=useId(),input=useRef<HTMLInputElement>(null);
   const visible=open&&projection.state==='ready',options=projection.items;
   useEffect(()=>setActive(-1),[projection.queryId]);
-  const choose=(index:number)=>{const option=options[index];if(!option||option.availability?.kind==='disabled')return;onSelect(option.value);setOpen(false);input.current?.focus();};
+  const choose=(index:number)=>{const option=options[index];if(!option||option.availability?.kind==='disabled')return;onSelect(option.value);setOpen(false);restoreNavigationFocus(input.current);};
   return <div {...props}><Field><TextField aria-label={label} placeholder={placeholder} clearable={clearable} onClear={()=>onQueryChange('')} ref={input} value={projection.query} role="combobox" aria-expanded={visible}
     aria-controls={`${id}-results`} aria-activedescendant={visible&&active>=0?`${id}-result-${active}`:undefined}
     onFocus={()=>setOpen(true)} onBlur={()=>setOpen(false)} onChange={event=>{setOpen(true);onQueryChange(event.target.value);}}
@@ -169,7 +170,13 @@ export function CommandPicker({commands,onSelect,label}:CommandPickerProps) {
 }
 export function SlashCommandMenu(props:CommandPickerProps){return <CommandPicker {...props}/>;}
 export function MentionPicker(props:CommandPickerProps){return <CommandPicker {...props}/>;}
-export function EmojiPicker({items,onSelect,label}: {items:readonly {id:string;emoji:string;name:string}[];onSelect:(id:string)=>void;label:string}) {
+export function EmojiPicker({items,onSelect,label,presentation='list'}: {items:readonly {id:string;emoji:string;name:string}[];onSelect:(id:string)=>void;label:string;presentation?:'list'|'palette'}) {
+  if (presentation === 'palette') return <div className="pt-emoji-picker" role="group" aria-label={label}>
+    <span className="pt-emoji-picker-label">{label}</span>
+    <div className="pt-emoji-picker-grid">{items.map(item => <Button key={item.id} actionId={`emoji.${item.id}`}
+      aria-label={item.name} emphasis="quiet" density="comfortable"
+      onActivate={() => onSelect(item.id)}><span aria-hidden="true">{item.emoji}</span></Button>)}</div>
+  </div>;
   return <CommandPicker label={label} commands={items.map(item=>({id:item.id,label:`${item.emoji} ${item.name}`}))} onSelect={onSelect}/>;
 }
 export interface RichTextEditorProps extends HTMLAttributes<HTMLDivElement> {value:string;onValueChange:(html:string)=>void;label:string;readOnly?:boolean;}
@@ -180,7 +187,7 @@ export function RichTextEditor({value,onValueChange,label,readOnly,...props}:Ric
     <ActionGroup label="Formatting">{(['bold','italic','insertUnorderedList'] as const).map(command=><Button key={command}
       actionId={`editor.${command}`} label={command==='insertUnorderedList'?'Bullet list':command} emphasis="quiet"
       availability={readOnly?{kind:'disabled',reason:'Read only'}:undefined}
-      onMouseDown={e=>e.preventDefault()} onActivate={()=>{editor.current?.focus();editor.current?.ownerDocument.execCommand(command);
+      onMouseDown={e=>e.preventDefault()} onActivate={()=>{if(!restoreNavigationFocus(editor.current))return;editor.current?.ownerDocument.execCommand(command);
         onValueChange(sanitizeDocument(editor.current?.innerHTML??''));}}/>)}</ActionGroup>
     <div ref={editor} role="textbox" aria-label={label} aria-multiline="true" aria-readonly={readOnly||undefined} contentEditable={!readOnly}
       suppressContentEditableWarning className="pt-rich-editor-content"

@@ -70,6 +70,25 @@ pub fn verify_direct_genesis_event<'a>(
             !snapshot.federation_id.trim().is_empty()
         }
     };
+    // Direct conversations have two accepted shapes:
+    //   * two-actor Direct — exactly two distinct members, owner first;
+    //   * self-direct (Saved Messages) — exactly one member who owns the
+    //     conversation and is also the local receiver, Local scope only.
+    // Both shapes require at least one active endpoint per member-side:
+    // self-direct on a multi-device actor lists every own endpoint.
+    let member_shape_valid = match snapshot.active_members.len() {
+        2 => {
+            snapshot.active_members[0].ptid == snapshot.owner_ptid
+                && snapshot.active_members[0].ptid.as_str()
+                    < snapshot.active_members[1].ptid.as_str()
+        }
+        1 => {
+            snapshot.active_members[0].ptid == snapshot.owner_ptid
+                && snapshot.active_members[0].ptid == local_ptid
+                && scope == crate::proto::chat::ConversationScopeKind::Local
+        }
+        _ => false,
+    };
     if local_ptid.trim().is_empty()
         || event.sequence != 1
         || !event.previous_hash.is_empty()
@@ -86,15 +105,14 @@ pub fn verify_direct_genesis_event<'a>(
         || snapshot.authority_epoch <= 0
         || snapshot.membership_epoch != event.membership_epoch
         || snapshot.mls_epoch != event.mls_epoch
-        || snapshot.active_members.len() != 2
-        || snapshot.active_endpoints.len() < 2
+        || !member_shape_valid
+        || snapshot.active_endpoints.is_empty()
         || snapshot.active_endpoint_routes.len() != snapshot.active_endpoints.len()
         || event.delivery_commitments.len() != snapshot.active_endpoints.len()
     {
         return Err("messaging Direct genesis binding is invalid".to_string());
     }
-    if snapshot.active_members[0].ptid != snapshot.owner_ptid
-        || !snapshot
+    if !snapshot
             .active_members
             .windows(2)
             .all(|members| members[0].ptid.as_str() < members[1].ptid.as_str())
@@ -515,6 +533,94 @@ mod tests {
             verify_direct_genesis_event(&wrong_route, "ptid:bob").unwrap_err(),
             "messaging Direct genesis endpoint routes are invalid"
         );
+    }
+
+    fn self_direct_genesis_event(scope: crate::proto::chat::ConversationScopeKind) -> ConversationEvent {
+        let alice = CryptoEndpoint {
+            ptid: "ptid:alice".to_string(),
+            device_id: "alice-device".to_string(),
+        };
+        let members = vec![ConversationAuthorityMember {
+            ptid: alice.ptid.clone(),
+            role: "member".to_string(),
+            home_station_peer_id: "station-local".to_string(),
+            ..Default::default()
+        }];
+        let mut event = ConversationEvent {
+            event_id: "created:self-direct-1".to_string(),
+            conversation_id: "direct-self-1".to_string(),
+            sequence: 1,
+            command_id: "create:self-direct-1".to_string(),
+            actor: Some(alice.clone()),
+            previous_hash: Vec::new(),
+            event_hash: Vec::new(),
+            committed_at: Some(prost_types::Timestamp {
+                seconds: 1,
+                nanos: 0,
+            }),
+            delivery_commitments: vec![vec![1; 32]],
+            membership_epoch: 1,
+            mls_epoch: 0,
+            authority_station_peer_id: "station-local".to_string(),
+            payload: Some(conversation_event::Payload::ConversationCreated(
+                ConversationCreatedFact {
+                    kind: ConversationKind::Direct as i32,
+                    name: String::new(),
+                    owner_ptid: alice.ptid.clone(),
+                    members: members.clone(),
+                    post_state: Some(ConversationAuthoritySnapshot {
+                        kind: ConversationKind::Direct as i32,
+                        name: String::new(),
+                        owner_ptid: alice.ptid.clone(),
+                        active_members: members,
+                        active_endpoints: vec![alice.clone()],
+                        membership_epoch: 1,
+                        mls_epoch: 0,
+                        active_endpoint_routes: vec![ConversationAuthorityEndpoint {
+                            endpoint: Some(alice),
+                            home_station_peer_id: "station-local".to_string(),
+                        }],
+                        federation_id: String::new(),
+                        authority_epoch: 1,
+                        scope_kind: scope as i32,
+                        ..Default::default()
+                    }),
+                },
+            )),
+        };
+        event.event_hash = Sha256::digest(event.encode_to_vec()).to_vec();
+        event
+    }
+
+    #[test]
+    fn self_direct_genesis_verifies_singleton_member_shape() {
+        let event =
+            self_direct_genesis_event(crate::proto::chat::ConversationScopeKind::Local);
+        let created = verify_direct_genesis_event(&event, "ptid:alice").unwrap();
+        assert_eq!(created.owner_ptid, "ptid:alice");
+
+        // A different receiver must not accept the self-direct genesis.
+        assert_eq!(
+            verify_direct_genesis_event(&event, "ptid:bob").unwrap_err(),
+            "messaging Direct genesis binding is invalid"
+        );
+
+        // Self-direct is Local scope only; Federation scope must fail closed.
+        let federated =
+            self_direct_genesis_event(crate::proto::chat::ConversationScopeKind::Federation);
+        assert!(verify_direct_genesis_event(&federated, "ptid:alice").is_err());
+
+        // A singleton whose sole member is not the owner is invalid.
+        let mut wrong_owner = event.clone();
+        let created = match wrong_owner.payload.as_mut().unwrap() {
+            conversation_event::Payload::ConversationCreated(created) => created,
+            _ => unreachable!(),
+        };
+        created.owner_ptid = "ptid:bob".to_string();
+        created.post_state.as_mut().unwrap().owner_ptid = "ptid:bob".to_string();
+        wrong_owner.event_hash.clear();
+        wrong_owner.event_hash = Sha256::digest(wrong_owner.encode_to_vec()).to_vec();
+        assert!(verify_direct_genesis_event(&wrong_owner, "ptid:alice").is_err());
     }
 
     #[test]

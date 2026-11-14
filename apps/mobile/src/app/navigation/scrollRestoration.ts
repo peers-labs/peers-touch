@@ -6,6 +6,8 @@
  * allowing the shell to manage restoration during tab switches.
  */
 
+import { isEditableFocusTarget } from '@peers-touch/ui';
+
 interface ScrollPosition {
   scrollTop: number;
   scrollLeft: number;
@@ -23,10 +25,27 @@ const MAX_SCROLL_AGE_MS = 30 * 60 * 1000; // 30 minutes
 
 export function resolveScrollOwner(element: Element | null): Element | null {
   if (!element) return null;
+  element = resolveActiveNavigationContainer(element);
   return element.querySelector('[data-message-viewport]')
     ?? element.querySelector('[data-search-viewport]')
+    ?? element.querySelector('.find-people-results')
     ?? element.querySelector('.page-container')
     ?? element;
+}
+
+export function resolveActiveNavigationContainer(element: Element): Element {
+  // Activity uses display:none while hidden. Multiple retained frames may have
+  // identical control IDs, so restoration must choose the visible leaf frame.
+  const frames = Array.from(element.querySelectorAll?.<HTMLElement>('[data-navigation-frame]') ?? []);
+  return frames.filter(frame => {
+    if (frame.dataset.navigationActive !== 'true') return false;
+    let ancestor: HTMLElement | null = frame;
+    while (ancestor && ancestor !== element) {
+      if (ancestor.hidden) return false;
+      ancestor = ancestor.parentElement;
+    }
+    return true;
+  }).at(-1) ?? element;
 }
 
 function remember<T>(cache: Map<string, T>, key: string, value: T): void {
@@ -127,11 +146,15 @@ export function clearAllScrollPositions(): void {
  * Save the currently focused element's identity for a route.
  * Focus restoration is best-effort via a data-focus-id attribute.
  */
-export function saveFocusTarget(routeId: string): string | null {
+export function saveFocusTarget(routeId: string, container?: Element | null): string | null {
   const active = document.activeElement;
-  if (!active || active === document.body) return null;
+  if (!active || active === document.body || (container && !container.contains(active))) return null;
 
   const focusId = active.getAttribute('data-focus-id');
+  if (isEditableFocusTarget(active)) {
+    focusTargets.delete(routeId);
+    return null;
+  }
   if (focusId) {
     remember(focusTargets, routeId, focusId);
   }
@@ -143,12 +166,13 @@ export function saveFocusTarget(routeId: string): string | null {
  */
 export function restoreFocusTarget(routeId: string, container: Element | null): boolean {
   if (!container) return false;
+  container = resolveActiveNavigationContainer(container);
 
   const focusId = focusTargets.get(routeId);
   if (!focusId) return false;
 
   const target = container.querySelector(`[data-focus-id="${CSS.escape(focusId)}"]`);
-  if (target instanceof HTMLElement) {
+  if (target instanceof HTMLElement && !isEditableFocusTarget(target)) {
     target.focus({ preventScroll: true });
     return true;
   }

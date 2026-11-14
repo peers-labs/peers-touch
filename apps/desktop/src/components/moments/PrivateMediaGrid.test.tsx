@@ -6,6 +6,10 @@ import { expect, it, vi } from 'vitest';
 
 import { PrivateMediaGrid } from './PrivateMediaGrid';
 import { normalizePrivateMomentProjection } from '../../services/privateMomentsNative';
+import {
+  registerPrivateMediaLocalPreviews,
+  releasePrivateMediaLocalPreviews,
+} from '../../services/privateMediaLocalPreview';
 
 const render = (children: ReactNode) => renderToStaticMarkup(<UIProvider>{children}</UIProvider>);
 
@@ -60,6 +64,7 @@ it('renders remote private image from home station', () => {
   const html = render(
     <PrivateMediaGrid
       media={projection.content.media}
+      postId="test-post"
       onOpen={vi.fn()}
     />,
   );
@@ -98,6 +103,7 @@ it('renders remote private video retry state without direct remote URL', () => {
   const html = render(
     <PrivateMediaGrid
       media={projection.content.media}
+      postId="test-post"
       onOpen={vi.fn()}
     />,
   );
@@ -110,6 +116,45 @@ it('renders remote private video retry state without direct remote URL', () => {
   expect(html).not.toContain('station-source');
   expect(html).not.toContain('http://');
   expect(html).not.toContain('https://');
+});
+
+it('never embeds the publisher local file in server markup during the grant gap', () => {
+  // Session-scoped local previews are a client-render-only paint. The SSR
+  // snapshot must stay empty so picked file URLs never leak into static HTML.
+  registerPrivateMediaLocalPreviews('post-pending', [
+    { src: 'asset://localhost/picked.jpg', isVideo: false },
+  ]);
+  const projection = normalizePrivateMomentProjection({
+    post_id: 'post-pending',
+    content_id: 'post-pending',
+    generation: '11',
+    author_ptid: 'ptid:author',
+    audience_kind: 'SELF',
+    state: 'CONTENT_READY',
+    content: {
+      kind: 'IMAGE',
+      text: 'own pending post',
+      media: [{
+        object_id: 'object-pending',
+        state: 'MEDIA_GRANT_PENDING',
+        access_path: 'HOME_STATION_LOCAL_OBJECT',
+        retryable: false,
+      }],
+    },
+  });
+  if (projection.content?.kind !== 'IMAGE') throw new Error('expected IMAGE content');
+  const html = render(
+    <PrivateMediaGrid
+      media={projection.content.media}
+      postId="post-pending"
+      onOpen={vi.fn()}
+    />,
+  );
+
+  expect(html).toContain('data-private-media-state="MEDIA_GRANT_PENDING"');
+  expect(html).not.toContain('asset://localhost/picked.jpg');
+  expect(html).not.toContain('data-private-media-local="true"');
+  releasePrivateMediaLocalPreviews('post-pending');
 });
 
 it('localizes the remote private media retry state', () => {
@@ -130,10 +175,11 @@ it('renders available video through the shared player and removes revoked media'
     accessPath: 'HOME_STATION_REMOTE_PEER_STREAM' as const, retryable: false,
     mimeType: 'video/mp4', renderUrl: 'private-media://localhost/window-grant',
   };
-  const ready = render(<PrivateMediaGrid media={[item]} onOpen={vi.fn()} />);
+  const ready = render(<PrivateMediaGrid postId="private-video-post" media={[item]} onOpen={vi.fn()} />);
   expect(ready).toContain('class="pt-media-player');
   expect(ready).toContain('src="private-media://localhost/window-grant"');
   const revoked = render(<PrivateMediaGrid
+    postId="private-video-post"
     media={[{ ...item, state: 'MEDIA_ACCESS_DENIED', renderUrl: undefined }]} onOpen={vi.fn()} />);
   expect(revoked).toContain('data-private-media-state="MEDIA_ACCESS_DENIED"');
   expect(revoked).not.toContain('<video');

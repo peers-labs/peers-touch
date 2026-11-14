@@ -13,12 +13,13 @@ import { Flexbox } from 'react-layout-kit';
 import {
   LayoutDashboard, Users, Key, Server,
   HardDrive, Shield, Monitor, FileText, LogOut,
-  Settings, UserCircle, Network, FolderOpen, Ticket, RadioTower,
+  Settings, UserCircle, Network, FolderOpen, Ticket, RadioTower, Brain,
 } from 'lucide-react';
 import { useHashRouter } from '../hooks/useHashRouter';
 import { useAuthStore } from '../store/auth';
 import { PAGES, type Page } from '../utils/constants';
 import PageRouter from './PageRouter';
+import { t } from '../i18n';
 
 const { Text } = Typography;
 
@@ -35,6 +36,8 @@ interface NavItem {
  */
 const NAV_ITEMS: NavItem[] = [
   { key: PAGES.OVERVIEW,    icon: <LayoutDashboard size={20} />, label: 'Overview' },
+  { key: PAGES.AI,          icon: <Brain size={20} />,           label: t('ai.title') },
+  { key: PAGES.FEDERATION,  icon: <Network size={20} />,         label: t('federation.title') },
   { key: PAGES.TRANSPORT,   icon: <Network size={20} />,         label: 'Transport' },
   { key: PAGES.RELAY_ATTACHMENTS, icon: <RadioTower size={20} />, label: 'Relays' },
   { key: PAGES.ACTORS,      icon: <Users size={20} />,           label: 'Actors' },
@@ -76,6 +79,7 @@ export default function DashboardLayout() {
       {/* ── Sidebar ── */}
       <Flexbox
         gap={4}
+        className="dashboard-sidebar"
         style={{
           width: 220,
           minWidth: 220,
@@ -122,10 +126,16 @@ export default function DashboardLayout() {
                 mouseEnterDelay={0.5}
               >
                 <Flexbox
+                  role="button"
+                  tabIndex={0}
+                  aria-current={isActive ? 'page' : undefined}
                   horizontal
                   align="center"
                   gap={10}
                   onClick={() => navigateTo(item.key)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); navigateTo(item.key); }
+                  }}
                   style={{
                     padding: '8px 12px',
                     borderRadius: token.borderRadius,
@@ -138,7 +148,7 @@ export default function DashboardLayout() {
                   }}
                 >
                   {item.icon}
-                  <span>{item.label}</span>
+                  <span className="dashboard-nav-label">{item.label}</span>
                 </Flexbox>
               </Tooltip>
             );
@@ -182,7 +192,7 @@ export default function DashboardLayout() {
       </Flexbox>
 
       {/* ── Content area ── */}
-      <Flexbox style={{ flex: 1, overflow: 'auto', background: token.colorBgLayout }}>
+      <Flexbox style={{ flex: 1, minWidth: 0, overflow: 'auto', background: token.colorBgLayout }}>
         <PageRouter page={page} />
       </Flexbox>
     </Flexbox>

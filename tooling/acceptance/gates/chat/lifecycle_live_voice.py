@@ -3,16 +3,16 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 import json
 import time
 from typing import Any
 
-from tooling.acceptance.core import AcceptanceGate, DriverError, GateError
+from tooling.acceptance.core import AcceptanceGate, GateError
 from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
 from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.gates.chat.native_support import (
     async_harness,
+    media_harness,
     selected_native_runtime,
     wait_until,
 )
@@ -103,40 +103,6 @@ def _has_live_track(snapshot: object, kind: str, side: str) -> bool:
         and track.get("readyState") == "live"
         for track in tracks
     )
-
-
-def _media_harness(
-    client: TauriSession,
-    runtime_binding: NativeDesktopRuntimeBinding,
-    method: str,
-    payload: dict[str, Any],
-    *,
-    timeout: float = 45.0,
-) -> Any:
-    if client.process_id is None:
-        raise GateError(f"{method} has no owning Native process")
-
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(
-            async_harness,
-            client,
-            method,
-            payload,
-            timeout,
-        )
-        while True:
-            try:
-                return future.result(timeout=0.1)
-            except FutureTimeoutError:
-                try:
-                    runtime_binding.native_adapter.accept_media_capture_permission_to_process(
-                        client.process_id
-                    )
-                except DriverError as permission_error:
-                    try:
-                        return future.result(timeout=2)
-                    except FutureTimeoutError:
-                        raise permission_error
 
 
 def _call_surface(client: TauriSession) -> dict[str, Any] | None:
@@ -274,7 +240,7 @@ class LifecycleLiveVoiceGate(NativeTwoClientGate):
         alice_ptid = self.ptids["alice"]
         bob_ptid = self.ptids["bob"]
 
-        _media_harness(alice, self.runtime_binding, "callStart", {
+        media_harness(alice, self.runtime_binding, "callStart", {
             "peerPtid": bob_ptid,
             "mediaKind": "audio",
         })
@@ -293,7 +259,7 @@ class LifecycleLiveVoiceGate(NativeTwoClientGate):
             detail=_detail(incoming),
         )
 
-        _media_harness(
+        media_harness(
             bob,
             self.runtime_binding,
             "callAccept",
@@ -365,7 +331,7 @@ class LifecycleLiveVoiceGate(NativeTwoClientGate):
         bob_ptid = self.ptids["bob"]
         alice_ptid = self.ptids["alice"]
 
-        _media_harness(alice, self.runtime_binding, "callStart", {
+        media_harness(alice, self.runtime_binding, "callStart", {
             "peerPtid": bob_ptid,
             "mediaKind": "audio",
         })
@@ -387,7 +353,7 @@ class LifecycleLiveVoiceGate(NativeTwoClientGate):
         alice = self.clients["alice"]
         bob_ptid = self.ptids["bob"]
 
-        _media_harness(alice, self.runtime_binding, "callStart", {
+        media_harness(alice, self.runtime_binding, "callStart", {
             "peerPtid": bob_ptid,
             "mediaKind": "audio",
         })
@@ -409,7 +375,7 @@ class LifecycleLiveVoiceGate(NativeTwoClientGate):
         alice_ptid = self.ptids["alice"]
         bob_ptid = self.ptids["bob"]
 
-        _media_harness(alice, self.runtime_binding, "callStart", {
+        media_harness(alice, self.runtime_binding, "callStart", {
             "peerPtid": bob_ptid,
             "mediaKind": "video",
         })
@@ -422,7 +388,7 @@ class LifecycleLiveVoiceGate(NativeTwoClientGate):
         )
 
         _wait_call_state(bob, alice_ptid, "incoming", timeout=30)
-        _media_harness(
+        media_harness(
             bob,
             self.runtime_binding,
             "callAccept",
@@ -676,13 +642,13 @@ class LifecycleLiveVoiceGate(NativeTwoClientGate):
         alice_ptid = self.ptids["alice"]
         bob_ptid = self.ptids["bob"]
 
-        _media_harness(alice, self.runtime_binding, "callStart", {
+        media_harness(alice, self.runtime_binding, "callStart", {
             "peerPtid": bob_ptid,
             "mediaKind": "audio",
         })
         _wait_call_state(alice, bob_ptid, "outgoing", timeout=15)
         _wait_call_state(bob, alice_ptid, "incoming", timeout=15)
-        _media_harness(
+        media_harness(
             bob,
             self.runtime_binding,
             "callAccept",

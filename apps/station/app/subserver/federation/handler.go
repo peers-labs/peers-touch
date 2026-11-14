@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/application"
-	"github.com/peers-labs/peers-touch/station/app/subserver/federation/domain"
 	pb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
@@ -25,36 +24,22 @@ var (
 
 type ListFederationsRequest struct{}
 
-func (s *subServer) requireStationGovernance(
+func (s *subServer) governanceActor(
 	ctx context.Context,
-) (*coreauth.Subject, error) {
-	subject := coreauth.GetSubject(ctx)
-	if subject == nil {
-		return nil, server.Unauthorized("authentication required")
-	}
+) (string, error) {
 	if s.stationRoleRepo == nil {
-		return nil, server.InternalError(
+		return "", server.InternalError(
 			"Station governance authorization is unavailable",
 		)
 	}
-	allowed, err := s.stationRoleRepo.HasAnyRole(
-		ctx,
-		subject.ID,
-		domain.StationRoleOwner,
-		domain.StationRoleFederationAdmin,
-	)
+	actorPTID, err := s.stationRoleRepo.InitialOwnerPTID(ctx)
 	if err != nil {
-		return nil, server.InternalErrorWithCause(
-			"authorize Station Federation governance",
+		return "", server.InternalErrorWithCause(
+			"resolve Station Federation governance signer",
 			err,
 		)
 	}
-	if !allowed {
-		return nil, server.Forbidden(
-			"Station owner or Federation administrator role required",
-		)
-	}
-	return subject, nil
+	return actorPTID, nil
 }
 
 // ensureDefaultFederation materializes the Station's local social domain on
@@ -102,12 +87,11 @@ func (s *subServer) handleListFederations(ctx context.Context, _ *ListFederation
 	return s.projectionSvc.ListFederations(ctx, stationPeerID, actorPTID)
 }
 
-func (s *subServer) handleCreateFederation(ctx context.Context, req *pb.CreateFederationRequest) (*pb.CreateFederationResponse, error) {
-	subject, err := s.requireStationGovernance(ctx)
+func (s *subServer) CreateFederation(ctx context.Context, req *pb.CreateFederationRequest) (*pb.CreateFederationResponse, error) {
+	actorPTID, err := s.governanceActor(ctx)
 	if err != nil {
 		return nil, err
 	}
-	actorPTID := subject.ID
 	stationPeerID := localStationPeerID()
 	if stationPeerID == "" {
 		return nil, server.InternalError("local Station peer identity unavailable")
@@ -130,7 +114,7 @@ func (s *subServer) handleCreateFederation(ctx context.Context, req *pb.CreateFe
 		Description:          req.Description,
 		PolicyType:           policyType,
 		ActorPTID:            actorPTID,
-		ActorFederatedHandle: subject.ID,
+		ActorFederatedHandle: actorPTID,
 		StationPeerID:        stationPeerID,
 		StationName:          node.GetService().Name(),
 		StationURL:           localStationURL(),
@@ -162,8 +146,8 @@ func (s *subServer) handleListMemberStations(ctx context.Context, req *pb.ListMe
 	return s.projectionSvc.ListMemberStations(ctx, req.FederationId)
 }
 
-func (s *subServer) handleJoinFederation(ctx context.Context, req *pb.JoinFederationRequest) (*pb.JoinFederationResponse, error) {
-	subject, err := s.requireStationGovernance(ctx)
+func (s *subServer) JoinFederation(ctx context.Context, req *pb.JoinFederationRequest) (*pb.JoinFederationResponse, error) {
+	actorPTID, err := s.governanceActor(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +155,6 @@ func (s *subServer) handleJoinFederation(ctx context.Context, req *pb.JoinFedera
 		return nil, errors.New("federation_id is required")
 	}
 
-	actorPTID := subject.ID
 	stationPeerID := localStationPeerID()
 	if stationPeerID == "" {
 		return nil, server.InternalError("local Station peer identity unavailable")
@@ -274,8 +257,8 @@ func (s *subServer) handleJoinFederation(ctx context.Context, req *pb.JoinFedera
 	}, nil
 }
 
-func (s *subServer) handleLeaveFederation(ctx context.Context, req *pb.LeaveFederationRequest) (*pb.LeaveFederationResponse, error) {
-	subject, err := s.requireStationGovernance(ctx)
+func (s *subServer) LeaveFederation(ctx context.Context, req *pb.LeaveFederationRequest) (*pb.LeaveFederationResponse, error) {
+	actorPTID, err := s.governanceActor(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -283,7 +266,6 @@ func (s *subServer) handleLeaveFederation(ctx context.Context, req *pb.LeaveFede
 		return nil, errors.New("federation_id is required")
 	}
 
-	actorPTID := subject.ID
 	stationPeerID := localStationPeerID()
 	if stationPeerID == "" {
 		return nil, server.InternalError("local Station peer identity unavailable")
@@ -380,8 +362,8 @@ func (s *subServer) handleLeaveFederation(ctx context.Context, req *pb.LeaveFede
 	return &pb.LeaveFederationResponse{Success: true}, nil
 }
 
-func (s *subServer) handleDeleteFederation(ctx context.Context, req *pb.DeleteFederationRequest) (*pb.DeleteFederationResponse, error) {
-	subject, err := s.requireStationGovernance(ctx)
+func (s *subServer) DeleteFederation(ctx context.Context, req *pb.DeleteFederationRequest) (*pb.DeleteFederationResponse, error) {
+	actorPTID, err := s.governanceActor(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -389,7 +371,6 @@ func (s *subServer) handleDeleteFederation(ctx context.Context, req *pb.DeleteFe
 		return nil, errors.New("federation_id is required")
 	}
 
-	actorPTID := subject.ID
 	stationPeerID := localStationPeerID()
 	if stationPeerID == "" {
 		return nil, server.InternalError("local Station peer identity unavailable")
