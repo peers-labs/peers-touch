@@ -283,6 +283,14 @@ export interface DesktopNativeHostEventInput {
   reason?: string;
 }
 
+export interface DesktopWakeAckInput {
+  reason: string;
+}
+
+export interface DesktopWakeAckResult {
+  acknowledged: boolean;
+}
+
 export interface DesktopHealth {
   readonly status: 'ok';
   readonly clientForm: 'desktop';
@@ -8836,6 +8844,15 @@ export const api = {
   desktopNativeHostEventEmit: (input: DesktopNativeHostEventInput) =>
     invokeRustDataFromStatus<DesktopNativeHostEventInput, { emitted: boolean; kind: string }>(
       'desktop_native_event_emit',
+      input,
+    ),
+
+  // Renderer liveness ack for the native resume watchdog. A missing ack after
+  // a system resume tells the native side the WebView is unresponsive and must
+  // be reloaded to recover from a blank compositing surface.
+  desktopWakeAck: (input: DesktopWakeAckInput) =>
+    invokeRustDataFromStatus<DesktopWakeAckInput, DesktopWakeAckResult>(
+      'desktop_wake_ack',
       input,
     ),
 

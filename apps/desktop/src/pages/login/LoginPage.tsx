@@ -55,6 +55,10 @@ interface Props {
   onUnlockWithPin: (accountId: string, pin: string) => Promise<void>;
   restoredUser?: SessionUser | null;
   knownAccounts?: SessionUser[];
+  /** When set, the window was parked on the PIN gate by an idle/lock event. */
+  lockedAccountId?: string | null;
+  /** Called once the locked account has been routed to PIN entry. */
+  onLockConsumed?: () => void;
   embedded?: boolean;
 }
 
@@ -80,6 +84,8 @@ export function LoginPage({
   onUnlockWithPin,
   restoredUser,
   knownAccounts = [],
+  lockedAccountId = null,
+  onLockConsumed,
   embedded,
 }: Props) {
   const { t } = useTranslation('auth');
@@ -235,6 +241,21 @@ export function LoginPage({
       if (!authenticated) setLoginState('logged_out');
     }
   }, [loginState]);
+
+  // Idle/lock edge: open the PIN entry directly for the locked account
+  // instead of making the user pick it from the account list again.
+  useEffect(() => {
+    if (!lockedAccountId) return;
+    const lockedAccount = knownAccounts.find(
+      account => account.accountId === lockedAccountId && account.hasPin,
+    );
+    if (lockedAccount) {
+      setSelectedAccount(lockedAccount);
+      setPinError('');
+      setLoginState('pin_entry');
+    }
+    onLockConsumed?.();
+  }, [lockedAccountId, knownAccounts, onLockConsumed]);
 
   // ── Helpers ──
 

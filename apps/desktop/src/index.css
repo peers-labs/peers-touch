@@ -14,6 +14,16 @@ body {
   user-select: none;
 }
 
+/*
+ * Wake repaint nudge: applied for one frame by kernel/wakeRecovery after a
+ * system resume. Promoting the body to its own compositing layer forces
+ * WKWebView to rebuild the backing store, which recovers a blank surface left
+ * by a sleep-killed GPU/compositing process without reloading the page.
+ */
+body.pt-wake-repaint {
+  transform: translateZ(0);
+}
+
 input, textarea, [contenteditable="true"] {
   -webkit-user-select: auto;
   user-select: auto;

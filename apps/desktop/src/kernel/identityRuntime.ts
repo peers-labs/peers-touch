@@ -373,6 +373,9 @@ class IdentityRuntime {
 
   private restoredUser: SessionUser | null = null;
 
+  /** Account parked on the PIN gate by a system lock/sleep event, if any. */
+  private lockedAccountId: string | null = null;
+
   private knownAccounts: SessionUser[] = [];
 
   private dataReady = false;
@@ -797,6 +800,50 @@ class IdentityRuntime {
     await this.loadAuthGate('revoked', false);
   };
 
+  /**
+   * Park an authenticated window on the PIN gate after a system lock/sleep
+   * event. The native side has already purged the raw session token for PIN
+   * accounts, so the only way back in is `unlockWithPin`. Accounts without a
+   * PIN are left untouched (their restore edge enters the shell directly).
+   */
+  lockForIdle = async (input: {
+    accountId: string | null;
+    pinRequired: boolean;
+    reason: string;
+  }): Promise<void> => {
+    if (!input.pinRequired || !input.accountId) {
+      log.info('identity', 'idle lock skipped: no PIN on active account', { reason: input.reason });
+      return;
+    }
+    const { authenticated, currentUser } = useSessionStore.getState();
+    if (!authenticated || !currentUser) {
+      // Already on an auth/boot surface; nothing to lock.
+      return;
+    }
+    log.info('identity', 'locking authenticated session after system idle', {
+      reason: input.reason,
+      actorPtid: currentUser.actorPtid,
+    });
+    this.lockedAccountId = input.accountId;
+    // Resetting the mirror flips lifecycle.authenticated to false, which tears
+    // down session-scoped runtimes via useAppRuntime's reactive effect.
+    useSessionStore.getState().reset();
+    this.restoredUser = null;
+    try {
+      this.knownAccounts = await loadKnownAccountUsers();
+    } catch (error) {
+      log.warn('identity', 'lock: known accounts load failed', { error: String(error) });
+      this.knownAccounts = [];
+    }
+    this.dataReady = true;
+    this.dispatch({ type: 'PIN_REQUIRED', accountId: input.accountId });
+  };
+
+  /** Consumed by the login card once it routes the locked account to PIN entry. */
+  clearLockMarker = (): void => {
+    this.lockedAccountId = null;
+  };
+
   logout = async (): Promise<void> => {
     if (this.oauthAcknowledgementRetryTimer) {
       clearTimeout(this.oauthAcknowledgementRetryTimer);
@@ -890,6 +937,7 @@ class IdentityRuntime {
     freshPolicy: FreshCompletionPolicy = 'network-sync',
   ): Promise<void> => {
     markRendererAuthenticated();
+    this.lockedAccountId = null;
     if (edge.kind !== 'applet_launch') {
       restoreLastActivePage(edge.kind === 'restored_session' && this.initialBootReason === 'renderer_reload');
     }
@@ -1059,6 +1107,7 @@ class IdentityRuntime {
     clearWarmResume();
     clearRendererAuthenticated();
     this.restoredUser = null;
+    this.lockedAccountId = null;
     this.dispatch({ type: 'ACCOUNT_GATE_READY', reason });
     if (runLogoutPipeline) {
       globalContext.runPipeline('session_logout').catch(() => {});
@@ -1108,12 +1157,15 @@ class IdentityRuntime {
       restoredUser: this.restoredUser,
       knownAccounts: this.knownAccounts,
       dataReady: this.dataReady,
+      lockedAccountId: this.lockedAccountId,
       completeLogin: this.completeCurrentSession,
       loginWithPassword: this.loginWithPassword,
       freshPasswordAuthenticated: this.freshPasswordAuthenticated,
       loginWithOAuthBridge: this.loginWithOAuthBridge,
       switchAccount: this.switchAccount,
       unlockWithPin: this.unlockWithPin,
+      lockForIdle: this.lockForIdle,
+      clearLockMarker: this.clearLockMarker,
       refreshCurrentProfile: this.refreshCurrentProfile,
       beginPinRecovery: this.beginPinRecovery,
       cancelPinRecovery: this.cancelPinRecovery,

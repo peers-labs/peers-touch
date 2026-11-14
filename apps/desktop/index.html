@@ -5,18 +5,35 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Peers Touch Desktop</title>
     <style id="pt-boot-style">
-      /* North-star boot: a silent neutral paper canvas. No splash chrome,
-         spinner, or wordmark — the first visible surface is the app's own
-         auth card. Only a failure card is painted if the bundle cannot start. */
+      /* North-star boot: a neutral paper canvas with a quiet wordmark and
+         loading ring so a stalled wake/boot reads as "loading" instead of a
+         dead white window. The failure card replaces it only if the bundle
+         cannot start. Mirrors the .ds-boot grammar in northstar.css. */
       #pt-boot-fallback {
         position: fixed; inset: 0; z-index: 99999;
         display: flex; flex-direction: column;
         align-items: center; justify-content: center;
+        gap: 16px;
         background: #f4f5f4;
         transition: opacity 0.4s ease;
+        font-family: Manrope, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', 'PingFang SC', sans-serif;
       }
       #pt-boot-fallback[data-hidden] {
         opacity: 0; pointer-events: none;
+      }
+      #pt-boot-wordmark {
+        font-size: 20px; font-weight: 650; letter-spacing: -0.01em;
+        color: #171a1c;
+      }
+      #pt-boot-ring {
+        width: 26px; height: 26px; border-radius: 50%;
+        border: 3px solid rgba(22,26,24,0.12);
+        border-top-color: #2f6a50;
+        animation: pt-boot-spin 0.8s linear infinite;
+      }
+      @keyframes pt-boot-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) {
+        #pt-boot-ring { animation-duration: 1.6s; }
       }
       #pt-boot-error {
         display: none; max-width: 420px; text-align: center;
@@ -47,8 +64,12 @@
   <body>
     <div id="root"></div>
 
-    <!-- Boot Fallback: silent paper surface until React mounts; error-only if JS fails -->
+    <!-- Boot Fallback: visible loading surface until React mounts; error card if JS fails -->
     <div id="pt-boot-fallback">
+      <div id="pt-boot-loading">
+        <span id="pt-boot-wordmark">Peers</span>
+        <span id="pt-boot-ring" role="status" aria-label="Loading"></span>
+      </div>
       <div id="pt-boot-error">
         <div style="font-size:36px">⚠️</div>
         <h3>Failed to start</h3>
@@ -142,8 +163,10 @@
         window.__PT_BOOT_ERROR__ = showBootError;
         function showBootError(detail) {
           logBoot('showBootError: ' + detail);
+          var loading = document.getElementById('pt-boot-loading');
           var errorBox = document.getElementById('pt-boot-error');
           var diagPre = document.getElementById('pt-boot-diag');
+          if (loading) loading.style.display = 'none';
           if (errorBox) errorBox.style.display = 'block';
           if (diagPre) diagPre.textContent = bootLog.join('\n') + '\n\n' + (detail || '');
         }

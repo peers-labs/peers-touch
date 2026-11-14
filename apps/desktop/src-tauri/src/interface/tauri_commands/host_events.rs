@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::json;
 use tauri::{AppHandle, Runtime};
 
-use crate::application::host_events;
+use crate::application::{host_events, wake_watchdog};
 use crate::contracts::StubPayload;
 use crate::error::{AppResult, ErrorCode};
 
@@ -14,6 +14,13 @@ pub struct DesktopHostEventInput {
     session_ulid: Option<String>,
     notification_id: Option<String>,
     reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopWakeAckInput {
+    #[allow(dead_code)]
+    reason: String,
 }
 
 #[tauri::command]
@@ -57,6 +64,17 @@ pub fn desktop_native_event_emit<R: Runtime>(
             Some(json!({ "kind": kind, "error": error.to_string() })),
         ),
     }
+}
+
+/// Renderer liveness ack for the native resume watchdog. A missing ack after
+/// a system resume triggers a webview reload to recover from a blank surface.
+#[tauri::command]
+pub fn desktop_wake_ack(_input: DesktopWakeAckInput) -> AppResult<StubPayload> {
+    wake_watchdog::acknowledge();
+    AppResult::success(StubPayload {
+        command: "desktop_wake_ack".to_string(),
+        status: json!({ "acknowledged": true }).to_string(),
+    })
 }
 
 fn clean_optional(value: Option<String>) -> Option<String> {
