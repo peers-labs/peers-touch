@@ -1167,20 +1167,18 @@ mod tests {
 
     #[test]
     fn actor_profile_key_pin_does_not_register_a_transport_destination() {
-        with_seed(None, || {
-            let root = temp_dir("profile-key-only");
-            let registry = StationRegistry::new(&root);
-            registry.pin_or_verify_federation_signing_key("remote-home", "profile-key", [7; 32]).unwrap();
-            assert!(registry.entry("remote-home").is_none());
-            assert_eq!(registry.federation_signing_key_pin("remote-home").unwrap().unwrap()
-                .ed25519_public_key, [7; 32]);
-            assert!(registry.pin_or_verify_federation_signing_key("remote-home", "other-key", [8; 32]).is_err());
-            drop(registry);
-            let reopened = StationRegistry::new(&root);
-            assert!(reopened.entry("remote-home").is_none());
-            assert!(reopened.federation_signing_key_pin("remote-home").unwrap().is_some());
-            std::fs::remove_dir_all(root).unwrap();
-        });
+        let root = temp_dir("profile-key-only");
+        let registry = StationRegistry::new(&root);
+        registry.pin_or_verify_federation_signing_key("remote-home", "profile-key", [7; 32]).unwrap();
+        assert!(registry.entry("remote-home").is_none());
+        assert_eq!(registry.federation_signing_key_pin("remote-home").unwrap().unwrap()
+            .ed25519_public_key, [7; 32]);
+        assert!(registry.pin_or_verify_federation_signing_key("remote-home", "other-key", [8; 32]).is_err());
+        drop(registry);
+        let reopened = StationRegistry::new(&root);
+        assert!(reopened.entry("remote-home").is_none());
+        assert!(reopened.federation_signing_key_pin("remote-home").unwrap().is_some());
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     fn temp_dir(name: &str) -> PathBuf {
