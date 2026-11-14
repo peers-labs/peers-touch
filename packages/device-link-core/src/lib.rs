@@ -7,6 +7,7 @@ pub mod reference;
 pub mod transcript;
 
 pub use schema_core::proto::device_link as proto;
+pub use schema_core::proto::login_approval as approval_proto;
 pub use schema_core::proto::peers_touch::model::actor::v1 as actor;
 
 pub const PROTOCOL_VERSION: u32 = 1;

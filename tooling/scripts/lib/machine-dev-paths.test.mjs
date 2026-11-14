@@ -13,8 +13,12 @@ import {
   machineWorkspacesPath,
   workspaceIdForRoot,
   workspaceStatePath,
+  worktreeObservationFilePath,
+  worktreeObservationLockFilePath,
   workspaceRuntimeRef,
   workspaceRuntimePath,
+  worktreeObservationsRootPath,
+  worktreeSkillEventLogPath,
 } from './machine-dev-paths.mjs';
 
 test('resolves runtime state under the machine Dev Control Plane', () => {
@@ -98,5 +102,25 @@ test('rejects runtime names that can escape the workspace root', () => {
   assert.throws(
     () => machineLeasePath('station.deploy', '../outside', '/home/tester'),
     /Invalid lease resource id/,
+  );
+});
+
+test('observation files stay inside the worktree local state directory', () => {
+  const workspaceRoot = '/home/tester/worktrees/feature-one';
+  assert.equal(
+    worktreeObservationsRootPath(workspaceRoot),
+    path.join(workspaceRoot, '.dev-workflow', 'observations'),
+  );
+  assert.equal(
+    worktreeObservationFilePath(workspaceRoot),
+    path.join(workspaceRoot, '.dev-workflow', 'observations', 'worktree.json'),
+  );
+  assert.equal(
+    worktreeObservationLockFilePath(workspaceRoot),
+    path.join(workspaceRoot, '.dev-workflow', 'observations', 'worktree.lock'),
+  );
+  assert.equal(
+    worktreeSkillEventLogPath(workspaceRoot),
+    path.join(workspaceRoot, '.dev-workflow', 'observations', 'skill-events.jsonl'),
   );
 });

@@ -1,5 +1,5 @@
 // Source-contract: conversation chrome geometry vs the north-star prototype —
-// the compact chat header band (52px, baseline title, 34px ghost actions) and
+// the compact chat header band (48px, baseline title, 34px ghost actions) and
 // the composer tool cluster (1px rhythm, 34px circles, recording danger wash).
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
@@ -29,7 +29,11 @@ describe('conversation header (north-star .sk-chat-head parity)', () => {
   });
 
   it('renders the three ghost actions at 34px / r8 with 6px rhythm', () => {
-    expect(rule('.sc-chat-head-actions')).toContain('gap: 6px');
+    const actions = rule('.sc-chat-head-actions');
+    expect(actions).toContain('gap: 6px');
+    // The action cluster hugs the right window edge 8px closer than the
+    // header's 20px inset, per the manual right-shift adjustment.
+    expect(actions).toContain('margin-right: -8px');
     const action = rule('.sc-chat-head-actions .sc-head-action');
     expect(action).toContain('width: 34px');
     expect(action).toContain('height: 34px');
@@ -45,7 +49,7 @@ describe('conversation header (north-star .sk-chat-head parity)', () => {
 });
 
 describe('composer tool cluster (north-star .sk-composer-tools parity)', () => {
-  it('spaces tools at 1px and keeps 34px circular quiet targets', () => {
+  it('spaces tools at 1px and keeps 34px squircle quiet targets', () => {
     // Match the standalone rule, not the `.sc-composer__row .sc-composer__tools`
     // positioning block that appears earlier in the stylesheet.
     const toolsRule = chatCss.match(
@@ -55,7 +59,8 @@ describe('composer tool cluster (north-star .sk-composer-tools parity)', () => {
     const tool = rule('.sc-composer__tool.pt-button');
     expect(tool).toContain('width: 34px');
     expect(tool).toContain('height: 34px');
-    expect(tool).toContain('border-radius: 999px');
+    // UI identity: icon tiles are rounded squares (r8), never pure circles.
+    expect(tool).toContain('border-radius: 8px');
   });
 
   it('marks the recording tool with the danger glyph on a 10% danger wash', () => {

@@ -107,6 +107,7 @@
   "chat.input.uploadFile": "上传文件",
   "chat.input.workspace.title": "工作目录",
   "chat.workbench.hide": "收起工作区",
+  "chat.rail.resize": "拖拽调整聊天列表宽度（双击恢复默认）",
   "chat.workbench.resize": "拖拽调整宽度（双击恢复默认）",
   "chat.workbench.startHere": "从这里开始",
   "chat.workbench.add": "添加工具",

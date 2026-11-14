@@ -167,15 +167,40 @@ export function Select<T extends string | number>({
     </Popover>
   </div>;
 }
+/** Stateless cramp criterion: the fully-labelled island collapses to icons
+ *  only when its intrinsic width cannot fit the container. Kept separate from
+ *  the component so the narrow→collapsed→wide sequence is unit-testable
+ *  without a DOM; the 1px epsilon absorbs sub-pixel rounding noise. */
+export function shouldCollapseToIcons(requiredWidth: number, containerWidth: number): boolean {
+  return requiredWidth > containerWidth + 1;
+}
 export interface SegmentedProps<T extends string | number> extends RadioGroupProps<T> {
   density?: Density; fullWidth?: boolean; className?: string;
   /** Island mode: the group stays on ONE line and scrolls horizontally
       1 instead of wrapping — used when a narrow container must preserve the
       peer elements' relative positions under spatial squeeze. */
   scrollable?: boolean;
+  /** Collapse text labels to the leading icons when the island is too narrow.
+      Only takes effect when every option supplies a leading icon, so text-only
+      groups are never affected. Defaults to true for unified cramp behavior. */
+  autoIconOnly?: boolean;
 }
-export function Segmented<T extends string | number>({ options, value, onValueChange, disabled, label, style, fullWidth, density, scrollable, className = '' }: SegmentedProps<T>) {
+export function Segmented<T extends string | number>({ options, value, onValueChange, disabled, label, style, fullWidth, density, scrollable, autoIconOnly = true, className = '' }: SegmentedProps<T>) {
   const ref = useRef<HTMLDivElement | null>(null);
+  // Off-screen probe that always renders the FULL icon+label content in
+  // non-shrinking boxes. Its width is the intrinsic labelled width,
+  // independent of the current collapsed state — this is what makes collapse
+  // and re-expand share one stable criterion instead of inferring overflow
+  // from scrollWidth (which flex:1 + min-width:0 keeps equal to clientWidth).
+  const measureRef = useRef<HTMLDivElement | null>(null);
+  const [iconOnly, setIconOnly] = useState(false);
+  const normalized = options.map(entry => typeof entry === 'object' ? entry : { value: entry, label: String(entry) });
+  const allHaveLeading = normalized.every(option => option.leading != null);
+  const collapseEligible = autoIconOnly && !scrollable && allHaveLeading;
+  const contentKey = normalized
+    .map(option => `${String(option.value)}:${readableText(option.label)}`)
+    .join('|');
+
   // Keep the active option revealed when the island is scrolled or the value
   // changes (e.g. restored tab), without moving any sibling outside the group.
   useEffect(() => {
@@ -190,15 +215,94 @@ export function Segmented<T extends string | number>({ options, value, onValueCh
     if (a.left < h.left) host.scrollLeft -= h.left - a.left;
     else if (a.right > h.right) host.scrollLeft += a.right - h.right;
   }, [scrollable, value]);
+
+  // Two-state cramp machine: labels show while the parent's flex budget fits
+  // the probe's intrinsic labelled width; otherwise only leading icons show.
+  // Both numbers are independent of the host's CURRENT width — a collapsed
+  // host shrinks to its icon content, so measuring it would self-trap the
+  // group in icon-only forever. The parent's width comes from the page's
+  // min-width:0 constraint chain and therefore tracks the window faithfully.
+  // Groups without leading icons opt out automatically.
+  useEffect(() => {
+    if (!collapseEligible) {
+      setIconOnly(false);
+      return;
+    }
+    const host = ref.current;
+    const parent = host?.parentElement;
+    if (!host || !parent) return;
+
+    // Full icon+label width. The probe is non-shrinking and never reflects
+    // the collapsed state, so this answer is stable across re-measurements.
+    const measureRequiredWidth = () => {
+      const probe = measureRef.current;
+      if (!probe) return 0;
+      const hostStyle = window.getComputedStyle(host);
+      return probe.scrollWidth
+        + parseFloat(hostStyle.paddingLeft)
+        + parseFloat(hostStyle.paddingRight);
+    };
+
+    // Width the layout grants this island: parent content box minus the
+    // outer footprint of every flex sibling and the flex gaps. The probe
+    // lives inside the host, so it never counts as a sibling.
+    const measureAvailableWidth = () => {
+      const parentStyle = window.getComputedStyle(parent);
+      let siblingFootprint = 0;
+      for (const child of Array.from(parent.children)) {
+        if (child === host) continue;
+        const childStyle = window.getComputedStyle(child);
+        siblingFootprint += (child as HTMLElement).getBoundingClientRect().width
+          + parseFloat(childStyle.marginLeft || '0')
+          + parseFloat(childStyle.marginRight || '0');
+      }
+      const gapTotal = parent.children.length > 1
+        ? (parseFloat(parentStyle.gap) || 0) * (parent.children.length - 1)
+        : 0;
+      return parent.clientWidth
+        - parseFloat(parentStyle.paddingLeft || '0')
+        - parseFloat(parentStyle.paddingRight || '0')
+        - siblingFootprint
+        - gapTotal;
+    };
+
+    const measure = () => {
+      const next = shouldCollapseToIcons(measureRequiredWidth(), measureAvailableWidth());
+      setIconOnly(previous => (previous === next ? previous : next));
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    // Only the parent needs observing: it is the sole budget source and its
+    // size moves with window/rail resizes while the host's size may not.
+    const observer = new ResizeObserver(measure);
+    observer.observe(parent);
+    return () => observer.disconnect();
+  }, [collapseEligible, contentKey]);
+
+  const collapsed = collapseEligible && iconOnly;
   return <div ref={ref} className={`pt-segmented ${className}`} role="group" aria-label={label}
     data-full-width={fullWidth || undefined} data-scrollable={scrollable || undefined}
+    data-crampable={collapseEligible || undefined}
+    data-icon-only={collapsed || undefined}
     style={{ width: fullWidth ? '100%' : undefined, ...style }}>
-    {options.map(entry => { const option = typeof entry === 'object' ? entry : {value:entry,label:String(entry)};
+    {collapseEligible && (
+      <div ref={measureRef} className="pt-segmented__measure" aria-hidden="true">
+        {normalized.map(option => (
+          <span key={option.value} className="pt-segmented__measure-item">
+            {option.leading}<span>{option.label}</span>
+          </span>
+        ))}
+      </div>
+    )}
+    {normalized.map(option => {
+      const textLabel = typeof option.label === 'string' ? option.label : undefined;
       return <Button key={option.value} actionId={`segment.${option.value}`} density={density}
       emphasis="quiet" aria-pressed={value === option.value}
       availability={disabled ? { kind: 'disabled', reason: 'Selection is unavailable' } : option.availability}
       {...option.attributes}
-      onActivate={() => onValueChange?.(option.value)}>{option.leading}{option.label}</Button>; })}
+      aria-label={collapsed ? textLabel : option.attributes?.['aria-label']}
+      title={collapsed ? textLabel : option.attributes?.title}
+      onActivate={() => onValueChange?.(option.value)}>{option.leading}<span className="pt-segmented__label">{option.label}</span></Button>; })}
   </div>;
 }
 export interface SliderProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'value' | 'onChange' | 'size'> {

@@ -19,6 +19,15 @@ interface StationSetupPanelProps {
    * exists.
    */
   onBack?: () => void;
+  /**
+   * First-run "continue to sign in" control rendered at the top-left instead
+   * of a back arrow. It is disabled until a Station is configured, then
+   * explicitly advances to the auth surface. Mutually exclusive with onBack.
+   */
+  proceed?: {
+    disabled: boolean;
+    onActivate: () => void;
+  };
 }
 
 /**
@@ -26,7 +35,7 @@ interface StationSetupPanelProps {
  * the gear popover. Pure presentation — all data and mutations come from
  * `useStationRegistry`, so both entry points stay behavior-identical.
  */
-export function StationSetupPanel({ registry, autoHint, onBack }: StationSetupPanelProps) {
+export function StationSetupPanel({ registry, autoHint, onBack, proceed }: StationSetupPanelProps) {
   const { t } = useTranslation('common');
   const {
     entries,
@@ -53,6 +62,23 @@ export function StationSetupPanel({ registry, autoHint, onBack }: StationSetupPa
           leading={<Icon iconId="arrow-left" size={14} />}
         >
           <span style={{ fontSize: 12 }}>{t('common.stationPicker.back')}</span>
+        </Button>
+      )}
+      {proceed && (
+        <Button
+          actionId="auth.station.continue-to-login"
+          emphasis="quiet"
+          density="compact"
+          className="pt-station-panel__proceed"
+          availability={proceed.disabled
+            ? {
+                kind: 'disabled',
+                reason: t('common.stationPicker.continueToLoginDisabled'),
+              }
+            : undefined}
+          onActivate={proceed.onActivate}
+        >
+          <span style={{ fontSize: 12 }}>{t('common.stationPicker.continueToLogin')}</span>
         </Button>
       )}
       <div className="pt-station-panel-title">{t('common.stationPicker.title')}</div>

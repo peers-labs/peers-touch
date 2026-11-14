@@ -19,6 +19,9 @@ enum AccessGateType {
   ACCESS_GATE_TYPE_MAINTENANCE = 7;
   ACCESS_GATE_TYPE_TERMS_ACCEPTANCE = 8;
   ACCESS_GATE_TYPE_AUTH_OAUTH = 9;
+  // Claimant-first device approval: after credentials pass, a new
+  // installation waits for an already-enrolled device of the same Actor.
+  ACCESS_GATE_TYPE_DEVICE_APPROVAL = 10;
   ACCESS_GATE_TYPE_CUSTOM = 100;
 }
 
@@ -191,6 +194,12 @@ message AccessPolicy {
   // When true the Station offers self-service invite-code redemption as a gate
   // (invite.code) in addition to administrator-managed allowlist entries.
   bool self_service_invite = 8;
+  // Operator rollout switch for claimant-first device approval. Defaults to
+  // false so existing authorization behavior is unchanged until enabled.
+  bool device_approval_enabled = 9;
+  // Optional explicit per-Actor enrolled-device ceiling; 0 means no limit and
+  // the gate relies only on the first-device bypass.
+  uint32 device_approval_max_devices = 10;
 }
 
 message UpdateAccessPolicyRequest {

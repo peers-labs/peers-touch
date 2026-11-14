@@ -107,6 +107,7 @@
   "chat.input.uploadFile": "Upload File",
   "chat.input.workspace.title": "Working directory",
   "chat.workbench.hide": "Hide work area",
+  "chat.rail.resize": "Drag to resize the chat list (double-click to reset)",
   "chat.workbench.resize": "Drag to resize (double-click to reset)",
   "chat.workbench.startHere": "Start here",
   "chat.workbench.add": "Add tool",

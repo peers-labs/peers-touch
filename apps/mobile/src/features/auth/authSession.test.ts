@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   ACCESS_GATE_TYPE_AUTH_LOGIN,
+  ACCESS_GATE_TYPE_DEVICE_APPROVAL,
   STATION_ACCESS_ATTEMPT_EXPIRED,
   STATION_ACCESS_IDENTITY_MISMATCH,
   STATION_ACCESS_UNKNOWN_GATE,
@@ -9,6 +10,7 @@ import {
   cancelStationAccessAttempt,
   getStationAccessDecision,
   isCustomGate,
+  isDeviceApprovalGate,
   isDeviceTrustGate,
   isSchemaDrivenGate,
   isTermsAcceptanceGate,
@@ -111,6 +113,33 @@ describe('schema-driven Station access gates', () => {
     expect(isCustomGate(gate(100))).toBe(true);
     expect(isCustomGate(gate('ACCESS_GATE_TYPE_CUSTOM'))).toBe(true);
     expect(isSchemaDrivenGate(gate('ACCESS_GATE_TYPE_AUTH_LOGIN'))).toBe(false);
+  });
+});
+
+describe('device approval gate recognition', () => {
+  it('matches the numeric enum and the protojson string name', () => {
+    expect(isDeviceApprovalGate(gate(ACCESS_GATE_TYPE_DEVICE_APPROVAL))).toBe(true);
+    expect(isDeviceApprovalGate(gate('ACCESS_GATE_TYPE_DEVICE_APPROVAL'))).toBe(true);
+  });
+
+  it('does not match unrelated gate types', () => {
+    expect(isDeviceApprovalGate(gate(ACCESS_GATE_TYPE_AUTH_LOGIN))).toBe(false);
+    expect(isDeviceApprovalGate(gate('ACCESS_GATE_TYPE_CUSTOM'))).toBe(false);
+    expect(isDeviceApprovalGate(undefined)).toBe(false);
+  });
+
+  it('is a known gate, so an action-required decision is not an unknown-gate failure', () => {
+    const decision = normalizeDecision({
+      state: 'ACCESS_DECISION_STATE_ACTION_REQUIRED',
+      attempt_id: 'attempt-approval',
+      current_gate_id: 'device.approval',
+      gates: [{
+        gate_id: 'device.approval',
+        type: 'ACCESS_GATE_TYPE_DEVICE_APPROVAL',
+        state: 'ACCESS_GATE_STATE_ACTION_REQUIRED',
+      }],
+    });
+    expect(stationAccessFailureOutcome(decision, 100)).toBeNull();
   });
 });
 

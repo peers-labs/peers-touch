@@ -694,13 +694,15 @@ func (h *dashboardHandler) handleUpdateAccessPolicy(ctx context.Context, req *ga
 	}
 
 	policy, err := gate.UpdatePolicy(ctx, gate.PolicyInput{
-		Mode:              accessPolicyModeName(req.GetPolicy().GetMode()),
-		AllowedEmails:     req.GetPolicy().GetAllowedEmails(),
-		AllowedUsernames:  req.GetPolicy().GetAllowedUsernames(),
-		AllowedActorPTIDs: req.GetPolicy().GetAllowedActorPtids(),
-		EnabledGates:      req.GetPolicy().GetEnabledGates(),
-		SelfServiceInvite: req.GetPolicy().GetSelfServiceInvite(),
-		UpdatedBy:         updatedBy,
+		Mode:                     accessPolicyModeName(req.GetPolicy().GetMode()),
+		AllowedEmails:            req.GetPolicy().GetAllowedEmails(),
+		AllowedUsernames:         req.GetPolicy().GetAllowedUsernames(),
+		AllowedActorPTIDs:        req.GetPolicy().GetAllowedActorPtids(),
+		EnabledGates:             req.GetPolicy().GetEnabledGates(),
+		SelfServiceInvite:        req.GetPolicy().GetSelfServiceInvite(),
+		DeviceApprovalEnabled:    req.GetPolicy().GetDeviceApprovalEnabled(),
+		DeviceApprovalMaxDevices: req.GetPolicy().GetDeviceApprovalMaxDevices(),
+		UpdatedBy:                updatedBy,
 	})
 	if err != nil {
 		return nil, server.BadRequest(err.Error())

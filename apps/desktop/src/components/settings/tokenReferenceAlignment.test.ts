@@ -128,10 +128,14 @@ describe('pt custom-property references resolve to emitted tokens', () => {
     expect(cardRule).not.toContain('box-shadow');
   });
 
-  it('owns the settings edge inset once, as a uniform 8px gutter on every side', () => {
-    // The scroll layer is the single gutter owner; the column stays
-    // padding-free so the two never stack into a wider double inset.
-    expect(rule(northstarCss, '.sc-settings__scroll')).toContain('padding: 8px');
+  it('keeps one edge-inset owner and a stable right scrollbar lane', () => {
+    // The scroll layer owns the inset; the column stays padding-free so the
+    // two never stack. Left/top/bottom are an 8px padding while the right
+    // inset is the stable scrollbar gutter (a fixed lane, not a right padding
+    // that would double up and misalign the nested provider scrollbar).
+    const scroll = rule(northstarCss, '.sc-settings__scroll');
+    expect(scroll).toContain('padding: 8px 0 8px 8px');
+    expect(scroll).toContain('scrollbar-gutter: stable');
     expect(rule(northstarCss, '.sc-settings-column')).toContain('padding: 0');
     expect(rule(northstarCss, '.sc-settings-card')).toContain('padding: 0 8px');
   });

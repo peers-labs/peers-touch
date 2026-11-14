@@ -845,6 +845,18 @@ export function readRegistry(file, { requireAuthority = true } = {}) {
   return validateRegistry(registry);
 }
 
+// Read-only discovery for pull-based collectors. The registry is the only
+// machine-wide enumeration of worktree roots; observation writers never push
+// into a shared directory. A missing registry means "nothing registered yet"
+// and resolves to an empty list. A corrupt registry still throws so the
+// collector can isolate and report the discovery failure.
+export function registeredCanonicalRoots(options = {}) {
+  const file = options.registryPath ?? machineRegistryPath(options.home);
+  const registry = readRegistry(file, { requireAuthority: false });
+  if (registry === null) return [];
+  return registry.registrations.map((entry) => entry.canonicalRoot);
+}
+
 function readOperationalRegistry(
   options,
   { requireAuthority = true, registryLockHeld = false } = {},

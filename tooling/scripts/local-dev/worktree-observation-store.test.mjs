@@ -18,7 +18,7 @@ import {
 } from './worktree-observation-store.mjs';
 import {
   workspaceIdForRoot,
-  workspaceObservationPath,
+  worktreeObservationFilePath,
 } from '../lib/machine-dev-paths.mjs';
 
 function git(root, args) {
@@ -43,11 +43,8 @@ function createRepository(parent, name) {
 
 function fixture() {
   const root = mkdtempSync(path.join(tmpdir(), 'pt-worktree-observation-'));
-  const home = path.join(root, 'home');
-  mkdirSync(home);
   return {
     root,
-    home,
     close() {
       rmSync(root, {
         recursive: true,
@@ -59,37 +56,35 @@ function fixture() {
   };
 }
 
-test('reports two worktrees into disjoint owner-only records', () => {
+test('reports two worktrees into disjoint worktree-local records', () => {
   const scope = fixture();
   try {
     const workspaceA = createRepository(scope.root, 'workspace-a');
     const workspaceB = createRepository(scope.root, 'workspace-b');
     const recordA = reportWorktreeObservation({
       workspaceRoot: workspaceA,
-      home: scope.home,
       host: 'trae',
       event: 'SessionStart',
       now: new Date('2026-09-23T01:00:00.000Z'),
     });
     const recordB = reportWorktreeObservation({
       workspaceRoot: workspaceB,
-      home: scope.home,
       host: 'codex',
       event: 'UserPromptSubmit',
       now: new Date('2026-09-23T01:00:01.000Z'),
     });
 
     assert.notEqual(recordA.workspaceId, recordB.workspaceId);
+    const fileA = worktreeObservationFilePath(workspaceA);
     assert.equal(
-      observationFileMode(
-        workspaceObservationPath({
-          home: scope.home,
-          workspaceId: recordA.workspaceId,
-        }),
-      ),
-      0o600,
+      fileA,
+      path.join(workspaceA, '.dev-workflow', 'observations', 'worktree.json'),
     );
-    const all = readAllWorktreeObservations({ home: scope.home });
+    assert.equal(observationFileMode(fileA), 0o600);
+
+    const all = readAllWorktreeObservations({
+      workspaceRoots: [workspaceA, workspaceB],
+    });
     assert.deepEqual(
       all.records.map((record) => record.workspaceId),
       [recordA.workspaceId, recordB.workspaceId].sort(),
@@ -106,12 +101,10 @@ test('newer observation cannot be replaced by an older report', () => {
     const workspace = createRepository(scope.root, 'workspace');
     const newer = reportWorktreeObservation({
       workspaceRoot: workspace,
-      home: scope.home,
       now: new Date('2026-09-23T01:00:05.000Z'),
     });
     const result = reportWorktreeObservation({
       workspaceRoot: workspace,
-      home: scope.home,
       now: new Date('2026-09-23T01:00:04.000Z'),
     });
     assert.equal(result.reportedAt, newer.reportedAt);
@@ -120,28 +113,21 @@ test('newer observation cannot be replaced by an older report', () => {
   }
 });
 
-test('one corrupt observation is isolated from healthy workspaces', () => {
+test('one corrupt observation is isolated from healthy worktrees', () => {
   const scope = fixture();
   try {
     const workspaceA = createRepository(scope.root, 'workspace-a');
     const workspaceB = createRepository(scope.root, 'workspace-b');
-    const recordA = reportWorktreeObservation({
-      workspaceRoot: workspaceA,
-      home: scope.home,
-    });
-    const recordB = reportWorktreeObservation({
-      workspaceRoot: workspaceB,
-      home: scope.home,
-    });
-    const corruptFile = workspaceObservationPath({
-      home: scope.home,
-      workspaceId: recordB.workspaceId,
-    });
+    const recordA = reportWorktreeObservation({ workspaceRoot: workspaceA });
+    const recordB = reportWorktreeObservation({ workspaceRoot: workspaceB });
+    const corruptFile = worktreeObservationFilePath(workspaceB);
     const corrupt = JSON.parse(readFileSync(corruptFile, 'utf8'));
     corrupt.branch = 'tampered';
     writeFileSync(corruptFile, `${JSON.stringify(corrupt)}\n`);
 
-    const all = readAllWorktreeObservations({ home: scope.home });
+    const all = readAllWorktreeObservations({
+      workspaceRoots: [workspaceA, workspaceB],
+    });
     assert.deepEqual(
       all.records.map((record) => record.workspaceId),
       [recordA.workspaceId],
@@ -154,6 +140,30 @@ test('one corrupt observation is isolated from healthy workspaces', () => {
       },
     ]);
     assert.equal(workspaceIdForRoot(workspaceA), recordA.workspaceId);
+  } finally {
+    scope.close();
+  }
+});
+
+test('collector skips worktrees without a report and flags unresolved roots', () => {
+  const scope = fixture();
+  try {
+    const workspaceA = createRepository(scope.root, 'workspace-a');
+    const quiet = createRepository(scope.root, 'workspace-quiet');
+    const gone = path.join(scope.root, 'already-removed');
+    reportWorktreeObservation({ workspaceRoot: workspaceA });
+
+    const all = readAllWorktreeObservations({
+      workspaceRoots: [workspaceA, quiet, gone],
+    });
+    assert.deepEqual(
+      all.records.map((record) => record.workspaceId),
+      [workspaceIdForRoot(workspaceA)],
+    );
+    assert.deepEqual(
+      all.errors.map((error) => error.code),
+      ['WORKTREE_OBSERVATION_ROOT_UNRESOLVED'],
+    );
   } finally {
     scope.close();
   }

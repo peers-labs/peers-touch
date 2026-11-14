@@ -22,8 +22,9 @@
 - `packages/station-trust` 验证逻辑 Station root、Node 授权、路由与 SPKI。
   “同源 Station”是同一 `station_peer_id/root`，不要求 URL、Node 或 Relay 相同。
 - `frame/core/facility/session/db_store.go` 定义 desktop/mobile/web 会话类别；
-  同 Actor 的 Desktop 与 Mobile 可以占不同类别。当前active唯一索引是
-  `(user_id, device_type)`，同类别新登录会撤销旧Session，尚不支持多手机同时在线。
+  同 Actor 的 Desktop 与 Mobile 可以占不同类别。active 唯一索引现为
+  `(station_peer_id, user_id, device_id)`（WHERE revoked=false），按具体安装
+  实例而非类别占用会话槽，异设备可并存；同安装实例重登只替换自身 Session。
 - `actor_identity/domain/device.go` 拒绝 Actor 身份公钥变化，设备证书必须由
   Actor 身份签名。Mobile 与 Session 必须复用同一个 `device_id`。
 - Mobile `domain/crypto/identity_keys.rs:ensure_identity` 在没有本机身份时生成

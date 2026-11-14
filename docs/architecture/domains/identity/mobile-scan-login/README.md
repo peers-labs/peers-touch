@@ -26,6 +26,13 @@ Station、同一 Actor 账号。允许两端使用不同网络路线。
 - [验证状态与剩余范围](./verification.md)。
 - 通用能力的独立真源：[Schema](../../../shared/schema/README.md)。
 
+## 演进提案
+
+[Device Login Approval](../device-login-approval/README.md)（draft）提出 claimant-first
+登录模型：新设备凭据登录后在登录卡等待，同 Actor 任意已登录设备全局弹窗审批。
+该提案接受并落地后，本模块的发起方向与审批 UX 段落将被替代，二维码/扫码保留为
+私有 Station 网络引导的备用路径，MSL-D01 至 MSL-D07 的密码学与 Session 合同继续有效。
+
 ## 上游约束
 
 [Station Access](../../../platform/station/access/station-access-gate-architecture.md)、

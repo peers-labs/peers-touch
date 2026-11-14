@@ -34,6 +34,16 @@ function selectExecutionRoot(event) {
   return null;
 }
 
+// Events whose prior live context was replaced (session start, prompt entry,
+// context compaction). They must re-assert the workflow as guidance instead of
+// emitting a bare tool allowance, so recovery boundaries cannot silently skip it.
+const CONTEXT_EVENTS = new Set([
+  'SESSION_START',
+  'BEFORE_PROMPT',
+  'PRE_COMPACT',
+  'POST_COMPACT',
+]);
+
 function contextHeader(root) {
   return [
     'Peers-Touch project guidance',
@@ -41,7 +51,22 @@ function contextHeader(root) {
     'workflow=docs/global/workflow.md',
     'knowledge=docs/knowledge/README.md',
     'skills=tooling/skills',
-    'Hook context is advisory; operation permissions remain at concrete runtime and delivery entrypoints.',
+    'The project workflow skills are mandatory unless the user explicitly declares an opt-out.',
+    'Hooks cannot hard-block by design; advisory delivery does not make the workflow optional.',
+    'Operation permissions remain at concrete runtime and delivery entrypoints.',
+  ].join('\n');
+}
+
+function compactionGuidance(root) {
+  return [
+    contextHeader(root),
+    '',
+    'Context was compacted, so the live workflow state was replaced. Before continuing work:',
+    '1. Re-enter via the pt-god-view skill to re-classify intent and current stage.',
+    '2. Resume the owning workflow skill (for example pt-dev-workflow) instead of treating',
+    '   the frozen plan, task summary, or handoff notes as proof the workflow already ran.',
+    '3. If the user has explicitly declared the workflow skipped for this scope, record that',
+    '   declaration and proceed; otherwise the workflow is mandatory.',
   ].join('\n');
 }
 
@@ -111,15 +136,25 @@ export async function evaluateWorkflowEvent(event, options = {}) {
       additionalContext: null,
     };
   }
+  // Compaction replaced the live context: inject an explicit workflow re-entry
+  // directive rather than the ordinary pre-edit guidance so recovery cannot
+  // silently continue without re-running the workflow.
+  if (event.event === 'PRE_COMPACT' || event.event === 'POST_COMPACT') {
+    return {
+      action: 'CONTEXT',
+      code: 'WORKFLOW_REENTRY_AFTER_COMPACTION',
+      reason: 'Context was compacted; the workflow must be re-entered unless the user opted out.',
+      executionRoot,
+      additionalContext: compactionGuidance(executionRoot),
+    };
+  }
   const additionalContext = await guidanceContext(
     event,
     executionRoot,
     options,
   );
   return {
-    action: ['SESSION_START', 'BEFORE_PROMPT'].includes(event.event)
-      ? 'CONTEXT'
-      : 'ALLOW',
+    action: CONTEXT_EVENTS.has(event.event) ? 'CONTEXT' : 'ALLOW',
     code: 'PROJECT_GUIDANCE_AVAILABLE',
     reason: 'Current project workflow and relevant knowledge are available.',
     executionRoot,

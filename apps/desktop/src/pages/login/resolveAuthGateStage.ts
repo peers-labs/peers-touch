@@ -24,6 +24,14 @@ export interface AuthGateInput {
   hydrated: boolean;
   /** True when at least one Station is registered locally. */
   hasStation: boolean;
+  /** True when the install already holds at least one signed-in account. */
+  hasAccounts: boolean;
+  /**
+   * Set when the user explicitly leaves first-run Station setup via the
+   * "continue to sign in" action. Session-only; a fresh launch re-derives the
+   * stage from hasAccounts/hasStation instead.
+   */
+  proceeded: boolean;
   /** Optional manual pin (e.g. the gear re-opens Station setup). */
   override: AuthGateOverride;
 }
@@ -31,17 +39,21 @@ export interface AuthGateInput {
 /**
  * Resolve which top-level surface the auth card must present.
  *
- * - Before hydration we stay on `station_setup` (the surface renders its own
- *   loading state), avoiding a flash of the login form on first run.
- * - After hydration, an unconfigured install stays on `station_setup`; a
- *   configured one advances to `auth`.
- * - An explicit user override always wins, so the gear can re-open Station
- *   setup even after a Station has been configured.
+ * Priority (first match wins):
+ * 1. An explicit override always wins (gear re-opening Station setup).
+ * 2. Before hydration stay on `station_setup` to avoid a login-form flash.
+ * 3. Any known account → `auth` (the account list card outranks Station setup).
+ * 4. No account but a configured Station → `auth` (straight to sign-in).
+ * 5. No account and no Station → `station_setup` until the user proceeds; the
+ *    proceed action is disabled until a Station exists.
  */
 export function resolveAuthGateStage(input: AuthGateInput): AuthGateStage {
   if (input.override) return input.override;
   if (!input.hydrated) return 'station_setup';
-  return input.hasStation ? 'auth' : 'station_setup';
+  if (input.hasAccounts || input.hasStation || input.proceeded) {
+    return 'auth';
+  }
+  return 'station_setup';
 }
 
 /**

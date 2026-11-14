@@ -16,7 +16,11 @@
   flex-direction: row;
   overflow-x: auto;
   overflow-y: hidden;
-  background: var(--pt-canvas);
+  /* One continuous paper field from the icon-rail boundary to the window
+     edge. The catalog rail and conversation are surface-white, so the host
+     must match: a canvas host would leak a grey band through any scrollbar
+     gutter or sub-pixel gap and break the full-bleed surface into two tones. */
+  background: var(--pt-surface);
   color: var(--pt-text);
 }
 
@@ -24,14 +28,14 @@
    The 消息/联系人 Segmented island, quiet search/new icon tiles and the
    inline search expansion live in one rail header (prototype sk-rail-header
    parity). The old 48px vertical sub-rail is gone. */
-/* Slim 48px band that shares the overlay traffic-light row: only a small top
+/* Slim 40px band that shares the overlay traffic-light row: only a small top
    clearance, so the segmented track / search rise to the top like WeChat
    instead of leaving an empty strip (prototype sk-rail-header parity). */
 .sc-rail-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 48px;
+  min-height: 40px;
   box-sizing: border-box;
   padding: 6px 16px;
   flex-shrink: 0;
@@ -151,19 +155,19 @@
 
 /* ── Conversation session list ──────────────────────────────────────────── */
 .sc-sessions {
-  /* One fixed 300px catalog column at desktop widths. The narrow breakpoint
-     below takes ownership below 720px (single-pane swap); width must stay in
-     CSS, not inline styles, so the media query can override it. */
-  width: 300px;
-  flex: 0 0 300px;
+  /* Catalog column at desktop widths. The default 300px is overridable via
+     --pt-chat-rail-width (manual ChatRailResizer drag); width stays in CSS,
+     not inline styles, so the 720px narrow media query can still override it. */
+  width: var(--pt-chat-rail-width, 300px);
+  flex: 0 0 var(--pt-chat-rail-width, 300px);
   align-self: stretch;
   height: 100%;
   display: flex;
   flex-direction: column;
-  /* WeChat-parity separation: a faint ink whisper, the surface material does
-     the real work rather than a hard rule. */
-  border-right: 1px solid var(--pt-column-hairline);
-  background: var(--pt-surface);
+  /* Level-2 zone: a quiet subtle fill. It separates from the level-3 white
+     conversation purely by tonal step (north-star grammar #2 — material, not
+     a hairline), so no border-right is drawn between the two chrome zones. */
+  background: var(--pt-subtle);
   position: relative;
 }
 /* Embedded contacts share the rail material — no second border. */
@@ -171,6 +175,48 @@
   flex: 1 1 auto;
   min-height: 0;
   border-right: 0;
+}
+
+/* Manual catalog-rail resize handle. An absolutely-positioned 10px hit strip
+   straddling the rail's right hairline — it must NOT take flex space, or its
+   transparent body exposes the canvas background as a visible grey band. The
+   visual rule stays invisible until hover/drag so resting chrome is unchanged.
+   Below 720px the single-pane swap owns layout and the handle is hidden. */
+.sc-chat-rail-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--pt-chat-rail-width, 300px);
+  width: 10px;
+  margin-left: -5px;
+  z-index: 3;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+.sc-chat-rail-resizer__line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  margin-left: -0.5px;
+  background: transparent;
+  transition: background-color 0.14s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.sc-chat-rail-resizer:hover .sc-chat-rail-resizer__line,
+.sc-chat-rail-resizer[data-dragging='true'] .sc-chat-rail-resizer__line,
+.sc-chat-rail-resizer:focus-visible .sc-chat-rail-resizer__line {
+  background: var(--pt-accent);
+}
+.sc-chat-rail-resizer:focus-visible {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--pt-accent) 35%, transparent);
+}
+/* While dragging, the col-resize cursor and text-selection lock apply
+   document-wide even when the pointer moves over other panes. */
+body[data-chat-rail-resizing='true'] {
+  cursor: col-resize;
+  user-select: none;
 }
 .sc-sessions__toolbar {
   display: flex;
@@ -1532,15 +1578,16 @@
 
 /* Runtime reset confirm footer */
 .sc-reset-confirm__footer { display: flex; justify-content: flex-end; gap: 8px; }
-/* Small composer glyphs are 34px circular ghost buttons (WeChat parity): no
-   border or fill at rest — only the glyph reads, and hover adds a faint ink
-   wash. The send control keeps the same circular footprint but a primary fill. */
+/* Small composer glyphs are 34px squircle ghost buttons (UI identity: icon
+   tiles are rounded squares, never pure circles). No border or fill at rest —
+   only the glyph reads, and hover adds a faint ink wash. The send control
+   keeps the same squircle footprint but a primary fill. */
 .sc-composer__tool.pt-button {
   width: 34px;
   height: 34px;
   min-width: 34px;
   padding: 0;
-  border-radius: 999px;
+  border-radius: 8px;
   border-color: transparent;
   background: transparent;
   color: var(--pt-secondary);
@@ -1566,7 +1613,7 @@
   height: 34px;
   min-height: 0;
   padding: 0;
-  border-radius: 999px;
+  border-radius: 8px;
   border-color: transparent;
   background: transparent;
   color: var(--pt-secondary);
@@ -1595,30 +1642,31 @@
 @keyframes chat-composer-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 /* Emoji picker popover content. */
-/* Prototype .sk-emoji-panel: a 10-column emoji grid in a 312px popover. */
+/* WeChat-parity emoji panel: a 10-column grid in a 400px popover with 34px
+   cells and 28px glyphs so every emoji stays legible at a glance. */
 .sc-emoji-panel {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  width: 312px;
+  gap: 12px;
+  width: 400px;
   max-width: 78vw;
-  padding: 10px;
+  padding: 12px;
 }
-.sc-emoji-panel__group { display: flex; flex-direction: column; gap: 6px; }
-.sc-emoji-panel__label { font-size: 11px; color: var(--pt-muted); }
+.sc-emoji-panel__group { display: flex; flex-direction: column; gap: 8px; }
+.sc-emoji-panel__label { font-size: 12px; color: var(--pt-muted); }
 .sc-emoji-panel__grid {
   display: grid;
   grid-template-columns: repeat(10, 1fr);
-  gap: 2px;
+  gap: 4px;
 }
 .sc-emoji-panel__item {
   border: 0;
   background: transparent;
   cursor: pointer;
-  font-size: 19px;
+  font-size: 28px;
   line-height: 1;
-  padding: 5px 0;
-  border-radius: 7px;
+  padding: 6px 0;
+  border-radius: 8px;
 }
 .sc-emoji-panel__item:hover { background: var(--pt-subtle); }
 .sc-emoji-panel__footer {
@@ -1752,13 +1800,14 @@
 .sc-call__tray-actions,
 .sc-call__controls { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; }
 
-/* North-star .sk-call-hud .sk-call-ctl parity: borderless tile buttons with a
-   primary-tinted hover and a neutral pressed state; variant colors win below. */
+/* North-star .sk-call-hud .sk-call-ctl parity: borderless squircle tile
+   buttons (UI identity: icon tiles are rounded squares) with a primary-tinted
+   hover and a neutral pressed state; variant colors win below. */
 .sc-call__btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
+  border-radius: 8px;
   border: 0;
   background: var(--pt-subtle);
   color: var(--pt-secondary);
@@ -2254,7 +2303,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 8px 12px 0;
+  /* Symmetric vertical inset so the title centers on the same 48px band as
+     .sc-chat-head (whose bottom rule this header must line up with). */
+  padding: 0 12px;
   border-bottom: 1px solid color-mix(in srgb, var(--pt-text) 8%, transparent);
 }
 .sc-detail__header strong {
@@ -2763,8 +2814,10 @@
 .sc-thread__header {
   flex-shrink: 0;
   box-sizing: border-box;
-  height: 52px;
-  padding: 8px 12px 0;
+  /* Match the 48px .sc-chat-head band so the side panel header rule aligns
+     with the conversation header instead of stepping down by 4px. */
+  height: 48px;
+  padding: 0 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -3269,7 +3322,8 @@
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--pt-border);
+  /* Level-2 zone: subtle fill, tonal separation instead of a hairline. */
+  background: var(--pt-subtle);
 }
 .sc-create-group__search { padding: 16px 16px 12px; }
 .sc-create-group__list { flex: 1; overflow-y: auto; }
@@ -3435,7 +3489,10 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--pt-canvas);
+  /* Full-bleed stage: one continuous surface with the catalog rail from the
+     first-level nav boundary to the window edge — no card frame, gutter,
+     border or radius. The rail's own right hairline is the only separator. */
+  background: var(--pt-surface);
 }
 .sc-conversation--empty,
 .sc-conversation__center {
@@ -3443,7 +3500,9 @@
   align-items: center;
   justify-content: center;
 }
-.sc-conversation--empty { background: var(--pt-canvas); }
+.sc-conversation--empty { background: var(--pt-surface); }
+/* The narrow single-pane mode inherits the same full-bleed surface; no frame
+   override is needed because the base rule never introduces one. */
 .sc-conversation__center {
   flex: 1;
   min-height: 0;
@@ -3673,7 +3732,7 @@
   white-space: nowrap;
 }
 
-.sc-chat-head-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.sc-chat-head-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-right: -8px; }
 /* Quiet ghost header tiles (prototype sk-head-action parity): 34px / r8
    borderless squares, secondary glyph; hover = faint ink wash, the open
    info tile marks itself with pine. */
@@ -4413,26 +4472,49 @@
  * ───────────────────────────────────────────────────────────────────────── */
 .sc-chat-head__back { display: none; }
 
-/* Narrow pane swap is an INSTANT visibility flip, never a sliding page.
-   The desktop shell is a native-style persistent tree (keepAlive pages), so
-   a conversation is already mounted and hot; animating the whole pane with a
-   translateX(100%) sweep reads as an H5 full-page reload and makes the header,
-   scroll region and composer jitter. Surface/route transition rules:
-   docs/client/common/ui-identity/craft-quality.md §12. */
+/* Narrow pane navigation is a WeChat-style horizontal push. The conversation
+   is a persistent full-stage layer that slides in from the right over the
+   catalog and slides back out on back. Both panes stay mounted — only a
+   transform/visibility transition flips — so enter and exit are symmetric with
+   no display reflow and no keyframe re-trigger. This deliberately replaces the
+   earlier instant flip; it is NOT the rejected keyframe version (which tied a
+   translateX animation to a display:none→flex swap and could animate in but
+   never out). See pitfalls/css-full-pane-translate-mimics-h5-reload.md. */
 @media (max-width: 720px) {
   .sc-chat[data-narrow='true'] { overflow-x: hidden; }
 
+  /* Single-pane swap: manual rail resize is unavailable. */
+  .sc-chat[data-narrow='true'] .sc-chat-rail-resizer { display: none; }
+
+  /* The catalog stays mounted as the base layer even while a conversation is
+     open; the sliding conversation covers it and reveals it again on pop. */
   .sc-chat[data-narrow='true'] .sc-sessions {
     width: 100%;
     flex-basis: 100%;
     border-right: 0;
   }
-  .sc-chat[data-narrow='true'] .sc-conversation { display: none; }
 
-  .sc-chat[data-narrow='true'][data-narrow-open='true'] .sc-sessions { display: none; }
+  /* Persistent sliding layer: parked just off the right edge and removed from
+     input/AT while parked, then translated to rest when data-narrow-open. The
+     visibility delay keeps it in the tab order only after the slide-out ends. */
+  .sc-chat[data-narrow='true'] .sc-conversation {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    flex: none;
+    width: 100%;
+    transform: translateX(100%);
+    visibility: hidden;
+    transition:
+      transform var(--pt-motion-slow) var(--pt-motion-out),
+      visibility 0s linear var(--pt-motion-slow);
+  }
   .sc-chat[data-narrow='true'][data-narrow-open='true'] .sc-conversation {
-    display: flex;
-    flex: 1 1 100%;
+    transform: translateX(0);
+    visibility: visible;
+    transition:
+      transform var(--pt-motion-slow) var(--pt-motion-out),
+      visibility 0s;
   }
 
   .sc-chat[data-narrow='true'] .sc-chat-head__back { display: inline-flex; }

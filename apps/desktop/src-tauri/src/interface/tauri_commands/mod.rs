@@ -19,6 +19,7 @@ pub mod cron;
 pub mod crypto;
 pub mod desktop_capture;
 pub mod device_link;
+pub mod login_approval;
 pub mod evaluation;
 pub mod federation;
 pub mod frontend_log;

@@ -14,10 +14,16 @@ type AccessPolicy struct {
 	EnabledGates string `gorm:"type:text"`
 	// SelfServiceInvite enables the invite.code gate for holders of a valid
 	// Station-issued invite code.
-	SelfServiceInvite bool      `gorm:"not null;default:false"`
-	UpdatedBy         string    `gorm:"size:128"`
-	CreatedAt         time.Time `gorm:"autoCreateTime"`
-	UpdatedAt         time.Time `gorm:"autoUpdateTime"`
+	SelfServiceInvite bool `gorm:"not null;default:false"`
+	// DeviceApprovalEnabled rolls out claimant-first device approval. Defaults
+	// false so the authorization chain is unchanged until an operator enables it.
+	DeviceApprovalEnabled bool `gorm:"column:device_approval_enabled;not null;default:false"`
+	// DeviceApprovalMaxDevices is the optional per-Actor enrolled-device ceiling
+	// (0 = unlimited).
+	DeviceApprovalMaxDevices uint32    `gorm:"column:device_approval_max_devices;not null;default:0"`
+	UpdatedBy                string    `gorm:"size:128"`
+	CreatedAt                time.Time `gorm:"autoCreateTime"`
+	UpdatedAt                time.Time `gorm:"autoUpdateTime"`
 }
 
 func (*AccessPolicy) TableName() string { return "access_gate_policies" }

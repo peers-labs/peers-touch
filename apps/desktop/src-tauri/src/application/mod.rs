@@ -22,6 +22,7 @@ pub mod federation;
 pub mod home;
 pub mod host_events;
 pub mod key_exchange;
+pub mod login_approval;
 #[cfg(target_os = "macos")]
 pub mod macos_user_notifications;
 pub mod mcp;

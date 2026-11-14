@@ -10,6 +10,8 @@ function input(partial: Partial<AuthGateInput>): AuthGateInput {
   return {
     hydrated: false,
     hasStation: false,
+    hasAccounts: false,
+    proceeded: false,
     override: null,
     ...partial,
   };
@@ -21,17 +23,48 @@ describe('resolveAuthGateStage', () => {
     expect(
       resolveAuthGateStage(input({ hydrated: false, hasStation: true })),
     ).toBe('station_setup');
-  });
-
-  it('forces first-run Station setup when no Station is registered', () => {
     expect(
-      resolveAuthGateStage(input({ hydrated: true, hasStation: false })),
+      resolveAuthGateStage(input({ hydrated: false, hasAccounts: true })),
     ).toBe('station_setup');
   });
 
-  it('advances to auth once a Station exists', () => {
+  it('forces first-run Station setup when there is no account and no Station', () => {
     expect(
-      resolveAuthGateStage(input({ hydrated: true, hasStation: true })),
+      resolveAuthGateStage(input({ hydrated: true, hasStation: false, hasAccounts: false })),
+    ).toBe('station_setup');
+  });
+
+  it('rule 1: an existing account outranks Station setup even without a Station', () => {
+    expect(
+      resolveAuthGateStage(
+        input({ hydrated: true, hasStation: false, hasAccounts: true }),
+      ),
+    ).toBe('auth');
+    expect(
+      resolveAuthGateStage(
+        input({ hydrated: true, hasStation: true, hasAccounts: true }),
+      ),
+    ).toBe('auth');
+  });
+
+  it('rule 2: no account but a configured Station goes straight to auth', () => {
+    expect(
+      resolveAuthGateStage(
+        input({ hydrated: true, hasStation: true, hasAccounts: false }),
+      ),
+    ).toBe('auth');
+  });
+
+  it('rule 3: an explicit proceed leaves first-run setup after a Station is configured', () => {
+    expect(
+      resolveAuthGateStage(
+        input({ hydrated: true, hasStation: false, hasAccounts: false, proceeded: false }),
+      ),
+    ).toBe('station_setup');
+    expect(
+      resolveAuthGateStage(
+        input({ hydrated: true, hasStation: false, hasAccounts: false, proceeded: true }),
+      ),
     ).toBe('auth');
   });
 
@@ -41,6 +74,7 @@ describe('resolveAuthGateStage', () => {
         input({
           hydrated: true,
           hasStation: true,
+          hasAccounts: true,
           override: 'station_setup',
         }),
       ),
@@ -51,6 +85,7 @@ describe('resolveAuthGateStage', () => {
         input({
           hydrated: true,
           hasStation: false,
+          hasAccounts: false,
           override: 'auth',
         }),
       ),
@@ -61,19 +96,23 @@ describe('resolveAuthGateStage', () => {
 describe('isAutoStationSetup', () => {
   it('is true only for the automatic first-run rule without an override', () => {
     expect(
-      isAutoStationSetup(input({ hydrated: true, hasStation: false })),
+      isAutoStationSetup(input({ hydrated: true, hasStation: false, hasAccounts: false })),
     ).toBe(true);
     expect(
       isAutoStationSetup(
         input({
           hydrated: true,
           hasStation: true,
+          hasAccounts: true,
           override: 'station_setup',
         }),
       ),
     ).toBe(false);
     expect(
-      isAutoStationSetup(input({ hydrated: true, hasStation: true })),
+      isAutoStationSetup(input({ hydrated: true, hasStation: true, hasAccounts: false })),
+    ).toBe(false);
+    expect(
+      isAutoStationSetup(input({ hydrated: true, hasStation: false, hasAccounts: true })),
     ).toBe(false);
   });
 });
