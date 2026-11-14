@@ -45,9 +45,6 @@
      splits it into a header band (traffic lights only) and a content band
      below; the self avatar anchors the content band top, never the seam. */
   --pt-rail-top: 0px;
-  /* WeChat-parity faint column hairline: material carries the separation, the
-     line is only a 6% ink whisper, never a hard rule. */
-  --pt-column-hairline: color-mix(in srgb, var(--pt-text) 6%, transparent);
   /* Non-mac windows are square; macOS overrides this to the native corner. */
   --pt-window-radius: 0px;
   --pt-frame-inset: 3px;
@@ -79,6 +76,9 @@
  * three edges extend that same material around an inset, rounded stage.
  * A translucent rail or a subtle/L2-colored border breaks that continuity. */
 .ds-shell {
+  /* Color tokens live on UIProvider, below :root. Derive the column rule
+     here so --pt-text resolves in the same scope as the painted frame. */
+  --pt-column-hairline: color-mix(in srgb, var(--pt-text) 6%, transparent);
   width: 100%;
   flex: 1 1 auto;
   min-height: 0;

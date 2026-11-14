@@ -101,7 +101,7 @@ impl NativeWindowHandle for tauri::WebviewWindow {
 mod macos {
     use super::*;
     use objc2_app_kit::{NSLayoutConstraint, NSWindow, NSWindowButton};
-    use objc2_foundation::{NSArray, NSString};
+    use objc2_foundation::{NSArray, NSSize, NSString};
 
     const KINDS: [NSWindowButton; LIGHT_COUNT] = [
         NSWindowButton::CloseButton,
@@ -109,7 +109,8 @@ mod macos {
         NSWindowButton::ZoomButton,
     ];
 
-    const LIGHT_DIAMETER: f64 = 14.0;
+    const LIGHT_DIAMETER: f64 = 12.0;
+    const LIGHT_HIT_DIAMETER: f64 = 14.0;
     const LEADING_INSET: f64 = 5.0;
     const LIGHT_STEP: f64 = 18.0;
 
@@ -142,14 +143,21 @@ mod macos {
                                     .constraintEqualToAnchor(&parent.centerYAnchor()),
                                 button
                                     .widthAnchor()
-                                    .constraintEqualToConstant(LIGHT_DIAMETER),
+                                    .constraintEqualToConstant(LIGHT_HIT_DIAMETER),
                                 button
                                     .heightAnchor()
-                                    .constraintEqualToConstant(LIGHT_DIAMETER),
+                                    .constraintEqualToConstant(LIGHT_HIT_DIAMETER),
                             ]);
                             NSLayoutConstraint::activateConstraints(&constraints);
                         }
                     }
+                    // AppKit's standard button cell keeps its 14pt drawing
+                    // size even with smaller constraints or controlSize.
+                    // Scale its drawing coordinates, not its frame or layer
+                    // transform (AppKit owns and rewrites those transforms).
+                    // Assigning absolute bounds keeps transitions idempotent.
+                    let drawing_size = LIGHT_HIT_DIAMETER * LIGHT_HIT_DIAMETER / LIGHT_DIAMETER;
+                    button.setBoundsSize(NSSize::new(drawing_size, drawing_size));
                     button.setHidden(hidden[slot]);
                 }
             }

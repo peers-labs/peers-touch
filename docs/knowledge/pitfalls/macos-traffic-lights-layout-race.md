@@ -34,6 +34,16 @@ minimize/restore and fullscreen exit. Native screenshots must show whole
 circles and no overlap with chat/settings controls. A programmatic resize
 check does not prove physical live-drag frames; record that distinction.
 
+AppKit's standard button cell keeps a 14pt drawing size even after reducing
+width/height constraints or selecting a small control size. A smaller declared
+frame therefore does not prove a smaller circle. Keep the native 14pt hit
+target and scale the original button's drawing coordinates around its existing
+center to the accepted painted diameter. Assign absolute drawing bounds so
+repeated surface changes do not accumulate scaling. Do not use a layer
+transform: AppKit owns and rewrites the view's layer transform during layout.
+Verify the colored circle's pixel bounds in a normal development NSWindow,
+not only Accessibility bounds or an Acceptance build that bypasses chrome.
+
 ## How to detect perimeter material recurrence
 
 Deleting the left border left the top/upper-left corner painted with L2
@@ -49,3 +59,9 @@ Check actual native screenshots at both narrow and wide sizes: sample blank
 L1, its top edge, top/right/bottom surround and the exposed inner corner.
 The chrome colors must match, while L2 retains its existing distinct surface.
 Source assertions alone cannot prove painted pixel continuity.
+
+Frame color derivations must resolve inside the UIProvider scope. A column
+hairline declared on `:root` from `--pt-text`, which is supplied only by the
+descendant UIProvider, becomes invalid and silently paints no separator.
+Derive it on `.ds-shell` and inspect the actual header-bottom pixels after
+making header and conversation surfaces the same color.

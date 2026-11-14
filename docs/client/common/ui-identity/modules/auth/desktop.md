@@ -55,8 +55,10 @@ window with empty space. Geometry is owned by the native shell
   icon rail, the only column whose avatar sits under the lights. Each header is
   a slim 48px band marked `data-tauri-drag-region`. The original AppKit standard
   window buttons remain in their native title-bar container, with Auto Layout
-  leading offsets **5/23/41pt**, **14pt** diameters and the container's native
-  vertical center. The compact cluster ends at 55pt, entirely inside the fixed
+  leading offsets **5/23/41pt**, **14pt** native hit targets and the container's
+  native vertical center. Each original button's drawing coordinates paint a
+  **12pt** circle around that same center. The visible circles
+  start at **6/24/42pt** and end at 54pt, entirely inside the fixed
   60px icon rail, matching the WeChat convention. Adjacent chat/settings headers
   keep their normal padding. No manual button/container frames, reparenting,
   resize callbacks or Tao `trafficLightPosition` participate in placement.

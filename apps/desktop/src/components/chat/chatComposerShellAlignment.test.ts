@@ -128,8 +128,8 @@ describe('composer expand toggle and frame inset', () => {
   });
 
   it('keeps the main composer frame transparent so no solid white band is painted', () => {
-    // The grey shell is the only visible surface. The outer composer zone must
-    // default to transparent, letting the conversation surface show through.
+    // The shell shares the conversation canvas. The outer composer zone stays
+    // transparent so the same conversation surface shows through.
     expect(composerSource).toContain(
       "background: surfaceBackground ?? 'transparent'",
     );

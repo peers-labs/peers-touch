@@ -443,7 +443,7 @@ body[data-chat-rail-resizing='true'] {
 .sc-composer__shell {
   display: flex;
   flex-direction: column;
-  background: var(--pt-subtle);
+  background: var(--pt-surface);
   overflow: hidden;
 }
 /* Draft strip, recording and voice preview live ABOVE the composer pill
@@ -3621,7 +3621,7 @@ body[data-chat-rail-resizing='true'] {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  background: var(--pt-subtle);
+  background: var(--pt-surface);
   border-bottom: 1px solid var(--pt-column-hairline);
 }
 .sc-chat-head-id { flex: 1 1 auto; display: flex; align-items: center; gap: 10px; min-width: 0; }

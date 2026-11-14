@@ -13,7 +13,10 @@
      structurally impossible — every child chain has min-width:0 and the
      message stream is the only scroll host (vertical). */
 }
-.sk-chat-main { grid-column: 2; min-width: 0; min-height: 0; display: flex; }
+.sk-chat-main {
+  grid-column: 2; min-width: 0; min-height: 0; display: flex;
+  background: var(--sk-overlay);
+}
 .sk-chat-feature > .sk-conv-rail {
   grid-column: 1; width: auto; margin: 0;
   border-right: 1px solid color-mix(in srgb, var(--sk-text) 8%, transparent);
@@ -433,7 +436,7 @@
   flex-shrink: 0; box-sizing: border-box;
   height: 52px; padding: 8px 20px 0;
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  background: var(--sk-tile);
+  background: var(--sk-overlay);
   border-bottom: 1px solid color-mix(in srgb, var(--sk-text) 8%, transparent);
 }
 .sk-chat-head-id { flex: 1 1 auto; display: flex; align-items: center; gap: 10px; min-width: 0; }

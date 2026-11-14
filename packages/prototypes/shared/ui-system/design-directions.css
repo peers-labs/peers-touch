@@ -384,7 +384,7 @@
   /* Symmetric inset: tools/send share one rhythm and the dock aligns cleanly
      inside the stream column (no wide asymmetric lead beside the catalog). */
   padding: 8px; border-radius: var(--pt-composer-radius);
-  background: var(--sk-tile);
+  background: var(--sk-overlay);
 }
 .sk-composer:focus-within { box-shadow: 0 0 0 2px var(--sk-focus-ring); }
 /* The textarea must NOT flex-grow inside the column FieldFrame: flex:1 sets
