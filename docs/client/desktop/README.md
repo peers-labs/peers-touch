@@ -15,6 +15,7 @@
 7. [chat-layout-contract.md](./chat-layout-contract.md) — Desktop Chat 布局、pane、hover、右键菜单、Composer 边界契约
 8. [navigation-and-settings-ownership.md](./navigation-and-settings-ownership.md) — 主导航与 Settings 工具入口的单一归属
 9. [north-star-ui-migration.md](./north-star-ui-migration.md) — 真身渲染层迁移到自包含 peers-ui + 北极星原型（壳/rail/chat/moments/settings/notification）
+10. [window-chrome.md](./window-chrome.md) — AppShell 统一窗口拖动边界、模块标题栏接入及控件排除
 
 ## 架构层真源（跨进程）
 

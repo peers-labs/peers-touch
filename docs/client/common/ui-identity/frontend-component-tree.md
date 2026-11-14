@@ -96,6 +96,11 @@ Rules:
 - Shell must not fetch page-specific business data.
 - Shell may subscribe to global navigation badges, account state, and app readiness only.
 - Shell may provide context, but context values must be stable or split by responsibility.
+- Desktop native drag/maximize hit regions consume the shell-owned
+  `WindowDragRegion` adapter on existing header roots. Pages cannot install
+  another window pointer handler or enroll their whole content tree.
+  See [Desktop window chrome](../../desktop/window-chrome.md) for the
+  platform region and control-exclusion contract.
 
 ### 4.2 NavigationShell
 

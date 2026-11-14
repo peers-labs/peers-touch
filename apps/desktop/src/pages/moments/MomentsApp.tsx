@@ -11,6 +11,7 @@ import { ensureCircleMemberProfiles, ensureMomentDetailProjection, ensureUserMom
 import { useActiveDiscoverySlice, useActiveMomentsSlice } from '../../components/moments/useActiveMomentsStore';
 import { useMomentsNavigationStore, type MomentsTab } from '../../store/momentsNavigation';
 import { useSessionStore } from '../../store/session';
+import { WindowDragRegion } from '../../components/shell/WindowDragRegion';
 import './moments-layout.css';
 import './moments-glass.css';
 
@@ -57,7 +58,7 @@ function MomentsSessionView() {
     return () => host?.removeAttribute('data-social-glass');
   }, []);
   return <div className="moments-app" data-social-glass="" data-social-scope={activeTab}>
-    {view.kind === 'tab' && <MomentScopeBar value={activeTab}
+    {view.kind === 'tab' && <WindowDragRegion><MomentScopeBar value={activeTab}
       options={[{ value: 'feed', label: t('moments.tab.feed') }, { value: 'circles', label: t('moments.tab.circle') }]}
       onChange={goTab} query={query} onQueryChange={setQuery}
       copy={{ scope: t('moments.scope.label'), search: t('moments.scope.search'),
@@ -65,7 +66,7 @@ function MomentsSessionView() {
       actionId={activeTab === 'feed' ? 'moments.compose' : 'circle.open-create'}
       actionClassName={activeTab === 'feed' ? 'pt-mom-compose-open' : 'pt-mom-circle-open'}
       actionAcceptanceId={activeTab === 'feed' ? 'social-composer-open' : 'social-circle-create-open'}
-      onAction={() => activeTab === 'feed' ? setComposerOpen(true) : setCircleCreateOpen(true)} />}
+      onAction={() => activeTab === 'feed' ? setComposerOpen(true) : setCircleCreateOpen(true)} /></WindowDragRegion>}
     <div className="moments-scroll" ref={scrollerRef} data-moments-scroller>
       {(readError || recoveryError) && <Alert data-acceptance-id="social-public-feed-error"
         variant="inline" tone="warning" description={t(publicFeedErrorKey(readError ?? recoveryError))} />}

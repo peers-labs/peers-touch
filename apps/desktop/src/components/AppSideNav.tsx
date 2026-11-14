@@ -2,6 +2,7 @@ import { useCallback, useEffect, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Badge, Button, IconButton } from '@peers-touch/ui';
 import { NotificationBell } from './NotificationBell';
+import { WindowDragRegion } from './shell/WindowDragRegion';
 import { UserProfilePopover, useUserAvatar } from './UserProfilePopover';
 import { UserSquareAvatar } from './common/UserSquareAvatar';
 import { useAgentStore } from '../store/agent';
@@ -124,9 +125,7 @@ export function AppSideNav({ page, navigation }: AppSideNavProps) {
   }, [handleNewChat, handleNextAgent, navigatePrimary]);
 
   return (
-    // deep: any non-interactive spot in the rail drags the window; buttons/
-    // links/inputs inside are still auto-excluded by Tauri's drag-region walk.
-    <nav className="ds-rail" aria-label={t('layout.nav.primary')} data-tauri-drag-region="deep">
+    <WindowDragRegion><nav className="ds-rail" aria-label={t('layout.nav.primary')}>
       <UserProfilePopover>
         <Button actionId="rail.open-self" emphasis="quiet" className="ds-rail-avatar"
           aria-label={t('layout.user.viewProfile')} aria-haspopup="dialog">
@@ -181,6 +180,6 @@ export function AppSideNav({ page, navigation }: AppSideNavProps) {
             onClick={() => navigatePrimary('settings')} />
         </PrimaryNavAnchor>
       </div>
-    </nav>
+    </nav></WindowDragRegion>
   );
 }

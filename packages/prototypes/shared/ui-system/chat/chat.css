@@ -433,6 +433,7 @@
   flex-shrink: 0; box-sizing: border-box;
   height: 52px; padding: 8px 20px 0;
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  background: var(--sk-tile);
   border-bottom: 1px solid color-mix(in srgb, var(--sk-text) 8%, transparent);
 }
 .sk-chat-head-id { flex: 1 1 auto; display: flex; align-items: center; gap: 10px; min-width: 0; }
@@ -497,9 +498,6 @@
 /* Chrome surfaces over the wallpaper: the title band is opaque (wallpaper
    starts at the hairline, WeChat parity); the composer floats on a near-
    opaque canvas veil so the input row stays legible over a busy image. */
-.sk-conv-view[data-chat-background]:not([data-chat-background='default']) .sk-chat-head {
-  background: var(--sk-overlay);
-}
 .sk-conv-view[data-chat-background]:not([data-chat-background='default']) .sk-composer-zone {
   background: color-mix(in srgb, var(--sk-overlay) 92%, transparent);
   backdrop-filter: blur(10px);

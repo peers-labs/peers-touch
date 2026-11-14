@@ -7,8 +7,11 @@ owns:
   - apps/desktop/src-tauri/tauri.conf.json
   - apps/desktop/src/ui/northstar.css
   - apps/desktop/src/ui/chat.css
+  - packages/prototypes/shared/ui-system/design-directions.css
 related:
   - docs/client/common/ui-identity/modules/auth/desktop.md
+  - docs/client/common/ui-identity/tokens.md
+  - docs/architecture/platform/client/ui-system/prototype/north-star-frame.md
 detected: 2026-11-14
 ---
 
@@ -30,3 +33,19 @@ NSWindow: check button bounds within the rail at narrow/wide sizes and after
 minimize/restore and fullscreen exit. Native screenshots must show whole
 circles and no overlap with chat/settings controls. A programmatic resize
 check does not prove physical live-drag frames; record that distinction.
+
+## How to detect perimeter material recurrence
+
+Deleting the left border left the top/upper-left corner painted with L2
+`subtle` while L1 used a white translucent gradient. This produced two
+different materials around the native lights and the rest of the perimeter.
+L1 and the shell background/border must all consume the existing `--pt-surface`
+color. The reference governs frame geometry, not a new palette: preserve the
+product's existing three-level colors.
+Inset stage corners expose that same base; prototype wallpaper/background
+layers must be inset and rounded too, or they paint over the base.
+
+Check actual native screenshots at both narrow and wide sizes: sample blank
+L1, its top edge, top/right/bottom surround and the exposed inner corner.
+The chrome colors must match, while L2 retains its existing distinct surface.
+Source assertions alone cannot prove painted pixel continuity.

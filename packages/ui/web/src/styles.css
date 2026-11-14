@@ -537,7 +537,7 @@ button.pt-link:hover:not(:disabled){background:var(--pt-subtle)}
 .pt-field-frame[data-appearance=composer][data-invalid=true]{border-color:var(--pt-danger)}
 .pt-ui .pt-field-frame[data-framing=embedded]{flex:1;min-width:0;min-height:0;border:0;background:transparent;box-shadow:none;padding:0}
 .pt-ui .pt-field-frame[data-framing=embedded]:focus-within{box-shadow:none}
-.pt-field-frame[data-framing=embedded] .pt-textarea{flex:none;min-height:0;max-height:none;width:100%;box-sizing:border-box;padding:8px 4px;resize:none}
+.pt-field-frame[data-framing=embedded] .pt-textarea{flex:none;min-height:var(--pt-textarea-min-height,0);max-height:var(--pt-textarea-max-height,none);width:100%;box-sizing:border-box;padding:var(--pt-textarea-padding,8px 4px);caret-color:var(--pt-textarea-caret-color,auto);resize:none}
 .pt-field-frame[data-framing=embedded] .pt-textarea[data-density=comfortable]{min-height:var(--pt-control-comfortable)}
 .pt-field-frame[data-appearance=composer] .pt-button[data-emphasis=primary]{background:var(--pt-primary);color:var(--pt-onPrimary)}
 .pt-field-frame[data-appearance=composer] .pt-button[data-emphasis=primary]:hover:not([aria-disabled=true]){background:var(--pt-primaryHover)}

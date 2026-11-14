@@ -1,6 +1,7 @@
 import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
+import { WindowDragRegion } from '../components/shell/WindowDragRegion';
 
 import { PageColumn } from '../layout/PageColumn';
 import {
@@ -57,7 +58,7 @@ export const EvaluationPage = memo(() => {
       }}
     >
       <PageColumn tier="standard" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-      <Flexbox horizontal align="center" justify="space-between" gap={16}>
+      <WindowDragRegion><Flexbox horizontal align="center" justify="space-between" gap={16}>
         <Flexbox gap={2}>
           <Typography.Title level={4} style={{ margin: 0 }}>
             {t('agent.eval.title')}
@@ -74,7 +75,7 @@ export const EvaluationPage = memo(() => {
         >
           {t('agent.eval.refresh')}
         </Button>
-      </Flexbox>
+      </Flexbox></WindowDragRegion>
 
       {projectionPhase === 'restoring' && (
         <Alert

@@ -78,6 +78,25 @@ next identical defect had to be noticed by a human again.
 
 ## How to detect a recurrence
 
+### Embedded writing insets and expanded bounds
+
+The 2026-11-15 Desktop composer put its caret against the curved upper-left
+edge. Its app class declared wider padding, but the shared embedded
+`FieldFrame` descendant selector won the cascade with `8px 4px`. That same
+selector reset min/max height, leaving the expand button pressed while the
+editor stayed one line tall.
+
+Embedded TextArea now consumes public `--pt-textarea-padding`,
+`--pt-textarea-caret-color`, `--pt-textarea-min-height` and
+`--pt-textarea-max-height` inputs. Chat binds the shared `12px 16px 8px`
+writing inset and accent caret; Desktop passes its existing height bounds.
+The default embedded geometry and comfortable touch floor still apply to
+other callers. Never fix this by increasing the app selector's specificity.
+The writing dock's shared radius is 8px. The craft battery checks resolved
+padding and caret paint, so a source-only assertion cannot hide another
+cascade override. Check an empty native editor, expansion and collapse, plus
+single-line/multiline text and narrow geometry on the current source.
+
 ### Embedded composer touch height
 
 The 2026-11-13 whole-product native iOS run failed `chat.direct-thread`:

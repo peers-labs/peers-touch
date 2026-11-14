@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Typography, theme } from 'antd';
+import { WindowDragRegion } from './shell/WindowDragRegion';
 
 const { Title, Text } = Typography;
 
@@ -16,7 +17,7 @@ export function PageHeader({ title, subtitle, icon, actions, extra }: PageHeader
   const { token } = theme.useToken();
 
   return (
-    <Flexbox
+    <WindowDragRegion><Flexbox
       horizontal
       align="center"
       justify="space-between"
@@ -36,10 +37,10 @@ export function PageHeader({ title, subtitle, icon, actions, extra }: PageHeader
           )}
         </Flexbox>
       </Flexbox>
-      <Flexbox horizontal gap={12} align="center" style={{ flexShrink: 0 }}>
+      <WindowDragRegion mode="none"><Flexbox horizontal gap={12} align="center" style={{ flexShrink: 0 }}>
         {extra}
         {actions}
-      </Flexbox>
-    </Flexbox>
+      </Flexbox></WindowDragRegion>
+    </Flexbox></WindowDragRegion>
   );
 }

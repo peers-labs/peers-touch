@@ -17,6 +17,7 @@
 
 .pt-ui.ds-theme {
   color: var(--pt-text);
+  background: var(--pt-surface);
   font-family: var(--pt-font);
   /* Own the full viewport instead of relying on a 100% parent chain: the
      outer antd App wrapper has no intrinsic height, so width/height:100%
@@ -49,6 +50,7 @@
   --pt-column-hairline: color-mix(in srgb, var(--pt-text) 6%, transparent);
   /* Non-mac windows are square; macOS overrides this to the native corner. */
   --pt-window-radius: 0px;
+  --pt-frame-inset: 3px;
 }
 :root[data-platform='macos'] {
   --pt-titlebar-inset: 8px;
@@ -72,14 +74,10 @@
  * content stage. Unlike the centered prototype card there is no outer margin;
  * the rail is the material zone and the stage is the canvas.
  *
- * The frame is deliberately three-sided, not a uniform ring. The L1 rail is a
- * translucent, backdrop-blurred material whose flattened color shifts with
- * whatever is behind it, so no solid border color can match it on every
- * surface — a solid ring always reads as a darker frame painted ON the menu.
- * Instead the left edge has NO border: the rail's own frosted fill runs to the
- * window's rounded corner (the shell's overflow + radius clip it), which is the
- * native macOS sidebar treatment. The subtle solid frame stays only on the
- * stage edges (top/right/bottom), where it also covers the corner crescent. */
+ * L1 and the entire perimeter share the existing surface color, including the
+ * top-left traffic-light corner. The 60px rail owns the left edge; the other
+ * three edges extend that same material around an inset, rounded stage.
+ * A translucent rail or a subtle/L2-colored border breaks that continuity. */
 .ds-shell {
   width: 100%;
   flex: 1 1 auto;
@@ -87,11 +85,11 @@
   display: flex;
   flex-direction: row;
   overflow: hidden;
-  background: var(--pt-canvas);
+  background: var(--pt-surface);
   color: var(--pt-text);
   border-style: solid;
-  border-color: var(--pt-subtle);
-  border-width: 3px 3px 3px 0;
+  border-color: var(--pt-surface);
+  border-width: var(--pt-frame-inset) var(--pt-frame-inset) var(--pt-frame-inset) 0;
   border-radius: var(--pt-window-radius);
 }
 
@@ -107,26 +105,9 @@
      below it while other columns rise into the title-bar strip. */
   padding: var(--pt-rail-top) 0 14px;
   gap: 4px;
-  /* Chrome zones separate by material (translucent surface + blur), never by
-     an opaque hairline — north-star frame grammar #2. WeChat-parity frosted
-     glass: a wide translucent-surface gradient with real light play (bright
-     outer edge fading toward the stage) and a soft inset edge that defines
-     the material boundary. The saturated backdrop blur is live for any
-     overlay content; the rail's fixed 60px column means page content never
-     scrolls beneath it, so true desktop vibrancy would additionally require
-     a native NSVisualEffectView window treatment. */
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--pt-surface) 88%, transparent),
-    color-mix(in srgb, var(--pt-surface) 38%, transparent)
-  );
-  backdrop-filter: blur(26px) saturate(1.8);
-  -webkit-backdrop-filter: blur(26px) saturate(1.8);
-  /* Only the soft inset glow spans the full height. The hard 1px column
-     hairline lives on ::after and starts below the traffic-light header band,
-     so the native lights never straddle a vertical seam. */
-  box-shadow:
-    inset 8px 0 18px -16px color-mix(in srgb, var(--pt-text) 18%, transparent);
+  /* Keep the original L1 surface color and extend it around the perimeter.
+     L2/subtle and the reading stage keep their existing palette. */
+  background: var(--pt-surface);
 }
 /* Rail/stage hairline. It begins at --pt-rail-top (the bottom of the title
    band), not at the window's top edge: with macOS titleBarStyle Overlay the
@@ -155,6 +136,7 @@
   overflow: hidden;
   position: relative;
   background: var(--pt-canvas);
+  border-radius: max(0px, calc(var(--pt-window-radius) - var(--pt-frame-inset)));
 }
 
 /* Rail groups */
@@ -815,7 +797,7 @@
   }
 }
 .sk-identity-avatar .pt-avatar {
-  box-shadow: 0 0 0 4px var(--sk-overlay), 0 6px 16px rgba(15, 23, 42, .18);
+  box-shadow: 0 0 0 4px var(--pt-white), 0 6px 16px rgba(15, 23, 42, .18);
 }
 .sk-identity-meta {
   flex: 1;

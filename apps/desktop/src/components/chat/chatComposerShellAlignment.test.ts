@@ -38,7 +38,7 @@ describe('composer vertical shell (WeChat grammar)', () => {
     expect(input).toContain('width: 100%');
     expect(input).toContain('font-size: 13.5px');
     expect(input).toContain('line-height: 1.55');
-    expect(input).toContain('min-height: var(--sc-composer-input-min-height, 34px)');
+    expect(input).toContain('--pt-textarea-min-height: var(--sc-composer-input-min-height, 34px)');
     const wrap = rule('.sc-composer__input-wrap');
     expect(wrap).toContain('flex: 1 1 auto');
   });

@@ -606,7 +606,7 @@ body[data-chat-rail-resizing='true'] {
   min-width: 0;
   height: 34px;
 }
-/* The input is a peers-ui TextArea (framing="embedded"): the rounded host pill
+/* The input is a peers-ui TextArea (framing="embedded"): the rounded host dock
    owns all chrome, so the library frame stays borderless/transparent with no
    inner focus ring (prototype sk-composer parity). App CSS only owns geometry
    and type so the auto-grow effect keeps its min/max-height contract. */
@@ -623,27 +623,27 @@ body[data-chat-rail-resizing='true'] {
   box-shadow: none;
 }
 /* The layout policy drives the resting shell with an inline box-shadow:none;
-   focus must still ring the whole pill, so win that reset explicitly. */
+   focus must still ring the whole dock, so win that reset explicitly. */
 .sc-composer__shell:focus-within {
   box-shadow: 0 0 0 2px var(--pt-focus) !important;
 }
 /* WeChat composer grammar: the textarea fills the full top region (the large
    editable area), and the tool/send controls sit in a separate footer row.
-   13.5px / 1.55 type with symmetric gutters; auto-grow is instant (no height
+   13.5px / 1.55 type with shared writing insets; auto-grow is instant (no height
    transition) between the min/max-height contract. */
 .sc-composer__input {
   width: 100%;
   box-sizing: border-box;
   resize: none;
-  padding: 10px 12px 6px;
+  --pt-textarea-padding: var(--pt-composer-input-padding);
+  --pt-textarea-caret-color: var(--pt-accent);
   background: transparent;
   color: var(--pt-text);
-  caret-color: var(--pt-primary);
   font-family: inherit;
   font-size: 13.5px;
   line-height: 1.55;
-  min-height: var(--sc-composer-input-min-height, 34px);
-  max-height: var(--sc-composer-input-max-height, 180px);
+  --pt-textarea-min-height: var(--sc-composer-input-min-height, 34px);
+  --pt-textarea-max-height: var(--sc-composer-input-max-height, 180px);
   overflow-y: auto;
 }
 /* The input region owns the full shell width so expanded text fills the box
@@ -3621,7 +3621,7 @@ body[data-chat-rail-resizing='true'] {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  background: var(--pt-surface);
+  background: var(--pt-subtle);
   border-bottom: 1px solid var(--pt-column-hairline);
 }
 .sc-chat-head-id { flex: 1 1 auto; display: flex; align-items: center; gap: 10px; min-width: 0; }

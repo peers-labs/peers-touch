@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Card, Icon, IconButton } from '@peers-touch/ui';
 import { feedbackChannel, notifyError } from '../../ui/feedback';
+import { WindowDragRegion } from '../../components/shell/WindowDragRegion';
 import { BRANDING } from '../../branding';
 import { LanguageSwitcher } from '../../components/common/LanguageSwitcher';
 import {
@@ -1131,10 +1132,8 @@ export function LoginPage({
   if (embedded) return card;
 
   return (
-    // deep: blank shell area drags the login window; form controls stay
-    // interactive because Tauri excludes inputs/buttons from the subtree walk.
-    <div className="pt-auth-shell" data-tauri-drag-region="deep">
+    <WindowDragRegion><div className="pt-auth-shell">
       <div className="pt-auth-region">{card}</div>
-    </div>
+    </div></WindowDragRegion>
   );
 }

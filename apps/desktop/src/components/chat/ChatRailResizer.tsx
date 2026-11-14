@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { WindowDragRegion } from '../shell/WindowDragRegion';
 
 import {
   CHAT_RAIL_KEYBOARD_STEP,
@@ -76,7 +77,7 @@ export function ChatRailResizer({
   };
 
   return (
-    <div
+    <WindowDragRegion mode="none"><div
       role="separator"
       aria-orientation="vertical"
       aria-label={t('chat.rail.resize')}
@@ -96,6 +97,6 @@ export function ChatRailResizer({
       onKeyDown={handleKeyDown}
     >
       <span className="sc-chat-rail-resizer__line" aria-hidden="true" />
-    </div>
+    </div></WindowDragRegion>
   );
 }

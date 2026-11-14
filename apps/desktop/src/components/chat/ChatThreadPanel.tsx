@@ -1,3 +1,4 @@
+import { WindowDragRegion } from '../shell/WindowDragRegion';
 import {
   useCallback,
   useEffect,
@@ -500,7 +501,7 @@ export function ChatThreadPanel() {
       data-chat-thread-reply-count={replies.length}
       data-chat-thread-root={openThreadRootUlid}
     >
-      <header className="sc-thread__header">
+      <WindowDragRegion><header className="sc-thread__header">
         <span className="sc-thread__title-group">
           <MessagesSquare size={16} className="sc-thread__title-icon" />
           <span className="sc-thread__title-text">
@@ -529,7 +530,7 @@ export function ChatThreadPanel() {
             onActivate={closeThread}
           />
         </span>
-      </header>
+      </header></WindowDragRegion>
 
       {!rootMessage ? (
         <div className="sc-thread__missing">

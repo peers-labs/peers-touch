@@ -16,6 +16,7 @@ import { AgentIconTile } from '../AgentIconTile';
 import { PanelToggleDock } from './PanelToggleDock';
 import { openAgentCreateFlow } from '../create';
 import { openAgentChatSession } from '../../../services/openAgentChatSession';
+import { WindowDragRegion } from '../../shell/WindowDragRegion';
 
 interface AgentRailProps {
   collapsed: boolean;
@@ -115,7 +116,7 @@ export function AgentRail({
 
   if (collapsed) {
     return (
-      <aside
+      <WindowDragRegion mode="self"><aside
         data-pt-agent-rail="collapsed"
         style={{
           width: 48,
@@ -192,12 +193,12 @@ export function AgentRail({
           title={t('agent.chat.expandPanel')}
           onClick={onToggle}
         />
-      </aside>
+      </aside></WindowDragRegion>
     );
   }
 
   return (
-    <aside
+    <WindowDragRegion mode="self"><aside
       data-pt-agent-rail="expanded"
       style={{
         width: 230,
@@ -213,7 +214,7 @@ export function AgentRail({
         overflow: 'hidden',
       }}
     >
-      <div
+      <WindowDragRegion><div
         style={{
           height: 36,
           display: 'flex',
@@ -239,7 +240,7 @@ export function AgentRail({
           onClick={() => void createLocalAgent()}
           size={{ blockSize: 30, size: 15 }}
         />
-      </div>
+      </div></WindowDragRegion>
       <SearchBar
         placeholder={t('agent.sidebar.searchAgents')}
         value={search}
@@ -317,7 +318,7 @@ export function AgentRail({
         title={t('agent.chat.collapsePanel')}
         onClick={onToggle}
       />
-    </aside>
+    </aside></WindowDragRegion>
   );
 }
 

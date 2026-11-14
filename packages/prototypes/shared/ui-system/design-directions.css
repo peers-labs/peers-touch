@@ -103,12 +103,16 @@
 }
 
 .sk-shell {
+  --sk-frame-inset: 3px;
+  --sk-frame-radius: var(--sk-radius-soft);
   position: relative;
   max-width: 1180px; margin: 0 auto;
   display: flex; height: calc(100vh - 150px); min-height: 620px;
-  border-radius: var(--sk-radius-soft); overflow: hidden;
-  background: var(--sk-shell-bg);
-  border: 1px solid var(--sk-glass-border);
+  border-radius: var(--sk-frame-radius); overflow: hidden;
+  background: var(--sk-rail-bg);
+  border-style: solid;
+  border-color: var(--sk-rail-bg);
+  border-width: var(--sk-frame-inset) var(--sk-frame-inset) var(--sk-frame-inset) 0;
   box-shadow: 0 18px 44px rgba(35, 30, 18, .12);
   color: var(--sk-text);
   font-family: var(--sk-font);
@@ -138,7 +142,11 @@
 }
 .sk-theme ::-webkit-scrollbar-thumb:horizontal { border-width: 2px 3px; }
 
-.sk-shell-bg { position: absolute; inset: 0; z-index: 0; overflow: hidden; }
+.sk-shell-bg {
+  position: absolute; inset: 0 0 0 60px; z-index: 0; overflow: hidden;
+  background: var(--sk-shell-bg);
+  border-radius: max(0px, calc(var(--sk-frame-radius) - var(--sk-frame-inset)));
+}
 .sk-shell-glow { position: absolute; inset: 0; background: var(--sk-shell-glow); }
 .sk-shell-wall { position: absolute; inset: 0; background: var(--sk-wallpaper, none); background-color: transparent; }
 .sk-rail, .sk-feed { position: relative; z-index: 1; }
@@ -162,7 +170,7 @@
   --sk-card-shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 8px 24px -16px rgba(16, 24, 40, .12);
   --sk-shell-glow: none;
 }
-/* Pine-on-neutral glass (north-star grammar): the material stays frosted
+/* Pine-on-neutral glass (north-star grammar): content stays frosted
    (translucent cards + backdrop blur over a flat neutral paper floor), but
    hue is flattened out of the container — no green canvas, no ambient glow.
    Pine lives only on small brand/connection touch points via --sk-accent. */
@@ -173,7 +181,7 @@
   --sk-primary: #1a1d20; --sk-primary-ink: #ffffff;
   --sk-accent: #2f6a50; --sk-on-accent: #ffffff;
   --sk-danger: #c0392f; --sk-warning: #9a5f00; --sk-success: #1f7d52;
-  --sk-rail-bg: rgba(255,255,255,.5); --sk-r-card: 20px; --sk-radius-soft: 22px;
+  --sk-rail-bg: var(--sk-overlay); --sk-r-card: 20px; --sk-radius-soft: 22px;
   --sk-radius-control: 12px; --sk-avatar-radius: 11px;
   --sk-btn-primary-shadow: 0 10px 24px -14px rgba(20,24,22,.45);
   --sk-font: Manrope, -apple-system, "PingFang SC", "Segoe UI", sans-serif;
@@ -190,13 +198,11 @@
   background: color-mix(in srgb, var(--sk-shell-bg) 28%, transparent);
 }
 
-/* rail — material zone, no hairline borders against other chrome */
+/* L1 and the perimeter are one opaque base; glass stays inside the stage. */
 .sk-rail {
   width: 60px; flex-shrink: 0;
   display: flex; flex-direction: column; align-items: center; padding: 14px 0;
   background: var(--sk-rail-bg);
-  backdrop-filter: blur(var(--sk-glass-blur));
-  -webkit-backdrop-filter: blur(var(--sk-glass-blur));
 }
 /* Identity anchors the rail one step above the 38px nav targets. It is a
    peers-ui Button (keyboard-focusable); the rail-scoped selectors neutralize
@@ -211,8 +217,7 @@
   color: var(--sk-on-accent); background: var(--sk-accent);
   box-shadow: 0 10px 22px -12px rgba(20,24,22,.45);
   /* Quiet wash only: no transform/box-shadow animation. Moving the hit target
-     under the cursor flickers at the tile edge, and animating shadow over the
-     rail's backdrop-filter repaints noisily. */
+     under the cursor flickers at the tile edge. */
   transition: background-color .16s cubic-bezier(.22,1,.36,1), color .16s cubic-bezier(.22,1,.36,1);
 }
 /* Hover stays a PINE tile: lighten the pine fill slightly, never swap it for
@@ -293,7 +298,10 @@
 .sk-self-card-body [data-self-card-manage] { margin-top: 13px; }
 
 /* feed: panes own their scroll; the frame never shows a page-level scrollbar */
-.sk-feed { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.sk-feed {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden;
+  border-radius: max(0px, calc(var(--sk-frame-radius) - var(--sk-frame-inset)));
+}
 /* Surface panes stay mounted (live cross-surface state); only the active one shows. */
 .sk-feed-pane { display: none; flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
 .sk-feed-pane[data-pane-active='true'] { display: flex; }
@@ -373,9 +381,9 @@
 
 .sk-composer {
   flex-shrink: 0; min-width: 0; display: flex; align-items: flex-end; gap: 10px;
-  /* Symmetric inset: tools/send share one rhythm and the pill aligns cleanly
+  /* Symmetric inset: tools/send share one rhythm and the dock aligns cleanly
      inside the stream column (no wide asymmetric lead beside the catalog). */
-  padding: 8px; border-radius: 16px;
+  padding: 8px; border-radius: var(--pt-composer-radius);
   background: var(--sk-tile);
 }
 .sk-composer:focus-within { box-shadow: 0 0 0 2px var(--sk-focus-ring); }
@@ -383,13 +391,17 @@
    main-size basis to 0 and makes the box ignore its explicit height (it
    collapses to one row and expand/auto-grow can never work). Horizontal fill
    is owned by .sk-composer-input-wrap; here just span the frame width. */
-.sk-composer-input { flex: none; width: 100%; min-width: 0; background: transparent; }
+.sk-composer-input {
+  --pt-textarea-padding: var(--pt-composer-input-padding);
+  --pt-textarea-caret-color: var(--pt-accent);
+  flex: none; width: 100%; min-width: 0; background: transparent;
+}
 /* peers-ui embedded FieldFrame: remove its own frame; the rounded host owns it */
 .sk-composer .pt-field-frame { background: transparent; border: 0; box-shadow: none; padding: 0; }
 .sk-composer .pt-field-frame:focus-within { box-shadow: none; }
 /* Height is owned by the composer's auto-grow logic (rows clamp), not the
-   primitive's 80px textarea floor or a static max-height. Horizontal padding
-   stays at the primitive's 12px. */
+   primitive's 80px textarea floor or a static max-height. Writing insets and
+   caret paint go through the primitive's shared token inputs. */
 .sk-composer .pt-textarea {
   background: transparent; border: 0; outline: 0; resize: none;
   font-family: inherit; font-size: 13.5px; line-height: 1.55; color: var(--sk-text);
@@ -486,7 +498,10 @@
   .sk-page { padding: 0; }
   /* Fill the viewport edge-to-edge but keep the ROW geometry: the rail stays
      a full-height 60px vertical surface, the shell never stacks. */
-  .sk-shell { height: 100vh; min-height: 100vh; border-radius: 0; border: 0; box-shadow: none; }
+  .sk-shell {
+    --sk-frame-radius: 0px; --sk-frame-inset: 0px;
+    height: 100vh; min-height: 100vh; box-shadow: none;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .sk-shell *, .sk-switcher * { animation: none !important; transition: none !important; }

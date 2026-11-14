@@ -1,5 +1,6 @@
 import { useMemo, useState, useCallback, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { WindowDragRegion } from '../shell/WindowDragRegion';
 import { Button, ContextMenu, Empty, Icon, IconButton, Menu, Segmented, TextField } from '@peers-touch/ui';
 import type { MenuAction } from '@peers-touch/ui';
 import { GroupSquareAvatar } from '../common/GroupSquareAvatar';
@@ -514,16 +515,13 @@ export function ChatSessionList({
             TAKES OVER the band (prototype sk-rail-header parity): while open
             the segmented island and chrome tiles unmount, leaving the field
             plus one close tile on the same row so the list never jumps. */}
-        {/* deep so header blank space drags; the segmented control, search
-            field and icon buttons remain interactive (auto-excluded). */}
-        <div
+        <WindowDragRegion><div
           className="sc-rail-header"
           data-rail-search={searchOpen ? 'active' : 'idle'}
-          data-tauri-drag-region="deep"
         >
           {searchOpen ? (
             <>
-              <span className="sc-rail-search">
+              <WindowDragRegion mode="none"><span className="sc-rail-search">
                 <TextField
                   appearance="search"
                   reveal
@@ -540,7 +538,7 @@ export function ChatSessionList({
                   onClear={() => setSearchText('')}
                   onKeyDown={event => { if (event.key === 'Escape') closeSearch(); }}
                 />
-              </span>
+              </span></WindowDragRegion>
               <IconButton
                 actionId="chat.rail-search-close"
                 className="sc-rail-icon"
@@ -592,7 +590,7 @@ export function ChatSessionList({
               </Menu>
             </>
           )}
-        </div>
+        </div></WindowDragRegion>
 
         {tab === 'contacts' ? (
           renderContacts?.(searchText)

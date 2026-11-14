@@ -21,6 +21,11 @@
 取代：搜索是 ⌘K/搜索钮唤起的浮层，不是页面）。当前窗内上演动态、消息、
 设置三个真实面，跨面路由由窗框宿主统一执行。
 
+Native Desktop 窗口交互由 AppShell 的
+[`WindowDragRegion`](../../../../../client/desktop/window-chrome.md)
+统一适配：各模块保留既有标题栏几何，标题与空白可拖动，控件与内容保留原交互。
+浏览器原型只表达上述区域/几何；它不能证明 OS 窗口实际移动。
+
 ## Frame Grammar（设计原则）
 
 1. **单一窗框，结构分区固定，信息列弹性。**
@@ -31,10 +36,18 @@
    （min-width:0 链 + 面内容器查询），导航不重排、不在「底部 ↔ 右上」之间
    跳位。≤760px 仅回收舞台外边距、壳铺满视口，几何方向不变。
 
-2. **Chrome 分区靠材质，不靠发丝线。**
-   图标轨、顶栏之间**禁止 border 分隔**；层级用半透明表面
-   （`--sk-rail-bg` / `--sk-head-bg`）、毛玻璃模糊与投影表达。描边发丝线是
-   「后台瓷砖框」观感的来源。内容分组内部的分隔允许保留。
+2. **一级菜单与外框是连续底座，内容区内嵌。**
+   2026-11-14 用户明确：**保留我们原来的一、二、三级配色，微信只参照窗框结构，
+   不抄灰色**。一级菜单、其顶部/左上圆角以及顶/右/底外框必须是同一种
+   原有一级菜单底色，Desktop 统一消费 `--pt-surface`；
+   原型沿用各皮肤的 `--sk-rail-bg`，glass 一级菜单仍是原有白色。
+   禁止把外框刷成二级菜单的 `subtle`，或让一级菜单渐变/透底后与外框变色。
+   60px 一级菜单自然占据左边；其余三边内缩 3px，内容区内圆角为外圆角减
+   内缩量，露出的转角仍是一级菜单底座。毛玻璃只用于内嵌内容表面。
+   层级沿用原有表面明度关系，不额外画硬分隔线；内容分组内部允许分隔。
+   会话标题栏统一使用原有二级表面（Desktop `--pt-subtle`，原型
+   `--sk-tile`），与消息区区分并和列表标题带对齐。自己的会话、普通私聊、
+   群聊共用这条标题栏；设置壁纸也不改变其表面层级。
 
 3. **圆角长在产生底色的那一层；身份元素统一方圆（rounded-square）。**
    不允许只给父容器圆角 + `overflow:hidden` 而让实际绘制底色/描边的子元素
@@ -96,6 +109,23 @@
    - 机器守护：评论排序控件缺失（`moments-comment-pagination`）、信息流默认时间序
      且热门仅为可选项（`moments-feed-order-view` / `moments-feed`）等由 north-star
      套件断言；再引入按互动量排序的默认入口即视为违反本原则。
+
+## Desktop Settings 组合与边界
+
+- 生产 Settings 延续已确认的紧凑分组岛与常驻分区侧栏；当前分组为
+  General / AI / Channels / Advanced，工具、存储、日志、Applet 与帮助归入
+  Advanced，不另起顶层标签，也不添加文章式 Settings 大标题。
+- `SettingsPage` 根节点必须挂载 `.sc-settings`。它同时承担定高布局和
+  `--sk-*`、`--pt-settings-edge-gutter` 的继承边界；所有分区由其内部的
+  `.sc-settings__scroll` → `SectionHost` 挂载，卡片列不再叠加外侧留白。
+  CSS 声明存在不能证明组合正确，需同时检查实际渲染的页面根节点。
+- Provider 与 Federation 管理的产品边界以
+  [Provider control plane](../../../../domains/agent/provider-control-plane.md#desktop-and-federation)
+  为准。恢复布局不得恢复已迁到 Dashboard 的管理入口。
+- `shared/ui-system/settings/SettingsFeature.tsx` 的分组岛、侧栏与内容滚动
+  语法仍是视觉对照；其 Network / Provider 管理导航仍为 **UNSYNCED**，
+  Client Platform 需按上述消费端边界整理原型目录。本次回归修复不把这些
+  管理示例当作生产导航授权。
 
 ## Pine 色彩哲学与用色边界
 

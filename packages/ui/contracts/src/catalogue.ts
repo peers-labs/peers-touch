@@ -487,7 +487,7 @@ export const capabilityCatalogue: readonly CapabilityRecord[] = [
       "FieldFrame.appearance=composer；一个外框包含工具、embedded TextArea和发送；唯一焦点边界。",
       "TextArea.autoGrow=false/true；true由控件测量内容与宽度，minimumRows/maximumRows控制展开和滚动。"
     ],
-    "geometryAndMotion": "同意图一个外框和focus ring；composer为12px圆角、6px内距，embedded输入不画第二个边框或ring，发送保留primary语义；autoGrow以实际字体/内容/宽度计算行限，上下限服从控件最小高度，超限内部滚动；comfortable embedded输入至少44px触控高度；search原位160ms ease-out淡入，焦点32% accent边框、2px 9% accent光晕，140ms cubic-bezier(.22,1,.36,1)；减弱动效关闭动画和过渡；comfortable/触控输入16px防iOS缩放；不加位移动画。",
+    "geometryAndMotion": "同意图一个外框和focus ring；composer为8px圆角、6px内距，embedded输入不画第二个边框或ring，发送保留primary语义；聊天文字通过--pt-textarea-padding消费composer.inputPadding（12px 16px 8px），游标通过--pt-textarea-caret-color消费accent，其他embedded输入保留默认留白；autoGrow以实际字体/内容/宽度计算行限，上下限服从控件最小高度，超限内部滚动；comfortable embedded输入至少44px触控高度；search原位160ms ease-out淡入，焦点32% accent边框、2px 9% accent光晕，140ms cubic-bezier(.22,1,.36,1)；减弱动效关闭动画和过渡；comfortable/触控输入16px防iOS缩放；不加位移动画。",
     "extremeData": "空与0、负数/指数/小数精度、中文IME、emoji组合字符、长URL、粘贴带空格、200%字；PIN长度不写死为6。",
     "publicContractFields": "各kind独立value类型；fieldId/label/draft/validation/readOnly；number有min/max/step/precision；pin有length/alphabet；onEdit/onCommit"
   },

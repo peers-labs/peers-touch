@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { WindowDragRegion } from './shell/WindowDragRegion';
 
 interface GlobalLayoutProps {
   sideNav: ReactNode;
@@ -13,10 +14,10 @@ interface GlobalLayoutProps {
  */
 export function GlobalLayout({ sideNav, children, overlay }: GlobalLayoutProps) {
   return (
-    <div className="ds-shell">
+    <WindowDragRegion mode="self"><div className="ds-shell">
       {sideNav}
       <div className="ds-stage">{children}</div>
       {overlay}
-    </div>
+    </div></WindowDragRegion>
   );
 }

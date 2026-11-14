@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { WindowDragRegion } from '../../components/shell/WindowDragRegion';
 import { Button } from '@peers-touch/ui';
 import { ChevronLeft } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -50,7 +51,7 @@ export function MomentDetailView({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center' }}>
+      <WindowDragRegion><div style={{ display: 'flex', alignItems: 'center' }}>
         <Button
           actionId="moments.detail.back"
           emphasis="quiet"
@@ -59,7 +60,7 @@ export function MomentDetailView({
         >
           {t('moments.action.back')}
         </Button>
-      </div>
+      </div></WindowDragRegion>
       {!post && (
         <SocialEmptyState
           kind="empty"

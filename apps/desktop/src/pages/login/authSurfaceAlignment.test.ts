@@ -380,8 +380,8 @@ describe('auth surface polish', () => {
       'utf8',
     );
     // A full-height hard seam made the native green light straddle the
-    // rail/stage boundary. The base rail rule must no longer paint the 1px
-    // inset line (only the soft glow spans the whole column).
+    // rail/stage boundary. The base rail rule must not paint a full-height
+    // inset line across the continuous chrome.
     const railRule = northstar.match(/\.ds-rail\s*\{([^}]*)\}/)?.[1] ?? '';
     expect(railRule).not.toContain('inset -1px 0 0');
     // The hairline moves to a pseudo that starts under the title band, so the
@@ -395,18 +395,22 @@ describe('auth surface polish', () => {
     );
   });
 
-  it('lets the frosted rail own the left edge instead of painting a frame on it', () => {
+  it('uses the same opaque L1 material around the inset rounded stage', () => {
     const northstar = readFileSync(
       new URL('../../ui/northstar.css', import.meta.url),
       'utf8',
     );
-    // The rail is a translucent blurred material no solid color can match, so
-    // the shell frame is three-sided: zero left border (rail fills to the
-    // rounded corner), 3px subtle frame only on the stage edges.
+    // The perimeter must match L1, including its top edge, rather than L2.
     const shell = northstar.match(/\.ds-shell\s*\{([^}]*)\}/)?.[1] ?? '';
-    expect(shell).toContain('border-width: 3px 3px 3px 0');
-    expect(shell).toContain('border-color: var(--pt-subtle)');
-    expect(shell).not.toContain('border: 3px solid');
+    const rail = northstar.match(/\.ds-rail\s*\{([^}]*)\}/)?.[1] ?? '';
+    const stage = northstar.match(/\.ds-stage\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(shell).toContain('border-width: var(--pt-frame-inset) var(--pt-frame-inset) var(--pt-frame-inset) 0');
+    expect(shell).toContain('border-color: var(--pt-surface)');
+    expect(shell).toContain('background: var(--pt-surface)');
+    expect(rail).toContain('background: var(--pt-surface)');
+    expect(rail).not.toContain('linear-gradient');
+    expect(rail).not.toContain('backdrop-filter');
+    expect(stage).toContain('border-radius: max(0px, calc(var(--pt-window-radius) - var(--pt-frame-inset)))');
   });
 });
 

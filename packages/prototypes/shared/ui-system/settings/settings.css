@@ -211,7 +211,7 @@
 }
 .sk-identity-card { padding: 0 18px 16px; background: transparent; }
 .sk-identity-row { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
-/* 80px avatar on a 120px banner: ~38px overlap with a 4px card ring. */
+/* 80px avatar on a 120px banner: ~38px overlap with a 4px white ring. */
 .sk-identity-avatar {
   position: relative; z-index: 1; margin-top: -38px;
   display: flex; flex-direction: column; align-items: center;
@@ -237,7 +237,7 @@
   }
 }
 .sk-identity-avatar .pt-avatar {
-  box-shadow: 0 0 0 4px var(--sk-overlay), 0 6px 16px rgba(15, 23, 42, .18);
+  box-shadow: 0 0 0 4px var(--pt-white), 0 6px 16px rgba(15, 23, 42, .18);
 }
 .sk-identity-meta { flex: 1; min-width: 220px; padding-top: 14px; display: flex; flex-direction: column; gap: 10px; }
 .sk-identity-names { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

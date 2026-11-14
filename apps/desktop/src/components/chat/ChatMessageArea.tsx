@@ -1,3 +1,4 @@
+import { WindowDragRegion } from '../shell/WindowDragRegion';
 import {
   useCallback,
   useEffect,
@@ -1031,19 +1032,19 @@ export function ChatMessageArea({
         data-chat-conversation-intent={directOpenIntent.peerPtid}
         data-chat-conversation-intent-state={directOpenIntent.phase}
       >
-        <header className="sc-chat-head" data-tauri-drag-region="deep">
+        <WindowDragRegion><header className="sc-chat-head">
           {narrowBack}
           <div className="sc-chat-head-id">
             <div className="sc-chat-head-name">
               <strong>{directOpenIntent.displayName}</strong>
             </div>
           </div>
-        </header>
+        </header></WindowDragRegion>
 
         {/* The pane always stays open: creation failures are reported through
             the shell-wide floating toast, never as a content-replacing inline
             error. Re-open by selecting the contact again. */}
-        <div className="sc-conversation__center" aria-live="polite" data-tauri-drag-region="deep">
+        <WindowDragRegion mode="self"><div className="sc-conversation__center" aria-live="polite">
           {directOpenIntent.phase === 'creating' ? (
             <PtSpin size="small" label={t('common.state.loading', { ns: 'common' })} />
           ) : (
@@ -1056,7 +1057,7 @@ export function ChatMessageArea({
               }
             />
           )}
-        </div>
+        </div></WindowDragRegion>
 
         <ChatComposer
           key="chat-composer:disabled"
@@ -1079,7 +1080,7 @@ export function ChatMessageArea({
 
   if (!activeUlid) {
     return (
-      <div className="sc-conversation sc-conversation--empty" data-tauri-drag-region="deep">
+      <WindowDragRegion mode="self"><div className="sc-conversation sc-conversation--empty">
         <PtEmpty
           icon={<Icon iconId="inbox" size={40} className="sc-conversation-empty__icon" />}
           description={
@@ -1088,7 +1089,7 @@ export function ChatMessageArea({
             </span>
           }
         />
-      </div>
+      </div></WindowDragRegion>
     );
   }
 
@@ -1132,7 +1133,7 @@ export function ChatMessageArea({
         conversationId={activeUlid ?? undefined}
       />
 
-      <header className="sc-chat-head" data-tauri-drag-region="deep">
+      <WindowDragRegion><header className="sc-chat-head">
         {narrowBack}
         <div className="sc-chat-head-id">
           <div className="sc-chat-head-name">
@@ -1276,7 +1277,7 @@ export function ChatMessageArea({
             onClick={toggleDetail}
           />
         </div>
-      </header>
+      </header></WindowDragRegion>
 
       <div
         className="chat-message-scroll sc-conversation__stream"

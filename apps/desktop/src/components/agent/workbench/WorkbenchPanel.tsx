@@ -15,6 +15,7 @@ import { WorkbenchRail } from './WorkbenchRail';
 import { WorkbenchResizeHandle } from './WorkbenchResizeHandle';
 import { WORKBENCH_TOOLS } from './workbenchTools';
 import './workbench.css';
+import { WindowDragRegion } from '../../shell/WindowDragRegion';
 
 // Trae-style unified right work area.
 // - closed: floating vertical icon rail with direct entries
@@ -77,12 +78,12 @@ export function WorkbenchPanel() {
       }}
     >
       <WorkbenchResizeHandle />
-      <header className="wb-shell-header">
+      <WindowDragRegion><header className="wb-shell-header">
         {active === null ? (
           <span style={{ flex: 1 }} />
         ) : (
           <>
-            <div className="wb-shell-tabs">
+            <WindowDragRegion mode="none"><div className="wb-shell-tabs">
               {tabs.map((toolId) => {
                 const meta = metaById.get(toolId);
                 if (!meta) return null;
@@ -118,12 +119,12 @@ export function WorkbenchPanel() {
                   </span>
                 );
               })}
-            </div>
+            </div></WindowDragRegion>
             <WorkbenchAddMenu />
           </>
         )}
         <WorkbenchFoldButton blockSize={28} />
-      </header>
+      </header></WindowDragRegion>
 
       {active === null ? (
         <div className="wb-shell-launcher" data-pt-workbench-launcher>

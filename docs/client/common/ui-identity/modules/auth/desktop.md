@@ -15,6 +15,9 @@ This document adapts Auth UI Identity to Desktop.
 It does not redefine the Auth product model. It defines Desktop layout, surface,
 and motion constraints for implementing it.
 
+Settings Identity 的资料头像以白色边框与封面、卡片分隔，使用 `--pt-white`。
+图片、姓名后备和加载态共享该边框；不得跟随卡片底色或通用灰色边框。
+
 ## 2. Desktop Auth Layout
 
 Desktop Auth uses **one full-bleed surface that is the window content**. There

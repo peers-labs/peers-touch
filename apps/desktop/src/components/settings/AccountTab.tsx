@@ -310,7 +310,7 @@ function EditableAvatar({
           name={fallbackText}
           size={size}
           radius={AVATAR_RADIUS}
-          border="2px solid var(--pt-border)"
+          border="2px solid var(--pt-white)"
         />
 
         {pendingUrl && (

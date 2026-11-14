@@ -1,7 +1,7 @@
 ---
 status: active
 owner: Client Platform Team
-updated: 2026-11-07
+updated: 2026-11-14
 review-cadence: quarterly
 next-review: 2027-02-07
 related:
@@ -51,7 +51,7 @@ Rules:
 
 | Role               | Meaning                      | Usage                                   |
 | ------------------ | ---------------------------- | --------------------------------------- |
-| `surface.canvas`   | application background       | shell and page background               |
+| `surface.canvas`   | application background       | inset stage and page background         |
 | `surface.base`     | primary reading surface      | feed items, cards, panels               |
 | `surface.subtle`   | low-emphasis grouping        | composer background, empty state blocks |
 | `surface.raised`   | floating surfaces            | popovers, menus, lightweight dialogs    |
@@ -68,6 +68,11 @@ Rules:
 
 Rules:
 
+- L1 and the top/right/bottom surround consume the existing `--pt-surface`
+  color; the L1 fill continues into the rounded left window edge. Preserve
+  the established L1/L2/reading palette. The WeChat reference governs the
+  inset frame structure, not its gray color. Do not substitute L2 `subtle`
+  for the surround or introduce a separate window-frame palette.
 - A page should usually have one `action.primary` region.
 - `action.primary` is the near-ink **capsule** from the north-star frame
   (`#1a1d20` on paper; dark inverts to near-white `#f1f3f2` with ink text).
@@ -109,6 +114,12 @@ Rules:
 - User avatars always use rounded-square geometry derived from their size; they never use `radius.full`.
 - Interactive inputs and icon buttons never use circular or pill geometry. Use `radius.sm` or `radius.md`.
 - `radius.full` is reserved for non-container indicators and compact metadata, not the product's primary visual language.
+- Writing docks use `composer.radius = 8px`. The editable text starts inside
+  the corner tangent, with `composer.inputPadding = 12px 16px 8px`.
+  Embedded TextArea consumes `--pt-textarea-padding` and
+  `--pt-textarea-caret-color`; chat binds them to
+  `--pt-composer-input-padding` and the existing `--pt-accent`. Other embedded
+  fields keep their default insets. Preserve the established three surface colors.
 
 ## 5. Spacing Roles
 
