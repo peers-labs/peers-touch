@@ -8,7 +8,7 @@
  * and is modeled explicitly.
  */
 import type {
-  AppState, AudienceKind, CallState, ChatsSheet, MediaKind, MomentComment, Route, TabId, TrustReason,
+  AppState, AudienceKind, CallState, ChatPane, ChatsSheet, MediaKind, MomentComment, Route, TabId, TrustReason,
 } from './model';
 import { createInitialState, ME } from './model';
 import type { ChatMessage } from './model';
@@ -31,6 +31,7 @@ export type Action =
   | { type: 'tab'; tab: TabId }
   | { type: 'navigate'; route: Route }
   | { type: 'back' }
+  | { type: 'chats/pane'; pane: ChatPane }
   | { type: 'chats/sheet'; sheet: ChatsSheet }
   | { type: 'contact/add'; id: string; name: string; role?: string }
   | { type: 'group/start'; id: string; name: string; memberIds: string[] }
@@ -139,10 +140,16 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, route: { tab: action.tab }, chatsSheet: 'none' };
 
     case 'navigate':
-      return { ...state, route: action.route, chatsSheet: 'none' };
+      return {
+        ...state, route: action.route, chatsSheet: 'none',
+        chatPane: action.route.tab === 'chats' && action.route.contactDetail ? 'contacts' : state.chatPane,
+      };
 
     case 'back':
       return { ...backFrom(state), chatsSheet: 'none' };
+
+    case 'chats/pane':
+      return { ...state, chatPane: action.pane };
 
     case 'chats/sheet':
       return { ...state, chatsSheet: action.sheet };
@@ -181,6 +188,7 @@ export function reducer(state: AppState, action: Action): AppState {
       };
       return {
         ...state,
+        chatPane: 'chats',
         chatsSheet: 'none',
         conversations: [conversation, ...state.conversations],
         groups: [group, ...state.groups.filter(g => g.id !== action.id)],
@@ -754,13 +762,10 @@ export function reducer(state: AppState, action: Action): AppState {
 
 function backFrom(state: AppState): AppState {
   const { route } = state;
-  // Detail pages pop to their tab root; conversation pops to the chat list.
+  // Detail pages pop to their tab root, retaining the messages pane.
   if (route.tab === 'settings' && route.setting) return { ...state, route: { tab: 'settings' } };
-  if (route.tab === 'chats' && route.conversationId) {
+  if (route.tab === 'chats' && (route.conversationId || route.contactDetail || route.findPeople)) {
     return { ...state, route: { tab: 'chats' } };
-  }
-  if (route.tab === 'contacts' && route.contactDetail) {
-    return { ...state, route: { tab: 'contacts' } };
   }
   return state;
 }
@@ -769,8 +774,7 @@ function backFrom(state: AppState): AppState {
 export function tabBarVisible(state: AppState): boolean {
   const { route } = state;
   if (state.call.status !== 'idle') return false;
-  if (route.tab === 'chats' && route.conversationId) return false;
-  if (route.tab === 'contacts' && route.contactDetail) return false;
+  if (route.tab === 'chats' && (route.conversationId || route.contactDetail || route.findPeople)) return false;
   if (route.tab === 'settings' && route.setting) return false;
   return true;
 }

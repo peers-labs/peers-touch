@@ -454,7 +454,7 @@ export function MomentCommentsSection({
                 ref={commentViewId(comment) === commentId ? commentAnchorRef : undefined}
                 tabIndex={commentViewId(comment) === commentId ? -1 : undefined}
                 style={commentViewId(comment) === commentId ? {
-                  outline: '2px solid var(--brand-primary)',
+                  outline: '2px solid var(--pt-focus)',
                 } : undefined}
               >
                 <CommentItem

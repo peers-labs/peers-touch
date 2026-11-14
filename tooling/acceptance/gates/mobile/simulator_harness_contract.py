@@ -4,6 +4,7 @@ from __future__ import annotations
 CHAT_MIXED_NATIVE_GATE_IDS = frozenset(
     {
         "chat-lifecycle-call-resolution-e2e",
+        "chat-lifecycle-group-live-e2e",
         "chat-lifecycle-mixed-client-cross-station-e2e",
         "chat-lifecycle-mixed-client-group-mls-e2e",
         "chat-lifecycle-mixed-client-multi-device-e2e",
@@ -47,10 +48,20 @@ STATION_LIFECYCLE_CHILD_HARNESS_ACTIONS = frozenset(
 
 CHAT_MIXED_NATIVE_CHILD_HARNESS_ACTIONS = frozenset(
     {
+        "build.identity",
         "acceptCall",
         "callResolutionState",
+        "callSnapshot",
+        "callMediaStats",
+        "callRestartConnection",
         "cleanup",
         "getRealtimeDevice",
+        "groupCallStart",
+        "groupCallLeave",
+        "groupCallToggleMic",
+        "groupCallToggleCamera",
+        "groupCallSnapshot",
+        "groupCallMediaStats",
         "initiateCall",
         "lifecycle.restart",
         "lifecycle.resume",

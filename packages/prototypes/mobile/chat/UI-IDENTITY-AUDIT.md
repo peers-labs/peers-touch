@@ -6,6 +6,13 @@
 > rendered review found that its closure claims no longer describe the actual
 > experience. Do not use it as approval evidence. The active review source is
 > `docs/architecture/platform/client/mobile/prototype/interaction-gap-register.md`.
+>
+> Navigation correction (2026-11-13): the current confirmed product has three
+> bottom destinations (messages/moments/me) and top chats/contacts subtabs inside
+> messages. The historical four-tab source references and badge observations
+> below describe the superseded audit, not today's navigation authority.
+> Current shell contract:
+> [`northstar-realignment/decisions.md` ADR-4](../../../../docs/architecture/platform/client/mobile/northstar-realignment/decisions.md#adr-4-confirmed-navigation-governs-presentation-preserve-real-capabilities).
 
 > Status: core journey and recovery-state amendment confirmed by the Owner on 2026-08-27;
 > real `apps/mobile` runtime acceptance remains unproven.
@@ -162,7 +169,16 @@ Source truth: `ChatPage.tsx` `transferGroupOwnership`(149)/`confirmTransferGroup
 
 ---
 
-## Screen 5 — Contacts (`ContactsProjection` 972-1082, `FindPeopleModal` 1093-1121, `CreateGroupModal` 1123-1152, `ProfileModal` 1154-1184)
+## Screen 5 — Contacts
+
+2026-11-14 user-confirmed correction: the runnable `app/FindPeopleScreen`
+composition is a dedicated detail page. Its peers-ui nav/search/scope controls
+stay above one scrolling, person-first results list; Messages' original pane
+returns on Back and the tab bar stays hidden while searching. The old local
+name-entry sheet is removed. Directory and request outcomes are prototype
+fixtures; production uses `FindPeoplePage` and the Station/Federation gateways.
+This supersedes the historical FindPeopleModal entries below; native keyboard
+and directory evidence remains required.
 
 Source truth: `ContactsPage.tsx` (541 lines).
 

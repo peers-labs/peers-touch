@@ -591,7 +591,6 @@
           "model/domain/federation/**",
           "apps/station/frame/touch/actor/**",
           "apps/station/frame/touch/federation_api_handler.go",
-          "apps/desktop/src/components/settings/FederationTab.tsx",
           "apps/desktop/src/components/chat/FindPeopleModal.tsx",
           "apps/desktop/src/store/federation.ts",
           "apps/desktop/src/runtimes/federationRuntime.ts",
@@ -1859,6 +1858,15 @@
       "when": {
         "paths": [
           "apps/station/app/subserver/groupcall/**",
+          "apps/station/frame/core/facility/session/media_authorization.go",
+          "apps/station/frame/core/facility/mediaaccess/**",
+          "apps/station/app/subserver/actor_identity/infrastructure/persistence/repository.go",
+          "apps/station/app/subserver/conversation/group_call_capability.go",
+          "packages/client-chat-core/src/group-call/**",
+          "apps/mobile/src/features/call/**",
+          "apps/mobile/src/components/call/MobileGroupCallSurface.tsx",
+          "tooling/docker/livekit*",
+          "tooling/docker/patch-livekit.py",
           "apps/desktop/src/modules/groupCall/**",
           "apps/desktop/src/components/chat/GroupCallSurface.tsx",
           "apps/desktop/src/components/chat/ChatMessageArea.tsx",
@@ -2052,7 +2060,6 @@
         "paths": [
           "model/domain/federation/**",
           "apps/station/app/subserver/federation/**",
-          "apps/desktop/src/components/settings/FederationTab.tsx",
           "apps/desktop/src/store/federation.ts",
           "apps/desktop/src/runtimes/federationRuntime.ts",
           "apps/desktop/src/acceptance/moments/harness.ts",
@@ -2140,8 +2147,7 @@
       ],
       "when": {
         "paths": [
-          "apps/desktop/src/components/common/StationPicker.tsx",
-          "apps/desktop/src/components/settings/FederationTab.tsx",
+          "apps/desktop/src/pages/login/StationSetupPanel.tsx",
           "apps/desktop/src/components/chat/FindPeopleModal.tsx",
           "apps/desktop/src/store/stationRegistry.ts",
           "apps/desktop/src/runtimes/stationRuntime.ts",
@@ -3504,7 +3510,7 @@
       "when": {
         "paths": [
           "apps/station/app/subserver/agent/**/memory*",
-          "apps/desktop/src/store/memory.ts"
+          "apps/desktop/src/components/settings/MemorySettingsSection.tsx"
         ]
       },
       "require": [

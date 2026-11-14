@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
-import { Dialog, Text } from '@peers-touch/ui';
+import { Button, Dialog, Text } from '@peers-touch/ui';
 
 import { confirm } from './app/feedback/mobileFeedback';
 
@@ -947,20 +947,23 @@ function MobileAppRoot() {
               })}
             </Text>
             <div className="entry-confirmation-actions">
-              <button
-                type="button"
-                className="entry-confirmation-button"
-                onClick={() => resolveStationIdentityReplacement(false)}
+              <Button
+                actionId="entry.station-replace.cancel"
+                density="comfortable"
+                fullWidth
+                onActivate={() => resolveStationIdentityReplacement(false)}
               >
                 {t('common.action.cancel')}
-              </button>
-              <button
-                type="button"
-                className="entry-confirmation-button danger"
-                onClick={() => resolveStationIdentityReplacement(true)}
+              </Button>
+              <Button
+                actionId="entry.station-replace.confirm"
+                tone="danger"
+                density="comfortable"
+                fullWidth
+                onActivate={() => resolveStationIdentityReplacement(true)}
               >
                 {t('mobile.launch.stationReplace')}
-              </button>
+              </Button>
             </div>
           </section>
         </Dialog>

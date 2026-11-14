@@ -1,10 +1,13 @@
-import { Button, Checkbox, Empty, Icon, IconButton, Spin, Text, TextArea, TextField } from '@peers-touch/ui';
+import { BottomSheet, Button, Checkbox, Empty, Icon, IconButton, Spin, Text, TextArea, TextField } from '@peers-touch/ui';
+import { useState, type ReactNode } from 'react';
 
 import type {
   ContactsSurfaceFixtureId,
 } from '../../acceptance/contactsSurfaceFixture';
 import { useMobileI18n } from '../../app/mobileI18n';
 import { MobileNotice } from '../../components/MobileNotice';
+import { ContactRemarkForm } from './ContactRemarkForm';
+import { FindPeopleSurface } from './FindPeopleSurface';
 
 const FIXTURE_CONTACTS = {
   alexandria: {
@@ -39,24 +42,30 @@ const LIST_SURFACES = new Set<ContactsSurfaceFixtureId>([
 
 const PROFILE_SURFACES = new Set<ContactsSurfaceFixtureId>([
   'contacts.profile',
+  'contacts.remark',
   'contacts.profile-unavailable',
   'contacts.block-confirm',
 ]);
 
 export function ContactsAcceptanceSurface({
   surfaceId,
+  listHeader,
 }: {
   readonly surfaceId: ContactsSurfaceFixtureId;
+  readonly listHeader?: ReactNode;
 }) {
   if (LIST_SURFACES.has(surfaceId)) {
-    return <ContactsFixtureList surfaceId={surfaceId} />;
+    return <ContactsFixtureList surfaceId={surfaceId} listHeader={listHeader} />;
   }
   if (PROFILE_SURFACES.has(surfaceId)) {
     return <ContactsFixtureProfile surfaceId={surfaceId} />;
   }
+  if (surfaceId !== 'contacts.create-group' && !surfaceId.startsWith('contacts.group-')) {
+    return <ContactsFixturePeople surfaceId={surfaceId} />;
+  }
   return (
     <>
-      <ContactsFixtureList background />
+      <ContactsFixtureList background listHeader={listHeader} />
       {surfaceId === 'contacts.create-group'
         || surfaceId.startsWith('contacts.group-') ? (
           <ContactsFixtureGroup surfaceId={surfaceId} />
@@ -70,9 +79,11 @@ export function ContactsAcceptanceSurface({
 function ContactsFixtureList({
   surfaceId = 'contacts.list',
   background = false,
+  listHeader,
 }: {
   readonly surfaceId?: ContactsSurfaceFixtureId;
   readonly background?: boolean;
+  readonly listHeader?: ReactNode;
 }) {
   const { t } = useMobileI18n();
   const query = surfaceId === 'contacts.local-search'
@@ -99,7 +110,7 @@ function ContactsFixtureList({
       className="page-container contacts-acceptance-fixture"
       data-product-surface={background ? undefined : surfaceId}
     >
-      <header className="page-header">
+      {listHeader ?? <><header className="page-header">
         <h1 className="header-title">{t('mobile.contacts.title')}</h1>
         <button
           type="button"
@@ -126,6 +137,7 @@ function ContactsFixtureList({
           readOnly
         />
       </div>
+      </>}
       {surfaceId === 'contacts.list-error' ? (
         <MobileNotice>
           {t('mobile.social.runtimeUnavailable')}
@@ -287,8 +299,11 @@ function ContactsFixtureProfile({
   readonly surfaceId: ContactsSurfaceFixtureId;
 }) {
   const { t } = useMobileI18n();
+  const [remarkOpen, setRemarkOpen] = useState(surfaceId === 'contacts.remark');
+  const [nickname, setNickname] = useState('Alexandria');
+  const [note, setNote] = useState(FIXTURE_CONTACTS.alexandria.note as string);
   const unavailable = surfaceId === 'contacts.profile-unavailable';
-  const profileSurface = surfaceId === 'contacts.block-confirm'
+  const profileSurface = surfaceId === 'contacts.block-confirm' || surfaceId === 'contacts.remark'
     ? undefined
     : surfaceId;
 
@@ -346,6 +361,8 @@ function ContactsFixtureProfile({
                 </span>
               </div>
               <div className="contacts-fixture-profile-actions">
+                <Button actionId="contacts.fixture.remark" fullWidth
+                  onActivate={() => setRemarkOpen(true)}>{t('mobile.contacts.editRemark')}</Button>
                 <Button actionId="contacts.fixture.open-chat" emphasis="primary" fullWidth>
                   {t('mobile.contacts.openChat')}
                 </Button>
@@ -363,6 +380,11 @@ function ContactsFixtureProfile({
           )}
         </section>
       </div>
+      <BottomSheet open={remarkOpen} title={t('mobile.contacts.editRemark')}
+        onDismiss={() => setRemarkOpen(false)}>
+        <ContactRemarkForm nickname={nickname} note={note} saving={false} error=""
+          onNicknameChange={setNickname} onNoteChange={setNote} onSave={() => setRemarkOpen(false)} />
+      </BottomSheet>
       {surfaceId === 'contacts.block-confirm' ? (
         <div className="contacts-fixture-backdrop">
           <section
@@ -403,120 +425,25 @@ function ContactsFixturePeople({
   const unavailable = surfaceId === 'contacts.search-unavailable';
   const denied = surfaceId === 'contacts.search-permission-denied';
   const showResult = !empty && !loading && !failed && !unavailable && !denied;
-
-  return (
-    <div className="contacts-fixture-backdrop">
-      <section
-        className="contacts-fixture-sheet contacts-fixture-people"
-        data-product-surface={surfaceId}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="contacts-people-title"
-      >
-        <header className="contacts-fixture-sheet-header">
-          <h2 id="contacts-people-title">{t('mobile.contacts.findPeople')}</h2>
-          <IconButton
-            actionId="contacts.fixture.close-people"
-            iconId="close"
-            iconSize={20}
-            label={t('common.action.close')}
-            emphasis="quiet"
-          />
-        </header>
-        <TextField
-          className="people-search-field"
-          data-contacts-fixture-people-search
-          aria-label={t('mobile.contacts.findPeoplePlaceholder')}
-          placeholder={t('mobile.contacts.findPeoplePlaceholder')}
-          value={surfaceId === 'contacts.add-friend'
-            ? ''
-            : 'Alexandria'}
-          readOnly
-          leading={<Icon iconId="search" size={16} />}
-          trailing={(
-            <Button
-              actionId="contacts.fixture.people-search"
-              emphasis="quiet"
-              density="compact"
-              tabIndex={-1}
-              className="people-search-button"
-            >
-              {t('mobile.contacts.search')}
-            </Button>
-          )}
-        />
-        <fieldset className="contacts-fixture-federation">
-          <legend>{t('mobile.contacts.federation')}</legend>
-          <button
-            type="button"
-            className="contacts-fixture-federation-choice"
-            aria-pressed="true"
-          >
-            Product Federation
-          </button>
-        </fieldset>
-        {loading ? (
-          <div className="contacts-fixture-state" role="status">
-            <Spin />
-            <Text>{t('mobile.contacts.resolving')}</Text>
-          </div>
-        ) : empty ? (
-          <Empty
-            description={(
-              <div className="empty-copy">
-                <Text>{t('mobile.contacts.noPeopleResults')}</Text>
-                <Button actionId="contacts.fixture.people-search-again">
-                  {t('common.action.search')}
-                </Button>
-              </div>
-            )}
-          />
-        ) : unavailable || failed || denied ? (
-          <MobileNotice>
-            {t(unavailable
-              ? 'common.stationPicker.status.offline'
-              : denied
-                ? 'mobile.contacts.roleDenied'
-                : 'mobile.contacts.searchFailed')}
-            <Button
-              actionId="contacts.fixture.retry-people"
-              leading={<Icon iconId="rotate-ccw" size={15} />}
-            >
-              {t('common.action.retry')}
-            </Button>
-          </MobileNotice>
-        ) : surfaceId === 'contacts.add-friend' ? (
-          <Text tone="secondary">{t('mobile.contacts.findPeopleHint')}</Text>
-        ) : showResult ? (
-          <div className="contacts-fixture-person">
-            <span className="contacts-fixture-avatar">
-              {FIXTURE_CONTACTS.alexandria.avatar}
-            </span>
-            <span className="contacts-fixture-copy">
-              <Text strong>{FIXTURE_CONTACTS.alexandria.name}</Text>
-              <Text tone="secondary">{FIXTURE_CONTACTS.alexandria.handle}</Text>
-            </span>
-            <Button
-              actionId="contacts.fixture.send-request"
-              emphasis="primary"
-              execution={pending ? 'pending' : 'idle'}
-              availability={duplicate || pending
-                ? { kind: 'disabled', reason: t(duplicate
-                  ? 'mobile.contacts.alreadyFriend'
-                  : 'mobile.contacts.requestPending') }
-                : undefined}
-            >
-              {duplicate
-                ? t('mobile.contacts.alreadyFriend')
-                : pending
-                  ? t('mobile.contacts.requestPending')
-                  : t('mobile.contacts.sendRequest')}
-            </Button>
-          </div>
-        ) : null}
-      </section>
-    </div>
-  );
+  const [query, setQuery] = useState(surfaceId === 'contacts.add-friend' ? '' : 'Alexandria');
+  const result = {
+    id: 'acceptance-contact', ptid: 'ptid:acceptance-contact', username: 'alexandria',
+    displayName: FIXTURE_CONTACTS.alexandria.name, avatar: '', homeStationPeerId: 'acceptance-station',
+  };
+  const statusKey = duplicate ? 'mobile.contacts.alreadyFriend'
+    : pending ? 'mobile.contacts.requestPending' : 'mobile.contacts.sendRequest';
+  return <FindPeopleSurface surfaceId={surfaceId} query={query} scope={{ kind: 'station' }}
+    federations={[]} loading={loading}
+    feedback={surfaceId === 'contacts.add-friend' ? 'idle' : unavailable ? 'remote-unavailable'
+      : empty ? 'local-no-result' : failed || denied ? 'failed' : 'results'}
+    error={failed || denied ? t(denied ? 'mobile.contacts.roleDenied' : 'mobile.contacts.searchFailed') : undefined}
+    results={showResult && surfaceId !== 'contacts.add-friend' ? [result] : []}
+    actions={{ [result.ptid]: {
+      label: t(statusKey), pending,
+      unavailableReason: duplicate || pending ? t(statusKey) : undefined,
+    } }}
+    onQueryChange={setQuery} onScopeChange={() => undefined} onSearch={() => undefined}
+    onSendRequest={() => undefined} onBack={() => undefined} />;
 }
 
 function ContactsFixtureGroup({

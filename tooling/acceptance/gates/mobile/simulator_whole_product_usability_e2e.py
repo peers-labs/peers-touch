@@ -10,8 +10,10 @@ import re
 import struct
 import subprocess
 import sys
+import tempfile
 import time
 import zlib
+import xml.etree.ElementTree as ET
 from collections.abc import Mapping
 from html.parser import HTMLParser
 from pathlib import Path
@@ -37,6 +39,7 @@ from tooling.acceptance.gates.mobile.messaging_journey import (
     MobileMessagingJourney,
 )
 from tooling.acceptance.gates.mobile.simulator_e2e import (
+    SimulatorAppiumSession,
     SimulatorCallbackRoutingGate,
     SimulatorGateBlocked,
     _redacted_markup,
@@ -45,6 +48,7 @@ from tooling.acceptance.gates.mobile.simulator_e2e import (
     _validate_runtime_identity,
     _validate_source_identity,
 )
+from tooling.acceptance.gates.mobile.simulator_native_output import ios_native_output_callbacks
 from tooling.acceptance.gates.mobile.surface_audit import (
     audit_accessibility_tree,
     audit_keyboard_tree,
@@ -99,7 +103,7 @@ SHELL_REQUIRED_HARNESS_ACTIONS = (
 SHELL_ROUTE_ACTIONS = {
     "tap-chat-tab": "tab:chat",
     "tap-moments-tab": "tab:moments",
-    "tap-contacts-tab": "tab:contacts",
+    "tap-contacts-pane": "tab:chat",
     "tap-settings-tab": "tab:settings",
 }
 AUTHENTICATED_SURFACE_SETS = (
@@ -114,7 +118,7 @@ SURFACE_SET_ROUTES = {
     "shell": "tab:chat",
     "recovery": "tab:chat",
     "chat": "tab:chat",
-    "contacts": "tab:contacts",
+    "contacts": "tab:chat",
     "moments": "tab:moments",
     "settings": "tab:settings",
 }
@@ -136,12 +140,45 @@ RECOVERY_PAGE_CONTROL_SURFACES = {
     "recovery.capacity",
     "recovery.write-revocation",
 }
+# The retained Messages header owns search/new-conversation controls outside
+# these status-body markers.
+CHAT_PAGE_CONTROL_SURFACES = {
+    "chat.list-loading",
+    "chat.list-empty",
+    "chat.list-search-empty",
+}
+KEYBOARD_ENTRY_ACTIONS = {
+    "focus-message-composer",
+    "type-conversation-query",
+    "search-unknown-conversation",
+    "type-contact-query",
+    "search-unknown-contact",
+    "search-unknown-person",
+    "search-federated-person",
+    "search-existing-contact",
+}
 TEXT_SIZE_SCRIPT = """
 const size = arguments[0];
 if (size !== 'normal' && size !== 'maximum') {
   throw new Error(`unsupported text size ${size}`);
 }
 document.documentElement.dataset.acceptanceTextSize = size;
+const attribute = 'data-acceptance-original-font-size';
+const priorityAttribute = 'data-acceptance-original-font-priority';
+// Restore all previously touched nodes, including containers that no longer
+// have direct text, before measuring any descendant's inherited font size.
+for (const element of document.body.querySelectorAll(`[${attribute}]`)) {
+  const original = element.getAttribute(attribute);
+  if (original) {
+    element.style.setProperty(
+      'font-size', original, element.getAttribute(priorityAttribute) || '',
+    );
+  } else {
+    element.style.removeProperty('font-size');
+  }
+  element.removeAttribute(attribute);
+  element.removeAttribute(priorityAttribute);
+}
 const nodes = Array.from(document.body.querySelectorAll('*')).filter(
   (element) => element instanceof HTMLElement
     && (
@@ -151,28 +188,26 @@ const nodes = Array.from(document.body.querySelectorAll('*')).filter(
       )
     ),
 );
-for (const element of nodes) {
-  const attribute = 'data-acceptance-original-font-size';
-  if (size === 'normal') {
-    if (element.hasAttribute(attribute)) {
-      element.style.fontSize = element.getAttribute(attribute);
-      element.removeAttribute(attribute);
-    }
-    continue;
-  }
-  if (!element.hasAttribute(attribute)) {
-    element.setAttribute(attribute, element.style.fontSize || '');
-  }
-  const computed = Number.parseFloat(getComputedStyle(element).fontSize);
-  if (Number.isFinite(computed) && computed > 0) {
-    element.style.fontSize = `${Math.min(32, computed * 1.35)}px`;
-  }
+// Read every baseline before writing any size so parent/child inheritance
+// cannot apply the multiplier twice in one capture or across captures.
+const measurements = size === 'maximum' ? nodes.flatMap((element) => {
+  const baseline = Number.parseFloat(getComputedStyle(element).fontSize);
+  return Number.isFinite(baseline) && baseline > 0
+    ? [{element, baseline}]
+    : [];
+}) : [];
+for (const {element, baseline} of measurements) {
+  element.setAttribute(attribute, element.style.fontSize || '');
+  element.setAttribute(
+    priorityAttribute, element.style.getPropertyPriority('font-size'),
+  );
+  element.style.fontSize = `${Math.min(32, baseline * 1.35)}px`;
 }
 return {
   textSize: size,
   width: Math.round(window.innerWidth),
   height: Math.round(window.innerHeight),
-  scaledElementCount: size === 'maximum' ? nodes.length : 0,
+  scaledElementCount: measurements.length,
 };
 """
 SURFACE_AUDIT_SCRIPT = """
@@ -228,7 +263,7 @@ const fullyVisibleWithinAncestors = (element, rect) => {
   }
   return true;
 };
-const root = document.querySelector(selector);
+const root = Array.from(document.querySelectorAll(selector)).find(visible);
 if (!root || !visible(root)) return {found: false};
 const rootRect = root.getBoundingClientRect();
 const interactiveSelector =
@@ -398,6 +433,15 @@ return {
       : null,
   },
 };
+"""
+
+
+CHAT_COMPOSER_FOCUS_SCRIPT = """
+const node = document.activeElement;
+return node instanceof HTMLElement
+  && node.matches('[data-chat-fixture-composer]')
+  && !node.closest('[hidden]')
+  && node.getClientRects().length > 0;
 """
 
 
@@ -1469,6 +1513,7 @@ class SimulatorWholeProductUsabilityGate(
 
     def __init__(self, *, foreground_probe: Any = None, **kwargs: Any) -> None:
         super().__init__(**kwargs)
+        self._native_output_roots: list[tempfile.TemporaryDirectory] = []
         self.foreground_probe = (
             foreground_probe or self._probe_simulator_foreground
         )
@@ -1569,6 +1614,15 @@ class SimulatorWholeProductUsabilityGate(
                     }
             finally:
                 self._cleanup_sessions(artifacts)
+                for directory in self._native_output_roots:
+                    try:
+                        directory.cleanup()
+                    except OSError as error:
+                        self.cleanup.append({
+                            "clientId": SHELL_CLIENT_ID, "resource": "native-output-storage",
+                            "status": "failed", "reason": redact_text(str(error)),
+                        })
+                self._native_output_roots.clear()
             if any(item["status"] == "failed" for item in self.cleanup):
                 status = "FAIL"
                 completion_status = "PARTIAL"
@@ -1883,7 +1937,7 @@ class SimulatorWholeProductUsabilityGate(
                 f"{ENVIRONMENT_ID}:client:{SHELL_CLIENT_ID}",
             )
 
-        session = self._create_session(server_url, spec)
+        session = self._create_logged_session(artifacts, server_url, spec)
         self.sessions.append(session)
         session.start()
         self._record(spec.client_id, "session-created")
@@ -1938,6 +1992,14 @@ class SimulatorWholeProductUsabilityGate(
             role="mobile-whole-product-foreground",
         )
 
+        if surface_set == "contacts":
+            self._exercise_live_people_search(
+                artifacts, session,
+                self._load_actor(artifacts, manifest, role="bob", client_id="sim-ios-peer"),
+            )
+            self._exercise_native_navigation_continuity(artifacts, session)
+        if surface_set == "chat":
+            self._exercise_native_primary_swipes(artifacts, session)
         surface_evidence = self._capture_authenticated_surface_sets(
             artifacts,
             session,
@@ -1978,6 +2040,138 @@ class SimulatorWholeProductUsabilityGate(
             "surfaceEvidence": surface_evidence,
             "findings": [],
         }
+
+    def _exercise_native_primary_swipes(
+        self, artifacts: ArtifactSession, session: Any,
+    ) -> dict[str, Any]:
+        """Swipe real primary views while retaining the original Chat tree."""
+        session.switch_to_app_webview()
+        session.call_action("navigation.apply", {"kind": "primary", "routeId": "tab:chat"})
+        self._assert_keyboard_inactive(artifacts, session, "primary-swipe-entry")
+        session.execute_script(
+            """
+// mobile-primary-swipe-origin
+const frame = document.querySelector('.mobile-content > [data-navigation-host] > [data-navigation-frame="tab:chat"]');
+if (!frame || frame.hidden) throw new Error('Chat primary frame is not visible');
+window.__mobilePrimarySwipeOrigin = {
+  frame,
+  scroll: Array.from(frame.querySelectorAll('*')).filter(node => node.scrollHeight > node.clientHeight + 1)
+    .map(node => ({node, top: node.scrollTop})),
+  inputs: Array.from(frame.querySelectorAll('input,textarea')).map(node => ({node, value: node.value})),
+};
+const events = [];
+const eventNames = ['touchstart','touchmove','touchend','touchcancel','pointerdown','pointermove','pointerup','pointercancel'];
+const observe = event => {
+  if (events.length >= 128) return;
+  const touch = event.changedTouches?.[0] ?? event;
+  events.push({
+    type: event.type, at: event.timeStamp, x: touch.clientX, y: touch.clientY,
+    touches: event.touches?.length ?? null, cancelable: event.cancelable,
+    target: event.target instanceof Element ? event.target.tagName : null,
+    targetClasses: event.target instanceof Element ? event.target.className : null,
+  });
+};
+for (const name of eventNames) document.addEventListener(name, observe, {capture:true, passive:true});
+window.__mobilePrimarySwipeTrace = {events, observe, eventNames};
+""",
+        )
+        steps = []
+        for direction, expected in (
+            ("left", "tab:moments"), ("left", "tab:settings"),
+            ("left", "tab:settings"), ("right", "tab:moments"),
+            ("right", "tab:chat"), ("right", "tab:chat"),
+        ):
+            session.switch_to_app_webview()
+            geometry = session.execute_script(
+                """
+const rect = document.querySelector('.mobile-content').getBoundingClientRect();
+window.__mobilePrimarySwipeTrace.events.length = 0;
+return {left:rect.left, top:rect.top, width:rect.width, height:rect.height};
+""",
+            )
+            if not isinstance(geometry, Mapping):
+                raise GateError("Primary swipe viewport geometry is missing")
+            start = 0.8 if direction == "left" else 0.2
+            end = 0.2 if direction == "left" else 0.8
+            y = geometry["top"] + geometry["height"] * 0.5
+            session.switch_to_native()
+            session.execute_script("mobile: dragFromToForDuration", {
+                "duration": 0.25,
+                "fromX": geometry["left"] + geometry["width"] * start,
+                "toX": geometry["left"] + geometry["width"] * end,
+                "fromY": y, "toY": y,
+            })
+            session.switch_to_app_webview()
+            observation = session.execute_script(
+                """
+const root = document.querySelector('.mobile-content');
+const path = [];
+for (let node = document.elementFromPoint(arguments[0],arguments[1]); node; node = node.parentElement) {
+  const style = getComputedStyle(node);
+  path.push({tag:node.tagName, classes:node.className, overflowX:style.overflowX,
+    touchAction:style.touchAction, scrollWidth:node.scrollWidth, clientWidth:node.clientWidth});
+}
+return {
+  events: window.__mobilePrimarySwipeTrace.events.slice(),
+  path, tab: document.querySelector('.mobile-shell')?.dataset.productSurface,
+  frames: Array.from(root.querySelectorAll('[data-navigation-frame]')).map(node => ({
+    key:node.dataset.navigationFrame, active:node.dataset.navigationActive, hidden:node.hidden,
+  })),
+  overlays: Array.from(document.querySelectorAll('[role="dialog"],[role="alertdialog"],[role="menu"],[role="listbox"]'))
+    .filter(node => !node.closest('[hidden]') && node.getClientRects().length > 0)
+    .map(node => ({role:node.getAttribute('role'), classes:node.className})),
+};
+""",
+                geometry["left"] + geometry["width"] * start, y,
+            )
+            prefix = f"mobile-whole-product/primary-swipes/step-{len(steps)}"
+            artifacts.write_json(
+                f"{prefix}-observation.json",
+                {"direction": direction, "expected": expected, "geometry": dict(geometry),
+                 "observation": observation},
+                role=f"mobile-primary-swipe-observation-{len(steps)}",
+            )
+            session.switch_to_native()
+            artifacts.write_bytes(
+                f"{prefix}.png", session.screenshot_bytes(),
+                role=f"mobile-primary-swipe-screenshot-{len(steps)}", media_type="image/png",
+            )
+            session.switch_to_app_webview()
+            self._wait_for_surface(
+                session, f'.mobile-content > [data-navigation-host] > [data-navigation-frame="{expected}"][data-navigation-active="true"]',
+            )
+            navigation = session.call_action("navigation.snapshot")
+            if not isinstance(navigation, Mapping) or navigation.get("primaryRouteId") != expected:
+                raise GateError(f"Native primary swipe did not activate {expected}")
+            self._assert_keyboard_inactive(artifacts, session, f"primary-swipe-{len(steps)}")
+            steps.append({"direction": direction, "primaryRouteId": expected})
+        continuity = session.execute_script(
+            """
+// mobile-primary-swipe-return
+const origin = window.__mobilePrimarySwipeOrigin;
+const result = {
+  framePreserved: origin.frame === document.querySelector('.mobile-content > [data-navigation-host] > [data-navigation-frame="tab:chat"]'),
+  scrollPreserved: origin.scroll.every(item => item.node.isConnected && Math.abs(item.node.scrollTop - item.top) <= 1),
+  inputsPreserved: origin.inputs.every(item => item.node.isConnected && item.node.value === item.value),
+};
+delete window.__mobilePrimarySwipeOrigin;
+const trace = window.__mobilePrimarySwipeTrace;
+for (const name of trace.eventNames) document.removeEventListener(name, trace.observe, true);
+delete window.__mobilePrimarySwipeTrace;
+return result;
+""",
+        )
+        if not isinstance(continuity, Mapping) or any(
+            continuity.get(key) is not True
+            for key in ("framePreserved", "scrollPreserved", "inputsPreserved")
+        ):
+            raise GateError(f"Native primary swipe lost retained Chat state: {continuity}")
+        result = {"steps": steps, "continuity": dict(continuity), "nativeGesture": True}
+        artifacts.write_json(
+            "mobile-whole-product/primary-swipes.json", result,
+            role="mobile-primary-native-swipes",
+        )
+        return result
 
     def _capture_authenticated_surface_sets(
         self,
@@ -2058,7 +2252,19 @@ class SimulatorWholeProductUsabilityGate(
                             {"surfaceId": entry_surface_id},
                         )
                         time.sleep(0.5)
-                    action = enter_surface[surface_set](session, entry)
+                    try:
+                        action = enter_surface[surface_set](session, entry)
+                    except (DriverError, GateError) as error:
+                        try:
+                            self._capture_entry_failure(
+                                artifacts, session, entry, cell_id, error,
+                            )
+                        except (DriverError, GateError, OSError) as capture_error:
+                            error.add_note(
+                                "Entry failure capture also failed: "
+                                + redact_text(str(capture_error))
+                            )
+                        raise
                     surface_evidence[entry["id"]]["cells"][cell_id] = (
                         self._capture_surface(
                             artifacts,
@@ -2082,6 +2288,57 @@ class SimulatorWholeProductUsabilityGate(
 
         self._configure_cell(session, "portrait-normal")
         return surface_evidence
+
+    @staticmethod
+    def _capture_entry_failure(
+        artifacts: ArtifactSession,
+        session: Any,
+        entry: Mapping[str, Any],
+        cell_id: str,
+        error: Exception,
+    ) -> None:
+        """Retain the failed native input before cleanup without certifying it."""
+        prefix = f"mobile-whole-product/{entry['id']}/{cell_id}/entry-failure"
+        session.switch_to_native()
+        artifacts.write_bytes(
+            f"{prefix}.xml", _redacted_markup(session.get_page_source()),
+            media_type="application/xml", role=f"mobile-entry-failure-ax/{entry['id']}/{cell_id}",
+        )
+        artifacts.write_bytes(
+            f"{prefix}.png", session.screenshot_bytes(),
+            media_type="image/png", role=f"mobile-entry-failure-screenshot/{entry['id']}/{cell_id}",
+        )
+        session.switch_to_app_webview()
+        artifacts.write_bytes(
+            f"{prefix}.html", _redacted_markup(session.get_webview_source()),
+            media_type="text/html", role=f"mobile-entry-failure-dom/{entry['id']}/{cell_id}",
+        )
+        geometry = session.execute_script(
+            """
+const active = document.activeElement;
+const viewport = window.visualViewport;
+const rect = active?.getBoundingClientRect();
+return {
+  layoutViewport: {width:window.innerWidth, height:window.innerHeight},
+  visualViewport: viewport ? {width:viewport.width, height:viewport.height,
+    offsetTop:viewport.offsetTop, offsetLeft:viewport.offsetLeft, scale:viewport.scale} : null,
+  activeInput: rect ? {tag:active.tagName, focusId:active.dataset.focusId,
+    x:rect.x, y:rect.y, width:rect.width, height:rect.height} : null,
+  headers: Array.from(document.querySelectorAll('.mobile-messages-header,.chat-thread-header'))
+    .filter(node => !node.closest('[hidden]')).map(node => {
+      const bounds = node.getBoundingClientRect();
+      return {classes:node.className, x:bounds.x, y:bounds.y,
+        width:bounds.width, height:bounds.height};
+    }),
+};
+""",
+        )
+        artifacts.write_json(
+            f"{prefix}.json",
+            {"surfaceId": entry["id"], "cellId": cell_id, "entryAction": entry["entryAction"],
+             "error": redact_text(str(error)), "geometry": geometry},
+            role=f"mobile-entry-failure-observation/{entry['id']}/{cell_id}",
+        )
 
     def _run_entry_surface_journey(
         self,
@@ -2133,7 +2390,7 @@ class SimulatorWholeProductUsabilityGate(
                 f"{ENVIRONMENT_ID}:client:{SHELL_CLIENT_ID}",
             )
 
-        session = self._create_session(server_url, spec)
+        session = self._create_logged_session(artifacts, server_url, spec)
         self.sessions.append(session)
         session.start()
         self._record(spec.client_id, "entry-session-created")
@@ -2251,6 +2508,12 @@ class SimulatorWholeProductUsabilityGate(
                 role="mobile-whole-product-lifecycle-readiness",
             )
             _validate_lifecycle_readiness(lifecycle)
+            self._exercise_native_debug_controls(artifacts, session)
+            self._exercise_live_people_search(
+                artifacts, session,
+                self._load_actor(artifacts, manifest, role="bob", client_id="sim-ios-peer"),
+            )
+            self._exercise_native_navigation_continuity(artifacts, session)
             surface_evidence.update(
                 self._capture_authenticated_surface_sets(
                     artifacts,
@@ -2340,10 +2603,139 @@ class SimulatorWholeProductUsabilityGate(
             "findings": [],
         }
 
+    def _exercise_native_debug_controls(
+        self, artifacts: ArtifactSession, session: Any,
+    ) -> None:
+        """Touch and scroll the actual diagnostics overlay, then return to Chat."""
+        session.switch_to_app_webview()
+        session.execute_script(
+            "window.__acceptanceDebugOrigin=document.querySelector('[data-navigation-host]');"
+        )
+        observations: dict[str, Any] = {}
+
+        def observe(stage: str) -> dict[str, Any]:
+            session.switch_to_app_webview()
+            value = session.execute_script("""
+const drawer=document.querySelector('.mobile-debug-drawer');
+const scroll=drawer?.querySelector('.pt-dialog-body');
+const close=drawer?.querySelector('[data-action-id="drawer.close"]');
+const rect=node=>{
+  if(!node)return null;
+  const {x,y,width,height}=node.getBoundingClientRect();
+  return {x,y,width,height};
+};
+const toggle=document.querySelector('[data-acceptance-debug-toggle]');
+return {
+  open:!!drawer, triggerLabel:toggle?.textContent.trim(),
+  closeLabel:drawer?.querySelector('[data-acceptance-debug-close]')?.textContent.trim(),
+  scrollTop:scroll?.scrollTop??0, scrollHeight:scroll?.scrollHeight??0,
+  scroll:rect(scroll), close:rect(close),
+  viewport:{width:innerWidth,height:innerHeight},
+  originRetained:window.__acceptanceDebugOrigin===
+    document.querySelector('[data-navigation-host]'),
+  inert:!!document.querySelector('.pt-ui-content[inert]'),
+};
+""")
+            if not isinstance(value, dict):
+                raise GateError("Mobile Debug observation is invalid")
+            prefix = f"mobile-whole-product/debug-controls/{stage}"
+            artifacts.write_json(f"{prefix}/observation.json", value, role="mobile-debug-observation")
+            artifacts.write_bytes(
+                f"{prefix}/dom.html", _redacted_markup(session.get_webview_source()),
+                role="mobile-debug-dom", media_type="text/html",
+            )
+            session.switch_to_native()
+            artifacts.write_bytes(
+                f"{prefix}/native-ax.xml", _redacted_markup(session.get_page_source()),
+                role="mobile-debug-native-ax", media_type="application/xml",
+            )
+            artifacts.write_bytes(
+                f"{prefix}/screenshot.png", session.screenshot_bytes(),
+                role="mobile-debug-screenshot", media_type="image/png",
+            )
+            observations[stage] = value
+            return value
+
+        before = observe("before")
+        session.click_element(session.find_element("accessibility id", before["triggerLabel"]))
+        session.switch_to_app_webview()
+        self._wait_for_surface(session, "[data-acceptance-debug-timestamp]", require_heading=False)
+        opened = observe("opened")
+        scroll = opened["scroll"]
+        close = opened["close"]
+        viewport = opened["viewport"]
+        if (
+            not opened["open"] or not opened["inert"] or not scroll or not close
+            or opened["scrollHeight"] <= scroll["height"]
+            or close["width"] < 44 or close["height"] < 44
+            or close["y"] < 0 or close["y"] + close["height"] > viewport["height"]
+        ):
+            raise GateError("Mobile Debug close or scrolling bounds are unusable")
+        native = ET.fromstring(session.get_page_source())
+        webview = next(
+            (node for node in native.iter() if node.tag == "XCUIElementTypeWebView"
+             and node.get("visible") == "true"),
+            None,
+        )
+        if webview is None:
+            raise GateError("Mobile Debug has no visible native WebView")
+        native_x, native_y, native_width, native_height = (
+            float(webview.get(key, "0")) for key in ("x", "y", "width", "height")
+        )
+        if native_width <= 0 or native_height <= 0:
+            raise GateError("Mobile Debug native WebView bounds are invalid")
+        x = native_x + (scroll["x"] + scroll["width"] / 2) * native_width / viewport["width"]
+        session.execute_script("mobile: dragFromToForDuration", {
+            "fromX": x, "toX": x, "duration": 0.5,
+            "fromY": native_y + (scroll["y"] + scroll["height"] * 0.8) * native_height / viewport["height"],
+            "toY": native_y + (scroll["y"] + scroll["height"] * 0.2) * native_height / viewport["height"],
+        })
+        scrolled = observe("scrolled")
+        if scrolled["scrollTop"] <= opened["scrollTop"] or scrolled["close"] != close:
+            raise GateError("Mobile Debug touch scrolling failed or moved its close button")
+        session.click_element(session.find_element("accessibility id", opened["closeLabel"]))
+        session.switch_to_app_webview()
+        deadline = time.monotonic() + 5
+        while session.execute_script("return !!document.querySelector('.mobile-debug-drawer');"):
+            if time.monotonic() >= deadline:
+                observe("close-failed")
+                raise GateError("Mobile Debug native close did not dismiss the overlay")
+            time.sleep(0.1)
+        closed = observe("closed")
+        if closed["open"] or closed["inert"] or not closed["originRetained"]:
+            raise GateError("Mobile Debug dismissal did not restore the original product tree")
+        session.switch_to_app_webview()
+        tab = session.find_element("css selector", '[data-route-id="tab:chat"]')
+        session.click_element(tab)
+        self._wait_for_surface(session, '[data-navigation-host]', require_heading=False)
+        artifacts.write_json(
+            "mobile-whole-product/debug-controls/result.json",
+            {"artifactKind": "mobile-debug-native-controls", "observations": observations},
+            role="mobile-debug-native-controls",
+        )
+        session.execute_script("delete window.__acceptanceDebugOrigin;")
+
+    def _create_logged_session(
+        self, artifacts: ArtifactSession, server_url: str, spec: Any,
+    ) -> SimulatorAppiumSession:
+        session = self._create_session(server_url, spec)
+        if spec.platform == "ios" and isinstance(session, SimulatorAppiumSession):
+            directory = tempfile.TemporaryDirectory(prefix="peers-mobile-native-output-")
+            self._native_output_roots.append(directory)
+            session.ios_launch, session.capture_native_output = ios_native_output_callbacks(
+                directory=Path(directory.name), client_id=spec.client_id,
+                device=spec.device.identifier, application_id=spec.build.application_id,
+                writer=artifacts,
+            )
+        return session
+
     def _load_actor(
         self,
         artifacts: ArtifactSession,
         manifest: Mapping[str, Any],
+        *,
+        role: str = "alice",
+        client_id: str = SHELL_CLIENT_ID,
     ) -> MessagingActor:
         raw_reference = manifest.get("actorManifest")
         if not isinstance(raw_reference, Mapping):
@@ -2376,16 +2768,16 @@ class SimulatorWholeProductUsabilityGate(
                 (
                     value
                     for value in actors
-                    if isinstance(value, Mapping) and value.get("role") == "alice"
+                    if isinstance(value, Mapping) and value.get("role") == role
                 ),
                 None,
             )
             if not isinstance(actor, Mapping):
-                raise ValueError("alice actor is missing")
+                raise ValueError(f"{role} actor is missing")
             service = require_runtime_service(manifest, "station", "station")
             return MessagingActor(
-                client_id=SHELL_CLIENT_ID,
-                role="alice",
+                client_id=client_id,
+                role=role,
                 station_url=_required_text(
                     service,
                     "endpoint",
@@ -2419,6 +2811,341 @@ class SimulatorWholeProductUsabilityGate(
                 f"{ENVIRONMENT_ID}:actor-manifest",
             ) from error
 
+    def _exercise_live_people_search(
+        self,
+        artifacts: ArtifactSession,
+        session: Any,
+        actor: MessagingActor,
+    ) -> None:
+        """Real directory, native keyboard and origin return before fixture audits."""
+        self._configure_cell(session, "portrait-normal")
+        for pane in ("chats", "contacts"):
+            session.switch_to_app_webview()
+            session.call_action("contacts.fixture", {"surfaceId": None})
+            session.call_action(
+                "navigation.apply", {"kind": "messages", "pane": pane},
+            )
+            self._wait_for_surface(session, '[data-action-id="messages.new"]')
+            session.execute_script(
+                """
+// mobile-native-navigation-origin
+const visible = node => !node.closest('[hidden]') && node.getClientRects().length > 0;
+const frame = Array.from(document.querySelectorAll('.mobile-content > [data-navigation-host] > [data-navigation-frame]')).find(visible);
+const header = Array.from(document.querySelectorAll('.mobile-messages-header')).find(visible);
+const page = frame && Array.from(frame.querySelectorAll('.page-container')).find(visible);
+const origin = {frame, header, page, top: page?.scrollTop ?? 0, firstFrame: null};
+window.__mobilePeoplePaneOrigins ??= {};
+window.__mobilePeoplePaneOrigins[arguments[0]] = origin;
+const captureReturn = event => {
+  if (!event.target.closest('[data-action-id="mobile.nav.back"]')) return;
+  document.removeEventListener('click', captureReturn, true);
+  requestAnimationFrame(() => {
+    origin.firstFrame = {
+      headerPreserved: header?.isConnected === true && visible(header),
+      pagePreserved: page?.isConnected === true && visible(page),
+      scrollDelta: Math.abs((page?.scrollTop ?? 0) - origin.top),
+    };
+  });
+};
+document.addEventListener('click', captureReturn, true);
+window.__mobilePeopleNavigationOrigin = origin;
+""",
+                pane,
+            )
+            for selector in (
+                '[data-action-id="messages.new"]',
+                '[data-action-id="messages.add-friend"]',
+            ):
+                self._wait_for_surface(session, selector)
+                session.click_element(session.find_element("css selector", selector))
+            self._wait_for_surface(session, '[data-acceptance-id="find-people-page"]')
+            self._assert_keyboard_inactive(artifacts, session, f"find-people/{pane}-entry")
+            input_selector = '[data-focus-id="people-search-input"]'
+            field = session.find_element("css selector", input_selector)
+            session.click_element(field)
+            session.switch_to_native()
+            native_field = session.find_element(
+                "class name", "XCUIElementTypeTextField",
+            )
+            session.click_element(native_field)
+            self._wait_for_chat_keyboard(session)
+            session.send_keys(native_field, actor.role)
+            keyboard = audit_keyboard_tree(session.get_page_source())
+            session.switch_to_app_webview()
+            typing_geometry = session.execute_script(
+                """
+// mobile-find-people-typing-geometry
+const field = document.querySelector('[data-focus-id="people-search-input"]');
+const results = document.querySelector('.find-people-results');
+return {
+  query: field?.value,
+  inputTop: field?.getBoundingClientRect().top,
+  inputBottom: field?.getBoundingClientRect().bottom,
+  resultsBottom: results?.getBoundingClientRect().bottom,
+};
+""",
+            )
+            keyboard_top = keyboard.get("keyboardTop")
+            artifacts.write_json(
+                f"mobile-whole-product/find-people/{pane}-typing-geometry.json",
+                {"observation": typing_geometry, "keyboard": keyboard},
+                role=f"mobile-find-people-typing-geometry-{pane}",
+            )
+            session.switch_to_native()
+            artifacts.write_bytes(
+                f"mobile-whole-product/find-people/{pane}-keyboard.png",
+                session.screenshot_bytes(),
+                role=f"mobile-find-people-native-keyboard-{pane}",
+                media_type="image/png",
+            )
+            session.switch_to_app_webview()
+            if (
+                not isinstance(typing_geometry, Mapping)
+                or typing_geometry.get("query") != actor.role
+                or not isinstance(keyboard_top, (int, float))
+                or not all(isinstance(typing_geometry.get(key), (int, float)) for key in (
+                    "inputTop", "inputBottom", "resultsBottom",
+                ))
+                or typing_geometry["inputTop"] < -1
+                or typing_geometry["inputBottom"] > keyboard_top + 1
+                or typing_geometry["resultsBottom"] > keyboard_top + 1
+            ):
+                raise GateError(f"Find People keyboard layout failed while typing: {typing_geometry}, {keyboard}")
+            session.click_element(session.find_element(
+                "css selector", '[data-action-id="people-search-run"]',
+            ))
+            result_selector = f'.find-people-result[data-actor-ptid="{actor.ptid}"]'
+            try:
+                self._wait_for_surface(session, result_selector)
+            except GateError:
+                diagnostic = session.execute_script(
+                    """
+const page = document.querySelector('.find-people-page');
+const field = page?.querySelector('[data-focus-id="people-search-input"]');
+const button = page?.querySelector('[data-action-id="people-search-run"]');
+const results = page?.querySelector('.find-people-results');
+return {
+  query: field?.value,
+  searchUnavailable: button?.getAttribute('aria-disabled'),
+  state: results?.getAttribute('data-people-search-state'),
+  busy: results?.getAttribute('aria-busy'),
+  resultCount: results?.querySelectorAll('.find-people-result').length,
+  feedback: results?.textContent?.trim().slice(0, 1000),
+};
+""",
+                )
+                artifacts.write_json(
+                    f"mobile-whole-product/find-people/{pane}-failure.json",
+                    {"expectedPeer": actor.ptid, "observation": diagnostic},
+                    role=f"mobile-find-people-failure-{pane}",
+                )
+                session.switch_to_native()
+                artifacts.write_bytes(
+                    f"mobile-whole-product/find-people/{pane}-failure.png",
+                    session.screenshot_bytes(),
+                    role=f"mobile-find-people-failure-screenshot-{pane}",
+                    media_type="image/png",
+                )
+                raise
+            geometry = session.execute_script(
+                """
+const field = document.querySelector('[data-focus-id="people-search-input"]');
+const results = document.querySelector('.find-people-results');
+const viewport = window.visualViewport;
+const inputRect = field?.getBoundingClientRect();
+const resultRect = results?.getBoundingClientRect();
+return {
+  query: field?.value,
+  fieldEnabled: field?.disabled === false,
+  bottomSheetPresent: document.querySelector('.pt-bottom-sheet') !== null,
+  tabBarPresent: Array.from(document.querySelectorAll('.pt-mobile-tabbar')).some(node => node.getClientRects().length > 0),
+  inputTop: inputRect?.top,
+  inputBottom: inputRect?.bottom,
+  resultsBottom: resultRect?.bottom,
+  visibleTop: viewport?.offsetTop ?? 0,
+  visibleBottom: (viewport?.offsetTop ?? 0) + (viewport?.height ?? window.innerHeight),
+};
+""",
+            )
+            if (
+                not isinstance(geometry, Mapping)
+                or geometry.get("query") != actor.role
+                or geometry.get("fieldEnabled") is not True
+                or geometry.get("bottomSheetPresent") is not False
+                or geometry.get("tabBarPresent") is not False
+                or not all(isinstance(geometry.get(key), (float, int)) for key in (
+                    "inputTop", "inputBottom", "resultsBottom", "visibleTop", "visibleBottom",
+                ))
+                or geometry["inputTop"] < geometry["visibleTop"] - 1
+                or geometry["inputBottom"] > geometry["visibleBottom"] + 1
+                or geometry["resultsBottom"] > geometry["visibleBottom"] + 1
+            ):
+                raise GateError(f"Find People keyboard layout failed: {geometry}")
+            session.click_element(session.find_element(
+                "css selector", '.find-people-page [data-action-id="mobile.nav.back"]',
+            ))
+            self._wait_for_surface(session, '[data-action-id="messages.new"]')
+            self._assert_keyboard_inactive(artifacts, session, f"find-people/{pane}-return")
+            continuity = session.execute_script(
+                """
+// mobile-native-navigation-return
+const origin = window.__mobilePeopleNavigationOrigin;
+const visible = node => !node.closest('[hidden]') && node.getClientRects().length > 0;
+const frames = Array.from(document.querySelectorAll('.mobile-content > [data-navigation-host] > [data-navigation-frame]'));
+const frame = frames.find(visible);
+const header = Array.from(document.querySelectorAll('.mobile-messages-header')).find(visible);
+const page = frame && Array.from(frame.querySelectorAll('.page-container')).find(visible);
+delete window.__mobilePeopleNavigationOrigin;
+return {
+  headerPreserved: header === origin?.header,
+  pagePreserved: page === origin?.page,
+  framePreserved: frame === origin?.frame,
+  scrollDelta: Math.abs((page?.scrollTop ?? 0) - (origin?.top ?? 0)),
+  firstFrame: origin?.firstFrame,
+  retainedFrameCount: frames.length,
+  hiddenMediaPlaying: Array.from(document.querySelectorAll('audio,video'))
+    .filter(media => !visible(media) && !media.paused).length,
+};
+""",
+            )
+            first_frame = continuity.get("firstFrame") if isinstance(continuity, Mapping) else None
+            if (
+                not isinstance(continuity, Mapping)
+                or any(continuity.get(key) is not True for key in (
+                    "headerPreserved", "pagePreserved", "framePreserved",
+                ))
+                or not isinstance(first_frame, Mapping)
+                or first_frame.get("headerPreserved") is not True
+                or first_frame.get("pagePreserved") is not True
+                or not isinstance(first_frame.get("scrollDelta"), (int, float))
+                or first_frame["scrollDelta"] > 1
+                or not isinstance(continuity.get("scrollDelta"), (int, float))
+                or continuity["scrollDelta"] > 1
+                or not isinstance(continuity.get("retainedFrameCount"), int)
+                or not 1 <= continuity["retainedFrameCount"] <= 7
+                or continuity.get("hiddenMediaPlaying") != 0
+            ):
+                raise GateError(f"Mobile native navigation continuity failed: {continuity}")
+            navigation = session.call_action("navigation.snapshot")
+            if (
+                not isinstance(navigation, Mapping)
+                or navigation.get("messagePane") != pane
+                or navigation.get("detailKeys") != []
+                or navigation.get("overlayRouteId") is not None
+            ):
+                raise GateError("Find People did not return to the original Messages pane")
+            artifacts.write_json(
+                f"mobile-whole-product/find-people/{pane}-journey.json",
+                {"query": actor.role, "actorPtid": actor.ptid, "keyboard": keyboard,
+                 "typingGeometry": dict(typing_geometry), "geometry": dict(geometry),
+                 "nativeContinuity": dict(continuity),
+                 "returnNavigation": dict(navigation)},
+                role=f"mobile-find-people-live-directory-journey-{pane}",
+            )
+
+    def _exercise_native_navigation_continuity(
+        self, artifacts: ArtifactSession, session: Any,
+    ) -> None:
+        """Use actual tab and pane controls after the live directory journey."""
+        session.switch_to_app_webview()
+        session.execute_script(
+            """
+// mobile-native-primary-navigation-start
+const visible = node => node && !node.closest('[hidden]') && node.getClientRects().length > 0;
+const frames = () => Array.from(document.querySelectorAll('.mobile-content > [data-navigation-host] > [data-navigation-frame]'));
+const tabbar = document.querySelector('.mobile-tabbar-host');
+const samples = [];
+document.documentElement.dataset.mobileNativeNavigationSamples = '0';
+const capture = event => {
+  const tab = event.target.closest('.pt-mobile-tabbar [data-route-id]');
+  const pane = event.target.closest('[data-message-pane-target]');
+  if (!tab && !pane) return;
+  const expected = tab?.dataset.routeId ?? pane?.dataset.messagePaneTarget;
+  requestAnimationFrame(() => {
+    const frame = frames().find(visible);
+    const currentPane = document.querySelector('.mobile-shell')?.dataset.messagePane;
+    const origin = window.__mobilePeoplePaneOrigins?.[currentPane];
+    const page = origin?.page;
+    samples.push({
+      expected,
+      active: tab ? frame?.dataset.navigationFrame : currentPane,
+      pagePreserved: tab && expected !== 'tab:chat' ? null : visible(page),
+      scrollDelta: tab && expected !== 'tab:chat' ? null : Math.abs((page?.scrollTop ?? 0) - (origin?.top ?? 0)),
+    });
+    document.documentElement.dataset.mobileNativeNavigationSamples = String(samples.length);
+  });
+};
+document.addEventListener('click', capture, true);
+window.__mobileNativeContinuity = {tabbar, samples, capture};
+""",
+        )
+        for route_id in ("tab:moments", "tab:settings", "tab:chat"):
+            selector = f'.pt-mobile-tabbar [data-route-id="{route_id}"]'
+            self._wait_for_surface(session, selector)
+            session.click_element(session.find_element("css selector", selector))
+            self._wait_for_surface(
+                session, f'[data-navigation-frame="{route_id}"][data-navigation-active="true"]',
+            )
+        for pane in ("chats", "contacts"):
+            selector = f'[data-message-pane-target="{pane}"]'
+            session.click_element(session.find_element("css selector", selector))
+            self._wait_for_surface(
+                session, f'[data-navigation-frame="tab:chat:{pane}"][data-navigation-active="true"]',
+            )
+        self._wait_for_surface(session, '[data-mobile-native-navigation-samples="5"]')
+        observation = session.execute_script(
+            """
+// mobile-native-primary-navigation-result
+const state = window.__mobileNativeContinuity;
+document.removeEventListener('click', state.capture, true);
+const visible = node => node && !node.closest('[hidden]') && node.getClientRects().length > 0;
+const origins = window.__mobilePeoplePaneOrigins;
+const frames = Array.from(document.querySelectorAll('.mobile-content > [data-navigation-host] > [data-navigation-frame]'));
+const header = Array.from(document.querySelectorAll('.mobile-messages-header')).find(visible);
+const result = {
+  tabbarPreserved: state.tabbar === document.querySelector('.mobile-tabbar-host'),
+  headerPreserved: header === origins.chats.header && header === origins.contacts.header,
+  panesPreserved: ['chats','contacts'].every(pane => origins[pane]?.page?.isConnected === true),
+  frameCount: frames.length,
+  samples: state.samples,
+  hiddenMediaPlaying: Array.from(document.querySelectorAll('audio,video')).filter(media => !visible(media) && !media.paused).length,
+};
+delete window.__mobileNativeContinuity;
+delete window.__mobilePeoplePaneOrigins;
+delete document.documentElement.dataset.mobileNativeNavigationSamples;
+return result;
+""",
+        )
+        artifacts.write_json(
+            "mobile-whole-product/navigation-continuity.json", observation,
+            role="mobile-native-navigation-continuity",
+        )
+        samples = observation.get("samples") if isinstance(observation, Mapping) else None
+        expected = ["tab:moments", "tab:settings", "tab:chat", "chats", "contacts"]
+        if (
+            not isinstance(observation, Mapping)
+            or any(observation.get(key) is not True for key in (
+                "tabbarPreserved", "headerPreserved", "panesPreserved",
+            ))
+            or observation.get("frameCount") != 3
+            or observation.get("hiddenMediaPlaying") != 0
+            or not isinstance(samples, list) or len(samples) != len(expected)
+            or any(
+                not isinstance(sample, Mapping)
+                or sample.get("expected") != route or sample.get("active") != route
+                or (
+                    route in ("tab:chat", "chats", "contacts")
+                    and (
+                        sample.get("pagePreserved") is not True
+                        or not isinstance(sample.get("scrollDelta"), (int, float))
+                        or sample["scrollDelta"] > 1
+                    )
+                )
+                for route, sample in zip(expected, samples or [])
+            )
+        ):
+            raise GateError(f"Mobile native primary/pane continuity failed: {observation}")
+
     def _configure_cell(
         self,
         session: Any,
@@ -2450,26 +3177,7 @@ class SimulatorWholeProductUsabilityGate(
                 time.sleep(0.75 * attempt)
         time.sleep(0.5)
         session.switch_to_app_webview()
-        value = session.execute_script(TEXT_SIZE_SCRIPT, text_size)
-        if (
-            not isinstance(value, dict)
-            or value.get("textSize") != text_size
-            or not isinstance(value.get("width"), int)
-            or not isinstance(value.get("height"), int)
-            or value["width"] <= 0
-            or value["height"] <= 0
-        ):
-            raise GateError(f"Mobile viewport setup failed for {cell_id}")
-        if (
-            text_size == "maximum"
-            and (
-                not isinstance(value.get("scaledElementCount"), int)
-                or value["scaledElementCount"] <= 0
-            )
-        ):
-            raise GateError(
-                f"Mobile maximum text stress did not scale content for {cell_id}"
-            )
+        value = self._apply_text_size(session, text_size, cell_id)
         if (
             orientation == "portrait"
             and value["width"] >= value["height"]
@@ -2490,6 +3198,34 @@ class SimulatorWholeProductUsabilityGate(
             "textSize": text_size,
         }
 
+    @staticmethod
+    def _apply_text_size(
+        session: Any,
+        text_size: str,
+        context: str,
+    ) -> dict[str, Any]:
+        value = session.execute_script(TEXT_SIZE_SCRIPT, text_size)
+        if (
+            not isinstance(value, dict)
+            or value.get("textSize") != text_size
+            or not isinstance(value.get("width"), int)
+            or not isinstance(value.get("height"), int)
+            or value["width"] <= 0
+            or value["height"] <= 0
+        ):
+            raise GateError(f"Mobile viewport setup failed for {context}")
+        if (
+            text_size == "maximum"
+            and (
+                not isinstance(value.get("scaledElementCount"), int)
+                or value["scaledElementCount"] <= 0
+            )
+        ):
+            raise GateError(
+                f"Mobile maximum text stress did not scale content for {context}"
+            )
+        return value
+
     def _enter_surface(
         self,
         session: Any,
@@ -2504,12 +3240,23 @@ class SimulatorWholeProductUsabilityGate(
                 f'[data-route-id="{route_id}"]',
             )
             session.click_element(button)
+            if action == "tap-contacts-pane":
+                pane = session.find_element(
+                    "css selector",
+                    '[data-message-pane-target="contacts"]',
+                )
+                session.click_element(pane)
+            elif action == "tap-chat-tab":
+                pane = session.find_element("css selector", '[data-message-pane-target="chats"]')
+                session.click_element(pane)
             projection = session.call_action("navigation.snapshot")
             if (
                 not isinstance(projection, Mapping)
                 or projection.get("primaryRouteId") != route_id
             ):
                 raise GateError(f"Mobile shell did not navigate to {route_id}")
+            if action == "tap-contacts-pane" and projection.get("messagePane") != "contacts":
+                raise GateError("Mobile shell did not select the Contacts pane")
             action_kind = "native-touch"
         else:
             raise GateError(f"Unsupported shell entry action: {action}")
@@ -2598,9 +3345,10 @@ class SimulatorWholeProductUsabilityGate(
         if action in {"type-conversation-query", "search-unknown-conversation"}:
             search = session.find_element(
                 "css selector",
-                "[data-chat-fixture-search]",
+                '[data-focus-id="messages.search.chats"]',
             )
             session.click_element(search)
+            self._focus_native_search_keyboard(session)
             action_kind = "native-text"
         elif action == "focus-message-composer":
             composer = session.find_element(
@@ -2611,7 +3359,7 @@ class SimulatorWholeProductUsabilityGate(
             session.switch_to_native()
             native_composer = session.find_element(
                 "class name",
-                "XCUIElementTypeTextField",
+                "XCUIElementTypeTextView",
             )
             session.click_element(native_composer)
             self._wait_for_chat_keyboard(session)
@@ -2657,19 +3405,20 @@ class SimulatorWholeProductUsabilityGate(
         )
 
         action_kind = "system"
-        if action == "tap-contacts-tab":
+        if action == "tap-contacts-pane":
             tab = session.find_element(
                 "css selector",
-                '[data-route-id="tab:contacts"]',
+                '[data-message-pane-target="contacts"]',
             )
             session.click_element(tab)
             action_kind = "native-touch"
         elif action in {"type-contact-query", "search-unknown-contact"}:
             search = session.find_element(
                 "css selector",
-                "[data-contacts-fixture-search]",
+                '[data-focus-id="messages.search.contacts"]',
             )
             session.click_element(search)
+            self._focus_native_search_keyboard(session)
             action_kind = "native-text"
         elif action in {
             "search-unknown-person",
@@ -2681,6 +3430,7 @@ class SimulatorWholeProductUsabilityGate(
                 "[data-contacts-fixture-people-search]",
             )
             session.click_element(search)
+            self._focus_native_search_keyboard(session)
             action_kind = "native-text"
 
         return {
@@ -2783,10 +3533,11 @@ class SimulatorWholeProductUsabilityGate(
         detail_actions = {
             f"tap-setting-{setting_id}": (
                 "settings.summary",
-                f'[data-settings-fixture-open="{setting_id}"]',
+                f'[data-setting-id="{setting_id}"]',
             )
             for setting_id in (
                 "account-info",
+                "credentials",
                 "notifications",
                 "privacy-security",
                 "safety-number",
@@ -2878,6 +3629,53 @@ class SimulatorWholeProductUsabilityGate(
         }
 
     @staticmethod
+    def _assert_keyboard_inactive(
+        artifacts: ArtifactSession,
+        session: Any,
+        stage: str,
+        timeout_seconds: float = 5.0,
+    ) -> None:
+        """Observe native dismissal and DOM focus without forcing blur."""
+        session.switch_to_app_webview()
+        inactive = session.execute_script(
+            """
+// mobile-input-activation-inactive
+const active = document.activeElement;
+return !(active instanceof HTMLElement) ||
+  !(active.matches('input,textarea,select') || active.isContentEditable);
+""",
+        )
+        session.switch_to_native()
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            markup = session.get_page_source()
+            try:
+                root = ET.fromstring(markup)
+            except ET.ParseError as error:
+                raise GateError("Mobile keyboard inactivity tree is malformed") from error
+            visible = any(
+                node.tag == "XCUIElementTypeKeyboard"
+                and node.attrib.get("visible", "true") != "false"
+                for node in root.iter()
+            )
+            if not visible or time.monotonic() >= deadline:
+                break
+            time.sleep(0.2)
+        prefix = f"mobile-whole-product/input-activation/{stage}"
+        artifacts.write_json(
+            f"{prefix}.json",
+            {"stage": stage, "editableFocus": inactive is not True, "nativeKeyboardVisible": visible},
+            role=f"mobile-input-activation/{stage}",
+        )
+        artifacts.write_bytes(
+            f"{prefix}-native-ax.xml", _redacted_markup(markup),
+            role=f"mobile-input-activation-ax/{stage}", media_type="application/xml",
+        )
+        session.switch_to_app_webview()
+        if inactive is not True or visible:
+            raise GateError(f"Mobile automatically activated input/keyboard at {stage}")
+
+    @staticmethod
     def _wait_for_chat_composer_focus(
         session: Any,
         timeout_seconds: float = 10.0,
@@ -2885,14 +3683,21 @@ class SimulatorWholeProductUsabilityGate(
         deadline = time.monotonic() + timeout_seconds
         while time.monotonic() < deadline:
             focused = session.execute_script(
-                "const node=document.querySelector('[data-chat-fixture-composer]');"
-                "return Boolean(node&&document.activeElement===node);"
+                CHAT_COMPOSER_FOCUS_SCRIPT,
             )
             if focused is True:
                 time.sleep(0.5)
                 return
             time.sleep(0.2)
         raise GateError("Mobile Chat composer did not receive foreground focus")
+
+    @staticmethod
+    def _focus_native_search_keyboard(session: Any) -> None:
+        session.switch_to_native()
+        field = session.find_element("class name", "XCUIElementTypeTextField")
+        session.click_element(field)
+        SimulatorWholeProductUsabilityGate._wait_for_chat_keyboard(session)
+        session.switch_to_app_webview()
 
     @staticmethod
     def _wait_for_chat_keyboard(
@@ -2995,7 +3800,8 @@ class SimulatorWholeProductUsabilityGate(
         stable_observations = 0
         while time.monotonic() < deadline:
             found = session.execute_script(
-                "const node=document.querySelector(arguments[0]);"
+                "const node=Array.from(document.querySelectorAll(arguments[0]))"
+                ".find(node=>!node.closest('[hidden]')&&node.getClientRects().length>0);"
                 "if(!node)return false;"
                 "const rect=node.getBoundingClientRect();"
                 "const style=getComputedStyle(node);"
@@ -3035,6 +3841,11 @@ class SimulatorWholeProductUsabilityGate(
         action: Mapping[str, Any],
     ) -> dict[str, Any]:
         session.switch_to_app_webview()
+        self._apply_text_size(
+            session,
+            str(viewport["textSize"]),
+            f"{entry['id']}/{cell_id}",
+        )
         observation = session.execute_script(
             SURFACE_AUDIT_SCRIPT,
             entry["surfaceSelector"],
@@ -3043,50 +3854,12 @@ class SimulatorWholeProductUsabilityGate(
             entry["id"] in (
                 ENTRY_PAGE_CONTROL_SURFACES
                 | RECOVERY_PAGE_CONTROL_SURFACES
+                | CHAT_PAGE_CONTROL_SURFACES
             ),
         )
-        if not isinstance(observation, Mapping) or observation.get("found") is not True:
-            raise GateError(f"Mobile shell surface is unavailable: {entry['id']}")
-        for field in ("unlabeledControls", "undersizedControls", "clippedText"):
-            findings = observation.get(field)
-            if not isinstance(findings, list) or findings:
-                raise GateError(
-                    f"Mobile shell surface {entry['id']} failed {field}: "
-                    f"{findings!r}"
-                )
-        validate_station_entry_layout(str(entry["id"]), observation, viewport)
-        actual_viewport = observation.get("viewport")
-        if not isinstance(actual_viewport, Mapping):
-            raise GateError(f"Mobile viewport changed while capturing {entry['id']}")
-        viewport_changed = (
-            actual_viewport.get("width") != viewport["width"]
-            or actual_viewport.get("height") != viewport["height"]
-        )
-        keyboard_viewport = (
-            entry["id"] == "chat.composer-keyboard"
-            and actual_viewport.get("width") == viewport["width"]
-            and isinstance(actual_viewport.get("height"), int)
-            and 0 < actual_viewport["height"] < viewport["height"]
-        )
-        if viewport_changed and not keyboard_viewport:
-            raise GateError(f"Mobile viewport changed while capturing {entry['id']}")
-        captured_viewport = {
-            **dict(viewport),
-            "width": actual_viewport["width"],
-            "height": actual_viewport["height"],
-        }
         dom = session.get_webview_source()
-        text_parser = _SurfaceHTMLAudit()
-        text_parser.feed(dom)
-        text_findings = audit_visible_text(inventory, text_parser.texts)
-        if text_findings:
-            raise GateError(
-                f"Mobile shell contains technical visible text: {text_findings[:5]!r}"
-            )
-
         session.switch_to_native()
         accessibility = session.get_page_source()
-        audit_accessibility_tree(accessibility)
         screenshot = session.screenshot_bytes()
         prefix = f"mobile-whole-product/{entry['id']}/{cell_id}"
         screenshot_ref = artifacts.write_bytes(
@@ -3107,6 +3880,77 @@ class SimulatorWholeProductUsabilityGate(
             media_type="application/xml",
             role=f"mobile-whole-product-accessibility/{entry['id']}/{cell_id}",
         )
+        artifacts.write_json(
+            f"{prefix}/capture-observation.json",
+            {
+                "artifactKind": "mobile-surface-capture-observation",
+                "surfaceId": entry["id"],
+                "cellId": cell_id,
+                "expectedViewport": dict(viewport),
+                "uiAction": dict(action),
+                "observation": observation,
+            },
+            role=f"mobile-whole-product-observation/{entry['id']}/{cell_id}",
+        )
+        if not isinstance(observation, Mapping) or observation.get("found") is not True:
+            raise GateError(f"Mobile shell surface is unavailable: {entry['id']}")
+        for field in ("unlabeledControls", "undersizedControls", "clippedText"):
+            findings = observation.get(field)
+            if not isinstance(findings, list) or findings:
+                raise GateError(
+                    f"Mobile shell surface {entry['id']} failed {field}: "
+                    f"{findings!r}"
+                )
+        validate_station_entry_layout(str(entry["id"]), observation, viewport)
+        actual_viewport = observation.get("viewport")
+        if not isinstance(actual_viewport, Mapping):
+            raise GateError(
+                f"Mobile viewport is invalid while capturing {entry['id']}: "
+                f"{actual_viewport!r}"
+            )
+        audit_accessibility_tree(accessibility)
+        keyboard_requested = (
+            entry["entryAction"] in KEYBOARD_ENTRY_ACTIONS
+            and action.get("target") == entry["entryAction"]
+            and action.get("performed") is True
+            and action.get("kind") in {"native-touch", "native-text"}
+        )
+        keyboard = audit_keyboard_tree(accessibility) if keyboard_requested else None
+        if not keyboard_requested and any(
+            node.tag == "XCUIElementTypeKeyboard"
+            and node.attrib.get("visible", "true") != "false"
+            for node in ET.fromstring(accessibility).iter()
+        ):
+            raise GateError(f"Mobile software keyboard appeared without input activation: {entry['id']}/{cell_id}")
+        viewport_changed = (
+            actual_viewport.get("width") != viewport["width"]
+            or actual_viewport.get("height") != viewport["height"]
+        )
+        keyboard_viewport = (
+            keyboard is not None
+            and actual_viewport.get("width") == viewport["width"]
+            and type(actual_viewport.get("height")) is int
+            and 0 < actual_viewport["height"] < viewport["height"]
+        )
+        if viewport_changed and not keyboard_viewport:
+            raise GateError(
+                f"Mobile viewport changed while capturing {entry['id']}: "
+                f"expected={dict(viewport)!r}, actual={dict(actual_viewport)!r}, "
+                f"keyboardRequested={keyboard_requested!r}"
+            )
+        captured_viewport = {
+            **dict(viewport),
+            "width": actual_viewport["width"],
+            "height": actual_viewport["height"],
+        }
+        text_parser = _SurfaceHTMLAudit()
+        text_parser.feed(dom)
+        text_findings = audit_visible_text(inventory, text_parser.texts)
+        if text_findings:
+            raise GateError(
+                f"Mobile shell contains technical visible text: {text_findings[:5]!r}"
+            )
+
         interaction = {
             "artifactKind": "mobile-surface-interaction-trace",
             "gateId": self.gate_id,

@@ -216,6 +216,7 @@ Pick one based on intent:
 - [`pitfalls/ios-acceptance-embedded-web-assets-split-brain.md`](pitfalls/ios-acceptance-embedded-web-assets-split-brain.md) — iOS acceptance builds must bind Cargo asset embedding and the bundle resource copy to one immutable harness dist snapshot.
 - [`pitfalls/mobile-enrollment-must-use-profile-revision.md`](pitfalls/mobile-enrollment-must-use-profile-revision.md) — Mobile device certificates must bind the authenticated Actor's current canonical profile revision.
 - [`pitfalls/call-id-must-use-canonical-ulid.md`](pitfalls/call-id-must-use-canonical-ulid.md) — Desktop and Mobile call arbitration must use one canonical shared ULID generator.
+- [`pitfalls/call-media-elements-must-rebind-after-mount.md`](pitfalls/call-media-elements-must-rebind-after-mount.md) — Single-call video remounts must retain real playback with one remote audio outlet.
 - [`pitfalls/runtime-owner-optional-workflow-state.md`](pitfalls/runtime-owner-optional-workflow-state.md) — runtime owners derive source-bound contract metadata without requiring optional task or declaration state.
 - [`pitfalls/fresh-recovery-cannot-require-active-engine.md`](pitfalls/fresh-recovery-cannot-require-active-engine.md) — fresh Actor recovery must establish the Messaging Engine instead of requiring one before archive restore.
 - [`pitfalls/json-fallback-decode-state.md`](pitfalls/json-fallback-decode-state.md) — fallback JSON parsers isolate destinations because failed decodes may leave partial state.

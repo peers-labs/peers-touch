@@ -1,6 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import {
   Button,
+  BottomSheet,
+  CopyButton,
   Empty,
   Icon,
   IconButton,
@@ -15,9 +17,12 @@ import { isRecalledChatMessage } from '@peers-touch/client-chat-core';
 
 import { confirm, confirmDestructive } from '../../app/feedback/mobileFeedback';
 import { useMobileI18n } from '../../app/mobileI18n';
+import { mobileClipboard } from '../../services/platform/mobileClipboard';
 import { BoundedList } from '../../components/BoundedList';
 import { MobileAvatar } from '../../components/MobileAvatar';
 import { actorDisplayName } from '../../features/social/socialProjection';
+import { MobileNotice } from '../../components/MobileNotice';
+import { readableErrorMessage } from '../../features/social/socialTypes';
 import {
   CHAT_BACKGROUND_OPTIONS,
   type ChatBackgroundId,
@@ -73,6 +78,8 @@ export function MessageActionSheet({
   onHideForMe,
   canModerate,
   onModerate,
+  onSelect,
+  onCopyError,
 }: {
   readonly message: SocialMessage | undefined;
   readonly currentUserPtid: string | null;
@@ -93,6 +100,8 @@ export function MessageActionSheet({
   readonly onHideForMe: () => void;
   readonly canModerate: boolean;
   readonly onModerate: () => void;
+  readonly onSelect?: () => void;
+  readonly onCopyError?: (error: unknown) => void;
 }) {
   const { t } = useMobileI18n();
   if (!message) return null;
@@ -102,16 +111,11 @@ export function MessageActionSheet({
   const unavailable = recalled || metadata.moderated;
 
   return (
-    <div
-      className="chat-action-sheet-shell message-action-sheet-shell"
-      data-product-surface="chat.message-actions"
-    >
-      <button className="chat-action-sheet-backdrop" type="button" aria-label={t('common.action.close')} onClick={onClose} />
-      <aside className="chat-action-sheet message-action-sheet" role="dialog" aria-modal="true" aria-labelledby="message-action-sheet-title">
-        <div className="chat-action-sheet-handle" aria-hidden="true" />
+    <BottomSheet open title={t('mobile.chat.messageActions')} onDismiss={onClose}
+      className="message-action-sheet" data-product-surface="chat.message-actions">
         <div className="chat-action-sheet-header">
-          <Text strong id="message-action-sheet-title">{t('mobile.chat.messageActions')}</Text>
-          <button className="header-action" type="button" aria-label={t('common.action.close')} onClick={onClose}><Icon iconId="close" size={18} /></button>
+          <IconButton actionId="chat.message-actions.close" iconId="close" density="comfortable" emphasis="quiet"
+            label={t('common.action.close')} onActivate={onClose} />
         </div>
         <div className="chat-action-list">
           <div className="chat-background-section message-action-reactions">
@@ -122,26 +126,34 @@ export function MessageActionSheet({
                   (item) => item.actorPtid === currentUserPtid && item.reaction === reaction,
                 );
                 return (
-                  <button
+                  <Button
                     key={reaction}
-                    type="button"
-                    className={`chat-background-choice message-reaction-choice ${active ? 'active' : ''}`}
+                    actionId={`chat.message.react.${reaction}`}
+                    emphasis="quiet" density="comfortable"
                     aria-label={t('mobile.chat.reactWith', { reaction })}
                     aria-pressed={active}
-                    disabled={commandBusy}
-                    onClick={() => onToggleReaction(reaction)}
+                    availability={commandBusy || unavailable ? { kind: 'disabled', reason: t('mobile.chat.commandPending') } : undefined}
+                    onActivate={() => onToggleReaction(reaction)}
                   >
-                    <Icon iconId="laugh" size={14} />
                     <span>{reaction}</span>
-                  </button>
+                  </Button>
                 );
               })}
             </div>
           </div>
           <div className="chat-action-group">
+            {!!message.content && !unavailable && (
+              <CopyButton actionId="chat.message.copy" text={message.content}
+                clipboardPort={mobileClipboard}
+                label={t('mobile.chat.copy')} copiedLabel={t('mobile.chat.copied')}
+                emphasis="quiet" density="comfortable" onCopyError={onCopyError} />
+            )}
             <ChatActionButton icon={<Icon iconId="corner-up-left" size={18} />} title={t('mobile.chat.reply')} onClick={onReply} />
             <ChatActionButton icon={<Icon iconId="forward" size={18} />} title={t('mobile.chat.forward')} disabled={commandBusy || unavailable} onClick={onForward} />
             <ChatActionButton icon={<Icon iconId="message-square" size={18} />} title={t('mobile.chat.thread')} onClick={onOpenThread} />
+            {onSelect && !unavailable && (
+              <ChatActionButton icon={<Icon iconId="check" size={18} />} title={t('mobile.chat.selectMessage')} onClick={onSelect} />
+            )}
             <ChatActionButton
               icon={<Icon iconId="pin" size={18} />}
               title={t(metadata.pinnedByPtid ? 'mobile.chat.unpinMessage' : 'mobile.chat.pinMessage')}
@@ -172,8 +184,7 @@ export function MessageActionSheet({
             </div>
           ) : null}
         </div>
-      </aside>
-    </div>
+    </BottomSheet>
   );
 }
 
@@ -527,54 +538,29 @@ export function GroupManagementModal({
     try {
       await operation();
       setPendingOperation('');
-    } catch {
-      setOperationError(t(failureKey));
+    } catch (error) {
+      setOperationError(`${t(failureKey)}: ${readableErrorMessage(error, 'operation_failed')}`);
       setPendingOperation('');
     }
   };
 
   return (
-    <div
-      className="chat-action-sheet-shell"
+    <BottomSheet
+      open={open}
+      title={t('mobile.group.members')}
+      onDismiss={onClose}
       data-product-surface={!canManage ? 'chat.group-role-denied' : undefined}
+      data-acceptance-id="group-management"
     >
-      <button
-        className="chat-action-sheet-backdrop"
-        type="button"
-        aria-label={t('common.action.close')}
-        onClick={onClose}
-      />
-      <aside
-        className="chat-action-sheet group-management-sheet"
-        data-acceptance-id="group-management"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="group-management-title"
+      <section
+        className="group-management-panel"
       >
-        <div className="chat-action-sheet-handle" aria-hidden="true" />
-        <div className="chat-action-sheet-header">
-          <Text strong id="group-management-title">{t('mobile.group.members')}</Text>
-          <button
-            className="header-action"
-            type="button"
-            aria-label={t('common.action.close')}
-            onClick={onClose}
-          >
-            <Icon iconId="close" size={18} />
-          </button>
-        </div>
-        <div className="chat-action-list group-management-panel">
+        <div className="group-management-content">
           {!canManage ? (
-            <div className="chat-overlay-alert info" role="status">
-              <Icon iconId="shield-alert" size={16} />
-              <span>{t('mobile.group.roleDenied')}</span>
-            </div>
+            <MobileNotice>{t('mobile.group.roleDenied')}</MobileNotice>
           ) : null}
           {operationError ? (
-            <div className="chat-overlay-alert error" role="alert">
-              <Icon iconId="warning" size={16} />
-              <span>{operationError}</span>
-            </div>
+            <MobileNotice tone="error">{operationError}</MobileNotice>
           ) : null}
           {visibleGroupOutcome ? (
             <GroupCommandNotice outcome={visibleGroupOutcome} />
@@ -907,8 +893,8 @@ export function GroupManagementModal({
             </Button>
           </div>
         </div>
-      </aside>
-    </div>
+      </section>
+    </BottomSheet>
   );
 }
 
@@ -1066,15 +1052,17 @@ function ChatActionButton({
   readonly disabled?: boolean;
   readonly onClick: () => void;
 }) {
+  const { t } = useMobileI18n();
   return (
-    <button
-      className={`chat-action-button ${active ? 'active' : ''} ${danger ? 'danger' : ''}`}
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
+    <Button
+      actionId={`chat.action.${title}`}
+      className="chat-action-button"
+      fullWidth emphasis="quiet" density="comfortable" tone={danger ? 'danger' : 'neutral'}
+      onActivate={onClick} aria-pressed={active || undefined}
+      availability={disabled ? { kind: 'disabled', reason: t('mobile.chat.commandPending') } : undefined}
+      leading={icon}
     >
-      <span className="chat-action-icon">{icon}</span>
-      <span>{title}</span>
-    </button>
+      {title}
+    </Button>
   );
 }

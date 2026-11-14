@@ -276,6 +276,10 @@ try {
       // 3) the last tool tile (＋) sits on the header's content right edge.
       const railHeader = document.querySelector('.ma-rail-header');
       const seg = document.querySelector('.ma-chat-subnav.pt-segmented');
+      if (!railHeader || !seg) out.defects.push('messages-top-scopes-missing');
+      if (document.querySelectorAll('.pt-mobile-tabbar button').length !== 3) out.defects.push('bottom-nav-not-three');
+      if (document.querySelector('[data-action-id="mobile.tab.contacts"]')) out.defects.push('contacts-is-bottom-tab');
+      if (seg?.querySelectorAll('button').length !== 2) out.defects.push('messages-scopes-not-two');
       if (railHeader && seg) {
         const segRect = seg.getBoundingClientRect();
         const segStyle = getComputedStyle(seg);
@@ -311,7 +315,7 @@ try {
       const out = { defects: [] };
       const field = document.querySelector('.ma-rail-search .pt-field-frame');
       if (!field) out.defects.push('search-did-not-morph');
-      else if (Math.abs(field.getBoundingClientRect().height - 34) > 1) out.defects.push('search-field-not-34');
+      else if (Math.abs(field.getBoundingClientRect().height - 44) > 1) out.defects.push('search-field-not-44');
       if (document.querySelector('.pt-mobile-navbar-title')) out.defects.push('search-navigated-to-page');
       // One cancel affordance only: no in-field clearable ✕ next to the cancel button.
       if (field?.querySelector("[data-action-id='field.clear']")) out.defects.push('search-double-cross');
@@ -376,8 +380,12 @@ try {
       if (sheet.getAttribute('data-mine') !== '0') out.defects.push('peer-sheet-mine-flag');
       if (sheet.querySelectorAll('.ma-react-emoji').length !== 8) out.defects.push('quick-reactions-not-8');
       const text = sheet.textContent ?? '';
-      for (const label of ['在话题中回复', '复制文本', '多选', '稍后处理', '举报', '仅对我隐藏']) {
+      for (const label of ['在话题中回复', '复制文本', '多选', '仅对我隐藏']) {
         if (!text.includes(label)) out.defects.push(`peer-action-missing:${label}`);
+      }
+      // The real-owner coverage contract removed these fixture-only actions.
+      for (const label of ['稍后处理', '举报']) {
+        if (text.includes(label)) out.defects.push(`peer-fake-action:${label}`);
       }
       if (text.includes('编辑')) out.defects.push('peer-has-edit');
       if (text.includes('撤回')) out.defects.push('peer-has-recall');
@@ -650,6 +658,17 @@ try {
     });
     record('contacts', geometry.details.contacts.defects.length === 0, { id: geometry.details.contacts.defects[0] });
 
+    // Pushing a contact and returning must keep contacts selected; switching
+    // bottom destinations must not discard that messages scope either.
+    await device.locator('.ma-contact-friend .ma-contact-row').first().click();
+    assert.equal(await device.locator('.pt-mobile-tabbar').isVisible(), false, 'detail hides bottom navigation');
+    await device.locator('[data-action-id="mobile.nav.back"]').click();
+    await device.locator('[data-action-id="segment.contacts"][aria-pressed="true"]').waitFor();
+    await device.locator('[data-action-id="mobile.tab.moments"]').click();
+    await device.locator('[data-action-id="mobile.tab.chats"]').click();
+    await device.locator('[data-action-id="segment.contacts"][aria-pressed="true"]').waitFor();
+    record('contacts-scope-retained', await device.locator('.ma-contact-row').count() > 0);
+
     // ── + menu REAL flows (add contact / start group; never the search morph) ──
     // Regression guard: the + menu once opened a fake sheet whose items only
     // switched tabs. Every item must now drive a closed loop, and while the
@@ -663,29 +682,32 @@ try {
       { id: 'plus-menu-actions' });
     await device.locator('.pt-menu [role="menuitem"]', { hasText: '添加联系人' }).click();
     await page.waitForTimeout(250);
-    const addSheet = await measure(() => {
+    const findPeople = await measure(() => {
       const out = { defects: [] };
-      const title = document.querySelector('.pt-sheet-title')?.textContent;
-      if (title !== '添加联系人') out.defects.push('add-sheet-wrong-title');
+      if (!document.querySelector('[data-find-people-page]')) out.defects.push('find-people-page-missing');
+      if (document.querySelector('.pt-bottom-sheet')) out.defects.push('find-people-opened-sheet');
       // "添加" must NOT be the in-place search morph.
       if (document.querySelector('.ma-rail-search .pt-field-frame')) out.defects.push('add-opened-search');
       // The tab bar is suppressed while the sheet covers its strip.
-      if (document.querySelector('.pt-mobile-tabbar')) out.defects.push('tabbar-not-suppressed');
-      const confirm = document.querySelector('[data-action-id="contact.add.confirm"]');
-      if (confirm?.getAttribute('aria-disabled') !== 'true') out.defects.push('add-enabled-empty');
+      if (Array.from(document.querySelectorAll('.pt-mobile-tabbar')).some(node => node.getClientRects().length > 0)) out.defects.push('tabbar-not-suppressed');
+      const search = document.querySelector('[data-action-id="contact.search"]');
+      if (search?.getAttribute('aria-disabled') !== 'true') out.defects.push('search-enabled-empty');
       return out;
     });
-    record('add-contact-sheet', addSheet.defects.length === 0, { id: addSheet.defects[0] });
+    record('find-people-page', findPeople.defects.length === 0, { id: findPeople.defects[0] });
 
-    await device.getByLabel('联系人昵称').fill('门禁新联系人');
+    await device.getByLabel('输入姓名或用户名').fill('Sora');
     await page.waitForTimeout(120);
+    await device.locator('[data-action-id="contact.search"]').click();
     await device.locator('[data-action-id="contact.add.confirm"]').click();
     await page.waitForTimeout(300);
+    await device.getByLabel('返回', { exact: true }).click();
+    await device.locator('[data-action-id="segment.contacts"]').click();
     const added = await measure(() => {
       const out = { defects: [] };
       if (document.querySelector('.pt-sheet-title')) out.defects.push('sheet-did-not-close');
       const names = [...document.querySelectorAll('.ma-contact-friend strong')].map(e => e.textContent);
-      if (!names.includes('门禁新联系人')) out.defects.push('contact-missing-after-add');
+      if (!names.includes('Sora Chen')) out.defects.push('contact-missing-after-add');
       return out;
     });
     record('contact-add-loop', added.defects.length === 0, { id: added.defects[0] });
@@ -695,12 +717,13 @@ try {
     await page.waitForTimeout(200);
     await device.locator('.pt-menu [role="menuitem"]', { hasText: '添加联系人' }).click();
     await page.waitForTimeout(250);
-    await device.getByLabel('联系人昵称').fill('门禁新联系人');
+    await device.getByLabel('输入姓名或用户名').fill('Sora');
     await page.waitForTimeout(120);
+    await device.locator('[data-action-id="contact.search"]').click();
     const dupBlocked = await measure(() =>
       document.querySelector('[data-action-id="contact.add.confirm"]')?.getAttribute('aria-disabled') === 'true');
     record('contact-duplicate-blocked', dupBlocked, { id: 'duplicate-allowed' });
-    await device.locator('[data-action-id="contact.add.cancel"]').click();
+    await device.getByLabel('返回', { exact: true }).click();
     await page.waitForTimeout(200);
 
     // Start group: pick two people → a real composite group thread opens and
@@ -1061,6 +1084,9 @@ try {
     record('me-danger-zone', dangerZone.defects.length === 0, { id: dangerZone.defects[0] });
 
     // Credential entry pushes a real second page that carries the PTID.
+    await page.evaluate(() => {
+      window.__meBeforeCredentials = document.querySelector('.ma-me');
+    });
     await device.locator('[data-action-id="me.credentials"]').click();
     await page.waitForTimeout(300);
     const credentials = await measure(() => {
@@ -1070,7 +1096,9 @@ try {
       if (!page2.textContent?.includes('ptid:3f9a7c21')) out.defects.push('ptid-missing-on-credentials');
       if (!document.querySelector('[data-action-id="me.copy-ptid"]')) out.defects.push('copy-ptid-missing');
       if (!document.querySelector('[data-credential="username"]')) out.defects.push('username-row-missing');
-      if (document.querySelector('.ma-me')) out.defects.push('me-still-mounted-under-credentials');
+      const me = document.querySelector('.ma-me');
+      if (me !== window.__meBeforeCredentials) out.defects.push('me-remounted-under-credentials');
+      if (me?.getClientRects().length) out.defects.push('me-visible-under-credentials');
       // A pushed detail page keeps the status bar in flow (no immersive cover
       // leaking onto its own nav bar).
       if (getComputedStyle(document.querySelector('.pt-mobile-statusbar')).position !== 'relative') {
@@ -1083,7 +1111,8 @@ try {
     await page.waitForTimeout(250);
     const backHome = await measure(() => {
       const me = document.querySelector('.ma-me');
-      return me && !me.textContent?.includes('ptid:3f9a7c21')
+      return me === window.__meBeforeCredentials && me?.getClientRects().length
+        && !me.textContent?.includes('ptid:3f9a7c21')
         ? { defects: [] }
         : { defects: ['ptid-releaked-after-back'] };
     });

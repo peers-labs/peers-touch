@@ -8548,7 +8548,7 @@ export const api = {
   groupCallJoin: (input: { group_ulid: string }) =>
     invokeRustDataFromStatus<
       { group_ulid: string },
-      { url: string; token: string; room_name: string }
+      { url: string; token: string; room_name: string; grant_id: string; participant_identity: string }
     >('group_call_join', input),
 };
 

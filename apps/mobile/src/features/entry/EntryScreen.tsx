@@ -160,16 +160,17 @@ export function EntryScreen({
                       : t('mobile.launch.unknown')}
               </span>
             </span>
-            <button
-              type="button"
-              className="entry-change-station"
+            <Button
+              actionId="entry.change-station"
+              emphasis="quiet"
+              density="comfortable"
               data-entry-action="change-station"
-              disabled={checking}
-              onClick={() => setChanging(true)}
+              availability={checking ? { kind: 'disabled', reason: t('mobile.launch.validating') } : undefined}
+              leading={<Icon iconId="pen-line" size={14} aria-hidden="true" />}
+              onActivate={() => setChanging(true)}
             >
-              <Icon iconId="pen-line" size={14} aria-hidden="true" />
               {t('mobile.launch.changeStation')}
-            </button>
+            </Button>
           </div>
         ) : null}
 
@@ -210,7 +211,9 @@ export function EntryScreen({
                   execution={checking ? 'pending' : 'idle'}
                   availability={!activeStation || !checkedUrls.includes(activeStation?.url ?? '')
                     || verifyingUrls.includes(activeStation?.url ?? '')
-                    ? { kind: 'disabled', reason: t('mobile.launch.continue') }
+                    ? { kind: 'disabled', reason: t(!activeStation
+                        ? 'mobile.launch.selectStationRequired'
+                        : verifyingActive ? 'mobile.launch.validating' : 'mobile.launch.verifyStationRequired') }
                     : undefined}
                   onActivate={() => void onContinue()}
                 >

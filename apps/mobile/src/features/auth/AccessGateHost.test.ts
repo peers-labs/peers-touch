@@ -180,9 +180,8 @@ describe('AccessGateHost attempt recovery', () => {
   });
 
   it('keeps the single Station-change action at the mobile touch minimum', () => {
-    expect(styles).toMatch(
-      /\.auth-actions\.single button\s*\{[^}]*height:\s*44px;/s,
-    );
+    expect(source).toMatch(/actionId="access-gate-change-station"\s*emphasis="secondary"\s*density="comfortable"/);
+    expect(styles).not.toMatch(/\.auth-actions\.single button\s*\{/);
   });
 });
 

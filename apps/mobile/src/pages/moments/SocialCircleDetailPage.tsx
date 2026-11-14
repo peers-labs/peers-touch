@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
   Empty,
@@ -62,6 +62,7 @@ export function SocialCircleDetailPage({
   const [name, setName] = useState(circle?.name ?? '');
   const [description, setDescription] = useState(circle?.description ?? '');
   const [actionError, setActionError] = useState('');
+  const committedCircle = useRef(circle);
 
   useEffect(() => {
     if (!circle) void refreshCircles();
@@ -72,8 +73,11 @@ export function SocialCircleDetailPage({
 
   useEffect(() => {
     if (!circle) return;
-    setName(circle.name);
-    setDescription(circle.description);
+    const previous = committedCircle.current;
+    if (previous === circle) return;
+    setName(draft => previous && draft !== previous.name ? draft : circle.name);
+    setDescription(draft => previous && draft !== previous.description ? draft : circle.description);
+    committedCircle.current = circle;
   }, [circle]);
 
   useEffect(() => {

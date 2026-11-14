@@ -10,8 +10,10 @@ import json
 import os
 import secrets
 import signal
+import subprocess
 import sys
 import time
+import xml.etree.ElementTree as ElementTree
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
@@ -52,6 +54,7 @@ IOS_SOCIAL_ENVIRONMENT_ID = "mobile-social-ios-simulator"
 SCENARIO_GATES = {
     "ios-social-parity": "mobile-social-ios-native",
     "social-convergence": "mobile-simulator-social-convergence-e2e",
+    "chat": "mobile-simulator-chat-e2e",
     "chat-contacts": "mobile-simulator-chat-contacts-e2e",
     "recovery": "mobile-simulator-recovery-e2e",
     "recovery-ui": "mobile-simulator-recovery-ui-e2e",
@@ -109,6 +112,11 @@ SCENARIO_METADATA = {
         "phase": "W5 Simulator Social Convergence",
         "bom": ["W5", "W5-OWNER"],
         "spec": ["MS-AG06"],
+    },
+    "chat": {
+        "phase": "W6A Simulator Direct And Group Chat",
+        "bom": ["W5", "W5-OWNER", "W6A"],
+        "spec": ["MS-AG04", "MS-AG06", "MS-AG09"],
     },
     "chat-contacts": {
         "phase": "W6A Simulator Chat Contacts And Groups",
@@ -175,6 +183,13 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
     client_assignments = CLIENT_ASSIGNMENTS
     scenario_gates = SCENARIO_GATES
     scenario_metadata = SCENARIO_METADATA
+
+    def __new__(cls, scenario: str, **kwargs: Any) -> SimulatorSocialGate:
+        if scenario not in cls.scenario_gates:
+            raise ValueError(f"unsupported Mobile social scenario: {scenario}")
+        # AcceptanceGate checks the request closure before __init__. Bind the
+        # selected scenario now rather than the inherited access Gate identity.
+        return super().__new__(cls, gate_id=cls.scenario_gates[scenario])
 
     def __init__(
         self,
@@ -350,6 +365,46 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         diagnostics: list[dict[str, Any]] = []
         for session in self.sessions:
             client_id = session.client_id
+            surface: dict[str, Any] = {}
+            if self.scenario == "chat":
+                try:
+                    session.switch_to_native()
+                    native_ax = artifacts.write_bytes(
+                        f"mobile-simulator-social/chat/{client_id}/failure/native-ax.xml",
+                        _redacted_markup(session.get_page_source()),
+                        media_type="application/xml",
+                        role=f"mobile-chat-failure-native-ax/{client_id}",
+                    )
+                    surface = {
+                        "nativeAccessibility": native_ax.to_dict(),
+                        **self._capture_client(artifacts, session, f"{client_id}/failure"),
+                    }
+                    surface["mediaCapture"] = self._mapping(
+                        session.execute_async_script(
+                            """
+const done = arguments[arguments.length - 1];
+const visible = node => !node.closest('[hidden], [inert]') && node.getClientRects().length > 0;
+const state = {
+  secureContext: window.isSecureContext,
+  getUserMediaAvailable: typeof navigator.mediaDevices?.getUserMedia === 'function',
+  mediaRecorderAvailable: typeof MediaRecorder === 'function',
+  documentVisibility: document.visibilityState,
+  recordingSurfaceVisible: Array.from(document.querySelectorAll(
+    '[data-product-surface="chat.voice-recording"]'
+  )).some(visible),
+};
+const check = window.__TAURI_INTERNALS__.invoke('permission_check', {kind: 'microphone'})
+  .then(value => ({status: value.status, canRequest: value.canRequest}))
+  .catch(() => ({checkFailed: true}));
+Promise.race([check, new Promise(resolve => setTimeout(
+  () => resolve({checkTimedOut: true}), 1500
+))]).then(permission => done({...state, microphonePermission: permission}));
+"""
+                        ),
+                        f"{client_id} media capture diagnostic",
+                    )
+                except Exception as error:
+                    surface["captureErrorType"] = type(error).__name__
             try:
                 lifecycle = self._mapping(
                     session.call_action(
@@ -420,6 +475,8 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                         "errorPresent": private_social.get("errorPresent"),
                     },
                 }
+                if surface:
+                    value["chatSurface"] = surface
                 reference = artifacts.write_json(
                     f"mobile-simulator-social/{self.scenario}/"
                     f"{client_id}/failure-runtime.json",
@@ -437,6 +494,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                     {
                         "clientId": client_id,
                         "captureErrorType": type(error).__name__,
+                        **({"chatSurface": surface} if surface else {}),
                     }
                 )
         return diagnostics
@@ -590,7 +648,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                     "same-Station social convergence must prove Local Direct "
                     f"scope, got {journey_result.get('directScope')!r}"
                 )
-        elif self.scenario == "chat-contacts":
+        elif self.scenario in {"chat", "chat-contacts"}:
             journey_result = journey.run_chat_contacts(
                 sender_session=sessions["sim-ios"],
                 receiver_session=sessions["sim-ios-peer"],
@@ -598,8 +656,43 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                 receiver=receiver,
                 journey_id=artifacts.run_id[-12:],
             )
+            journey_result["scenario"] = self.scenario
+            if self.scenario == "chat":
+                artifacts.write_json(
+                    "mobile-simulator-social/chat/messaging-before-media.json",
+                    journey_result,
+                    role="mobile-chat-messaging-supporting-diagnostic",
+                )
+                journey_result["nativeMedia"] = self._run_chat_native_media(
+                    artifacts=artifacts,
+                    sender_session=sessions["sim-ios"],
+                    receiver_session=sessions["sim-ios-peer"],
+                    conversations=journey_result,
+                    journey=journey,
+                    journey_id=artifacts.run_id[-12:],
+                )
+            if self.scenario == "chat-contacts":
+                journey_result["contactPreferencesAndClipboard"] = (
+                    self._run_contact_preferences_and_clipboard(
+                        sender_session=sessions["sim-ios"],
+                        receiver_session=sessions["sim-ios-peer"],
+                        sender=sender,
+                        receiver=receiver,
+                        journey=journey,
+                        journey_id=artifacts.run_id[-12:],
+                        expected_build_identity=expected_build_identity,
+                    )
+                )
+                journey_result["nativeProfileImages"] = self._run_native_profile_images(
+                    artifacts=artifacts,
+                    session=sessions["sim-ios"],
+                    actor=sender,
+                    journey=journey,
+                    expected_build_identity=expected_build_identity,
+                )
         elif self.scenario == "recovery":
             journey_result = self._run_recovery_journey(
+                artifacts=artifacts,
                 sender_session=sessions["sim-ios"],
                 receiver_session=sessions["sim-ios-peer"],
                 sender=sender,
@@ -1197,18 +1290,18 @@ return {
                 "Social Search Federation radios absent: "
                 f"{json.dumps({'dom': diagnostic, 'federationProbe': federation_probe}, sort_keys=True)}"
             ) from None
+        self._set_ui_value(
+            session,
+            '[data-acceptance-id="social-search-input"]',
+            receiver.role,
+            "Social Search query",
+        )
         self._select_radio(
             session,
             federation_control_selector,
             federation_selector,
             search_submit_selector,
             "Social Search Federation",
-        )
-        self._set_ui_value(
-            session,
-            '[data-acceptance-id="social-search-input"]',
-            receiver.role,
-            "Social Search query",
         )
         self._click_ui(
             session,
@@ -1811,7 +1904,11 @@ return {
         def read() -> dict[str, Any] | None:
             value = session.execute_script(
                 """
-const node = document.querySelector(arguments[0]);
+const node = Array.from(document.querySelectorAll(arguments[0])).find(
+  candidate => !candidate.closest('[hidden], [inert]')
+    && candidate.getClientRects().length > 0
+    && getComputedStyle(candidate).visibility !== 'hidden'
+);
 if (!node) return null;
 return {
   text: node.textContent || '',
@@ -1849,8 +1946,12 @@ return {
         def click() -> bool | None:
             value = session.execute_script(
                 """
-const node = document.querySelector(arguments[0]);
-if (!node || node.disabled) return null;
+const node = Array.from(document.querySelectorAll(arguments[0])).find(
+  candidate => !candidate.closest('[hidden], [inert]')
+    && candidate.getClientRects().length > 0
+    && getComputedStyle(candidate).visibility !== 'hidden'
+);
+if (!node || node.disabled || node.getAttribute('aria-disabled') === 'true') return null;
 node.scrollIntoView({block: 'center', inline: 'nearest'});
 node.click();
 return true;
@@ -3920,9 +4021,237 @@ return {
             f"timed out waiting for {description}: {redact_text(str(last))}"
         )
 
+    def _run_contact_preferences_and_clipboard(
+        self,
+        *,
+        sender_session: Any,
+        receiver_session: Any,
+        sender: MessagingActor,
+        receiver: MessagingActor,
+        journey: MobileMessagingJourney,
+        journey_id: str,
+        expected_build_identity: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        sender_session.call_action(
+            "navigation.apply", {"kind": "primary", "routeId": "tab:settings"}
+        )
+        self._click_ui(
+            sender_session, '[data-action-id="me.credentials"]',
+            "Open public account credentials",
+        )
+        clipboard: dict[str, Any] = {}
+        for field in ("username", "ptid"):
+            expected = self._wait_for_value(
+                lambda: sender_session.execute_script(
+                    "return document.querySelector(arguments[0])?.textContent || null;",
+                    f'[data-credential="{field}"] code',
+                ),
+                f"Public credential {field}",
+            )
+            if field == "ptid" and expected != sender.ptid:
+                raise GateError("Credential detail changed the authenticated PTID")
+            self._click_ui(
+                sender_session,
+                f'[data-action-id="settings.credentials.copy-{field}"]',
+                f"Copy {field} through the native clipboard owner",
+            )
+
+            def copied() -> dict[str, Any] | None:
+                observed = subprocess.run(
+                    ["xcrun", "simctl", "pbpaste", sender_session.device.identifier],
+                    check=False, capture_output=True, timeout=15,
+                )
+                if observed.returncode != 0:
+                    raise GateError("Native simulator pasteboard could not be read")
+                actual = observed.stdout.decode("utf-8")
+                return {
+                    "sha256": hashlib.sha256(observed.stdout).hexdigest(),
+                    "nativePasteboardMatched": True,
+                } if actual == expected else None
+
+            clipboard[field] = self._wait_for_value(
+                copied, f"Native pasteboard readback for {field}"
+            )
+
+        def open_contact(session: Any, actor_ptid: str) -> None:
+            session.call_action(
+                "navigation.apply", {"kind": "primary", "routeId": "tab:chat"}
+            )
+            self._click_ui(
+                session, '[data-message-pane-target="contacts"]',
+                "Select Contacts within Messages",
+            )
+            self._click_ui(
+                session, f'[data-action-id="contacts.open.{actor_ptid}"]',
+                "Open the real contact profile",
+            )
+
+        open_contact(sender_session, receiver.ptid)
+        self._click_ui(
+            sender_session, '[data-action-id="contact-profile-remark"]',
+            "Open local contact remark",
+        )
+        nickname = f"Local friend {journey_id}"
+        note = f"Device note {journey_id}"
+        self._set_ui_value(
+            sender_session, '[data-product-surface="contacts.remark"] input',
+            nickname, "Enter local contact nickname",
+        )
+        self._set_ui_value(
+            sender_session, '[data-product-surface="contacts.remark"] textarea',
+            note, "Enter local contact note",
+        )
+        self._click_ui(
+            sender_session, '[data-action-id="contact-remark-save"]',
+            "Save contact preferences through their production owner",
+        )
+        self._wait_ui_absent(
+            sender_session, '[data-product-surface="contacts.remark"]',
+            "Committed contact remark",
+        )
+        restart = self._restart_ios_application(sender_session, force_kill=False)
+        self._require_runtime_graph_ready(sender_session, "Contact preference native restart")
+        identity = self._verify_build_identity(
+            sender_session, expected_build_identity, "Contact preference restart build"
+        )
+        journey.wait_for_authenticated_runtime(sender_session, sender)
+        open_contact(sender_session, receiver.ptid)
+        profile = self._wait_for_value(
+            lambda: sender_session.execute_script(
+                """
+const root = document.querySelector('[data-product-surface="contacts.profile"]');
+return root?.textContent.includes(arguments[0]) && root.textContent.includes(arguments[1])
+  ? {nicknameVisible: true, noteVisible: true} : null;
+""", nickname, note,
+            ), "Contact nickname and note after native restart",
+        )
+        sender_session.call_action(
+            "navigation.apply", {"kind": "primary", "routeId": "tab:chat"}
+        )
+        self._click_ui(sender_session, '[data-message-pane-target="chats"]', "Return to Chats")
+        chat = self._wait_for_value(
+            lambda: sender_session.execute_script(
+                "return document.querySelector('[data-product-surface=\"chat.list\"]')?.textContent.includes(arguments[0]) ? {nicknameVisible: true} : null;",
+                nickname,
+            ), "Chat list uses the same local contact nickname",
+        )
+        open_contact(receiver_session, sender.ptid)
+        peer = receiver_session.execute_script(
+            """
+const root = document.querySelector('[data-product-surface="contacts.profile"]');
+return root ? {localPreferenceAbsent: !root.textContent.includes(arguments[0])
+  && !root.textContent.includes(arguments[1])} : null;
+""", nickname, note,
+        )
+        if not isinstance(peer, Mapping) or peer.get("localPreferenceAbsent") is not True:
+            raise GateError("Device-local contact preferences leaked to the peer")
+        return {
+            "clipboard": clipboard, "nativeRestart": restart, "buildIdentity": identity,
+            "contactReadback": profile, "chatReadback": chat, "peerIsolation": dict(peer),
+        }
+
+    def _run_native_profile_images(
+        self, *, artifacts: ArtifactSession, session: Any, actor: MessagingActor,
+        journey: MobileMessagingJourney, expected_build_identity: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        if session.platform != "ios":
+            raise GateError("Profile image selection requires the owned iOS Simulator")
+        original = self._mapping(session.call_action("settings.profile.read"), "Original image profile")
+        seed = REPO_ROOT / "apps/mobile/src-tauri/icons/icon.png"
+        seeded = subprocess.run(
+            ["xcrun", "simctl", "addmedia", session.device.identifier, str(seed)],
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+        if seeded.returncode != 0:
+            raise GateError("Could not seed the owned Simulator's photo library")
+        images: dict[str, Any] = {}
+        try:
+            session.call_action("navigation.apply", {"kind": "primary", "routeId": "tab:settings"})
+            for field in ("avatar", "header"):
+                selector = f'[data-action-id="settings.profile.change-{field}"]'
+                before = self._mapping(session.call_action("settings.profile.read"), "Image profile before edit")
+                self._click_ui(session, selector, f"Open the native {field} photo picker")
+                session.switch_to_native()
+                cancel = self._wait_for_value(
+                    lambda: self._find_native_element_or_none(
+                        session,
+                        "type == 'XCUIElementTypeButton' AND (label == 'Cancel' OR label == '取消')",
+                    ), "Native photo picker cancel control",
+                )
+                native_ax = artifacts.write_bytes(
+                    f"mobile-simulator-social/chat-contacts/{field}/picker.xml",
+                    session.get_page_source().encode("utf-8"), media_type="application/xml",
+                    role=f"mobile-profile-image-picker/{field}",
+                )
+                native_image = artifacts.write_bytes(
+                    f"mobile-simulator-social/chat-contacts/{field}/picker.png",
+                    session.get_screenshot(), media_type="image/png",
+                    role=f"mobile-profile-image-picker-screenshot/{field}",
+                )
+                session.click_element(cancel)
+                session.switch_to_app_webview()
+                self._wait_ui(session, selector + '[data-execution="idle"]', "Cancelled image edit returns idle")
+                cancelled = self._mapping(session.call_action("settings.profile.read"), "Cancelled image readback")
+                if cancelled.get(field) != before.get(field):
+                    raise GateError("Cancelling the native picker changed the profile image")
+                self._click_ui(session, selector, f"Select the native {field} image")
+                session.switch_to_native()
+                image = self._wait_for_value(
+                    lambda: self._find_native_element_or_none(
+                        session,
+                        "type == 'XCUIElementTypeImage' AND (label CONTAINS 'Photo' OR label CONTAINS '照片')",
+                    ), "Seeded photo in the native picker",
+                )
+                session.click_element(image)
+                session.switch_to_app_webview()
+
+                def committed() -> dict[str, Any] | None:
+                    value = self._mapping(session.call_action("settings.profile.read"), "Image owner readback")
+                    revision = value.get("profileRevision", "0")
+                    return value if value.get(field) and int(revision) > int(before.get("profileRevision", "0")) else None
+
+                saved = self._wait_for_value(committed, f"Authoritative {field} image commit")
+                self._wait_for_value(
+                    lambda: session.execute_script(
+                        """
+const image = document.querySelector(arguments[0]);
+return image?.complete && image.naturalWidth > 0 ? {imageDecoded: true} : null;
+""", '[data-hero-avatar] img' if field == "avatar" else '[data-hero-cover] img',
+                    ), f"Committed {field} decodes in Me",
+                )
+                images[field] = {
+                    "cancelPreservedProfile": True,
+                    "committedRevision": saved["profileRevision"],
+                    "assetUrlSha256": hashlib.sha256(saved[field].encode("utf-8")).hexdigest(),
+                    "nativeAccessibility": native_ax.to_dict(),
+                    "nativeScreenshot": native_image.to_dict(),
+                }
+            saved = self._mapping(session.call_action("settings.profile.read"), "Saved image profile")
+            restart = self._restart_ios_application(session, force_kill=False)
+            self._require_runtime_graph_ready(session, "Image edit native restart")
+            identity = self._verify_build_identity(session, expected_build_identity, "Image edit restart build")
+            journey.wait_for_authenticated_runtime(session, actor)
+            readback = self._mapping(session.call_action("settings.profile.read"), "Images after native restart")
+            if any(readback.get(field) != saved.get(field) for field in images):
+                raise GateError("Profile image edits did not survive native restart")
+            return {
+                "images": images, "nativeRestart": restart, "buildIdentity": identity,
+                "restartReadbackMatched": True, "fixturePickerResultInjected": False,
+            }
+        finally:
+            restored = self._mapping(
+                session.call_action("settings.profile.update", {
+                    "avatar": original.get("avatar", ""), "header": original.get("header", ""),
+                }), "Restore original profile images",
+            )
+            profile = self._mapping(restored.get("profile"), "Restored original image profile")
+            if any(profile.get(field) != original.get(field) for field in ("avatar", "header")):
+                raise GateError("Original profile image restoration did not converge")
+
     def _run_recovery_journey(
         self,
         *,
+        artifacts: ArtifactSession,
         sender_session: Any,
         receiver_session: Any,
         sender: MessagingActor,
@@ -4102,6 +4431,10 @@ return {
             sender_session,
             "normal process restart write admission",
         )
+        normal_restart_draft_decision = self._restore_recovery_drafts(
+            sender_session,
+            (moment_draft,),
+        )
         conversation = self._mapping(
             sender_session.call_action(
                 "social.contact.open",
@@ -4156,6 +4489,8 @@ return {
             sender_session,
             chat_draft_text,
         )
+        media_sources = self._select_recovery_media_files(sender_session, journey_id)
+        initial_media = self._wait_for_composer_media(sender_session, media_sources)
         chat_drafts = self._wait_for_value(
             lambda: self._read_chat_drafts(
                 sender_session,
@@ -4199,12 +4534,17 @@ return {
             draft_text=chat_draft_text,
             label="Chat UI after SIGKILL",
         )
+        forced_restart_media = self._wait_for_composer_media(sender_session, media_sources)
         forced_restart_snapshot = self._wait_for_reliability_snapshot(
             sender_session,
             "reliability snapshot after SIGKILL",
         )
         self._require_drafts(
             forced_restart_snapshot,
+            (chat_draft, moment_draft),
+        )
+        forced_restart_draft_decision = self._restore_recovery_drafts(
+            sender_session,
             (chat_draft, moment_draft),
         )
 
@@ -4251,6 +4591,7 @@ return {
             draft_text=chat_draft_text,
             label="Chat UI after Station restart",
         )
+        station_restart_media = self._wait_for_composer_media(sender_session, media_sources)
         station_restart_snapshot = self._wait_for_reliability_snapshot(
             sender_session,
             "reliability snapshot after Station restart",
@@ -4283,6 +4624,62 @@ return {
             "post-recovery receiver delivery",
         )
 
+        self._click_ui(
+            sender_session, '[data-action-id="chat.send-message"]',
+            "Send restored media draft through the real composer",
+        )
+
+        def received_media() -> Mapping[str, Any] | None:
+            receiver_session.call_action("messaging.reconcile")
+            projection = self._mapping(
+                receiver_session.call_action("messaging.projection.read", {}),
+                "Restored media receiver projection",
+            )
+            rows = projection.get("messages", {}).get(conversation_id, [])
+            matching = [
+                row for row in rows if isinstance(row, Mapping)
+                and row.get("plaintext") == chat_draft_text
+                and sorted(
+                    item.get("filename", "") for item in row.get("attachments", [])
+                    if isinstance(item, Mapping)
+                ) == sorted(source["filename"] for source in media_sources)
+            ]
+            if len(matching) > 1:
+                raise GateError("Restored composer sent the same draft more than once")
+            return matching[0] if matching else None
+
+        media_message = self._wait_for_value(received_media, "Restored media receiver delivery")
+        media_message_id = self._text(media_message.get("messageId"), "Restored media message ID")
+        received_sources = media_message.get("attachments", [])
+        for source in media_sources:
+            received = next(
+                item for item in received_sources
+                if isinstance(item, Mapping) and item.get("filename") == source["filename"]
+            )
+            if received.get("mimeType") != source["mimeType"]:
+                raise GateError("Restored media delivery changed private MIME metadata")
+            attachment_id = self._text(received.get("attachmentId"), "Restored media attachment ID")
+            self._wait_for_value(
+                lambda: True if journey._attachment_available(receiver_session, attachment_id) else None,
+                "Receiver opens restored media bytes",
+            )
+        self._wait_for_value(
+            lambda: sender_session.execute_script(
+                """
+const input = Array.from(document.querySelectorAll('textarea.message-composer-input'))
+  .find(node => !node.closest('[hidden], [inert]') && node.getClientRects().length > 0);
+return input && input.value === '' && !input.closest('[data-navigation-frame]').querySelector('[data-attachment-draft-id]')
+  ? {textCleared: true, mediaCleared: true} : null;
+"""
+            ), "Composer clears only after adopted media submission",
+        )
+
+        self._open_chat_conversation(receiver_session, conversation_id)
+        recorded_voice = self._run_recorded_voice(
+            artifacts=artifacts,
+            sender_session=sender_session, receiver_session=receiver_session,
+            conversation_id=conversation_id, journey_id=journey_id, journey=journey,
+        )
         discarded = self._reliability_snapshot(
             sender_session.call_action(
                 "reliability.draft.action",
@@ -4312,6 +4709,7 @@ return {
             "normalProcessRestartWriteAdmission": (
                 normal_restart_write_admission
             ),
+            "normalProcessRestartDraftDecision": normal_restart_draft_decision,
             "normalProcessRestartBuildIdentity": (
                 normal_restart_build_identity
             ),
@@ -4320,6 +4718,7 @@ return {
             "forcedProcessRestartWriteAdmission": (
                 forced_restart_write_admission
             ),
+            "forcedProcessRestartDraftDecision": forced_restart_draft_decision,
             "forcedProcessRestartBuildIdentity": (
                 forced_restart_build_identity
             ),
@@ -4331,9 +4730,641 @@ return {
             "stationRestartUi": station_restart_ui,
             "draftRestartReadback": True,
             "historyRestartReadback": True,
+            "mediaDraftRecovery": {
+                "initialComposer": initial_media,
+                "forcedRestartComposer": forced_restart_media,
+                "stationRestartComposer": station_restart_media,
+                "messageId": media_message_id,
+                "receiverReadback": media_message,
+                "nativePickerClaimed": False,
+            },
+            "recordedVoice": recorded_voice,
             "draftDiscarded": True,
             "recoveryProjection": recovery_ui,
         }
+
+    def _restore_recovery_drafts(
+        self,
+        session: Any,
+        expected: tuple[Any, ...],
+    ) -> dict[str, Any]:
+        self._wait_for_recovery_kind(session, "draft-restore-pending")
+        self._click_ui(
+            session,
+            '[data-acceptance-id="recovery-draft-restore-action"]',
+            "Restore retained drafts after process restart",
+        )
+        self._wait_ui_absent(
+            session,
+            '[data-acceptance-id="recovery-draft-restore"]',
+            "Draft restoration releases the Chat surface",
+        )
+        snapshot = self._wait_for_reliability_snapshot(
+            session,
+            "Retained drafts after the visible restore decision",
+        )
+        self._require_drafts(snapshot, expected)
+        return {"action": "restore", "durableDraftsPreserved": True}
+
+    def _run_chat_native_media(
+        self, *, artifacts: ArtifactSession, sender_session: Any,
+        receiver_session: Any, conversations: Mapping[str, Any],
+        journey: MobileMessagingJourney, journey_id: str,
+    ) -> dict[str, Any]:
+        if sender_session.platform != "ios" or receiver_session.platform != "ios":
+            raise GateError("Chat native media requires two owned iOS Simulators")
+        seeded = subprocess.run(
+            ["xcrun", "simctl", "addmedia", sender_session.device.identifier,
+             str(REPO_ROOT / "apps/mobile/src-tauri/icons/icon.png")],
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+        if seeded.returncode != 0:
+            raise GateError("Could not seed the owned Chat Simulator photo library")
+        result: dict[str, Any] = {}
+        for kind in ("direct", "group"):
+            conversation = self._mapping(conversations.get(kind), f"{kind} Chat journey")
+            conversation_id = self._text(conversation.get("conversationId"), f"{kind} conversation ID")
+            self._open_chat_conversation(sender_session, conversation_id, kind=kind)
+            self._open_chat_conversation(receiver_session, conversation_id, kind=kind)
+            image = self._run_native_chat_image(
+                artifacts=artifacts, sender_session=sender_session,
+                receiver_session=receiver_session, conversation_id=conversation_id,
+                journey_id=f"{journey_id}-{kind}", journey=journey,
+            )
+            voice = self._run_recorded_voice(
+                artifacts=artifacts,
+                sender_session=sender_session, receiver_session=receiver_session,
+                conversation_id=conversation_id, journey_id=f"{journey_id}-{kind}",
+                journey=journey,
+            )
+            result[kind] = {
+                "conversationId": conversation_id, "image": image, "voice": voice,
+                "receiverCapture": self._capture_client(
+                    artifacts, receiver_session, f"sim-ios-peer-{kind}-media",
+                ),
+            }
+        return result
+
+    def _run_native_chat_image(
+        self, *, artifacts: ArtifactSession, sender_session: Any,
+        receiver_session: Any, conversation_id: str, journey_id: str,
+        journey: MobileMessagingJourney,
+    ) -> dict[str, Any]:
+        text = f"native-image-{journey_id}"
+        self._write_chat_composer_draft(sender_session, text)
+        picker_attempt = 0
+
+        def open_picker() -> None:
+            nonlocal picker_attempt
+            picker_attempt += 1
+            self._click_ui(sender_session, '[data-action-id="chat.composer.attach"]', "Open Chat attachment menu")
+            self._wait_ui(sender_session, '[data-action-id="chat.attach.file"]', "Chat file selection action")
+            sender_session.switch_to_native()
+            # Web-context click is a RemoteDebugger JavaScript atom, which
+            # cannot grant WKWebView's file input a native user activation.
+            try:
+                menu_base = f"mobile-simulator-social/chat/native-media/{journey_id}/menu-{picker_attempt}"
+                artifacts.write_bytes(
+                    f"{menu_base}.xml", _redacted_markup(sender_session.get_page_source()),
+                    media_type="application/xml", role=f"mobile-chat-native-file-menu/{journey_id}/{picker_attempt}",
+                )
+                artifacts.write_bytes(
+                    f"{menu_base}.png", sender_session.screenshot_bytes(),
+                    media_type="image/png", role=f"mobile-chat-native-file-menu-screenshot/{journey_id}/{picker_attempt}",
+                )
+                file_action = self._wait_for_value(
+                    lambda: self._find_native_element_or_none(
+                        sender_session,
+                        "visible == true AND "
+                        "(type == 'XCUIElementTypeButton' OR type == 'XCUIElementTypeMenuItem') "
+                        "AND (label == 'File' OR label == '文件')",
+                    ), "Native Chat file menu action",
+                )
+                sender_session.click_element(file_action)
+                library = self._wait_for_value(
+                    lambda: self._find_native_element_or_none(
+                        sender_session,
+                        "(type == 'XCUIElementTypeButton' OR type == 'XCUIElementTypeStaticText') "
+                        "AND (label == 'Photo Library' OR label == '照片图库' OR label == '照片图书馆')",
+                    ), "WKWebView Photo Library action",
+                )
+            finally:
+                base = f"mobile-simulator-social/chat/native-media/{journey_id}/entry-{picker_attempt}"
+                artifacts.write_bytes(
+                    f"{base}.xml", _redacted_markup(sender_session.get_page_source()),
+                    media_type="application/xml", role=f"mobile-chat-native-picker-entry/{journey_id}/{picker_attempt}",
+                )
+                artifacts.write_bytes(
+                    f"{base}.png", sender_session.screenshot_bytes(),
+                    media_type="image/png", role=f"mobile-chat-native-picker-entry-screenshot/{journey_id}/{picker_attempt}",
+                )
+            sender_session.click_element(library)
+
+        open_picker()
+        cancel = self._wait_for_value(
+            lambda: self._find_native_element_or_none(
+                sender_session,
+                "type == 'XCUIElementTypeButton' AND (label == 'Cancel' OR label == '取消')",
+            ), "Cancel the native Chat photo picker",
+        )
+        native_ax = artifacts.write_bytes(
+            f"mobile-simulator-social/chat/native-media/{journey_id}/picker.xml",
+            _redacted_markup(sender_session.get_page_source()),
+            media_type="application/xml", role=f"mobile-chat-native-photo-picker/{journey_id}",
+        )
+        native_image = artifacts.write_bytes(
+            f"mobile-simulator-social/chat/native-media/{journey_id}/picker.png",
+            sender_session.screenshot_bytes(), media_type="image/png",
+            role=f"mobile-chat-native-photo-picker-screenshot/{journey_id}",
+        )
+        sender_session.click_element(cancel)
+        sender_session.switch_to_app_webview()
+        cancelled = self._wait_for_value(
+            lambda: sender_session.execute_script(
+                """
+const input = Array.from(document.querySelectorAll('textarea.message-composer-input'))
+  .find(node => !node.closest('[hidden], [inert]') && node.getClientRects().length > 0);
+if (!input || input.value !== arguments[0]) return null;
+const frame = input.closest('[data-navigation-frame]');
+const focused = document.activeElement;
+return {
+  draftPreserved: true,
+  attachmentCount: frame.querySelectorAll('[data-attachment-draft-id]').length,
+  editableFocus: focused?.matches('input, textarea, [contenteditable="true"]') ?? false,
+};
+""", text,
+            ), "Photo picker cancellation preserves the visible Chat draft",
+        )
+        if cancelled["attachmentCount"] != 0 or cancelled["editableFocus"]:
+            raise GateError("Cancelling Chat photo selection changed attachments or focused an input")
+        open_picker()
+        selection = self._select_native_chat_photo(sender_session)
+        sender_session.switch_to_app_webview()
+        draft = self._wait_for_value(
+            lambda: sender_session.execute_script(
+                """
+const row = Array.from(document.querySelectorAll('[data-attachment-draft-state="ready"]'))
+  .find(node => !node.closest('[hidden], [inert]') && node.getClientRects().length > 0);
+const image = row?.querySelector('img');
+return image?.complete && image.naturalWidth > 0
+  ? {filename: row.getAttribute('data-attachment-filename'), naturalWidth: image.naturalWidth,
+     naturalHeight: image.naturalHeight} : null;
+"""
+            ), "Native Chat photo stages and decodes in the visible composer",
+        )
+        self._click_ui(sender_session, '[data-action-id="chat.send-message"]', "Send the native Chat photo")
+        message = self._wait_received_media_message(receiver_session, conversation_id, text)
+        attachment = self._mapping(message["attachments"][0], "Receiver photo attachment")
+        if attachment.get("filename") != draft["filename"] or not str(attachment.get("mimeType", "")).startswith("image/"):
+            raise GateError("Receiver photo metadata differs from the native selection")
+        attachment_id = self._text(attachment.get("attachmentId"), "Receiver photo attachment ID")
+        self._wait_for_value(
+            lambda: True if journey._attachment_available(receiver_session, attachment_id) else None,
+            "Receiver opens the selected Chat photo bytes",
+        )
+        decoded = self._wait_chat_media(receiver_session, attachment_id, "img")
+        if (decoded["naturalWidth"], decoded["naturalHeight"]) != (draft["naturalWidth"], draft["naturalHeight"]):
+            raise GateError("Receiver decoded photo dimensions differ from the selected draft")
+        return {
+            "draft": draft, "receiverMessageId": message["messageId"],
+            "receiverDecoded": decoded, "cancelled": cancelled,
+            "nativeAccessibility": native_ax.to_dict(), "nativeScreenshot": native_image.to_dict(),
+            "nativeSelection": selection,
+            "fixturePickerResultInjected": False,
+        }
+
+    def _select_native_chat_photo(self, session: Any) -> dict[str, Any]:
+        photo = self._wait_for_value(
+            lambda: self._find_native_element_or_none(
+                session, "type == 'XCUIElementTypeImage' AND name == 'PXGGridLayout-Info'",
+            ), "Native Chat photo grid item",
+        )
+        tree = ElementTree.fromstring(session.get_page_source())
+        item = next(
+            (node for node in tree.iter()
+             if node.get("type") == "XCUIElementTypeImage"
+             and node.get("name") == "PXGGridLayout-Info"),
+            None,
+        )
+        if item is None:
+            raise GateError("Selected native Chat photo has no matching accessibility bounds")
+        width, height = float(item.get("width", "0")), float(item.get("height", "0"))
+        if not (0 < width < 10000 and 0 < height < 10000):
+            raise GateError("Native Chat photo accessibility bounds are invalid")
+        # PhotoKit's virtual AX images can report visible=false even while
+        # rendered. Tap the semantic element's observed center directly;
+        # XCUIElement.tap() may otherwise try to scroll that virtual item.
+        session.execute_script("mobile: tap", {
+            "elementId": photo, "x": width / 2, "y": height / 2,
+        })
+        confirm = self._wait_for_value(
+            lambda: self._find_native_element_or_none(
+                session,
+                "type == 'XCUIElementTypeButton' AND visible == true AND enabled == true AND "
+                "(label == 'Add' OR label == '添加' OR label == 'Done' OR label == '完成')",
+            ), "Native Chat photo selection enables confirmation",
+        )
+        session.click_element(confirm)
+        self._wait_for_value(
+            lambda: True if self._find_native_element_or_none(
+                session,
+                "type == 'XCUIElementTypeButton' AND visible == true AND "
+                "(label == 'Cancel' OR label == '取消' OR label == 'Done' OR label == '完成' "
+                "OR label == 'Add' OR label == '添加')",
+            ) is None else None,
+            "Native Chat photo picker closes after confirmation",
+        )
+        return {
+            "photoLabel": item.get("label", ""),
+            "nativeBounds": {key: item.get(key) for key in ("x", "y", "width", "height")},
+            "selectionConfirmed": True, "pickerClosed": True,
+        }
+
+    def _wait_received_media_message(
+        self, session: Any, conversation_id: str, text: str,
+    ) -> dict[str, Any]:
+        def delivered() -> Mapping[str, Any] | None:
+            session.call_action("messaging.reconcile")
+            projection = self._mapping(session.call_action("messaging.projection.read"), "Media receiver projection")
+            rows = projection.get("messages", {}).get(conversation_id, [])
+            matches = [
+                row for row in rows if isinstance(row, Mapping) and row.get("plaintext") == text
+                and len(row.get("attachments", [])) == 1
+            ]
+            if len(matches) > 1:
+                raise GateError("The Chat media message was delivered more than once")
+            return matches[0] if matches else None
+
+        return dict(self._wait_for_value(delivered, "Actual Chat media receiver delivery"))
+
+    def _wait_chat_media(
+        self, session: Any, attachment_id: str, media_tag: str,
+    ) -> dict[str, Any]:
+        return self._wait_for_value(
+            lambda: session.execute_script(
+                """
+const row = Array.from(document.querySelectorAll(
+  `[data-attachment-id="${CSS.escape(arguments[0])}"]`
+)).find(node => !node.closest('[hidden], [inert]') && node.getClientRects().length > 0);
+const media = row?.querySelector(arguments[1]);
+if (media instanceof HTMLImageElement && media.complete && media.naturalWidth > 0)
+  return {decoded: true, naturalWidth: media.naturalWidth, naturalHeight: media.naturalHeight};
+if (media instanceof HTMLAudioElement && media.readyState >= 1 && !media.error
+    && Number.isFinite(media.duration) && media.duration > 0)
+  return {decoded: true, durationSeconds: media.duration};
+return null;
+""", attachment_id, media_tag,
+            ), f"Receiver's visible {media_tag} decodes the actual Chat attachment",
+        )
+
+    def _run_recorded_voice(
+        self, *, artifacts: ArtifactSession, sender_session: Any, receiver_session: Any, conversation_id: str,
+        journey_id: str, journey: MobileMessagingJourney,
+    ) -> dict[str, Any]:
+        text = f"recorded-voice-{journey_id}"
+        self._write_chat_composer_draft(sender_session, text)
+        self._wait_ui(sender_session, '[data-action-id="chat.composer.voice"]', "Visible Chat voice action")
+        sender_session.execute_script(
+            """
+window.__peersChatVoiceActivation?.dispose();
+const button = Array.from(document.querySelectorAll('[data-action-id="chat.composer.voice"]'))
+  .find(node => !node.closest('[hidden], [inert]') && node.getClientRects().length > 0);
+const rect = button?.getBoundingClientRect();
+const controller = new AbortController();
+const state = {
+  initial: rect ? {x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+    route: button.closest('[data-navigation-frame]')?.getAttribute('data-navigation-frame'),
+    hitAtCenter: button.contains(document.elementFromPoint(
+      rect.x + rect.width / 2, rect.y + rect.height / 2
+    ))} : null,
+  events: [],
+};
+const timer = setTimeout(() => controller.abort(), 30000);
+for (const type of ['touchstart', 'touchend', 'click']) document.addEventListener(type, event => {
+  if (state.events.length >= 12) return;
+  const point = event.changedTouches?.[0] ?? event;
+  const action = event.target instanceof Element ? event.target.closest('[data-action-id]') : null;
+  state.events.push({type, trusted: event.isTrusted, x: point.clientX, y: point.clientY,
+    actionId: action?.getAttribute('data-action-id') ?? '', reachedVoice: button.contains(event.target)});
+}, {capture: true, signal: controller.signal});
+window.__peersChatVoiceActivation = {
+  state, dispose() {clearTimeout(timer); controller.abort();}
+};
+"""
+        )
+        sender_session.switch_to_native()
+        base = f"mobile-simulator-social/chat/native-media/{journey_id}/voice"
+        artifacts.write_bytes(
+            f"{base}-before.xml", _redacted_markup(sender_session.get_page_source()),
+            media_type="application/xml", role=f"mobile-chat-native-voice-entry/{journey_id}",
+        )
+        artifacts.write_bytes(
+            f"{base}-before.png", sender_session.screenshot_bytes(),
+            media_type="image/png", role=f"mobile-chat-native-voice-entry-screenshot/{journey_id}",
+        )
+        voice_button = self._wait_for_value(
+            lambda: self._find_native_element_or_none(
+                sender_session,
+                "type == 'XCUIElementTypeButton' AND visible == true AND enabled == true "
+                "AND (label == 'Voice' OR label == '语音')",
+            ), "Native Chat voice recording button",
+        )
+        sender_session.click_element(voice_button)
+
+        def recording() -> bool | None:
+            sender_session.switch_to_native()
+            self._accept_native_microphone_permission(sender_session)
+            sender_session.switch_to_app_webview()
+            return True if sender_session.execute_script(
+                "return Array.from(document.querySelectorAll('[data-product-surface=\"chat.voice-recording\"]'))"
+                ".some(node=>!node.closest('[hidden], [inert]')&&node.getClientRects().length>0);"
+            ) else None
+
+        try:
+            self._wait_for_value(recording, "Real MediaRecorder reaches recording")
+        finally:
+            # Supporting input observations never replace recording or mask its
+            # first failure; the probe owns no permission or recorder state.
+            try:
+                sender_session.switch_to_app_webview()
+                activation = sender_session.execute_script(
+                    """
+const probe = window.__peersChatVoiceActivation;
+const button = Array.from(document.querySelectorAll('[data-action-id="chat.composer.voice"]'))
+  .find(node => !node.closest('[hidden], [inert]') && node.getClientRects().length > 0);
+const rect = button?.getBoundingClientRect();
+const result = {...probe?.state, final: rect
+  ? {x: rect.x, y: rect.y, width: rect.width, height: rect.height} : null};
+probe?.dispose();
+delete window.__peersChatVoiceActivation;
+return result;
+"""
+                )
+                artifacts.write_json(
+                    f"{base}-activation.json", activation,
+                    role=f"mobile-chat-native-voice-activation/{journey_id}",
+                )
+            except Exception:
+                pass
+        started = time.monotonic()
+        self._wait_for_value(
+            lambda: True if time.monotonic() - started >= 2 else None,
+            "Capture at least two seconds of real microphone input",
+        )
+        self._click_ui(sender_session, '[data-action-id="chat.voice.finish"]', "Finish real microphone recording")
+        draft = self._wait_for_value(
+            lambda: sender_session.execute_script(
+                """
+const row = Array.from(document.querySelectorAll('[data-attachment-draft-state="ready"]')).find(
+  node => !node.closest('[hidden], [inert]') && node.getClientRects().length > 0
+);
+const audio = row?.querySelector('audio');
+return audio && audio.readyState >= 1 && !audio.error && audio.duration > 0
+  ? {filename: row.getAttribute('data-attachment-filename'), durationSeconds: audio.duration} : null;
+"""
+            ), "Recorded voice becomes a playable native draft",
+        )
+        self._click_ui(sender_session, '[data-action-id="chat.send-message"]', "Send actual recorded voice")
+
+        message = self._wait_received_media_message(receiver_session, conversation_id, text)
+        attachment = self._mapping(message["attachments"][0], "Recorded voice attachment")
+        voice = self._mapping(attachment.get("voiceNote"), "Recorded voice metadata")
+        if (attachment.get("filename") != draft.get("filename")
+            or not str(attachment.get("mimeType", "")).startswith("audio/")
+            or not isinstance(voice.get("durationMs"), (int, float))
+            or voice["durationMs"] < 1000):
+            raise GateError("Recorded voice receiver metadata does not match the actual capture")
+        attachment_id = self._text(attachment.get("attachmentId"), "Recorded voice attachment ID")
+        self._wait_for_value(
+            lambda: True if journey._attachment_available(receiver_session, attachment_id) else None,
+            "Receiver opens actual recorded voice bytes",
+        )
+        decoded = self._wait_chat_media(receiver_session, attachment_id, "audio")
+        playback = receiver_session.execute_async_script(
+            """
+const done = arguments[arguments.length - 1];
+const row = Array.from(document.querySelectorAll(
+  `[data-attachment-id="${CSS.escape(arguments[0])}"]`
+)).find(node => !node.closest('[hidden], [inert]') && node.getClientRects().length > 0);
+const audio = row?.querySelector('audio');
+if (!audio) { done({started: false, error: 'missing-visible-audio'}); return; }
+audio.play().then(() => done({started: true}), error => done({started: false, error: error.name}));
+""", attachment_id,
+        )
+        if not isinstance(playback, Mapping) or playback.get("started") is not True:
+            raise GateError(f"Receiver could not play the real voice attachment: {playback}")
+        try:
+            played = self._wait_for_value(
+                lambda: receiver_session.execute_script(
+                    """
+const audio = Array.from(document.querySelectorAll(
+  `[data-attachment-id="${CSS.escape(arguments[0])}"] audio`
+)).find(node => !node.closest('[hidden], [inert]') && node.getClientRects().length > 0);
+return audio && !audio.error && audio.currentTime >= 0.1
+  ? {played: true, currentTimeSeconds: audio.currentTime} : null;
+""", attachment_id,
+                ), "Receiver audio playback advances on the real recorded voice",
+            )
+        finally:
+            receiver_session.execute_script(
+                "document.querySelectorAll(`[data-attachment-id=\"${CSS.escape(arguments[0])}\"] audio`)"
+                ".forEach(audio=>audio.pause());", attachment_id,
+            )
+        return {
+            "draft": draft, "receiverMessageId": message["messageId"],
+            "receiverDurationMs": voice["durationMs"], "receiverBytesOpened": True,
+            "receiverDecoded": decoded, "receiverPlayback": played,
+            "syntheticAudioInjected": False,
+        }
+
+    @staticmethod
+    def _accept_native_microphone_permission(session: Any) -> None:
+        try:
+            buttons = session.execute_script("mobile: alert", {"action": "getButtons"})
+        except DriverError as error:
+            reason = str(error).lower()
+            if any(message in reason for message in (
+                "no such alert",
+                "no alert is present",
+                "an attempt was made to operate on a modal dialog when one was not open",
+            )):
+                return
+            raise
+        if not isinstance(buttons, list) or any(not isinstance(item, str) for item in buttons):
+            raise DriverError("Native microphone permission alert has invalid buttons")
+        if not buttons:
+            return
+        allow = next((label for label in buttons if label in ("Allow", "允许")), None)
+        if allow is None:
+            raise GateError("Unexpected system alert during microphone permission request")
+        session.execute_script("mobile: alert", {"action": "accept", "buttonLabel": allow})
+
+    def _select_recovery_media_files(
+        self, session: Any, journey_id: str,
+    ) -> list[dict[str, str]]:
+        """Use the real file input; this does not claim native picker interaction."""
+        sources = [
+            {
+                "filename": f"recovery-{journey_id}.txt", "mimeType": "text/plain",
+                "bytesBase64": base64.b64encode(f"Retained draft {journey_id}\n".encode()).decode(),
+            },
+            {
+                "filename": f"recovery-{journey_id}.wav", "mimeType": "audio/wav",
+                "bytesBase64": base64.b64encode(
+                    (REPO_ROOT / "apps/mobile/public/acceptance-voice-preview.wav").read_bytes()
+                ).decode(),
+            },
+        ]
+        selected = self._wait_for_value(
+            lambda: session.execute_script(
+                """
+const input = Array.from(document.querySelectorAll('input[type="file"][multiple]'))
+  .find(node => !node.closest('[hidden]'));
+if (!input) return null;
+const transfer = new DataTransfer();
+for (const source of arguments[0]) {
+  const bytes = Uint8Array.from(atob(source.bytesBase64), char => char.charCodeAt(0));
+  transfer.items.add(new File([bytes], source.filename, {type: source.mimeType}));
+}
+input.files = transfer.files;
+input.dispatchEvent(new Event('change', {bubbles: true}));
+return {selected: transfer.files.length};
+""", sources,
+            ), "Select media through the Chat file input",
+        )
+        if selected.get("selected") != len(sources):
+            raise GateError("Chat media input did not select every fixture source")
+        return [{"filename": row["filename"], "mimeType": row["mimeType"]} for row in sources]
+
+    def _run_notification_ui(
+        self, session: Any, *, comment_id: str, post_id: str,
+        expected_comment_ids: set[str],
+    ) -> dict[str, Any]:
+        def notification() -> dict[str, Any] | None:
+            session.call_action("social.reconcile")
+            projection = self._mapping(
+                session.call_action("social.projection.read"), "Notification owner projection"
+            )
+            rows = projection.get("notifications", [])
+            return next((
+                dict(row) for row in rows if isinstance(row, Mapping)
+                and row.get("targetId") == comment_id and row.get("status") == 1
+            ), None)
+
+        observed = self._wait_for_value(notification, "Receiver's durable comment-mention notification")
+        notification_id = self._text(observed.get("id"), "Notification ID")
+        session.call_action(
+            "navigation.apply", {"kind": "primary", "routeId": "tab:settings"}
+        )
+        self._click_ui(session, '[data-action-id="me.notifications"]', "Open the notification center")
+        selector = f'[data-notification-id="{notification_id}"]'
+        self._wait_ui(session, selector, "Receiver notification displayed")
+        before_page = self._mapping(session.call_action("social.projection.read"), "First notification page")
+        first_page = before_page.get("notifications", [])
+        if not isinstance(first_page, list) or len(first_page) >= len(expected_comment_ids):
+            raise GateError("Notification pagination did not begin with a bounded first page")
+        self._click_ui(
+            session, '[data-action-id="mobile-notifications-load-more"]',
+            "Load the next real notification page",
+        )
+
+        def loaded_page() -> dict[str, Any] | None:
+            projection = self._mapping(session.call_action("social.projection.read"), "Loaded notification window")
+            rows = projection.get("notifications", [])
+            targets = {row.get("targetId") for row in rows if isinstance(row, Mapping)}
+            return {"retainedCount": len(rows)} if expected_comment_ids.issubset(targets) else None
+
+        pagination = self._wait_for_value(loaded_page, "Every real notification appears after pagination")
+        self._click_ui(session, f'[data-action-id="notification.open.{notification_id}"]',
+            "Open the mentioned comment from its real notification")
+        def mentioned_route() -> Mapping[str, Any] | None:
+            value = self._mapping(session.call_action("navigation.snapshot"), "Mention target route")
+            return value if any(
+                post_id in key and comment_id in key for key in value.get("detailKeys", [])
+            ) else None
+
+        route = self._wait_for_value(mentioned_route, "Mention notification opens its original post and comment")
+        session.call_action(
+            "navigation.apply", {"kind": "primary", "routeId": "tab:settings"}
+        )
+        self._click_ui(session, '[data-action-id="me.notifications"]', "Reopen notification center after read")
+        read = self._wait_for_value(
+            lambda: session.execute_script(
+                """
+const row = document.querySelector(arguments[0]);
+return row?.getAttribute('data-unread') === 'false'
+  ? {notificationId: row.getAttribute('data-notification-id'), unread: false} : null;
+""", selector,
+            ), "Authoritative notification readback in the real overlay",
+        )
+        self._click_ui(
+            session, '[data-action-id="mobile-notifications-mark-all-read"]',
+            "Mark all real notifications read",
+        )
+
+        def all_read() -> dict[str, Any] | None:
+            projection = self._mapping(session.call_action("social.projection.read"), "All-read notification owner window")
+            rows = [row for row in projection.get("notifications", [])
+                    if isinstance(row, Mapping) and row.get("targetId") in expected_comment_ids]
+            return {"readCount": len(rows)} if (
+                len(rows) == len(expected_comment_ids) and all(row.get("status") != 1 for row in rows)
+            ) else None
+
+        all_read_result = self._wait_for_value(all_read, "All-read retains the complete paginated window")
+        restart = self._restart_ios_application(session, force_kill=False)
+        self._require_runtime_graph_ready(session, "Notification native restart")
+        session.call_action("navigation.apply", {"kind": "primary", "routeId": "tab:settings"})
+        self._click_ui(session, '[data-action-id="me.notifications"]', "Reopen notifications after native restart")
+        self._wait_ui(session, '[data-action-id="mobile-notifications-load-more"]', "Unread state readback page")
+        self._click_ui(session, '[data-action-id="mobile-notifications-load-more"]', "Read back the next persisted notification page")
+        persisted_read = self._wait_for_value(all_read, "All-read survives native restart on both pages")
+        self._click_ui(
+            session, f'[data-action-id="notification.delete.{notification_id}"]',
+            "Delete the read notification",
+        )
+        self._wait_ui_absent(session, selector, "Deleted notification absent from overlay")
+
+        def deleted() -> dict[str, Any] | None:
+            session.call_action("social.reconcile")
+            projection = self._mapping(
+                session.call_action("social.projection.read"), "Notification deletion readback"
+            )
+            rows = projection.get("notifications")
+            return {"notificationId": notification_id, "ownerRowAbsent": True} if (
+                isinstance(rows, list) and all(
+                    not isinstance(row, Mapping) or row.get("id") != notification_id
+                    for row in rows
+                )
+            ) else None
+
+        deletion = self._wait_for_value(deleted, "Notification deletion survives owner refresh")
+        session.call_action(
+            "navigation.apply", {"kind": "primary", "routeId": "tab:chat"}
+        )
+        return {
+            "read": read, "allRead": all_read_result, "pagination": pagination,
+            "nativeRestart": restart, "persistedRead": persisted_read,
+            "delete": deletion, "navigation": route, "fixtureStateInjected": False,
+        }
+
+    def _wait_for_composer_media(
+        self, session: Any, sources: list[dict[str, str]],
+    ) -> dict[str, Any]:
+        return self._wait_for_value(
+            lambda: session.execute_script(
+                """
+const rows = Array.from(document.querySelectorAll('[data-attachment-draft-id]'))
+  .filter(node => !node.closest('[hidden], [inert]') && node.getClientRects().length > 0);
+const ready = arguments[0].every(source => rows.some(row =>
+  row.getAttribute('data-attachment-filename') === source.filename
+  && row.getAttribute('data-attachment-draft-state') === 'ready'));
+const audio = rows.find(row => row.querySelector('audio'))?.querySelector('audio');
+return ready && audio && audio.readyState >= 1 && !audio.error
+  ? {readyCount: rows.length, filenames: rows.map(row => row.getAttribute('data-attachment-filename')),
+    audioMetadataLoaded: true} : null;
+""", sources,
+            ), "Native-restored media drafts and playable audio preview",
+        )
 
     @staticmethod
     def _verify_build_identity(
@@ -4421,7 +5452,11 @@ return {
     def _open_chat_conversation(
         session: Any,
         conversation_id: str,
+        *,
+        kind: str = "direct",
     ) -> None:
+        if kind not in {"direct", "group"}:
+            raise GateError(f"Unknown Chat conversation kind: {kind}")
         session.call_action(
             "navigation.apply",
             {"kind": "primary", "routeId": "tab:chat"},
@@ -4431,8 +5466,8 @@ return {
             {
                 "kind": "detail.push",
                 "route": {
-                    "routeId": "detail:chat-conversation",
-                    "sessionUlid": conversation_id,
+                    "routeId": "detail:group-conversation" if kind == "group" else "detail:chat-conversation",
+                    "groupUlid" if kind == "group" else "sessionUlid": conversation_id,
                 },
             },
         )
@@ -4445,10 +5480,12 @@ return {
         result = self._wait_for_value(
             lambda: session.execute_script(
                 """
-const input = document.querySelector('input.message-composer-input');
-if (!(input instanceof HTMLInputElement)) return null;
+const input = Array.from(document.querySelectorAll('textarea.message-composer-input')).find(
+  node => !node.closest('[hidden], [inert]') && node.getClientRects().length > 0
+);
+if (!(input instanceof HTMLTextAreaElement)) return null;
 const setter = Object.getOwnPropertyDescriptor(
-  HTMLInputElement.prototype,
+  HTMLTextAreaElement.prototype,
   'value'
 )?.set;
 if (!setter) return null;
@@ -4491,14 +5528,15 @@ return input.value;
         def read() -> dict[str, Any] | None:
             value = session.execute_script(
                 """
-const message = document.querySelector(
+const visible = node => !node.closest('[hidden], [inert]') && node.getClientRects().length > 0;
+const message = Array.from(document.querySelectorAll(
   `[data-message-ulid="${CSS.escape(arguments[0])}"] .message-text`
-);
-const composer = document.querySelector('input.message-composer-input');
+)).find(visible);
+const composer = Array.from(document.querySelectorAll('textarea.message-composer-input')).find(visible);
 return {
   messageVisible: Boolean(message && message.textContent === arguments[1]),
   draftVisible: Boolean(
-    composer instanceof HTMLInputElement
+    composer instanceof HTMLTextAreaElement
       && composer.value === arguments[2]
   ),
 };
@@ -4794,6 +5832,13 @@ return {
         )
 
     @staticmethod
+    def _find_native_element_or_none(session: Any, predicate: str) -> str | None:
+        try:
+            return session.find_element("-ios predicate string", predicate)
+        except DriverError:
+            return None
+
+    @staticmethod
     def _find_element_or_none(
         session: Any,
         selector: str,
@@ -4993,6 +6038,44 @@ return {
             post_id,
             {comment_id, reply_id},
         )
+        self._prepare_private_keys(sender_session)
+        self._prepare_private_keys(receiver_session)
+        private_post = self._mapping(
+            sender_session.call_action("moments.private.publishText", {
+                "draftId": f"notification-{journey_id}", "draftRevision": 1,
+                "text": f"Notification journey {journey_id}",
+                "audience": {"kind": "CUSTOM_ALLOW", "actorPtids": [receiver.ptid]},
+            }), "Mention notification parent Moment",
+        )
+        if private_post.get("state") != "PUBLISHED":
+            raise GateError("Mention notification parent Moment was not published")
+        private_post_id = self._text(private_post.get("postId"), "Mention notification parent ID")
+        self._wait_for_value(
+            lambda: True if self._mapping(
+                receiver_session.call_action("moments.private.readText", {"postId": private_post_id}),
+                "Mention parent receiver readback",
+            ).get("state") == "CONTENT_READY" else None,
+            "Receiver can read the notification parent",
+        )
+        mention_ids: set[str] = set()
+        for index in range(31):
+            mention = self._mapping(
+                receiver_session.call_action("moments.private.comment.submit", {
+                    "draftId": f"mention-{journey_id}-{index}", "draftRevision": 1,
+                    "postId": private_post_id, "text": f"@Alice notification {journey_id}-{index}",
+                    "mentions": [{"actorPtid": sender.ptid, "offset": 0, "length": 6, "display": "Alice"}],
+                }), "Committed comment mention",
+            )
+            if mention.get("state") != "COMMENT_POSTED" or mention.get("mentionCount") != 1:
+                raise GateError("Comment mention was not committed by its real owner")
+            mention_id = self._text(mention.get("commentId"), "Mention comment ID")
+            mention_ids.add(mention_id)
+        if len(mention_ids) != 31:
+            raise GateError("Notification page fixture must contain distinct real comments")
+        notification_ui = self._run_notification_ui(
+            sender_session, comment_id=mention_id, post_id=private_post_id,
+            expected_comment_ids=mention_ids,
+        )
         unreacted = receiver_session.call_action(
             "moments.react",
             {"postId": post_id, "reactionKind": 1, "active": False},
@@ -5031,6 +6114,7 @@ return {
             "commentId": comment_id,
             "replyId": reply_id,
             "commentCount": len(comments),
+            "notificationUi": notification_ui,
             "draftRestartReadback": True,
             "senderPtid": sender.ptid,
             "receiverPtid": receiver.ptid,
@@ -5644,6 +6728,35 @@ return {
                     "passed": journey_result.get("directScope") == "local",
                 }
             )
+        if scenario == "chat":
+            native_media = journey_result.get("nativeMedia", {})
+            for kind in ("direct", "group"):
+                media = native_media.get(kind, {}) if isinstance(native_media, Mapping) else {}
+                image = media.get("image", {}) if isinstance(media, Mapping) else {}
+                voice = media.get("voice", {}) if isinstance(media, Mapping) else {}
+                assertions.extend([
+                    {
+                        "name": f"chat:{kind}:native-photo-cancel-selection-and-receiver-decode",
+                        "passed": (
+                            image.get("fixturePickerResultInjected") is False
+                            and image.get("cancelled", {}).get("draftPreserved") is True
+                            and image.get("cancelled", {}).get("attachmentCount") == 0
+                            and image.get("cancelled", {}).get("editableFocus") is False
+                            and image.get("receiverDecoded", {}).get("decoded") is True
+                            and bool(image.get("nativeAccessibility", {}).get("path"))
+                            and bool(image.get("nativeScreenshot", {}).get("path"))
+                        ),
+                    },
+                    {
+                        "name": f"chat:{kind}:real-microphone-and-receiver-playback",
+                        "passed": (
+                            voice.get("syntheticAudioInjected") is False
+                            and voice.get("receiverBytesOpened") is True
+                            and voice.get("receiverDecoded", {}).get("decoded") is True
+                            and voice.get("receiverPlayback", {}).get("played") is True
+                        ),
+                    },
+                ])
         return assertions
 
 

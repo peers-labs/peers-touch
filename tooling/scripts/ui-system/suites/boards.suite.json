@@ -131,7 +131,7 @@
     },
     {
       "id": "ui.prototype.eles.mobile-product-default",
-      "title": "手机框默认是干净中文产品面 MobileApp（四个图标 tab：消息/动态/联系人/我的；会话行真实存在）",
+      "title": "手机框默认是中文 MobileApp（三项底部导航：消息/动态/我的；消息顶部区分聊天与联系人）",
       "level": "L3_DYNAMIC",
       "operations": [
         { "op": "click", "target": "[data-action-id='view.mobile']" },
@@ -140,11 +140,12 @@
       "oracles": [
         { "id": "phone-frame", "type": "exists", "scope": "global", "target": "[data-phone-frame]" },
         { "id": "product-root", "type": "exists", "scope": "global", "target": "[data-phone-body] .ma-root" },
-        { "id": "four-tabs", "type": "count", "scope": "global", "target": "[data-phone-body] .pt-mobile-tabbar button", "equals": 4 },
+        { "id": "three-tabs", "type": "count", "scope": "global", "target": "[data-phone-body] .pt-mobile-tabbar button", "equals": 3 },
         { "id": "agent-tab-gone", "type": "missing", "scope": "global", "target": "[data-phone-body] [data-action-id='mobile.tab.agent']" },
-        { "id": "contacts-is-tab", "type": "exists", "scope": "global", "target": "[data-phone-body] [data-action-id='mobile.tab.contacts']" },
+        { "id": "contacts-not-bottom-tab", "type": "missing", "scope": "global", "target": "[data-phone-body] [data-action-id='mobile.tab.contacts']" },
         { "id": "moments-is-tab", "type": "exists", "scope": "global", "target": "[data-phone-body] [data-action-id='mobile.tab.moments']" },
-        { "id": "legacy-chat-segmented-gone", "type": "missing", "scope": "global", "target": "[data-phone-body] .ma-chat-subnav" },
+        { "id": "messages-scopes", "type": "count", "scope": "global", "target": "[data-phone-body] .ma-chat-subnav button", "equals": 2 },
+        { "id": "contacts-top-scope", "type": "exists", "scope": "global", "target": "[data-phone-body] .ma-chat-subnav [data-action-id='segment.contacts']" },
         { "id": "statusbar-in-flow-on-chats", "type": "computedStyle", "scope": "global", "target": "[data-phone-body] .pt-mobile-statusbar", "prop": "position", "equals": "relative" },
         { "id": "conversation-rows", "type": "count", "scope": "global", "target": "[data-phone-body] .ma-conv-item", "gte": 5 }
       ],
@@ -152,12 +153,12 @@
     },
     {
       "id": "ui.prototype.eles.mobile-contact-detail",
-      "title": "手机产品面：切到联系人 tab 进群详情，发消息进入中文群会话线程",
+      "title": "手机产品面：切到消息顶部联系人子 tab 进群详情，发消息进入中文群会话线程",
       "level": "L3_DYNAMIC",
       "operations": [
         { "op": "click", "target": "[data-action-id='view.mobile']" },
         { "op": "wait", "ms": 900 },
-        { "op": "click", "scope": "global", "target": "[data-phone-body] [data-action-id='mobile.tab.contacts']" },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] .ma-chat-subnav [data-action-id='segment.contacts']" },
         { "op": "wait", "ms": 300 },
         { "op": "click", "scope": "global", "target": "[data-phone-body] .ma-contact-group .ma-contact-row" },
         { "op": "wait", "ms": 300 },
@@ -171,8 +172,28 @@
       "finalizers": []
     },
     {
-      "id": "ui.prototype.eles.mobile-add-contact-sheet",
-      "title": "手机产品面：消息 ＋ 的「添加联系人」打开真实添加表单（不是搜索 morph），空昵称禁用且底栏被抑制",
+      "id": "ui.prototype.eles.mobile-contact-scope-return",
+      "title": "联系人详情返回与底部切页后保留消息页的联系人子 tab",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-action-id='view.mobile']" },
+        { "op": "wait", "ms": 900 },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] .ma-chat-subnav [data-action-id='segment.contacts']" },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] .ma-contact-friend:first-child .ma-contact-row" },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] [data-action-id='mobile.nav.back']" },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] [data-action-id='mobile.tab.moments']" },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] [data-action-id='mobile.tab.chats']" }
+      ],
+      "oracles": [
+        { "id": "contacts-selected", "type": "attr", "scope": "global", "target": "[data-phone-body] .ma-chat-subnav [data-action-id='segment.contacts']", "attr": "aria-pressed", "equals": "true" },
+        { "id": "contacts-visible", "type": "count", "scope": "global", "target": "[data-phone-body] .ma-contact-friend", "gte": 1 },
+        { "id": "three-tabs", "type": "count", "scope": "global", "target": "[data-phone-body] .pt-mobile-tabbar button", "equals": 3 }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.eles.mobile-find-people-page",
+      "title": "手机产品面：消息 ＋ 打开顶部搜索的独立查找页，空查询禁用且底栏隐藏",
       "level": "L3_DYNAMIC",
       "operations": [
         { "op": "click", "target": "[data-action-id='view.mobile']" },
@@ -183,19 +204,20 @@
         { "op": "wait", "ms": 300 }
       ],
       "oracles": [
-        { "id": "add-sheet-title", "type": "textContains", "scope": "global", "target": "[data-phone-body] .pt-bottom-sheet .pt-sheet-title", "contains": "添加联系人" },
+        { "id": "find-people-page", "type": "count", "scope": "global", "target": "[data-phone-body] [data-find-people-page]", "equals": 1 },
+        { "id": "no-bottom-sheet", "type": "missing", "scope": "global", "target": "[data-phone-body] .pt-bottom-sheet" },
         { "id": "not-search-morph", "type": "missing", "scope": "global", "target": "[data-phone-body] .ma-rail-search .pt-field-frame" },
-        { "id": "confirm-disabled-empty", "type": "disabled", "scope": "global", "target": "[data-action-id='contact.add.confirm']" },
+        { "id": "search-disabled-empty", "type": "disabled", "scope": "global", "target": "[data-action-id='contact.search']" },
         { "id": "tabbar-suppressed", "type": "missing", "scope": "global", "target": "[data-phone-body] .pt-mobile-tabbar" }
       ],
       "finalizers": [
-        { "op": "clickGlobal", "target": "[data-action-id='contact.add.cancel']" },
+        { "op": "clickGlobal", "target": "[data-phone-body] [data-find-people-page] [aria-label='返回']" },
         { "op": "wait", "ms": 200 }
       ]
     },
     {
       "id": "ui.prototype.eles.mobile-add-contact-loop",
-      "title": "手机产品面：添加联系人提交后弹层关闭、此人真实进入通讯录（拒绝只关弹层的假动作）",
+      "title": "手机产品面：查找目录中的用户并发送请求，返回后联系人进入通讯录",
       "level": "L3_DYNAMIC",
       "operations": [
         { "op": "click", "target": "[data-action-id='view.mobile']" },
@@ -204,16 +226,18 @@
         { "op": "wait", "ms": 200 },
         { "op": "click", "scope": "global", "target": "[data-action-id='ma.new-person']" },
         { "op": "wait", "ms": 300 },
-        { "op": "type", "scope": "global", "target": "input[aria-label='联系人昵称']", "value": "注册新联系人" },
+        { "op": "type", "scope": "global", "target": "input[aria-label='输入姓名或用户名']", "value": "Sora" },
         { "op": "wait", "ms": 120 },
+        { "op": "click", "scope": "global", "target": "[data-action-id='contact.search']" },
         { "op": "click", "scope": "global", "target": "[data-action-id='contact.add.confirm']" },
         { "op": "wait", "ms": 350 },
-        { "op": "click", "scope": "global", "target": "[data-phone-body] [data-action-id='mobile.tab.contacts']" },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] [data-find-people-page] [aria-label='返回']" },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] .ma-chat-subnav [data-action-id='segment.contacts']" },
         { "op": "wait", "ms": 350 }
       ],
       "oracles": [
         { "id": "sheet-closed", "type": "missing", "scope": "global", "target": ".pt-overlay-host .pt-bottom-sheet" },
-        { "id": "contact-in-catalog", "type": "textContains", "scope": "global", "target": "[data-phone-body] .ma-contact-friend:first-child strong", "contains": "注册新联系人" }
+        { "id": "contact-in-catalog", "type": "textContains", "scope": "global", "target": "[data-phone-body] .ma-contact-friend:first-child strong", "contains": "Sora Chen" }
       ],
       "finalizers": []
     },
@@ -535,7 +559,7 @@
     },
     {
       "id": "ui.prototype.eles.mobile-single-product-ui",
-      "title": "手机框只渲染唯一产品面 MobileApp：四个图标 tab，无产品面/取证台切换、无 mp-* 旧皮",
+      "title": "手机框只渲染唯一产品面 MobileApp：三项底部导航，无产品面/取证台切换、无 mp-* 旧皮",
       "level": "L3_DYNAMIC",
       "operations": [
         { "op": "click", "target": "[data-action-id='view.mobile']" },
@@ -543,7 +567,7 @@
       ],
       "oracles": [
         { "id": "no-view-toggle", "type": "missing", "scope": "global", "target": "[data-action-id='mobile.view.evidence']" },
-        { "id": "four-tabs", "type": "count", "scope": "global", "target": "[data-phone-body] .pt-mobile-tabbar button", "equals": 4 },
+        { "id": "three-tabs", "type": "count", "scope": "global", "target": "[data-phone-body] .pt-mobile-tabbar button", "equals": 3 },
         { "id": "no-mp-skin", "type": "missing", "scope": "global", "target": "[data-phone-body] .mp-tabbar, [data-phone-body] .mp-shell" }
       ],
       "finalizers": []

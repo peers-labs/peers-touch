@@ -274,7 +274,10 @@ services:
   # file. If missing, the container starts but rejects all requests —
   # group calls are unavailable while 1v1 and chat remain functional.
   livekit:
-    image: livekit/livekit-server:v1.13
+    image: ${PEERS_LIVEKIT_IMAGE:-peers-touch/livekit:1.13.0-admission1}
+    build:
+      context: ../..
+      dockerfile: tooling/docker/livekit.Dockerfile
     profiles: [livekit]
     environment:
       LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-}: ${LIVEKIT_API_SECRET:-}"

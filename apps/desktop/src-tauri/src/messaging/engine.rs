@@ -1452,7 +1452,8 @@ impl MessagingEngine {
                 return Ok(access);
             }
         }
-        let access = attachment_access_projection(&projection.metadata, transfer.as_ref(), false);
+        let access =
+            attachment_access_projection(&projection.metadata, transfer.as_ref(), false, false);
         if start_download && access.state == AttachmentAccessState::Remote as i32 {
             let download =
                 attachment_download_transfer(&self.profile_id, &projection, now_unix_ms())?;
@@ -1487,9 +1488,15 @@ impl MessagingEngine {
                 .retry(attachment_id, now_unix_ms())?;
         }
         transfer = self.store.attachment_transfer(attachment_id)?;
+        if let Some(access) =
+            self.cached_attachment_access(owner, &projection, transfer.as_ref(), retry)?
+        {
+            return Ok(access);
+        }
         Ok(attachment_access_projection(
             &projection.metadata,
             transfer.as_ref(),
+            false,
             false,
         ))
     }
@@ -1505,8 +1512,13 @@ impl MessagingEngine {
         use messaging_core::proto::chat::AttachmentAccessState;
         let attachment_id = &projection.metadata.attachment_id;
         let cache = attachment_cache_path(&self.profile_id, attachment_id)?;
+        // Observe the permit before checking bytes so a completed promotion
+        // cannot turn a pending reader into a stale Remote projection.
+        let transfer_active = self.attachment_transfer_control.is_transfer_active(attachment_id)?;
         if !cache.is_file() {
-            return Ok(None);
+            let access =
+                attachment_access_projection(&projection.metadata, transfer, false, transfer_active);
+            return Ok((access.state == AttachmentAccessState::Verifying as i32).then_some(access));
         }
         match self.attachment_file_access.grant(
             owner,
@@ -1519,7 +1531,7 @@ impl MessagingEngine {
             &projection.metadata.plaintext_sha256,
         ) {
             Ok(handle) => {
-                let mut access = attachment_access_projection(&projection.metadata, transfer, true);
+                let mut access = attachment_access_projection(&projection.metadata, transfer, true, false);
                 access.asset_url = attachment_asset_url(&handle);
                 access.access_handle = handle;
                 Ok(Some(access))
@@ -1530,7 +1542,7 @@ impl MessagingEngine {
                     Ok(None)
                 } else {
                     let mut access =
-                        attachment_access_projection(&projection.metadata, transfer, false);
+                        attachment_access_projection(&projection.metadata, transfer, false, false);
                     access.state = AttachmentAccessState::Failed as i32;
                     access.error_code =
                         messaging_core::proto::chat::AttachmentTransferErrorCode::IntegrityFailed

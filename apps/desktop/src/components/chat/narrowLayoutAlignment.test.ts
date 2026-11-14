@@ -127,13 +127,9 @@ describe('720px single-pane swap stylesheet contract', () => {
 
   it('keeps in-rail search reveal to a pure fade, never a geometric shift', () => {
     // Inline surface reveal may fade but must not translate (no layout shift).
-    expect(stylesheet).toMatch(
-      /@keyframes sc-rail-search-in\s*\{\s*from\s*\{\s*opacity:\s*0;\s*\}\s*to\s*\{\s*opacity:\s*1;\s*\}\s*\}/,
-    );
-    const railSearchBlock = stylesheet.slice(
-      stylesheet.indexOf('@keyframes sc-rail-search-in'),
-      stylesheet.indexOf('@keyframes sc-rail-search-in') + 200,
-    );
+    const shared = readFileSync(new URL('../../../../../packages/ui/web/src/styles.css', import.meta.url), 'utf8');
+    expect(shared).toMatch(/@keyframes pt-search-reveal\{from\{opacity:0\}to\{opacity:1\}\}/);
+    const railSearchBlock = shared.match(/@keyframes pt-search-reveal\{[^\n]+/)?.[0] ?? '';
     expect(railSearchBlock).not.toContain('translateX');
     expect(railSearchBlock).not.toContain('translateY');
   });

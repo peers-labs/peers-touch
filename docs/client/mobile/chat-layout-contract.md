@@ -10,6 +10,14 @@ This document refines `docs/client/chat/chat-ux-contract.md` for Mobile.
 
 Mobile Chat has one primary responsibility: keep conversation content readable while the user's thumb, keyboard, safe area, bottom navigation, attachment panels, and floating actions compete for a small screen.
 
+Direct and Group voice/video actions occupy the same detail-header slots.
+Group joins the shared SFU controller through the authenticated native transport;
+one device media reservation excludes concurrent Direct and Group capture.
+The global group surface survives navigation, uses peers-ui CallControl,
+attaches audio/video by participant identity, and shows the real transport trust
+boundary. Cancel/leave/logout await capture and SDK cleanup before releasing
+the reservation; messages and drafts remain in their original owners.
+
 ## 2. Required Screen Model
 
 Mobile conversation detail MUST use a dedicated Chat shell:
@@ -71,6 +79,19 @@ ReplyOrEditComposer
 
 State rules:
 
+- The composer uses one peers-ui `FieldFrame appearance="composer"` with an
+  embedded comfortable `TextArea`. Emoji, attachment/camera, microphone,
+  expand and send controls share the same boundary; the page owns their
+  business intents, not separate borders or focus rings.
+- The shared TextArea owns auto-grow: collapsed 1–4 rows, expanded 4–10.
+  The measured composer and panel rectangles feed the existing clearance model.
+- Camera and document selection stage real encrypted attachments. Recording
+  finishes into a playable voice draft; removing it discards the stage.
+  Submission clears the draft only after authoritative message projection.
+- Editing temporarily retains the unsent text, reply and attachment draft;
+  cancel or successful edit restores it. Duplicate submission is fenced while
+  the command is in flight, and results from an old conversation cannot
+  replace a new conversation's draft. Recent emojis are Station/actor scoped.
 - Empty text shows attach/action affordance.
 - Non-empty text shows send affordance.
 - Multiline input expands to the platform token maximum, then scrolls internally.
@@ -91,6 +112,12 @@ State rules:
 ## 5. Message Actions
 
 Mobile message actions MUST use long-press or explicit overflow entry.
+
+The long-press owner cancels a 500ms hold once movement exceeds 12px, on pointer
+cancellation or teardown. Explicit overflow remains available. Copy uses the
+shared CopyButton and reports clipboard failure. Selection dispatches real
+forward/hide commands per message; acknowledged items leave the selection,
+and a partial failure preserves only the remaining items for retry.
 
 Legal placements:
 

@@ -245,11 +245,14 @@ export function StationSelector({
                 className={`station-entry ${isActive ? 'active' : ''}`}
                 data-product-surface={surfaceId}
               >
-                <button
-                  type="button"
+                <Button
+                  actionId={`station.select.${entry.stationPeerId}`}
+                  emphasis="quiet"
+                  density="comfortable"
                   className="station-entry-main"
                   aria-pressed={isActive}
-                  onClick={() => onSelect(entry.stationPeerId)}
+                  availability={checking ? { kind: 'disabled', reason: t('mobile.launch.validating') } : undefined}
+                  onActivate={() => onSelect(entry.stationPeerId)}
                 >
                   <Icon iconId="server" size={18} />
                   <span className="station-entry-copy">
@@ -261,19 +264,18 @@ export function StationSelector({
                   <span className="station-entry-check" aria-hidden="true">
                     {isActive ? <Icon iconId="check" size={16} /> : null}
                   </span>
-                </button>
-                <button
-                  type="button"
-                  className="station-remove"
-                  aria-label={t('common.action.delete')}
+                </Button>
+                <IconButton
+                  actionId={`station.remove.${entry.stationPeerId}`}
+                  iconId="delete"
+                  iconSize={15}
+                  label={t('common.stationPicker.removeLabel', { station: displayName })}
+                  emphasis="quiet"
+                  density="comfortable"
                   data-entry-action="remove-station"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setPendingRemoval(entry);
-                  }}
-                >
-                  <Icon iconId="delete" size={15} />
-                </button>
+                  availability={checking ? { kind: 'disabled', reason: t('mobile.launch.validating') } : undefined}
+                  onActivate={() => setPendingRemoval(entry)}
+                />
               </div>
             );
           })
@@ -292,14 +294,18 @@ export function StationSelector({
                   ? t('common.stationPicker.suggestionStale')
                   : t('common.stationPicker.suggested');
               return (
-                <button
-                  type="button"
+                <Button
                   key={suggestion.seedId}
-                  className={`station-suggestion ${failed ? 'failed' : ''}`}
+                  actionId={`station.suggestion.${suggestion.seedId}`}
+                  emphasis="quiet"
+                  density="comfortable"
+                  className="station-suggestion"
                   data-x-config-seed-id={suggestion.seedId}
                   data-x-config-freshness={suggestion.freshness}
-                  disabled={!suggestion.actionable || selecting}
-                  onClick={() => void selectSuggestion(suggestion)}
+                  availability={!suggestion.actionable || selectingSuggestionId !== null
+                    ? { kind: 'disabled', reason: t(!suggestion.actionable
+                        ? 'common.stationPicker.suggestionInvalid' : 'mobile.launch.validating') } : undefined}
+                  onActivate={() => void selectSuggestion(suggestion)}
                 >
                   {selecting
                     ? <Spin size="small" />
@@ -315,7 +321,7 @@ export function StationSelector({
                   <span className={`station-entry-status ${failed ? 'offline' : ''}`} aria-live={failed ? 'polite' : undefined}>
                     {status}
                   </span>
-                </button>
+                </Button>
               );
             })}
           </>
@@ -346,20 +352,22 @@ export function StationSelector({
         >
           <Text tone="secondary">{t('mobile.launch.stationRemoveBody')}</Text>
           <div className="entry-confirmation-actions">
-            <button
-              type="button"
-              className="entry-confirmation-button"
-              onClick={() => setPendingRemoval(null)}
+            <Button
+              actionId="station.remove.cancel"
+              density="comfortable"
+              onActivate={() => setPendingRemoval(null)}
             >
               {t('common.action.cancel')}
-            </button>
-            <button
-              type="button"
-              className="entry-confirmation-button danger"
-              onClick={confirmStationRemoval}
+            </Button>
+            <Button
+              actionId="station.remove.confirm"
+              emphasis="primary"
+              tone="danger"
+              density="comfortable"
+              onActivate={confirmStationRemoval}
             >
               {t('common.action.delete')}
-            </button>
+            </Button>
           </div>
         </section>
       </Dialog>

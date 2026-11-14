@@ -526,6 +526,8 @@ export function ChatSessionList({
             <>
               <span className="sc-rail-search">
                 <TextField
+                  appearance="search"
+                  reveal
                   className="sc-rail-search-field"
                   data-chat-session-search
                   data-rail-search-value={searchText}

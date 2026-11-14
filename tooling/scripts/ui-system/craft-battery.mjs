@@ -52,6 +52,40 @@ export function craftBatterySource(rootSelector) {
       if (slash) return parseFloat(slash[1]);
       return rgbaAlpha(value);
     };
+    // Shared search motion never moves the field; focus tint is UI-owned.
+    root.querySelectorAll('[data-appearance="search"]').forEach(el => {
+      if (!visible(el)) return;
+      const s = cs(el);
+      const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (s.transform !== 'none') flag('search-must-reveal-in-place', describe(el));
+      if (el.dataset.reveal && !reduced &&
+          (s.animationName !== 'pt-search-reveal' || s.animationDuration !== '0.16s' || s.animationTimingFunction !== 'ease-out')) {
+        flag('search-reveal-contract', describe(el), { animation: s.animationName, duration: s.animationDuration });
+      }
+      if (reduced && s.animationName !== 'none') flag('search-reduced-motion', describe(el));
+      const input = el.querySelector('input');
+      if (input && (el.dataset.density === 'comfortable' || matchMedia('(pointer: coarse)').matches)
+          && parseFloat(cs(input).fontSize) < 16) flag('search-ios-focus-zoom', describe(input));
+    });
+
+    // One writing dock; embedded inputs never acquire a second boundary.
+    root.querySelectorAll('[data-appearance="composer"]').forEach(el => {
+      if (!visible(el)) return;
+      const s = cs(el);
+      if (Math.abs(parseFloat(s.borderTopLeftRadius) - 12) > 1 ||
+          Math.abs(parseFloat(s.paddingLeft) - 6) > 1) flag('composer-frame-geometry', describe(el));
+      el.querySelectorAll('[data-framing="embedded"]').forEach(inputFrame => {
+        if (parseFloat(cs(inputFrame).borderTopWidth) !== 0 || cs(inputFrame).boxShadow !== 'none')
+          flag('composer-double-frame', describe(inputFrame));
+      });
+      el.querySelectorAll('textarea').forEach(input => {
+        if (input.dataset.density === 'comfortable' && parseFloat(cs(input).fontSize) < 16)
+          flag('composer-ios-focus-zoom', describe(input));
+        if (input.dataset.density === 'comfortable' && box(input).height < 43)
+          flag('composer-input-touch-height', describe(input), { height: box(input).height });
+        if (box(input).right > box(el).right + 1) flag('composer-input-overflow', describe(input));
+      });
+    });
 
     // C1 — Native OS chrome must never be visibly rendered. File/color inputs
     // are always hidden behind a custom affordance; raw submit/reset inputs are

@@ -95,6 +95,22 @@ message VoiceNoteMetadata {
   repeated uint32 waveform = 3;
 }
 
+// Device-local source commitment, stored in the client's encrypted messaging
+// store. This is not an uploaded object or a Station-visible descriptor.
+// The source path is derived by the native owner from stage_id.
+message AttachmentSourceStageRecord {
+  string stage_id = 1;
+  string filename = 2;
+  string mime_type = 3;
+  uint64 plaintext_size = 4;
+  bytes plaintext_sha256 = 5;
+  AttachmentContentKind content_kind = 6;
+  uint32 duration_ms = 7;
+  VoiceNoteMetadata voice_note = 8;
+  // Composer owner; never inferred from whichever route is currently visible.
+  string conversation_id = 9;
+}
+
 message AttachmentPlaintextMetadata {
   string attachment_id = 1;
   string filename = 2;

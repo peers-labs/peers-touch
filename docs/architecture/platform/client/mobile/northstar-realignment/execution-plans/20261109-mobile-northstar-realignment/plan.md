@@ -18,7 +18,9 @@ iOS-cell program complete (delivery) only when:
 2. Every functional point in [functional-coverage.md](../../functional-coverage.md)
    is REAL-RESTYLE / REAL-GAP-PRESENT-delivered, or explicitly removed
    (prototype corrected) / scheduled (NOT-THIS-PASS with a reason).
-3. Prototype matches the real 4-tab product structure; fakes removed.
+3. Prototype and real app implement three bottom destinations
+   (messages/moments/me), with top chats/contacts subtabs inside messages;
+   real capabilities preserved and fixture-only fakes removed.
 4. iOS Simulator: required per-slice functional gates PASS on current source,
    and the full 162-surface whole-product gate passes at delivery (foreground +
    Station profile supplied).
@@ -74,10 +76,13 @@ composer anatomy matches the prototype, and real functional gates pass.
 
 ### 5.1 Shell / navigation chrome
 
-- Migrate `MobileShell` tab bar (4 tabs), nav bar, badges, detail-stack
+- Migrate `MobileShell` tab bar (three destinations), nav bar, badges, detail-stack
   chrome, call overlay host container to peers-ui (`IconButton/Icon`,
   `Badge`, navigation tokens) using `--pt-m-*` geometry.
-- Reconcile prototype shell to 4 tabs (CONFLICT-REAL-WINS).
+- Combine chat/contacts inside messages with top subtabs
+  (CONFIRMED-DESIGN-ALIGN, ADR-4 corrected 2026-11-13). Retain pane selection
+  across detail return and tab changes; preserve contacts requests/group/search
+  owners and native back. Existing four routes are not visual authority.
 - Update `shell` fixture surfaces + inventory; keep native back/foreground
   behavior. Gates: layout-a11y, whole-product `shell`.
 
@@ -125,8 +130,9 @@ composer anatomy matches the prototype, and real functional gates pass.
 - iOS: `mobile-native-build`, layout-a11y, `chat-contacts` functional gate on
   current source (E2 profile). Whole-product `chat`+`shell` subset if time-box;
   full set at Slice 6.
-- Prototype: 4-tab shell reconciliation committed; dead/fake chat controls
-  removed.
+- Prototype: three bottom destinations and top chats/contacts subtabs verified;
+  detail return retains contacts scope; dead/fake chat controls removed.
+  Prototype proof does not close the real App navigation migration.
 
 ## 6. Subsequent slices (expanded when entered)
 
@@ -149,7 +155,7 @@ composer anatomy matches the prototype, and real functional gates pass.
 |---|---|---|---|
 | Single design system in migrated surfaces | residual 0 per surface; repo →0 at S6 | | |
 | Functional points bound to real owners | 100% mapped; no fixture-only delivery | | |
-| Prototype/real structure reconciled | 4-tab; fakes removed | | |
+| Prototype/real structure reconciled | 3 bottom destinations + top chats/contacts subtabs; real capabilities retained; fakes removed | | |
 | iOS functional gates | per-slice PASS; whole-product PASS at delivery | | |
 | Runtime/Rust regressions | none; existing gates stay green | | |
 

@@ -239,6 +239,7 @@ Search 当前真源：[封闭域 Search](./architecture/domains/search/README.md
 - 通知系统架构：`architecture/domains/notification/notification-architecture.md`
 - 实时平面：`architecture/shared/communication/event-stream.md`
 - 语音 / 视频通话架构：`architecture/domains/chat/calling/voice-video.md`
+- 群聊音视频：`architecture/domains/chat/calling/group/README.md`（active；共享媒体 SDK、设备 grant 与 SFU 授权生命周期）
 - Chat 端到端加密、设备级投递与恢复：`architecture/domains/chat/encryption/README.md`
 - 跨领域 Secure Content：`architecture/shared/security/secure-content/README.md`
   （active；定义 Social/Conversation 共用的 Native 加密、endpoint key envelope、

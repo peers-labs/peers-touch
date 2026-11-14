@@ -10,6 +10,7 @@ import type {
   MobileNavigationProjection,
 } from '../app/navigation';
 import type {
+  MessagingVoiceNoteMetadata,
   MobileOAuthProvider,
   OAuthPublicPhase,
   PrivateCommentIntent,
@@ -59,6 +60,7 @@ import type {
 import type { MobileSearchAcceptanceContracts } from './searchActions';
 import type { MobileSocialSearchAcceptanceContracts } from './socialSearchActions';
 import type { MobileDebugSnapshot } from './debug/collectMobileDebugSnapshot';
+import type { GroupCallSnapshot } from '@peers-touch/client-chat-core/group-call';
 
 export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'build.identity',
@@ -162,9 +164,18 @@ export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'settings.device.update',
   'getRealtimeDevice',
   'initiateCall',
+  'callSnapshot',
+  'callMediaStats',
+  'callRestartConnection',
   'callResolutionState',
   'acceptCall',
   'rejectCall',
+  'groupCallStart',
+  'groupCallLeave',
+  'groupCallToggleMic',
+  'groupCallToggleCamera',
+  'groupCallSnapshot',
+  'groupCallMediaStats',
   'debug.snapshot.read',
   'cleanup',
 ] as const;
@@ -623,6 +634,7 @@ export type MessagingCreateGroupActionOutput = {
 };
 
 export interface MessagingStageAttachmentActionInput {
+  conversationId: string;
   filename: string;
   mimeType: string;
   bytesBase64: string;
@@ -751,6 +763,7 @@ export interface PublicMessagingAttachmentProjection {
   plaintextSize: number;
   ciphertextSize?: number;
   availabilityState?: 'remote' | 'local';
+  voiceNote?: MessagingVoiceNoteMetadata;
 }
 
 export interface PublicMessagingMessageProjection {
@@ -1212,6 +1225,8 @@ export interface MomentsCommentsReadActionInput {
 export interface PublicProfileProjection {
   actorPtid: string;
   profileRevision: string;
+  avatar: string;
+  header: string;
   displayName: string;
   note: string;
   region: string;
@@ -1224,6 +1239,8 @@ export interface PublicProfileProjection {
 
 export interface SettingsProfileUpdateActionInput {
   displayName?: string;
+  avatar?: string;
+  header?: string;
   note?: string;
   region?: string;
   timezone?: string;
@@ -1536,6 +1553,7 @@ export interface MobileAcceptanceActionContract extends MobileSearchAcceptanceCo
     input: undefined;
     output: PublicSocialRuntimeProjection & {
       moments: ReturnType<typeof projectMomentsRuntimeDiagnostics>;
+      notifications: Array<{ id: string; status: number; targetType: string; targetId: string }>;
     };
   };
   'moments.private.acceptance.prepareKeys': {
@@ -1669,12 +1687,29 @@ export interface MobileAcceptanceActionContract extends MobileSearchAcceptanceCo
     };
   };
   initiateCall: {
-    input: { calleePtid: string; callerDeviceId?: string };
+    input: { calleePtid: string; callerDeviceId?: string; mediaKind?: 'audio' | 'video' };
     output: {
       callId: string;
       state: string;
       winningDeviceId?: string;
     };
+  };
+  callSnapshot: {
+    input: { peerPtid: string };
+    output: { snapshot: {
+      callId: string; state: string; mediaKind: 'audio' | 'video';
+      micMuted: boolean; cameraOff: boolean; endReason?: string;
+      localTracks: { kind: string; enabled: boolean; muted: boolean; readyState: string }[];
+      remoteTracks: { kind: string; enabled: boolean; muted: boolean; readyState: string }[];
+    } | null };
+  };
+  callMediaStats: {
+    input: { peerPtid: string };
+    output: import('@peers-touch/client-chat-core').CallMediaStats;
+  };
+  callRestartConnection: {
+    input: { peerPtid: string };
+    output: { requested: boolean };
   };
   callResolutionState: {
     input: { callId: string; deviceId?: string };
@@ -1702,6 +1737,30 @@ export interface MobileAcceptanceActionContract extends MobileSearchAcceptanceCo
       winningDeviceId?: string;
       conflict?: boolean;
     };
+  };
+  groupCallStart: {
+    input: { groupUlid: string; mediaKind: 'audio' | 'video' };
+    output: { actorPtid: string; snapshot: GroupCallSnapshot };
+  };
+  groupCallLeave: {
+    input: undefined;
+    output: { actorPtid: string; snapshot: GroupCallSnapshot };
+  };
+  groupCallToggleMic: {
+    input: { enabled: boolean };
+    output: { actorPtid: string; snapshot: GroupCallSnapshot };
+  };
+  groupCallToggleCamera: {
+    input: { enabled: boolean };
+    output: { actorPtid: string; snapshot: GroupCallSnapshot };
+  };
+  groupCallSnapshot: {
+    input: undefined;
+    output: { actorPtid: string; snapshot: GroupCallSnapshot };
+  };
+  groupCallMediaStats: {
+    input: undefined;
+    output: { actorPtid: string; media: import('@peers-touch/client-chat-core/group-call').GroupCallMediaStats };
   };
   'debug.snapshot.read': {
     input: undefined;

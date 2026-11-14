@@ -1,4 +1,4 @@
-import { useMemo, type CSSProperties } from 'react';
+import { useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Button, Empty, Icon, IconButton, Spin, Text, TextField } from '@peers-touch/ui';
 
 import {
@@ -7,6 +7,8 @@ import {
 import { useMobileI18n } from '../../app/mobileI18n';
 import { MobileAvatar } from '../../components/MobileAvatar';
 import { MobileNotice } from '../../components/MobileNotice';
+import { SearchKind, SearchZone } from '../../gen/proto/domain/search/search_pb';
+import { MobileSearchResult } from '../MobileSearchResult';
 import type { ChatActionState } from '../../features/chat/chatActionState';
 import type { ChatMessageCommandOutcome } from '../../features/chat/messageCommandState';
 import type {
@@ -29,6 +31,8 @@ import {
 import {
   MessageCommandStatus,
   MessageDeliveryStatus,
+  AttachmentDraftChip,
+  ChatMessageSelectionToolbar,
 } from './ChatMessagePresentation';
 import { ChatThreadPageContent } from './ChatPageContent';
 import {
@@ -36,11 +40,19 @@ import {
   useChatBottomOcclusion,
 } from './chatBottomOcclusion';
 import type { ConversationSettingsFeedback } from './conversationSettingsState';
+import { MobileChatComposer } from './MobileChatComposer';
+import { MobileGroupCallInvitationView, MobileGroupCallView } from '../../components/call/MobileGroupCallSurface';
+import { createIdleSnapshot, type GroupCallSnapshot } from '@peers-touch/client-chat-core/group-call';
+import { setChatSurfaceFixture } from '../../acceptance/chatSurfaceFixture';
 
 const FIXTURE_ATTACHMENT_NAME = 'launch-checklist.pdf';
 const FIXTURE_PEER_AVATAR = 'A';
 const FIXTURE_SEARCH_RESULT = 'The revised launch checklist is ready.';
 const FIXTURE_SELF_AVATAR = 'Y';
+
+/** One-second PCM tone served by the app, consistent with its self-only media CSP.
+ * Generate with scripts/generate-fixture-audio.py. Not recording/delivery proof. */
+const FIXTURE_VOICE_PREVIEW_URL = '/acceptance-voice-preview.wav';
 
 const LIST_SURFACES = new Set<ChatSurfaceFixtureId>([
   'chat.list',
@@ -140,22 +152,60 @@ const FIXTURE_PROFILES = {
 
 export function ChatAcceptanceSurface({
   surfaceId,
+  listHeader,
 }: {
   readonly surfaceId: ChatSurfaceFixtureId;
+  readonly listHeader?: ReactNode;
 }) {
   if (LIST_SURFACES.has(surfaceId)) {
-    return <ChatFixtureList surfaceId={surfaceId} />;
+    return <ChatFixtureList surfaceId={surfaceId} listHeader={listHeader} />;
   }
   if (OVERLAY_SURFACES.has(surfaceId)) {
     return <ChatFixtureOverlay surfaceId={surfaceId} />;
   }
+  if (surfaceId.startsWith('chat.group-call-')) return <ChatGroupCallFixture key={surfaceId} surfaceId={surfaceId} />;
   return <ChatFixtureThread surfaceId={surfaceId} />;
+}
+
+function ChatGroupCallFixture({ surfaceId }: { surfaceId: ChatSurfaceFixtureId }) {
+  const close = () => { setChatSurfaceFixture('chat.group-thread'); };
+  const [snapshot, setSnapshot] = useState<GroupCallSnapshot>(() => {
+    const state = surfaceId === 'chat.group-call-connecting' ? 'connecting'
+      : surfaceId === 'chat.group-call-reconnecting' ? 'reconnecting'
+        : surfaceId === 'chat.group-call-failed' ? 'failed'
+          : surfaceId === 'chat.group-call-leaving' ? 'leaving' : 'connected';
+    const video = surfaceId === 'chat.group-call-video';
+    return {
+      ...createIdleSnapshot(), state, groupUlid: 'acceptance-group', roomName: 'acceptance-room',
+      mediaKind: video ? 'video' : 'audio', localMicEnabled: true, localCameraEnabled: video,
+      startedAt: Date.now() - 84_000, errorCode: state === 'failed' ? 'network' : undefined,
+      participants: state === 'connected' || state === 'reconnecting' ? [
+        { participantId: 'fixture-self', actorPtid: 'member-self', isLocal: true, isMicEnabled: true, isCameraEnabled: video, isSpeaking: false, connectionQuality: 'excellent' },
+        { participantId: 'fixture-alice', actorPtid: 'member-alice', isLocal: false, isMicEnabled: true, isCameraEnabled: video, isSpeaking: true, connectionQuality: 'good' },
+        { participantId: 'fixture-morgan', actorPtid: 'member-morgan', isLocal: false, isMicEnabled: false, isCameraEnabled: false, isSpeaking: false, connectionQuality: 'poor' },
+      ] : [],
+    };
+  });
+  return <>
+    {surfaceId === 'chat.group-call-invitation' ? <MobileGroupCallInvitationView groupName={FIXTURE_GROUP.name}
+      onJoin={() => setChatSurfaceFixture('chat.group-call-audio')} onDismiss={close} />
+      : <MobileGroupCallView snapshot={snapshot} groupName={FIXTURE_GROUP.name}
+        identities={{ 'member-alice': { name: 'Alice Chen' }, 'member-morgan': { name: 'Morgan Lee' } }}
+        attachMedia={() => () => {}} onLeave={close}
+        onJoin={() => setChatSurfaceFixture('chat.group-call-audio')}
+        onMic={() => setSnapshot((current) => ({ ...current, localMicEnabled: !current.localMicEnabled,
+          participants: current.participants.map((participant) => participant.isLocal ? { ...participant, isMicEnabled: !current.localMicEnabled } : participant) }))}
+        onCamera={() => setSnapshot((current) => ({ ...current, localCameraEnabled: !current.localCameraEnabled,
+          participants: current.participants.map((participant) => participant.isLocal ? { ...participant, isCameraEnabled: !current.localCameraEnabled } : participant) }))} />}
+  </>;
 }
 
 function ChatFixtureList({
   surfaceId,
+  listHeader,
 }: {
   readonly surfaceId: ChatSurfaceFixtureId;
+  readonly listHeader?: ReactNode;
 }) {
   const { t } = useMobileI18n();
   const query = surfaceId === 'chat.list-search'
@@ -174,7 +224,7 @@ function ChatFixtureList({
       className="page-container chat-acceptance-fixture"
       data-product-surface={surfaceId}
     >
-      <header className="page-header">
+      {listHeader ?? <><header className="page-header">
         <h1 className="header-title">{t('mobile.chat.title')}</h1>
         <button
           type="button"
@@ -194,6 +244,7 @@ function ChatFixtureList({
           readOnly
         />
       </div>
+      </>}
       {surfaceId === 'chat.list-error' ? (
         <MobileNotice>
           {t('mobile.chat.renderFailed')}
@@ -293,6 +344,11 @@ function ChatFixtureThread({
   readonly overlayBackground?: boolean;
 }) {
   const { t } = useMobileI18n();
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const [draft, setDraft] = useState(surfaceId === 'chat.composer-keyboard' ? 'Meet at 4 PM?' : '');
+  const [selectionVisible, setSelectionVisible] = useState(surfaceId === 'chat.message-selection');
+  const [voicePreviewVisible, setVoicePreviewVisible] = useState(surfaceId === 'chat.voice-preview');
+  const [emojiOpen, setEmojiOpen] = useState(false);
   const attachmentState = surfaceId.startsWith('chat.attachment-');
   const voiceState = surfaceId.startsWith('chat.voice-');
   const activePanel = chatInputPanelState({
@@ -411,14 +467,17 @@ function ChatFixtureThread({
           {surfaceId === 'chat.thread-search-empty' ? (
             <Text tone="secondary">{t('mobile.chat.noMessageResults')}</Text>
           ) : (
-            <button type="button" className="message-search-result">
-              <Text truncate>{FIXTURE_SEARCH_RESULT}</Text>
-              <Text tone="secondary">10:42</Text>
-            </button>
+            <MobileSearchResult resourceId="message-planning" resourceKey="fixture:message-planning"
+              kind={SearchKind.MESSAGE} snippet={FIXTURE_SEARCH_RESULT} title=""
+              authorName="Alice Chen" conversationTitle="Launch planning" zone={SearchZone.DEVICE_E2EE}
+              createdAtUnixMs={(FIXTURE_MESSAGE.createdAt?.seconds ?? 0) * 1000}
+              selected={false} opening={false} onOpen={() => setChatSurfaceFixture('chat.direct-thread')} />
           )}
         </section>
       ) : null}
 
+      {selectionVisible && <ChatMessageSelectionToolbar count={2} busy={false}
+        onForward={() => undefined} onHide={() => undefined} onCancel={() => setSelectionVisible(false)} />}
       <section className="message-list chat-background-default" data-message-viewport>
         {isEmpty ? (
           <Empty description={t('mobile.chat.emptyThread')} />
@@ -435,11 +494,24 @@ function ChatFixtureThread({
         )}
       </section>
 
-      <footer className="message-composer chat-fixture-composer">
-        <div
-          className="message-composer-input-panels"
-          ref={bottom.inputPanelRef}
-        >
+      <MobileChatComposer
+        draft={draft} onDraftChange={setDraft} placeholder={t('mobile.chat.messagePlaceholder')}
+        inputRef={inputRef} composerRef={bottom.composerRef} inputPanelRef={bottom.inputPanelRef}
+        inputProps={{ 'data-chat-fixture-composer': true, readOnly: surfaceId !== 'chat.composer-keyboard' }}
+        keyboardOpen={surfaceId === 'chat.composer-keyboard'}
+        title={title} onSend={() => undefined} sending={false} toolsDisabled={false}
+        inputDisabled={false} editing={false}
+        initiallyExpanded={surfaceId === 'chat.composer-expanded'}
+        emojiOpen={emojiOpen} onEmojiOpenChange={setEmojiOpen} recentEmojis={[]} onEmojiUsed={() => undefined}
+        onChooseFile={() => undefined} onTakePhoto={() => undefined} onRecordVoice={() => undefined}
+        recording={surfaceId === 'chat.voice-recording' ? { seconds: 8, cancel: () => undefined, finish: () => undefined } : undefined}
+        attachments={<>
+          {voicePreviewVisible && <AttachmentDraftChip draft={{
+            id: 'voice-preview', filename: 'voice-note.wav', mimeType: 'audio/wav',
+            previewUrl: FIXTURE_VOICE_PREVIEW_URL,
+            attempt: 1, status: 'ready',
+            voiceNote: { durationMs: 1000, codec: 'audio/wav', waveform: [8, 15, 8] },
+          }} disabled={false} onRemove={() => setVoicePreviewVisible(false)} onRetry={() => undefined} />}
           {attachmentState ? (
             <div className="message-composer-panel attachment-draft-panel">
               <div className="attachment-draft-chip">
@@ -447,13 +519,9 @@ function ChatFixtureThread({
                 <span>{FIXTURE_ATTACHMENT_NAME}</span>
                 {surfaceId === 'chat.attachment-uploading' ? <Spin size="small" /> : null}
                 {surfaceId === 'chat.attachment-failed' ? (
-                  <button type="button" aria-label={t('common.action.retry')}>
-                    <Icon iconId="rotate-ccw" size={14} />
-                  </button>
+                  <IconButton actionId="chat.fixture.attachment.retry" iconId="rotate-ccw" density="comfortable" emphasis="quiet" label={t('common.action.retry')} />
                 ) : null}
-                <button type="button" aria-label={t('common.action.delete')}>
-                  <Icon iconId="close" size={14} />
-                </button>
+                <IconButton actionId="chat.fixture.attachment.remove" iconId="close" density="comfortable" emphasis="quiet" label={t('common.action.delete')} />
               </div>
               <Text tone="secondary">
                 {surfaceId === 'chat.attachment-uploading'
@@ -462,20 +530,6 @@ function ChatFixtureThread({
                     ? t('mobile.chat.attachmentUploadFailed')
                     : t('mobile.chat.attachmentMessage')}
               </Text>
-            </div>
-          ) : null}
-          {surfaceId === 'chat.voice-recording' ? (
-            <div className="message-composer-panel voice-recording-panel">
-              <span className="voice-recording-status">
-                <span className="voice-recording-dot" />
-                <Text>{t('chat.social.composer.recording', { seconds: 8 })}</Text>
-              </span>
-              <Button
-                actionId="chat.fixture.finish-record"
-                leading={<Icon iconId="square" size={14} />}
-              >
-                {t('chat.social.composer.finishRecord')}
-              </Button>
             </div>
           ) : null}
           {surfaceId === 'chat.voice-failed' ? (
@@ -489,55 +543,8 @@ function ChatFixtureThread({
               </Button>
             </MobileNotice>
           ) : null}
-        </div>
-        <div className="message-composer-surface" ref={bottom.composerRef}>
-          <span
-            className="chat-keyboard-context"
-            role="heading"
-            aria-level={1}
-          >
-            {title}
-          </span>
-          <div className="message-composer-row">
-            <button
-              type="button"
-              className="message-composer-tool"
-              aria-label={t('mobile.chat.composerMore')}
-            >
-              <Icon iconId="paperclip" size={18} />
-            </button>
-            <span className="message-composer-input-frame">
-              <TextField
-                className="message-composer-input"
-                data-chat-fixture-composer
-                data-product-surface={surfaceId === 'chat.composer-keyboard'
-                  ? 'chat.composer-keyboard'
-                  : undefined}
-                value={surfaceId === 'chat.composer-keyboard' ? 'Meet at 4 PM?' : ''}
-                readOnly={surfaceId !== 'chat.composer-keyboard'}
-                onChange={() => undefined}
-                autoFocus={surfaceId === 'chat.composer-keyboard'}
-                placeholder={t('mobile.chat.messagePlaceholder')}
-              />
-            </span>
-            <button
-              type="button"
-              className="message-composer-tool"
-              aria-label={t('mobile.chat.composerMore')}
-            >
-              <Icon iconId="plus" size={18} />
-            </button>
-            <IconButton
-              actionId="chat.fixture.send"
-              className="message-send-button"
-              iconId="send"
-              iconSize={16}
-              label={t('common.action.send')}
-              emphasis="primary"
-            />
-          </div>
-        </div>
-      </footer>
+        </>}
+      />
     </ChatThreadPageContent>
   );
 }
@@ -607,7 +614,7 @@ function ChatFixtureOverlay({
         currentUserPtid="member-self"
         canEdit
         commandBusy={false}
-        onClose={() => undefined}
+        onClose={() => setChatSurfaceFixture('chat.direct-thread')}
         onReply={() => undefined}
         onForward={() => undefined}
         onOpenThread={() => undefined}
@@ -659,7 +666,7 @@ function ChatFixtureOverlay({
       />
       <GroupManagementModal
         open={isGroupSurface}
-        onClose={() => undefined}
+        onClose={() => setChatSurfaceFixture('chat.group-thread')}
         conversation={FIXTURE_GROUP}
         members={FIXTURE_GROUP.members as readonly MessagingMemberAuthorityMemberProjection[]}
         myRole={surfaceId === 'chat.group-role-denied'

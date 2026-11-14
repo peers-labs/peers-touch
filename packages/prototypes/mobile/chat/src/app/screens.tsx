@@ -8,9 +8,9 @@
  * place, a primary plus, the 最新/热门 chip). Search never navigates: the
  * icon expands into the same row and filters the live list locally.
  */
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import {
-  Alert, Avatar, AvatarGroup, BottomSheet, Button, Dialog, Empty, Field, FilePicker, GroupAvatar,
+  Alert, Avatar, AvatarGroup, BottomSheet, Button, Dialog, Empty, Field, FieldFrame, FilePicker, GroupAvatar,
   Icon, IconButton, ListRow, ListSection, Menu, MobileNavBar, Popover, Segmented, Select,
   Spin, Switch, Tag, TextArea, TextField,
 } from '@peers-touch/ui';
@@ -38,7 +38,7 @@ import {
 import { AccessGateView } from './AccessGateView';
 import { nextLocalId, type Action, type CircleDraft } from './state';
 import type {
-  AppState, AudienceKind, ChatMessage, Circle, Conversation, Group, Moment, Person,
+  AppState, AudienceKind, ChatMessage, ChatPane, Circle, Conversation, Group, Moment, Person,
 } from './model';
 import { currentStation, ME, messagesFor, PROFILE } from './model';
 
@@ -78,12 +78,13 @@ function PressRow({ onClick, icon, label, description, control, ariaLabel }: {
   );
 }
 
-/* ── Chats (messages tab; contacts live in their own real tab) ────────── */
+/* ── Messages (chats + contacts, one shared header and action menu) ──── */
 
 export function ChatsScreen({ state, dispatch }: { state: AppState; dispatch: Dispatch }) {
   const { t } = useT();
+  const pane = state.chatPane;
   // In-place rail search — the icon morphs into a field occupying this header
-  // row, the list filters live below, and closing restores the title. No page.
+  // row, the selected pane filters below, and closing restores its segments.
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
   // The + menu opens REAL flows (add contact / start group), never the search.
@@ -99,30 +100,44 @@ export function ChatsScreen({ state, dispatch }: { state: AppState; dispatch: Di
   const visibleSessions = q
     ? sortedSessions.filter(c => [c.name, c.preview].join(' ').toLowerCase().includes(q))
     : sortedSessions;
+  const visibleGroups = q
+    ? state.groups.filter(g => [g.name, ...g.memberTiles.map(m => m.name)].join(' ').toLowerCase().includes(q))
+    : state.groups;
+  const visiblePeople = q
+    ? state.people.filter(p => [p.name, p.role].join(' ').toLowerCase().includes(q))
+    : state.people;
 
   return (
-    <div className="ma-page">
+    <div className="ma-page" data-chat-pane={pane}>
       <header className="ma-rail-header" data-rail-search={searchOpen ? 'active' : 'idle'}>
         {searchOpen ? (
           <>
             <span className="ma-rail-search">
-              <TextField density="compact" leading={<Icon iconId="search" size={14} />} autoFocus
-                aria-label={t('rail.search')} placeholder={t('mobile.search.chats')}
+              <TextField appearance="search" reveal density="comfortable" leading={<Icon iconId="search" size={18} />}
+                aria-label={t('rail.search')} placeholder={pane === 'contacts' ? t('mobile.search.contacts') : t('mobile.search.chats')}
                 value={query} onValueChange={setQuery}
                 onKeyDown={event => { if (event.key === 'Escape') closeSearch(); }} />
             </span>
-            <Button actionId="ma.rail-search-close" emphasis="quiet" density="compact"
+            <Button actionId="ma.rail-search-close" emphasis="quiet" density="comfortable"
               className="ma-search-cancel" label={t('common.cancel')} onActivate={closeSearch} />
           </>
         ) : (
           <>
-            <h1 className="ma-rail-title">{t('tab.chats')}</h1>
+            <div className="ma-rail-tabs">
+              <Segmented<ChatPane> className="ma-chat-subnav" label={t('mobile.tabScope')}
+                density="comfortable" value={pane}
+                options={[
+                  { value: 'chats', label: <span className="ma-subnav-label"><Icon iconId="message-circle" size={13} />{t('tab.chats')}</span> },
+                  { value: 'contacts', label: <span className="ma-subnav-label"><Icon iconId="users" size={13} />{t('tab.contacts')}</span> },
+                ]}
+                onValueChange={value => { closeSearch(); dispatch({ type: 'chats/pane', pane: value ?? 'chats' }); }} />
+            </div>
             <IconButton actionId="ma.rail-search" iconId="search" iconSize={17}
               className="ma-rail-icon-tile" label={t('rail.search')} emphasis="quiet"
               onActivate={() => setSearchOpen(true)} />
             <Menu placement="bottom" actions={[
               { id: 'ma.new-person', label: t('mobile.newContact'), leading: <Icon iconId="user-plus" size={14} />,
-                onActivate: () => dispatch({ type: 'chats/sheet', sheet: 'add-contact' }) },
+                onActivate: () => dispatch({ type: 'navigate', route: { tab: 'chats', findPeople: true } }) },
               { id: 'ma.new-group', label: t('mobile.newGroup'), leading: <Icon iconId="users" size={14} />,
                 onActivate: () => dispatch({ type: 'chats/sheet', sheet: 'start-group' }) },
             ]}>
@@ -133,125 +148,74 @@ export function ChatsScreen({ state, dispatch }: { state: AppState; dispatch: Di
         )}
       </header>
 
-      <ul className="ma-conv-list" data-session-count={visibleSessions.length}>
-        {visibleSessions.map(c => (
-          <SessionRow key={c.id} conversation={c} dispatch={dispatch} onPick={closeSearch} />
-        ))}
-        {visibleSessions.length === 0 && <li className="ma-list-empty"><Empty description={t('session.empty')} /></li>}
-      </ul>
+      {pane === 'chats' ? (
+        <ul className="ma-conv-list" data-session-count={visibleSessions.length}>
+          {visibleSessions.map(c => (
+            <SessionRow key={c.id} conversation={c} dispatch={dispatch} onPick={closeSearch} />
+          ))}
+          {visibleSessions.length === 0 && <li className="ma-list-empty"><Empty description={t('session.empty')} /></li>}
+        </ul>
+      ) : (
+        <ContactsPane groups={visibleGroups} people={visiblePeople} dispatch={dispatch} />
+      )}
 
-      <AddContactSheet open={state.chatsSheet === 'add-contact'} state={state} dispatch={dispatch}
-        onClose={closeSheet} onAdded={closeSheet} />
       <StartGroupSheet open={state.chatsSheet === 'start-group'} state={state} dispatch={dispatch}
         onClose={closeSheet} />
     </div>
   );
 }
 
-/** Contacts is its OWN bottom tab in the real mobile shell (ADR-4): groups and
-    friends with in-place search and the add-contact / create-group sheets. */
-export function ContactsScreen({ state, dispatch }: { state: AppState; dispatch: Dispatch }) {
+/** Dedicated discovery page; directory and request outcomes are prototype fixtures. */
+export function FindPeopleScreen({ state, dispatch }: { state: AppState; dispatch: Dispatch }) {
   const { t } = useT();
-  const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const closeSheet = () => dispatch({ type: 'chats/sheet', sheet: 'none' });
-  const q = query.trim().toLowerCase();
-  const closeSearch = () => { setSearchOpen(false); setQuery(''); };
-
-  const visibleGroups = q
-    ? state.groups.filter(g => [g.name, ...g.memberTiles.map(m => m.name)].join(' ').toLowerCase().includes(q))
-    : state.groups;
-  const visiblePeople = q
-    ? state.people.filter(p => [p.name, p.role].join(' ').toLowerCase().includes(q))
-    : state.people;
-
-  return (
-    <div className="ma-page">
-      <header className="ma-rail-header" data-rail-search={searchOpen ? 'active' : 'idle'}>
-        {searchOpen ? (
-          <>
-            <span className="ma-rail-search">
-              <TextField density="compact" leading={<Icon iconId="search" size={14} />} autoFocus
-                aria-label={t('rail.search')} placeholder={t('mobile.search.contacts')}
-                value={query} onValueChange={setQuery}
-                onKeyDown={event => { if (event.key === 'Escape') closeSearch(); }} />
-            </span>
-            <Button actionId="ma.contacts-search-close" emphasis="quiet" density="compact"
-              className="ma-search-cancel" label={t('common.cancel')} onActivate={closeSearch} />
-          </>
-        ) : (
-          <>
-            <h1 className="ma-rail-title">{t('tab.contacts')}</h1>
-            <IconButton actionId="ma.contacts-search" iconId="search" iconSize={17}
-              className="ma-rail-icon-tile" label={t('rail.search')} emphasis="quiet"
-              onActivate={() => setSearchOpen(true)} />
-            <Menu placement="bottom" actions={[
-              { id: 'ma.contacts-new-person', label: t('mobile.newContact'), leading: <Icon iconId="user-plus" size={14} />,
-                onActivate: () => dispatch({ type: 'chats/sheet', sheet: 'add-contact' }) },
-              { id: 'ma.contacts-new-group', label: t('mobile.newGroup'), leading: <Icon iconId="users" size={14} />,
-                onActivate: () => dispatch({ type: 'chats/sheet', sheet: 'start-group' }) },
-            ]}>
-              <IconButton actionId="ma.contacts-new-menu" iconId="plus" iconSize={19}
-                className="ma-rail-icon-tile" label={t('mobile.newChatMenu')} emphasis="quiet" />
-            </Menu>
-          </>
-        )}
-      </header>
-
-      <ContactsPane groups={visibleGroups} people={visiblePeople} dispatch={dispatch} />
-
-      <AddContactSheet open={state.chatsSheet === 'add-contact'} state={state} dispatch={dispatch}
-        onClose={closeSheet} onAdded={closeSheet} />
-      <StartGroupSheet open={state.chatsSheet === 'start-group'} state={state} dispatch={dispatch}
-        onClose={closeSheet} />
-    </div>
-  );
-}
-
-/** Add a contact by name (local prototype; no federation round-trip). Adds to
-    the people catalog; "添加并发消息" also opens the new 1:1 thread. */
-function AddContactSheet({ open, state, dispatch, onClose, onAdded }: {
-  open: boolean; state: AppState; dispatch: Dispatch; onClose: () => void;
-  onAdded?: (personId: string) => void;
-}) {
-  const { t } = useT();
-  const [name, setName] = useState('');
-  const [role, setRole] = useState('');
-  const trimmed = name.trim();
-  const duplicate = Boolean(trimmed) && state.people.some(p => p.name === trimmed);
-  const blocked = !trimmed || duplicate
-    ? duplicate ? t('mobile.contact.duplicate') : t('mobile.contact.nameRequired')
-    : undefined;
-  const reset = () => { setName(''); setRole(''); };
-
-  const build = () => {
-    const id = `local-person-${nextLocalId()}`;
-    dispatch({ type: 'contact/add', id, name: trimmed, role: role.trim() || undefined });
-    return id;
-  };
-
-  return (
-    <BottomSheet open={open} title={t('mobile.newContact')} onDismiss={() => { reset(); onClose(); }}>
-      <div className="ma-form-stack">
-        <Field label={t('mobile.contact.nickname')}><TextField aria-label={t('mobile.contact.nicknameAria')} placeholder={t('mobile.contact.nicknamePh')} value={name}
-          onValueChange={setName} onEnter={event => event.preventDefault()} /></Field>
-        <Field label={t('mobile.contact.note')}><TextField aria-label={t('mobile.contact.noteAria')} placeholder={t('mobile.contact.notePh')} value={role}
-          onValueChange={setRole} /></Field>
-        <div className="ma-form-foot">
-          <Button actionId="contact.add.cancel" emphasis="quiet" onActivate={() => { reset(); onClose(); }}>{t('common.cancel')}</Button>
-          <Button actionId="contact.add.chat" label={t('mobile.addAndChat')} emphasis="secondary" density="compact"
-            availability={blocked ? { kind: 'disabled', reason: blocked } : undefined}
-            onActivate={() => {
-              const id = build(); reset(); onClose();
-              dispatch({ type: 'navigate', route: { tab: 'contacts', contactDetail: { kind: 'person', id } } });
-            }} />
-          <Button actionId="contact.add.confirm" label={t('mobile.add')} emphasis="primary" density="compact"
-            availability={blocked ? { kind: 'disabled', reason: blocked } : undefined}
-            onActivate={() => { const id = build(); reset(); onAdded?.(id); }} />
-        </div>
+  const [submitted, setSubmitted] = useState('');
+  const [scope, setScope] = useState('station');
+  const [requested, setRequested] = useState(false);
+  const candidate: Person = { id: 'directory-sora', name: 'Sora Chen', role: '@sora', tone: '#7a8c99' };
+  const directory = [...state.people.filter(p => p.id !== candidate.id), candidate];
+  const results = submitted ? directory.filter(p =>
+    `${p.name} ${p.role}`.toLowerCase().includes(submitted.toLowerCase())) : [];
+  const search = () => setSubmitted(query.trim());
+  return <div className="ma-page ma-detail ma-find-people" data-find-people-page>
+    <MobileNavBar title={t('mobile.findPeople.title')} backLabel={t('common.back')}
+      onBack={() => dispatch({ type: 'back' })} />
+    <div className="ma-find-people-controls">
+      <div className="ma-find-people-search">
+        <TextField appearance="search" density="comfortable" value={query} clearable
+          aria-label={t('mobile.findPeople.placeholder')} placeholder={t('mobile.findPeople.placeholder')}
+          leading={<Icon iconId="search" size={18} />} enterKeyHint="search"
+          onValueChange={value => { setQuery(value); setSubmitted(''); }}
+          onClear={() => { setQuery(''); setSubmitted(''); }} onEnter={search} />
+        <IconButton actionId="contact.search" iconId="search" density="comfortable"
+          label={t('rail.search')} onActivate={search}
+          availability={!query.trim() ? { kind: 'disabled', reason: t('mobile.findPeople.placeholder') } : undefined} />
       </div>
-    </BottomSheet>
-  );
+      <Select<string> label={t('mobile.findPeople.scope')} value={scope}
+        options={[{ value: 'station', label: t('mobile.findPeople.station') },
+          { value: 'federation', label: 'Product Federation' }]}
+        onValueChange={value => { setScope(typeof value === 'string' ? value : 'station'); setSubmitted(''); }} />
+    </div>
+    <div className="ma-find-people-results">
+      {results.map(person => {
+        const existing = state.people.some(p => p.id === person.id);
+        const label = requested && person.id === candidate.id ? t('mobile.findPeople.sent')
+          : existing ? t('mobile.contact.duplicate') : t('mobile.findPeople.request');
+        return <div className="ma-find-people-row" key={person.id}>
+          <PersonAvatar name={person.name} tone={person.tone} size={44} />
+          <span className="ma-find-people-copy"><strong>{person.name}</strong><span>{person.role}</span></span>
+          <Button actionId="contact.add.confirm" emphasis="secondary" density="comfortable"
+            availability={existing ? { kind: 'disabled', reason: label } : undefined}
+            onActivate={() => {
+              dispatch({ type: 'contact/add', id: person.id, name: person.name, role: person.role });
+              setRequested(true);
+            }}>{label}</Button>
+        </div>;
+      })}
+      {results.length === 0 ? <Empty description={t(submitted
+        ? 'session.empty' : 'mobile.findPeople.hint')} /> : null}
+    </div>
+  </div>;
 }
 
 /** Start a group chat: name it (optional) and pick existing people; the
@@ -367,7 +331,7 @@ function ContactsPane({ groups, people, dispatch }: {
           {groups.map(g => (
             <li key={g.id} className="ma-contact-group">
               <button type="button" className="ma-contact-row"
-                onClick={() => dispatch({ type: 'navigate', route: { tab: 'contacts', contactDetail: { kind: 'group', id: g.id } } })}>
+                onClick={() => dispatch({ type: 'navigate', route: { tab: 'chats', contactDetail: { kind: 'group', id: g.id } } })}>
                 <GroupAvatar name={g.name} members={g.memberTiles} size={42} />
                 <span className="ma-conv-meta">
                   <span className="ma-conv-name-line"><strong>{g.name}</strong></span>
@@ -384,7 +348,7 @@ function ContactsPane({ groups, people, dispatch }: {
           {people.map(p => (
             <li key={p.id} className="ma-contact-friend">
               <button type="button" className="ma-contact-row"
-                onClick={() => dispatch({ type: 'navigate', route: { tab: 'contacts', contactDetail: { kind: 'person', id: p.id } } })}>
+                onClick={() => dispatch({ type: 'navigate', route: { tab: 'chats', contactDetail: { kind: 'person', id: p.id } } })}>
                 <PersonAvatar name={p.name} size={42} tone={p.tone} online={p.online} />
                 <span className="ma-conv-meta">
                   <span className="ma-conv-name-line"><strong>{p.name}</strong></span>
@@ -462,37 +426,15 @@ function ThreadComposer({ conversation, dispatch, replyTarget, editTarget, onCle
     reason => setVoiceError(reason),
   );
 
-  // Entering reply/edit from the long-press sheet prefills focus; the input is
-  // an uncontrolled-to-state bridge, so sync once per target switch.
+  // Prefill a changed target without activating the input or software keyboard.
   useEffect(() => {
     setDraft(editTarget?.text ?? '');
-    if (editTarget || replyTarget) requestAnimationFrame(() => textareaRef.current?.focus());
   }, [editTarget, replyTarget]);
 
   const canSend = draft.trim().length > 0 || images.length > 0;
 
-  // Auto-grow mirrors the desktop composer one-for-one: the textarea tracks
-  // its scrollHeight, clamped between a single-line floor and a row cap.
-  // Expanding raises BOTH floor and cap so an empty composer still enlarges;
-  // toggling only a max-height would leave the native rows=1 box stuck.
   const minRows = expanded ? 4 : 1;
   const maxRows = expanded ? 10 : 4;
-  useLayoutEffect(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    const cs = getComputedStyle(el);
-    const lineHeight = parseFloat(cs.lineHeight) || 20;
-    const blockPad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
-    const minH = minRows * lineHeight + blockPad;
-    const maxH = maxRows * lineHeight + blockPad;
-    // Drive the primitive's height through a CSS variable instead of direct
-    // visual style mutation (primitive-layer rule): reset to auto to measure,
-    // then publish the clamped row height for .ma-composer-input to consume.
-    el.style.setProperty('--ma-composer-height', 'auto');
-    const next = Math.min(Math.max(el.scrollHeight, minH), maxH);
-    el.style.setProperty('--ma-composer-height', `${next}px`);
-    el.style.setProperty('--ma-composer-overflow', el.scrollHeight > maxH + 1 ? 'auto' : 'hidden');
-  }, [draft, expanded, minRows, maxRows]);
 
   const insertEmoji = (emoji: string) => {
     const el = textareaRef.current;
@@ -500,7 +442,6 @@ function ThreadComposer({ conversation, dispatch, replyTarget, editTarget, onCle
     const end = el?.selectionEnd ?? draft.length;
     setDraft(`${draft.slice(0, start)}${emoji}${draft.slice(end)}`);
     requestAnimationFrame(() => {
-      el?.focus();
       el?.setSelectionRange(start + emoji.length, start + emoji.length);
     });
   };
@@ -613,7 +554,7 @@ function ThreadComposer({ conversation, dispatch, replyTarget, editTarget, onCle
 
       {/* One framed composer, same anatomy as desktop (.sk-composer): the
           rounded host owns the border; tools/input/send all live inside. */}
-      <div className="ma-composer" data-composer-mode={editTarget ? 'editing' : 'compose'}>
+      <FieldFrame appearance="composer" className="ma-composer" data-composer-mode={editTarget ? 'editing' : 'compose'}>
         <span className="ma-composer-tools">
           <Popover placement="top" content={emojiPanel}>
             <IconButton actionId="ma.chat.emoji" iconId="smile" label={t('composer.emoji')}
@@ -645,7 +586,7 @@ function ThreadComposer({ conversation, dispatch, replyTarget, editTarget, onCle
         <span className="ma-composer-input-wrap">
           <TextArea
             ref={el => { textareaRef.current = el; }}
-            framing="embedded" rows={1}
+            framing="embedded" rows={1} autoGrow minimumRows={minRows} maximumRows={maxRows} density="comfortable"
             className="ma-composer-input"
             aria-label={editTarget ? t('composer.editBanner') : t('mobile.inputAria')}
             placeholder={editTarget ? t('mobile.editPh') : t('mobile.sendPh')} value={draft}
@@ -669,7 +610,7 @@ function ThreadComposer({ conversation, dispatch, replyTarget, editTarget, onCle
           emphasis={canSend ? 'primary' : 'quiet'} iconSize={17}
           availability={canSend ? undefined : { kind: 'disabled', reason: t('mobile.sendReason') }}
           onActivate={send} />
-      </div>
+      </FieldFrame>
 
       {/* Native pickers. The unrestricted input opens the OS document/photo
       chooser (which offers Files + Camera on mobile); the capture input goes
@@ -1276,13 +1217,13 @@ export function MomentsScreen({ state, dispatch }: { state: AppState; dispatch: 
         {searchActive ? (
           <>
             <span className="ma-subbar-search">
-              <TextField className="ma-subbar-search-field" density="compact" autoFocus
+              <TextField appearance="search" reveal className="ma-subbar-search-field" density="comfortable"
                 aria-label={TAB_SEARCH_PLACEHOLDER} placeholder={TAB_SEARCH_PLACEHOLDER}
                 value={query} onValueChange={setQuery}
                 leading={<Icon iconId="search" size={15} />}
                 onKeyDown={event => { if (event.key === 'Escape') closeSearch(); }} />
             </span>
-            <Button actionId="ma.subbar-search-close" emphasis="quiet" density="compact"
+            <Button actionId="ma.subbar-search-close" emphasis="quiet" density="comfortable"
               className="ma-search-cancel" label={t('common.cancel')} onActivate={closeSearch} />
           </>
         ) : (
@@ -1507,7 +1448,7 @@ function ComposerSheet({ state, dispatch }: { state: AppState; dispatch: Dispatc
             rail (left, opposite the counter) — never a standalone pill row. */}
         <TextArea aria-label="动态内容" value={state.composerDraft}
           onChange={e => dispatch({ type: 'composer/draft', value: e.target.value })}
-          minimumRows={4} autoFocus maxLength={280} characterCount
+          minimumRows={4} maxLength={280} characterCount
           placeholder="分享你身边正在发生的连接……"
           leadingAccessory={<>
             <FilePicker iconOnly iconId="image-plus"
@@ -1627,7 +1568,6 @@ function MomentCard({ moment, state, dispatch }: { moment: Moment; state: AppSta
     } else {
       if (!commentsOpen) dispatch({ type: 'moment/toggleComments', id: moment.id });
       setComposerOpen(true);
-      requestAnimationFrame(() => commentInputRef.current?.focus());
     }
   };
   const chosen = new Set(moment.viewerReactions ?? []);
@@ -1764,7 +1704,6 @@ function MomentCard({ moment, state, dispatch }: { moment: Moment; state: AppSta
                 onActivate={() => {
                   if (!draft.trim()) return;
                   dispatch({ type: 'moment/addComment', id: moment.id, text: draft });
-                  requestAnimationFrame(() => commentInputRef.current?.focus());
                 }} />
             </div>
           )}
@@ -1841,7 +1780,7 @@ export function GroupDetailScreen({ group, state, dispatch }: { group: Group; st
         <ul className="ma-flat-list">
           {previewMembers.map(p => (
             <li key={p.id}><PressRow ariaLabel={p.name}
-              onClick={() => dispatch({ type: 'navigate', route: { tab: 'contacts', contactDetail: { kind: 'person', id: p.id } } })}
+              onClick={() => dispatch({ type: 'navigate', route: { tab: 'chats', contactDetail: { kind: 'person', id: p.id } } })}
               icon={<PersonAvatar name={p.name} size={40} tone={p.tone} online={p.online} />}
               label={<span className="ma-row-title">{p.name}</span>}
               description={p.role}
@@ -2042,7 +1981,7 @@ function StationAddDialog({ open, idPrefix, existingHandles, onClose, onSubmit }
           ? { state: 'invalid', message: duplicate ? t('station.add.duplicate') : t('station.add.invalid') }
           : { state: 'unchecked' }}>
           <TextField aria-label={t('station.add.inputLabel')} placeholder={t('station.add.placeholder')} value={url}
-            aria-invalid={invalid || duplicate || undefined} autoFocus autoCapitalize="none" autoCorrect="off"
+            aria-invalid={invalid || duplicate || undefined} autoCapitalize="none" autoCorrect="off"
             spellCheck={false} inputMode="url"
             onValueChange={setUrl} onEnter={event => { event.preventDefault(); submit(); }} />
         </Field>

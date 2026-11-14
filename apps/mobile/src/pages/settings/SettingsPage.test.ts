@@ -19,17 +19,14 @@ const devicePreferencesSource = readFileSync(
 );
 
 describe('Settings functional surface contract', () => {
-  it('uses canonical relationship, Group, and Moments projections for counts', () => {
-    expect(pageSource).toContain(
-      'useSocialStore((state) => state.messagingConversations.reduce',
-    );
-    expect(pageSource).toContain(
-      'const momentsCount = visibleProfile?.statusesCount ?? unavailableLabel',
-    );
+  it('uses canonical profile statistics on the confirmed identity hero', () => {
+    expect(pageSource).toContain('posts: visibleProfile?.statusesCount ?? null');
+    expect(pageSource).toContain('following: visibleProfile?.followingCount ?? null');
+    expect(pageSource).toContain('followers: visibleProfile?.followersCount ?? null');
     expect(pageSource).toContain(
       'const visibleProfile = controller.profileAvailable ? currentUserProfile : null',
     );
-    expect(pageSource).toContain('projectAcceptedContacts(');
+    expect(pageSource).toContain('<MeIdentityHeader');
     expect(pageSource).not.toContain('state.friendshipStatus');
     expect(pageSource).not.toContain('const groupCount = 0');
     expect(pageSource).not.toContain('const momentsCount = 0');
@@ -146,13 +143,13 @@ describe('Settings functional surface contract', () => {
   it('routes every user-requested Settings exit through save, discard, or stay', () => {
     expect(pageSource).toContain('registerSettingsExitGuard(requestExit)');
     expect(pageSource).toContain(
-      'const settingsDirty = selectedOwner?.dirty ?? false',
+      'const settingsDirty = Boolean(selectedOwner?.dirty || image.draft)',
     );
     expect(pageSource).toContain('save: controller.saveProfile');
     expect(pageSource).toContain('save: controller.saveDevicePreferences');
     expect(pageSource).toContain("case 'notifications':");
     expect(pageSource).toContain(
-      'const saved = selectedOwner ? await selectedOwner.save() : true',
+      'const saved = savedImage && (selectedOwner ? await selectedOwner.save() : true)',
     );
     expect(pageSource).not.toContain('saveAllSettings');
     expect(pageSource).not.toContain('aggregateSaveStatus');
@@ -160,9 +157,9 @@ describe('Settings functional surface contract', () => {
     expect(pageSource).toContain("t('mobile.settings.exit.save')");
     expect(pageSource).toContain("t('mobile.settings.exit.discard')");
     expect(pageSource).toContain("t('mobile.settings.exit.stay')");
-    expect(pageSource).toContain('onClick={() => requestExit(onBack)}');
+    expect(pageSource).toContain('onActivate={() => requestExit(onBack)}');
     expect(pageSource).toContain('onChangeStation={async () => requestExit(onChangeStation)}');
-    expect(pageSource).toContain('onClick={requestLogout}');
+    expect(pageSource).toContain('onActivate={requestLogout}');
   });
 
 });

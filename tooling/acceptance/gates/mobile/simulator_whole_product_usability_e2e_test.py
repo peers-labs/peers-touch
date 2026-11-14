@@ -14,6 +14,7 @@ from typing import Any
 from unittest.mock import patch
 
 from tooling.acceptance.core import (
+    ArtifactSession,
     DriverError,
     EvidenceManifestInvalid,
     EvidenceStore,
@@ -23,8 +24,10 @@ from tooling.acceptance.core import (
 )
 from tooling.acceptance.gates.mobile.simulator_whole_product_usability_e2e import (
     AUTHENTICATED_SURFACE_SETS,
+    CHAT_COMPOSER_FOCUS_SCRIPT,
     CONTRACT_ID,
     ENTRY_PAGE_CONTROL_SURFACES,
+    CHAT_PAGE_CONTROL_SURFACES,
     GATE_ID,
     SURFACE_AUDIT_SCRIPT,
     TEXT_SIZE_SCRIPT,
@@ -57,7 +60,7 @@ REQUIRED_SURFACE_IDS = {
     ),
     "shell": frozenset(
         """
-        shell.chat-tab shell.moments-tab shell.contacts-tab shell.settings-tab
+        shell.chat-tab shell.moments-tab shell.contacts-pane shell.settings-tab
         """.split()
     ),
     "recovery": frozenset(
@@ -77,6 +80,7 @@ REQUIRED_SURFACE_IDS = {
         chat.direct-thread chat.group-thread chat.thread-empty
         chat.history-loading chat.history-error chat.thread-search
         chat.thread-search-empty chat.thread-search-error chat.composer-keyboard
+        chat.composer-expanded chat.voice-preview chat.message-selection
         chat.attachment-ready chat.attachment-uploading chat.attachment-failed
         chat.voice-recording chat.voice-failed chat.message-pending
         chat.message-failed chat.message-uncertain chat.message-actions
@@ -84,6 +88,9 @@ REQUIRED_SURFACE_IDS = {
         chat.conversation-settings-saved chat.conversation-settings-failed
         chat.destructive-confirm chat.forward-picker chat.forward-pending
         chat.forward-failed chat.group-management chat.group-role-denied
+        chat.group-call-invitation chat.group-call-connecting chat.group-call-audio
+        chat.group-call-video chat.group-call-reconnecting chat.group-call-failed
+        chat.group-call-leaving
         """.split()
     ),
     "contacts": frozenset(
@@ -91,7 +98,7 @@ REQUIRED_SURFACE_IDS = {
         contacts.list contacts.list-loading contacts.list-empty
         contacts.list-error contacts.local-search contacts.local-search-empty
         contacts.requests contacts.request-pending contacts.request-unknown
-        contacts.request-failed contacts.profile contacts.profile-unavailable
+        contacts.request-failed contacts.profile contacts.remark contacts.profile-unavailable
         contacts.block-confirm contacts.add-friend contacts.add-friend-empty
         contacts.search-loading contacts.search-unavailable
         contacts.search-duplicate contacts.search-pending contacts.search-failed
@@ -119,7 +126,7 @@ REQUIRED_SURFACE_IDS = {
     "settings": frozenset(
         """
         settings.summary settings.summary-loading settings.summary-error
-        settings.account-info settings.notifications settings.privacy-security
+        settings.account-info settings.credentials settings.notifications settings.privacy-security
         settings.safety-number settings.blocked-users settings.chat-settings
         settings.chat-background settings.station-connection settings.encryption
         settings.language settings.about settings.detail-dirty
@@ -146,6 +153,7 @@ class _ShellDriverSession:
         )
         self.orientation = "PORTRAIT"
         self.route_id = "tab:chat"
+        self.message_pane = "chats"
         self.current_context = "WEBVIEW_com.peers.touch.mobile"
         self.clicked: list[str] = []
         self.lifecycle_actions: list[str] = []
@@ -197,6 +205,8 @@ class _ShellDriverSession:
         route_match = re.search(r'data-route-id="([^"]+)"', element_ref)
         if route_match:
             self.route_id = route_match.group(1)
+        if 'data-message-pane-target="contacts"' in element_ref:
+            self.message_pane = "contacts"
 
     def call_action(
         self,
@@ -228,7 +238,7 @@ class _ShellDriverSession:
             if overlapping:
                 raise DriverError("Acceptance surface fixtures overlap")
         if action == "navigation.snapshot":
-            return {"primaryRouteId": self.route_id}
+            return {"primaryRouteId": self.route_id, "messagePane": self.message_pane}
         if action == "navigation.apply":
             self.route_id = str((payload or {})["routeId"])
             self.navigation_actions.append(self.route_id)
@@ -276,7 +286,7 @@ class _ShellDriverSession:
 
     def get_page_source(self) -> str:
         return (
-            '<AppiumAUT><XCUIElementTypeTextField x="20" y="420" '
+            '<AppiumAUT><XCUIElementTypeTextView x="20" y="420" '
             'width="300" height="44" /><XCUIElementTypeKeyboard '
             'x="0" y="500" width="393" height="352" /></AppiumAUT>'
         )
@@ -453,6 +463,216 @@ def valid_surface_evidence(
 
 
 class WholeProductSurfaceContractTests(unittest.TestCase):
+    def test_debug_native_journey_requires_scroll_close_and_restored_product(self) -> None:
+        for defect in (None, "scroll", "close", "inert"):
+            with self.subTest(defect=defect):
+                state = SimpleNamespace(open=False, scroll_top=0)
+                session = unittest.mock.Mock()
+                artifacts = unittest.mock.Mock(spec=ArtifactSession)
+                session.find_element.side_effect = lambda using, value: value
+                session.get_page_source.return_value = (
+                    '<AppiumAUT><XCUIElementTypeWebView visible="true" '
+                    'x="0" y="0" width="393" height="852"/></AppiumAUT>'
+                )
+                session.get_webview_source.return_value = "<html><body>Diagnostics</body></html>"
+                session.screenshot_bytes.return_value = png_bytes(393, 852)
+
+                def click(element: str) -> None:
+                    if element == "Debug":
+                        state.open = True
+                    elif element == "Close" and defect != "close":
+                        state.open = False
+
+                def execute(script: str, *args: Any) -> Any:
+                    if script == "mobile: dragFromToForDuration":
+                        if defect != "scroll":
+                            state.scroll_top = 400
+                        return None
+                    if script.startswith("return !!document.querySelector"):
+                        return state.open
+                    if "const drawer=document.querySelector" in script:
+                        return {
+                            "open": state.open, "triggerLabel": "Debug", "closeLabel": "Close",
+                            "scrollTop": state.scroll_top, "scrollHeight": 2000,
+                            "scroll": {"x": 10, "y": 200, "width": 373, "height": 500} if state.open else None,
+                            "close": {"x": 320, "y": 130, "width": 44, "height": 44} if state.open else None,
+                            "viewport": {"width": 393, "height": 852},
+                            "originRetained": True,
+                            "inert": state.open or defect == "inert",
+                        }
+                    return None
+
+                session.click_element.side_effect = click
+                session.execute_script.side_effect = execute
+                gate = SimulatorWholeProductUsabilityGate(foreground_probe=lambda: {})
+                with (
+                    patch.object(gate, "_wait_for_surface"),
+                    patch("tooling.acceptance.gates.mobile.simulator_whole_product_usability_e2e.time.monotonic",
+                          side_effect=[0.0, 6.0]),
+                ):
+                    if defect is None:
+                        gate._exercise_native_debug_controls(artifacts, session)
+                        result = next(
+                            call.args[1] for call in artifacts.write_json.call_args_list
+                            if call.args[0] == "mobile-whole-product/debug-controls/result.json"
+                        )
+                        self.assertGreater(result["observations"]["scrolled"]["scrollTop"], 0)
+                        self.assertFalse(result["observations"]["closed"]["open"])
+                        self.assertTrue(result["observations"]["closed"]["originRetained"])
+                    else:
+                        with self.assertRaisesRegex(GateError, "Mobile Debug"):
+                            gate._exercise_native_debug_controls(artifacts, session)
+                        self.assertFalse(any(
+                            call.args[0] == "mobile-whole-product/debug-controls/result.json"
+                            for call in artifacts.write_json.call_args_list
+                        ))
+
+    def test_primary_continuity_rejects_remount_scroll_jump_and_hidden_media(self) -> None:
+        routes = ["tab:moments", "tab:settings", "tab:chat", "chats", "contacts"]
+        for defect in (None, "headerPreserved", "panesPreserved", "scroll", "media"):
+            with self.subTest(defect=defect):
+                observation = {
+                    "tabbarPreserved": True, "headerPreserved": True,
+                    "panesPreserved": True, "frameCount": 3, "hiddenMediaPlaying": 0,
+                    "samples": [
+                        {"expected": route, "active": route, "pagePreserved": True, "scrollDelta": 0}
+                        for route in routes
+                    ],
+                }
+                if defect in ("headerPreserved", "panesPreserved"):
+                    observation[defect] = False
+                elif defect == "scroll":
+                    observation["samples"][-1]["scrollDelta"] = 287
+                elif defect == "media":
+                    observation["hiddenMediaPlaying"] = 1
+                gate = SimulatorWholeProductUsabilityGate(foreground_probe=lambda: {})
+                session = unittest.mock.Mock()
+                session.execute_script.return_value = observation
+                with patch.object(gate, "_wait_for_surface"):
+                    if defect is None:
+                        gate._exercise_native_navigation_continuity(unittest.mock.Mock(), session)
+                        self.assertEqual(session.click_element.call_count, 5)
+                    else:
+                        with self.assertRaisesRegex(GateError, "primary/pane continuity failed"):
+                            gate._exercise_native_navigation_continuity(unittest.mock.Mock(), session)
+
+    def test_live_people_search_uses_native_input_and_checks_keyboard_and_return(self) -> None:
+        gate = SimulatorWholeProductUsabilityGate(foreground_probe=lambda: {})
+        actor = SimpleNamespace(role="alice", ptid="ptid:alice")
+        session = unittest.mock.Mock()
+        geometry = {
+            "query": "alice", "fieldEnabled": True, "bottomSheetPresent": False,
+            "tabBarPresent": False, "inputTop": 60, "inputBottom": 104,
+            "resultsBottom": 540, "visibleTop": 0, "visibleBottom": 540,
+        }
+        session.execute_script.side_effect = lambda script, *args: (
+            {"headerPreserved": True, "pagePreserved": True, "framePreserved": True,
+             "scrollDelta": 0, "retainedFrameCount": 1, "hiddenMediaPlaying": 0,
+             "firstFrame": {"headerPreserved": True, "pagePreserved": True, "scrollDelta": 0}}
+            if "mobile-native-navigation-return" in script else geometry
+        )
+        session.call_action.side_effect = [
+            None, None, {"messagePane": "chats", "detailKeys": [], "overlayRouteId": None},
+            None, None, {"messagePane": "contacts", "detailKeys": [], "overlayRouteId": None},
+        ]
+        artifacts = unittest.mock.Mock()
+        with (
+            patch.object(gate, "_configure_cell"),
+            patch.object(gate, "_wait_for_surface"),
+            patch.object(gate, "_wait_for_chat_keyboard"),
+            patch.object(gate, "_assert_keyboard_inactive"),
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_whole_product_usability_e2e.audit_keyboard_tree",
+                return_value={"keyboardTop": 540, "textFieldBottom": 104},
+            ),
+        ):
+            gate._exercise_live_people_search(artifacts, session, actor)
+        self.assertEqual(session.send_keys.call_count, 2)
+        for call in session.send_keys.call_args_list:
+            self.assertEqual(call.args[1], "alice")
+        self.assertEqual(artifacts.write_bytes.call_count, 2)
+        self.assertEqual(artifacts.write_json.call_count, 4)
+        roles = [
+            call.kwargs["role"]
+            for call in artifacts.write_bytes.call_args_list + artifacts.write_json.call_args_list
+        ]
+        self.assertEqual(len(set(roles)), len(roles), "each immutable artifact needs its own role")
+
+    def test_live_people_search_rejects_results_under_the_keyboard(self) -> None:
+        gate = SimulatorWholeProductUsabilityGate(foreground_probe=lambda: {})
+        session = unittest.mock.Mock()
+        session.execute_script.return_value = {
+            "query": "alice", "fieldEnabled": True, "bottomSheetPresent": False,
+            "tabBarPresent": False, "inputTop": 60, "inputBottom": 104,
+            "resultsBottom": 800, "visibleTop": 0, "visibleBottom": 540,
+        }
+        with (
+            patch.object(gate, "_configure_cell"),
+            patch.object(gate, "_wait_for_surface"),
+            patch.object(gate, "_wait_for_chat_keyboard"),
+            patch.object(gate, "_assert_keyboard_inactive"),
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_whole_product_usability_e2e.audit_keyboard_tree",
+                return_value={"keyboardTop": 540, "textFieldBottom": 104},
+            ),
+            self.assertRaisesRegex(GateError, "keyboard layout failed"),
+        ):
+            gate._exercise_live_people_search(
+                unittest.mock.Mock(), session, SimpleNamespace(role="alice", ptid="ptid:alice"),
+            )
+
+    def test_keyboard_inactivity_rejects_editing_focus_and_native_keyboard_without_blur(self) -> None:
+        gate = SimulatorWholeProductUsabilityGate(foreground_probe=lambda: {})
+        for editable, keyboard in ((False, False), (True, False), (False, True)):
+            with self.subTest(editable=editable, keyboard=keyboard):
+                session = unittest.mock.Mock()
+                session.execute_script.return_value = not editable
+                session.get_page_source.return_value = (
+                    '<AppiumAUT><XCUIElementTypeKeyboard visible="true" /></AppiumAUT>'
+                    if keyboard else '<AppiumAUT />'
+                )
+                artifacts = unittest.mock.Mock(spec=ArtifactSession)
+                if editable or keyboard:
+                    with self.assertRaisesRegex(GateError, "automatically activated"):
+                        gate._assert_keyboard_inactive(artifacts, session, "entry", timeout_seconds=0)
+                else:
+                    gate._assert_keyboard_inactive(artifacts, session, "entry", timeout_seconds=0)
+                self.assertEqual(artifacts.write_json.call_count, 1)
+                self.assertEqual(artifacts.write_bytes.call_count, 1)
+                self.assertNotIn("blur", session.execute_script.call_args.args[0])
+                self.assertNotIn(".focus(", session.execute_script.call_args.args[0])
+
+    def test_whole_product_entry_and_authenticated_sessions_capture_native_output(self) -> None:
+        from tooling.acceptance.gates.mobile.simulator_e2e import (
+            SimulatorAppiumSession, SimulatorBuildTarget, SimulatorClientSpec, SimulatorDeviceTarget,
+        )
+        from tooling.acceptance.gates.mobile.simulator_e2e_test import FakeAppiumTransport
+
+        spec = SimulatorClientSpec(
+            "sim-ios", "ios", "XCUITest", SimulatorDeviceTarget("ios", "owned-ios", "ios-simulator"),
+            SimulatorBuildTarget("ios", Path("/tmp/mobile.app"), "com.peers.touch.mobile"),
+            "peers-touch", {"wda-local": 8101, "mjpeg": 9101}, (),
+        )
+        gate = SimulatorWholeProductUsabilityGate()
+        writer = SimpleNamespace(write_bytes=lambda *_args, **_kwargs: None)
+        session = SimulatorAppiumSession(
+            FakeAppiumTransport("native"), client_id=spec.client_id, platform=spec.platform,
+            automation_name=spec.automation_name, device=spec.device, build=spec.build,
+            callback_scheme=spec.callback_scheme, ports=spec.ports,
+        )
+        with patch.object(gate, "_create_session", return_value=session):
+            bound = gate._create_logged_session(writer, "http://localhost:4723", spec)
+        self.assertIs(bound, session)
+        self.assertTrue(callable(session.ios_launch))
+        self.assertTrue(callable(session.capture_native_output))
+        roots = [Path(directory.name) for directory in gate._native_output_roots]
+        self.assertTrue(roots and all(root.is_dir() for root in roots))
+        for directory in gate._native_output_roots:
+            directory.cleanup()
+        self.assertTrue(all(not root.exists() for root in roots))
+        source = (REPO_ROOT / "tooling/acceptance/gates/mobile/simulator_whole_product_usability_e2e.py").read_text()
+        self.assertEqual(source.count("session = self._create_logged_session(artifacts, server_url, spec)"), 2)
+
     def test_shell_gate_emits_canonical_acceptance_report(self) -> None:
         report = SimulatorWholeProductUsabilityGate._result_report("PASS", "shell")
 
@@ -649,6 +869,341 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         self.assertEqual(result["orientation"], "landscape")
         self.assertGreater(result["width"], result["height"])
 
+    def test_text_size_script_restores_and_scales_current_dom_once(self) -> None:
+        # 执行原采集脚本；可控 DOM 只模拟外部 CSS 继承，不替换被测逻辑。
+        scenario = r"""
+const fs = require('node:fs');
+const apply = new Function(JSON.parse(fs.readFileSync(0, 'utf8')));
+global.Node = {TEXT_NODE: 3};
+class Element {
+  constructor(tag, font, parent = null, priority = '', base = '16px') {
+    this.tagName = tag;
+    this.parent = parent;
+    this.base = base;
+    this.childNodes = [{nodeType: 3, textContent: 'Readable'}];
+    this.attributes = new Map();
+    let value = font, currentPriority = priority;
+    this.style = {
+      get fontSize() { return value; },
+      set fontSize(next) { value = next; currentPriority = ''; },
+      setProperty(name, next, nextPriority) {
+        value = next; currentPriority = nextPriority;
+      },
+      removeProperty() { value = ''; currentPriority = ''; },
+      getPropertyPriority() { return currentPriority; },
+    };
+  }
+  getAttribute(name) { return this.attributes.get(name) ?? null; }
+  setAttribute(name, value) { this.attributes.set(name, value); }
+  removeAttribute(name) { this.attributes.delete(name); }
+}
+global.HTMLElement = Element;
+global.getComputedStyle = (element) => ({
+  fontSize: element.style.fontSize || (element.parent
+    ? getComputedStyle(element.parent).fontSize : element.base),
+});
+global.window = {innerWidth: 393, innerHeight: 852};
+const parent = new Element('DIV', '18px', null, 'important');
+const child = new Element('INPUT', '', parent);
+const capped = new Element('SPAN', '30px');
+const invalid = new Element('SPAN', '', null, '', 'invalid');
+let nodes = [parent, child, capped, invalid];
+global.document = {
+  documentElement: {dataset: {}},
+  body: {querySelectorAll(selector) {
+    return selector === '*' ? nodes : nodes.filter(
+      (element) => element.attributes.has(selector.slice(1, -1)),
+    );
+  }},
+};
+const snapshots = [];
+function capture(size) {
+  const result = apply(size);
+  snapshots.push({
+    result,
+    sizes: nodes.map((element) => element.style.fontSize),
+    priorities: nodes.map(
+      (element) => element.style.getPropertyPriority('font-size'),
+    ),
+    marked: nodes.map((element) => element.attributes.size > 0),
+  });
+}
+capture('maximum');
+capture('maximum');
+// 已处理容器失去直接文字时，仍须恢复；新插入的节点须真实放大。
+parent.childNodes = [];
+const added = new Element('TEXTAREA', '12px');
+nodes.push(added);
+capture('maximum');
+capture('normal');
+// 模拟导航替换整棵 DOM，不能沿用旧节点的字号证明。
+nodes = [new Element('SELECT', '14px'), invalid];
+capture('maximum');
+capture('normal');
+nodes = [invalid];
+capture('maximum');
+let error = '';
+try { apply('unsupported'); } catch (value) { error = value.message; }
+console.log(JSON.stringify({snapshots, error}));
+"""
+        completed = subprocess.run(
+            ["node", "-e", scenario],
+            input=json.dumps(TEXT_SIZE_SCRIPT),
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
+        )
+        value = json.loads(completed.stdout)
+        snapshots = value["snapshots"]
+        expected = [
+            ([24.3, 24.3, 32, None], 3),
+            ([24.3, 24.3, 32, None], 3),
+            ([18, 24.3, 32, None, 16.2], 3),
+            ([18, None, 30, None, 12], 0),
+            ([18.9, None], 1),
+            ([14, None], 0),
+            ([None], 0),
+        ]
+        for index, (sizes, count) in enumerate(expected):
+            with self.subTest(capture=index):
+                actual = snapshots[index]
+                self.assertEqual(len(actual["sizes"]), len(sizes))
+                for actual_size, expected_size in zip(actual["sizes"], sizes):
+                    if expected_size is None:
+                        self.assertEqual(actual_size, "")
+                    else:
+                        self.assertTrue(actual_size.endswith("px"))
+                        self.assertAlmostEqual(
+                            float(actual_size.removesuffix("px")), expected_size,
+                        )
+                self.assertEqual(actual["result"]["scaledElementCount"], count)
+                self.assertEqual(actual["result"]["width"], 393)
+                self.assertEqual(actual["result"]["height"], 852)
+        self.assertEqual(snapshots[2]["priorities"][0], "important")
+        self.assertEqual(snapshots[3]["marked"], [False] * 5)
+        self.assertEqual(snapshots[5]["marked"], [False, False])
+        self.assertEqual(value["error"], "unsupported text size unsupported")
+
+    def test_surface_capture_applies_text_size_before_auditing_new_surface(
+        self,
+    ) -> None:
+        class CaptureSession(_ShellDriverSession):
+            def __init__(self, scaled_count: int = 1) -> None:
+                super().__init__()
+                self.scaled_count = scaled_count
+                self.scripts: list[str] = []
+
+            def execute_script(self, script: str, *args: Any) -> Any:
+                self.scripts.append(script)
+                if script == TEXT_SIZE_SCRIPT:
+                    value = super().execute_script(script, *args)
+                    value["scaledElementCount"] = self.scaled_count
+                    return value
+                if script == SURFACE_AUDIT_SCRIPT:
+                    return {
+                        "found": True,
+                        "viewport": {"width": 393, "height": 852},
+                        "surfaceElement": {
+                            "selector": args[0], "width": 393, "height": 852,
+                            "visible": True, "inViewport": True,
+                        },
+                        "controls": [],
+                        "unlabeledControls": [],
+                        "undersizedControls": [],
+                        "clippedText": [],
+                        "occlusions": [],
+                        "blockingSurfaces": [],
+                        "stationLayout": {},
+                    }
+                raise AssertionError(script)
+
+            def get_webview_source(self) -> str:
+                return "<html><body><h1>Messages</h1></body></html>"
+
+            def get_page_source(self) -> str:
+                return (
+                    '<AppiumAUT><XCUIElementTypeApplication x="0" y="0" '
+                    'width="393" height="852"><XCUIElementTypeButton '
+                    'label="Continue" x="20" y="200" width="44" height="44" '
+                    'visible="true" /></XCUIElementTypeApplication></AppiumAUT>'
+                )
+
+            def screenshot_bytes(self) -> bytes:
+                return png_bytes(393, 852)
+
+        inventory = load_surface_inventory()
+        entry = selected_surface_entries(inventory, "shell")[0]
+        gate = SimulatorWholeProductUsabilityGate(foreground_probe=lambda: {})
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = EvidenceStore(Path(temp_dir), worktree=REPO_ROOT)
+            with store.begin_run(GATE_ID, source=source_identity(REPO_ROOT)) as run:
+                for text_size, count in (
+                    ("maximum", 1), ("normal", 0), ("maximum", 0),
+                ):
+                    with self.subTest(text_size=text_size, scaled_count=count):
+                        session = CaptureSession(count)
+                        viewport = {
+                            "width": 393, "height": 852,
+                            "orientation": "portrait", "textSize": text_size,
+                        }
+                        args = (
+                            run, session, inventory, entry,
+                            (
+                                "portrait-maximum-text" if text_size == "maximum"
+                                else "portrait-normal"
+                            ),
+                            viewport,
+                            {"kind": "native-touch", "performed": True},
+                        )
+                        if text_size == "maximum" and count == 0:
+                            with self.assertRaisesRegex(
+                                GateError, "did not scale content",
+                            ):
+                                gate._capture_surface(*args)
+                            self.assertEqual(session.scripts, [TEXT_SIZE_SCRIPT])
+                        else:
+                            result = gate._capture_surface(*args)
+                            self.assertEqual(
+                                session.scripts,
+                                [TEXT_SIZE_SCRIPT, SURFACE_AUDIT_SCRIPT],
+                            )
+                            self.assertEqual(result["viewport"], viewport)
+                            self.assertEqual(result["status"], "PASS")
+
+    def test_keyboard_capture_requires_native_keyboard_and_preserves_failures(self) -> None:
+        class CaptureSession(_ShellDriverSession):
+            def __init__(self, width: Any, height: Any, keyboard: bool, occluded: bool) -> None:
+                super().__init__()
+                self.width, self.height = width, height
+                self.keyboard, self.occluded = keyboard, occluded
+
+            def execute_script(self, script: str, *args: Any) -> Any:
+                if script == TEXT_SIZE_SCRIPT:
+                    return super().execute_script(script, *args)
+                if script == SURFACE_AUDIT_SCRIPT:
+                    return {
+                        "found": True,
+                        "viewport": {"width": self.width, "height": self.height},
+                        "surfaceElement": {
+                            "selector": args[0], "width": self.width, "height": self.height,
+                            "visible": True, "inViewport": True,
+                        },
+                        "controls": [], "unlabeledControls": [], "undersizedControls": [],
+                        "clippedText": [], "occlusions": [], "blockingSurfaces": [],
+                        "stationLayout": {},
+                    }
+                raise AssertionError(script)
+
+            def get_webview_source(self) -> str:
+                return "<html><body><h1>Messages</h1></body></html>"
+
+            def get_page_source(self) -> str:
+                return (
+                    '<AppiumAUT><XCUIElementTypeApplication x="0" y="0" width="393" height="852">'
+                    f'<XCUIElementTypeTextField x="20" y="{510 if self.occluded else 60}" '
+                    'width="300" height="44" visible="true" label="Search" />'
+                    + ('<XCUIElementTypeKeyboard x="0" y="500" width="393" height="352" />'
+                       if self.keyboard else '')
+                    + '</XCUIElementTypeApplication></AppiumAUT>'
+                )
+
+            def screenshot_bytes(self) -> bytes:
+                return png_bytes(393, 852)
+
+        inventory = load_surface_inventory()
+        entries = {entry["id"]: entry for entry in selected_surface_entries(inventory, "all")}
+        gate = SimulatorWholeProductUsabilityGate(foreground_probe=lambda: {})
+        viewport = {"width": 393, "height": 852, "orientation": "portrait", "textSize": "normal"}
+        scenarios = [
+            (surface_id, 393, 480, True, False, "native-text", None)
+            for surface_id in (
+                "chat.list-search", "chat.list-search-empty", "chat.composer-keyboard",
+                "contacts.local-search", "contacts.local-search-empty",
+                "contacts.add-friend-empty", "contacts.search-loading", "contacts.search-duplicate",
+            )
+        ] + [
+            ("chat.list-search", 393, 852, True, False, "native-text", None),
+            ("chat.list-search", 393, 480, False, False, "native-text", "requires keyboard"),
+            ("chat.list-search", 393, 852, False, False, "native-text", "requires keyboard"),
+            ("chat.list-search", 393, 480, True, True, "native-text", "occludes"),
+            ("chat.list-search", 394, 480, True, False, "native-text", "viewport changed"),
+            ("chat.list-search", 393, 853, True, False, "native-text", "viewport changed"),
+            ("chat.list-search", 393, 0, True, False, "native-text", "viewport changed"),
+            ("chat.list-search", 393, -1, True, False, "native-text", "viewport changed"),
+            ("chat.list-search", 393, True, True, False, "native-text", "viewport changed"),
+            ("chat.list-search", 393, 480, True, False, "system", "without input activation"),
+            ("shell.chat-tab", 393, 480, True, False, "native-touch", "without input activation"),
+        ]
+        for surface_id, width, height, keyboard, occluded, kind, failure in scenarios:
+            with self.subTest(surface=surface_id, width=width, height=height,
+                              keyboard=keyboard, occluded=occluded, kind=kind):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    store = EvidenceStore(Path(temp_dir), worktree=REPO_ROOT)
+                    with store.begin_run(GATE_ID, source=source_identity(REPO_ROOT)) as run:
+                        entry = entries[surface_id]
+                        args = (
+                            run, CaptureSession(width, height, keyboard, occluded), inventory,
+                            entry, "portrait-normal", viewport,
+                            {"kind": kind, "target": entry["entryAction"], "performed": True},
+                        )
+                        if failure:
+                            with self.assertRaisesRegex(GateError, failure):
+                                gate._capture_surface(*args)
+                        else:
+                            result = gate._capture_surface(*args)
+                            self.assertEqual(result["status"], "PASS")
+                            self.assertEqual(result["viewport"]["height"], height)
+                        diagnostics = list(Path(temp_dir).rglob("capture-observation.json"))
+                        self.assertEqual(len(diagnostics), 1)
+                        diagnostic = json.loads(diagnostics[0].read_text())
+                        self.assertEqual(diagnostic["expectedViewport"], viewport)
+                        self.assertEqual(diagnostic["observation"]["viewport"],
+                                         {"width": width, "height": height})
+                        for name in ("screenshot.png", "dom.html", "accessibility.xml"):
+                            self.assertTrue((diagnostics[0].parent / name).is_file())
+
+    def test_native_search_entry_waits_for_keyboard_before_capture(self) -> None:
+        inventory = load_surface_inventory()
+        entries = {entry["id"]: entry for entry in selected_surface_entries(inventory, "all")}
+        gate = SimulatorWholeProductUsabilityGate(foreground_probe=lambda: {})
+        for surface_id, enter in (
+            ("chat.list-search", gate._enter_chat_surface),
+            ("contacts.local-search", gate._enter_contacts_surface),
+            ("contacts.search-loading", gate._enter_contacts_surface),
+        ):
+            with self.subTest(surface=surface_id):
+                session = _ShellDriverSession()
+                with patch.object(gate, "_wait_for_surface"), patch.object(
+                    SimulatorWholeProductUsabilityGate, "_wait_for_chat_keyboard",
+                ) as wait:
+                    action = enter(session, entries[surface_id])
+                wait.assert_called_once_with(session)
+                self.assertIn("XCUIElementTypeTextField", session.clicked)
+                self.assertTrue(session.current_context.startswith("WEBVIEW"))
+                self.assertEqual(action["kind"], "native-text")
+
+    def test_text_size_setup_rejects_invalid_driver_observation(self) -> None:
+        valid = {
+            "textSize": "maximum", "width": 393, "height": 852,
+            "scaledElementCount": 1,
+        }
+        for value in (
+            None, {**valid, "textSize": "normal"}, {**valid, "width": 0},
+            {**valid, "height": "852"}, {**valid, "scaledElementCount": 0},
+            {**valid, "scaledElementCount": None},
+        ):
+            with self.subTest(observation=value):
+                session = _ShellDriverSession()
+                with patch.object(
+                    session, "execute_script", return_value=value,
+                ) as execute:
+                    with self.assertRaises(GateError):
+                        SimulatorWholeProductUsabilityGate._apply_text_size(
+                            session, "maximum", "new-surface",
+                        )
+                    execute.assert_called_once_with(TEXT_SIZE_SCRIPT, "maximum")
+
     def test_shell_driver_uses_product_navigation(self) -> None:
         inventory = load_surface_inventory()
         entries = {
@@ -660,14 +1215,15 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         )
         session = _ShellDriverSession()
 
-        action = gate._enter_surface(session, entries["shell.contacts-tab"])
+        action = gate._enter_surface(session, entries["shell.contacts-pane"])
         self.assertEqual(action["kind"], "native-touch")
-        self.assertEqual(session.route_id, "tab:contacts")
+        self.assertEqual(session.route_id, "tab:chat")
+        self.assertEqual(session.message_pane, "contacts")
         self.assertEqual(
             session.clicked,
-            ['[data-route-id="tab:contacts"]'],
+            ['[data-route-id="tab:chat"]', '[data-message-pane-target="contacts"]'],
         )
-        self.assertEqual(session.route_id, "tab:contacts")
+        self.assertEqual(session.route_id, "tab:chat")
         self.assertEqual(session.navigation_actions, [])
         self.assertEqual(session.lifecycle_actions, [])
 
@@ -751,7 +1307,39 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         self.assertEqual(action["target"], "focus-message-composer")
         self.assertEqual(session.chat_surface_id, "chat.composer-keyboard")
         self.assertIn("[data-chat-fixture-composer]", session.clicked)
-        self.assertIn("XCUIElementTypeTextField", session.clicked)
+        self.assertIn("XCUIElementTypeTextView", session.clicked)
+
+    def test_composer_focus_oracle_ignores_hidden_retained_duplicate(self) -> None:
+        scenario = r"""
+const fs = require('node:fs');
+const focused = new Function(JSON.parse(fs.readFileSync(0, 'utf8')));
+class Element {
+  constructor({composer = true, hidden = false, rendered = true} = {}) {
+    this.composer = composer; this.hidden = hidden; this.rendered = rendered;
+  }
+  matches() { return this.composer; }
+  closest() { return this.hidden ? {} : null; }
+  getClientRects() { return this.rendered ? [{}] : []; }
+}
+global.HTMLElement = Element;
+const hiddenFirst = new Element({hidden: true, rendered: false});
+global.document = {querySelector: () => hiddenFirst, activeElement: new Element()};
+const observed = [focused()];
+for (const options of [
+  {hidden: true}, {rendered: false}, {composer: false},
+]) {
+  document.activeElement = new Element(options);
+  observed.push(focused());
+}
+document.activeElement = null;
+observed.push(focused());
+process.stdout.write(JSON.stringify(observed));
+"""
+        completed = subprocess.run(
+            ["node", "-e", scenario], input=json.dumps(CHAT_COMPOSER_FOCUS_SCRIPT),
+            text=True, capture_output=True, check=True, timeout=10,
+        )
+        self.assertEqual(json.loads(completed.stdout), [True, False, False, False, False])
 
     def test_contacts_driver_projects_declared_surfaces_and_uses_search(
         self,
@@ -839,7 +1427,7 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         self.assertEqual(action["target"], "tap-setting-privacy-security")
         self.assertEqual(session.settings_surface_id, "settings.summary")
         self.assertIn(
-            '[data-settings-fixture-open="privacy-security"]',
+            '[data-setting-id="privacy-security"]',
             session.clicked,
         )
 
@@ -1031,6 +1619,11 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             },
         )
 
+    def test_chat_status_surfaces_include_retained_header_controls(self) -> None:
+        self.assertEqual(CHAT_PAGE_CONTROL_SURFACES, {
+            "chat.list-loading", "chat.list-empty", "chat.list-search-empty",
+        })
+
     def test_interaction_artifact_requires_captured_station_layout(self) -> None:
         inventory = load_surface_inventory()
         entry = selected_surface_entries(inventory, "shell")[0]
@@ -1215,12 +1808,18 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         )
 
         self.assertIn(
-            "data-product-surface={`shell.${activeTab}-tab`}",
+            "'shell.contacts-pane' : `shell.${activeTab}-tab`",
             shell,
         )
-        self.assertIn("data-route-id={descriptor.routeId}", shell)
+        self.assertIn("routeId: descriptor.routeId", shell)
+        primitive = (REPO_ROOT / "packages/ui/web/src/mobile.tsx").read_text(encoding="utf-8")
+        self.assertIn("data-route-id={item.routeId}", primitive)
         self.assertNotIn("ptidDisplay", settings)
-        self.assertIn("settings-profile-subtitle", settings)
+        self.assertIn("<MeIdentityHeader", settings)
+        self.assertIn("<AccountCredentialsSection", settings)
+        hero = (REPO_ROOT / "apps/mobile/src/pages/settings/MeIdentityHeader.tsx").read_text(encoding="utf-8")
+        self.assertIn("data-hero-stats", hero)
+        self.assertNotIn("credentialUsername", hero)
         self.assertIn(
             "renderedLaunchState === 'background'",
             app,
@@ -1481,7 +2080,7 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
                 "tab:chat",
                 "tab:chat",
                 "tab:chat",
-                "tab:contacts",
+                "tab:chat",
                 "tab:moments",
                 "tab:settings",
             ],
@@ -1493,6 +2092,56 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
                 ("moments.fixture", None),
             ],
         )
+
+    def test_failed_native_entry_retains_evidence_and_original_failure(self) -> None:
+        inventory = load_surface_inventory()
+        inventory["viewportTextSizeCells"] = ["landscape-normal"]
+        gate = SimulatorWholeProductUsabilityGate(foreground_probe=lambda: {})
+        entry = selected_surface_entries(inventory, "chat")[0]
+        prefix = f"mobile-whole-product/{entry['id']}/landscape-normal/entry-failure"
+        for capture_fails in (False, True):
+            with self.subTest(capture_fails=capture_fails):
+                error = GateError("iOS keyboard occludes the active text field")
+                session = unittest.mock.Mock()
+                session.call_action.return_value = {"primaryRouteId": "tab:chat"}
+                session.get_page_source.return_value = "<AppiumAUT />"
+                session.get_webview_source.return_value = "<main />"
+                session.screenshot_bytes.return_value = b"native-png"
+                session.execute_script.return_value = {"activeInput": {"y": 75}}
+                if capture_fails:
+                    session.screenshot_bytes.side_effect = DriverError("native capture failed")
+                artifacts = unittest.mock.Mock(spec=ArtifactSession)
+                with (
+                    patch.object(gate, "_configure_cell", return_value={}),
+                    patch.object(gate, "_enter_chat_surface", side_effect=error),
+                    patch.object(gate, "_capture_surface") as capture_surface,
+                    patch("tooling.acceptance.gates.mobile.simulator_whole_product_usability_e2e.time.sleep"),
+                    self.assertRaises(GateError) as raised,
+                ):
+                    gate._capture_authenticated_surface_sets(
+                        artifacts, session, inventory, ("chat",),
+                    )
+                self.assertIs(raised.exception, error)
+                capture_surface.assert_not_called()
+                artifacts.write_bytes.assert_any_call(
+                    f"{prefix}.xml", b"<AppiumAUT />", media_type="application/xml",
+                    role=f"mobile-entry-failure-ax/{entry['id']}/landscape-normal",
+                )
+                if capture_fails:
+                    self.assertIn("native capture failed", error.__notes__[0])
+                    artifacts.write_json.assert_not_called()
+                else:
+                    artifacts.write_bytes.assert_any_call(
+                        f"{prefix}.png", b"native-png", media_type="image/png",
+                        role=f"mobile-entry-failure-screenshot/{entry['id']}/landscape-normal",
+                    )
+                    artifacts.write_json.assert_called_once_with(
+                        f"{prefix}.json",
+                        {"surfaceId": entry["id"], "cellId": "landscape-normal",
+                         "entryAction": entry["entryAction"], "error": str(error),
+                         "geometry": {"activeInput": {"y": 75}}},
+                        role=f"mobile-entry-failure-observation/{entry['id']}/landscape-normal",
+                    )
 
     def test_landscape_moments_composer_preserves_top_safe_area(self) -> None:
         composer_styles = (
@@ -1560,14 +2209,13 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         route_ids = {
             "tab:chat",
             "tab:moments",
-            "tab:contacts",
             "tab:settings",
             "detail:chat-conversation",
             "detail:group-conversation",
             "detail:contact-profile",
             "detail:moment",
             "detail:setting",
-            "overlay:add-friend",
+            "detail:find-people",
             "overlay:create-group",
         }
         for route_id in route_ids:

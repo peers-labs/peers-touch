@@ -37,6 +37,7 @@ governed_prefixes:
   - /api/v1/social/relationships/result
   - /notification/push/
   - /federation/
+  - /group-call/
 owner_roots:
   station.access_endpoint:
     - apps/station/frame/core/plugin/native/subserver/bootstrap/
@@ -69,6 +70,8 @@ owner_roots:
     - apps/station/app/subserver/social/read_policy_handler.go
   station.notification:
     - apps/station/app/subserver/notification/
+  station.group_call:
+    - apps/station/app/subserver/groupcall/
   station.federation:
     - apps/station/frame/core/federation/
     - apps/station/app/subserver/federation/
@@ -1968,13 +1971,63 @@ capabilities:
 
   - id: federation.realtime.group_call.authority_join
     domain_owner: station.federation
-    truth_owner: conversation.authority
+    truth_owner: realtime.group_call
     exposure: peer
     canonical_route: { method: POST, path: /federation/realtime/group-call/join }
     request_proto: peers_touch.model.realtime.v1.GroupCallAuthorityJoinRequest
     response_proto: peers_touch.model.realtime.v1.GroupCallAuthorityJoinResponse
-    truth_stores: [conversations, conversation_members]
-    allowed_dependencies: [federation.auth.verify, conversation.membership.read, livekit.token.issue]
+    truth_stores: [group_call_endpoint_grants]
+    allowed_dependencies: [federation.auth.verify, conversation.membership.read, conversation.device.read, session.media.read, livekit.token.issue]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: federation.realtime.group_call.endpoint_control
+    domain_owner: station.federation
+    truth_owner: realtime.group_call
+    exposure: peer
+    canonical_route: { method: POST, path: /federation/realtime/group-call/endpoint-control }
+    request_proto: peers_touch.model.realtime.v1.GroupCallEndpointControlRequest
+    response_proto: peers_touch.model.realtime.v1.GroupCallEndpointControlResponse
+    truth_stores: [group_call_endpoint_grants, group_call_invitation_decisions]
+    allowed_dependencies: [federation.auth.verify, conversation.membership.read, conversation.device.read, session.media.read, livekit.admission, livekit.roster.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  # Existing JSON media-support API. Go wire projections live in
+  # groupcall/provider.go; it does not introduce a second Conversation API.
+  - id: realtime.group_call.join
+    domain_owner: station.group_call
+    truth_owner: realtime.group_call
+    exposure: client
+    canonical_route: { method: POST, path: /group-call/join }
+    request_proto: ""
+    response_proto: ""
+    truth_stores: [group_call_endpoint_grants]
+    allowed_dependencies: [session.media.read, actor.device.read, conversation.membership.read, federation.group_call.request, livekit.token.issue]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: realtime.group_call.status
+    domain_owner: station.group_call
+    truth_owner: realtime.group_call
+    exposure: client
+    canonical_route: { method: POST, path: /group-call/status }
+    request_proto: ""
+    response_proto: ""
+    truth_stores: [group_call_invitation_decisions]
+    allowed_dependencies: [conversation.membership.read, federation.group_call.request, livekit.roster.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: realtime.group_call.decline
+    domain_owner: station.group_call
+    truth_owner: realtime.group_call
+    exposure: client
+    canonical_route: { method: POST, path: /group-call/decline }
+    request_proto: ""
+    response_proto: ""
+    truth_stores: [group_call_invitation_decisions]
+    allowed_dependencies: [session.media.read, actor.device.read, conversation.membership.read, federation.group_call.request, livekit.roster.read]
     forbidden_aliases: []
     superseded_symbols: []
 

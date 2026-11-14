@@ -60,9 +60,6 @@ export type CacheClearStatus = 'idle' | 'clearing' | 'cleared' | 'error';
 export type EditableProfileDraft = Required<EditableProfileInput>;
 
 export interface SettingsControllerState {
-  /** True while initial data is loading */
-  readonly loading: boolean;
-
   /** Committed Station profile readback. */
   readonly serverProfile: EditableProfileDraft | null;
 
@@ -200,7 +197,6 @@ export function useSettingsController(
   const [profileProjectionState, setProfileProjectionState] = useState(
     () => profileRuntime?.projection.state() ?? null,
   );
-  const [loading, setLoading] = useState(true);
   const [serverProfile, setServerProfile] = useState<EditableProfileDraft | null>(null);
   const [draftProfile, setDraftProfile] = useState<EditableProfileDraft | null>(null);
   const initialDeviceSettings = readDeviceSettingsRuntimeSnapshot();
@@ -250,7 +246,6 @@ export function useSettingsController(
   // ---- Initial load ----
   const loadAll = useCallback(async () => {
     if (!mountedRef.current) return;
-    setLoading(true);
 
     const [permissionReadback, versionReadback] = await Promise.all([
       loadDevicePermissions()
@@ -266,7 +261,6 @@ export function useSettingsController(
     setPermissionsLoading(false);
     setAppVersion(versionReadback);
 
-    if (mountedRef.current) setLoading(false);
   }, []);
 
   useEffect(() => { void loadAll(); }, [loadAll]);
@@ -576,7 +570,6 @@ export function useSettingsController(
   }, [authSession]);
 
   return {
-    loading,
     serverProfile,
     draftProfile,
     profileAvailable,

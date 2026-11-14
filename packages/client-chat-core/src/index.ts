@@ -1,4 +1,5 @@
 export const CHAT_MESSAGE_TYPE_TEXT = 1;
+export { MediaReservation } from './mediaReservation.js';
 export const CHAT_MESSAGE_TYPE_IMAGE = 2;
 export const CHAT_MESSAGE_TYPE_FILE = 3;
 export const CHAT_MESSAGE_TYPE_AUDIO = 4;
@@ -1432,6 +1433,7 @@ export * from './chatStorageProjection.js';
 export * from './storageBatch.js';
 export * from './wireCodec.js';
 export * from './callId.js';
+export * from './callMediaStats.js';
 export * from './attachmentAccess.js';
 export * from './attachmentFileType.js';
 export * from './attachmentPreview.js';

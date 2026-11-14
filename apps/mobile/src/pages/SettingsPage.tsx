@@ -2,12 +2,9 @@
  * SettingsPage.tsx — Pure renderer for the Settings / "Me" tab.
  *
  * Visual hierarchy aligned with the prototype ProfilePage:
- * - Header: "Me" title + Settings gear button
- * - Profile header card: Avatar 64px + name + PTID + chevron,
- *   stats row (Friends / Groups / Moments)
- * - Setting groups: Account, Chat, Network, About
- *   Each row: colored icon in tinted bg + label + optional value + chevron
- * - Sign Out button at bottom
+ * - Cover and overlapping avatar with native image edits and real statistics
+ * - Public account credentials only on a pushed detail
+ * - Real preferences, existing settings and sign out
  *
  * This page is a pure renderer. All data comes from:
  *   - useSettingsController (dirty/save/discard/conflict lifecycle)
@@ -18,10 +15,10 @@
  * The page never fetches or persists data directly.
  */
 
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
-import { Button, Dialog, Empty, Icon, Spin, Text, type IconId } from '@peers-touch/ui';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Button, Dialog, Empty, Icon, IconButton, ListSection, Spin, Text, type IconId } from '@peers-touch/ui';
 
-import { confirmDestructive } from '../app/feedback/mobileFeedback';
+import { confirmDestructive, notifyError, notifySuccess } from '../app/feedback/mobileFeedback';
 import { useMobileI18n } from '../app/mobileI18n';
 import {
   registerSettingsExitGuard,
@@ -30,7 +27,6 @@ import {
 } from '../app/navigation';
 import type { MobileAuthSession } from '../features/auth/authSession';
 import { requestSocialCurrentUserProfile } from '../features/social/socialRuntime';
-import { projectAcceptedContacts } from '../features/social/socialProjection';
 import { useSocialStore } from '../features/social/socialStore';
 import {
   activeStationRoute,
@@ -40,7 +36,13 @@ import {
   type StoredStationRegistry,
 } from '../features/station/stationRegistry';
 import { stationDisplayName } from '../features/station/stationDisplayName';
-import { MobileAvatar } from '../components/MobileAvatar';
+import { MobileNotice } from '../components/MobileNotice';
+import { mobileClipboard } from '../services/platform/mobileClipboard';
+import { mobileProfileImages, useProfileImage } from '../runtimes/profileImageRuntime';
+import { MeIdentityHeader } from './settings/MeIdentityHeader';
+import { AccountCredentialsSection } from './settings/AccountCredentialsSection';
+import { MePreferencesSection } from './settings/MePreferencesSection';
+import { SettingsNavigationRow } from './settings/SettingsNavigationRow';
 import { useSettingsSurfaceFixture } from '../acceptance/settingsSurfaceFixture';
 import {
   useBlockedUsersController,
@@ -91,13 +93,13 @@ interface SettingsPageProps {
   readonly activeSettingId: MobileSettingDetailId | null;
   readonly onOpenSetting: (settingId: MobileSettingDetailId) => void;
   readonly onBack: () => void;
-  readonly searchEntry?: ReactNode;
   readonly onChangeStation: () => Promise<void>;
   readonly onChangeStationRoute: (
     stationPeerId: string,
     route: MobileStationRouteCandidate,
   ) => Promise<void>;
   readonly onLogout: () => Promise<void>;
+  readonly onOpenNotifications: () => void;
 }
 
 function ProfileUnavailable({
@@ -167,10 +169,10 @@ function SettingsPageContent({
   activeSettingId,
   onOpenSetting,
   onBack,
-  searchEntry,
   onChangeStation,
   onChangeStationRoute,
   onLogout,
+  onOpenNotifications,
 }: SettingsPageProps) {
   const { t, language } = useMobileI18n();
   const [loggingOut, setLoggingOut] = useState(false);
@@ -178,6 +180,8 @@ function SettingsPageContent({
     readonly action: SettingsExitAction;
   } | null>(null);
   const [exitSaving, setExitSaving] = useState(false);
+  const [copyingField, setCopyingField] = useState<'username' | 'ptid' | null>(null);
+  const image = useProfileImage();
 
   const activeStation = activeStationEntry(stationRegistry);
   const unavailableLabel = t('mobile.launch.unavailable');
@@ -198,26 +202,6 @@ function SettingsPageContent({
   );
   const blockedUsersCount = useSocialStore((state) => state.blockedUsers.length);
   const currentUserPtid = useSocialStore((state) => state.currentUserPtid);
-  const friendRequests = useSocialStore((state) => state.friendRequests);
-  const peerOnline = useSocialStore((state) => state.peerOnline);
-  const peerProfiles = useSocialStore((state) => state.peerProfiles);
-  const groupCount = useSocialStore((state) => state.messagingConversations.reduce(
-    (count, conversation) => count + Number(
-      conversation.active && conversation.kind === 2,
-    ),
-    0,
-  ));
-
-  const friendCount = useMemo(
-    () => projectAcceptedContacts(
-      friendRequests,
-      currentUserPtid,
-      peerOnline,
-      peerProfiles,
-    ).length,
-    [currentUserPtid, friendRequests, peerOnline, peerProfiles],
-  );
-
   // Settings controller — owns dirty/save/discard/conflict lifecycle
   const controller = useSettingsController(
     authSession,
@@ -227,11 +211,15 @@ function SettingsPageContent({
   );
   const visibleProfile = controller.profileAvailable ? currentUserProfile : null;
   const displayName = visibleProfile?.displayName || authSession?.actorRef.acct;
-  const momentsCount = visibleProfile?.statusesCount ?? unavailableLabel;
   const notificationController = useNotificationPreferencesController();
   const notificationPermission = controller.permissions.find(
     (permission) => permission.kind === 'notifications',
   );
+  useEffect(() => {
+    if (activeSettingId === null && notificationController.dirty && notificationController.saveStatus === 'idle') {
+      void notificationController.save();
+    }
+  }, [activeSettingId, notificationController]);
   const selectedOwner = (() => {
     switch (activeSettingId) {
       case 'account-info':
@@ -258,10 +246,10 @@ function SettingsPageContent({
           reload: controller.reloadDevicePreferences,
         };
       default:
-        return null;
+        return activeSettingId === null ? notificationController : null;
     }
   })();
-  const settingsDirty = selectedOwner?.dirty ?? false;
+  const settingsDirty = Boolean(selectedOwner?.dirty || image.draft);
   const settingsConflict = selectedOwner?.conflict ?? false;
   const settingsSaveStatus = selectedOwner?.saveStatus ?? 'idle';
   const settingsSaveError = selectedOwner?.saveError ?? null;
@@ -287,15 +275,17 @@ function SettingsPageContent({
 
   const saveAndExit = useCallback(async () => {
     setExitSaving(true);
-    const saved = selectedOwner ? await selectedOwner.save() : true;
+    const savedImage = !image.draft || await mobileProfileImages.retry();
+    const saved = savedImage && (selectedOwner ? await selectedOwner.save() : true);
     setExitSaving(false);
     if (saved) {
       await finishPendingExit();
     }
-  }, [finishPendingExit, selectedOwner]);
+  }, [finishPendingExit, image.draft, selectedOwner]);
 
   const discardAndExit = useCallback(async () => {
     selectedOwner?.discard();
+    mobileProfileImages.discard();
     await finishPendingExit();
   }, [finishPendingExit, selectedOwner]);
 
@@ -359,7 +349,22 @@ function SettingsPageContent({
   );
   const activeSettingIconId = activeSetting?.icon ?? null;
 
-  const profileSubtitle = t('mobile.settings.connected');
+  const credentialUsername = visibleProfile?.username || authSession?.actorRef.acct || '';
+  const copyCredential = async (field: 'username' | 'ptid', value: string) => {
+    if (copyingField || !value) return;
+    const session = authSession;
+    setCopyingField(field);
+    try {
+      await mobileClipboard.writeText(value);
+      if (useSocialStore.getState().authSession?.sessionId === session?.sessionId) {
+        notifySuccess(t('mobile.settings.credentials.copied'));
+      }
+    } catch {
+      notifyError(t('mobile.settings.credentials.copyFailed'));
+    } finally {
+      setCopyingField(null);
+    }
+  };
 
   // --- Logout flow ---
   const handleLogoutConfirm = useCallback(async () => {
@@ -387,6 +392,14 @@ function SettingsPageContent({
 
   const detailContent = (() => {
     switch (activeSettingId) {
+      case 'credentials':
+        return <AccountCredentialsSection
+          username={credentialUsername}
+          actorPtid={authSession?.actorRef.ptid || ''}
+          stationName={activeStationLabel}
+          copyingField={copyingField}
+          onCopy={(field, value) => void copyCredential(field, value)}
+        />;
       case 'account-info':
         return controller.profileAvailable ? (
           <ProfileSection
@@ -501,34 +514,17 @@ function SettingsPageContent({
   })();
 
   // --- Render ---
-  if (controller.loading) {
-    return (
-      <div
-        className="page-container settings-loading"
-        data-product-surface="settings.summary-loading"
-      >
-        <h1 className="sr-only">{t('mobile.settings.title')}</h1>
-        <Spin />
-      </div>
-    );
-  }
-
   const content = activeSettingId ? (
     <div
       className="page-container settings-page mobile-detail-page"
       data-product-surface={`settings.${activeSettingId}`}
     >
       <header className="page-header">
-        <button
-          type="button"
-          className="header-action"
-          aria-label={t('common.action.back')}
-          onClick={() => requestExit(onBack)}
-        >
-          <Icon iconId="arrow-left" size={20} />
-        </button>
+        <IconButton actionId="settings.back" iconId="arrow-left" density="comfortable" emphasis="quiet"
+          label={t('common.action.back')} onActivate={() => requestExit(onBack)} />
         <h1 className="header-title compact">
-          {activeSetting ? t(activeSetting.labelKey) : t('mobile.settings.title')}
+          {activeSettingId === 'credentials' ? t('mobile.settings.credentials.title')
+            : activeSetting ? t(activeSetting.labelKey) : t('mobile.settings.title')}
         </h1>
       </header>
       <div className="settings-detail-body">
@@ -551,108 +547,70 @@ function SettingsPageContent({
       className="page-container settings-page"
       data-product-surface="settings.summary"
     >
-      {/* The page is already Settings; profile details remain the first row. */}
-      <header className="page-header">
-        <h1 className="header-title">{t('mobile.settings.title')}</h1>
-        {searchEntry}
-      </header>
-
+      <h1 className="visually-hidden">{t('mobile.settings.title')}</h1>
+      <MeIdentityHeader model={{
+        actorPtid: currentUserPtid || authSession?.actorRef.ptid || '',
+        displayName: displayName || t('mobile.settings.notLoggedIn'),
+        handle: visibleProfile?.federatedHandle || credentialUsername,
+        avatar: image.draft?.field === 'avatar' && (image.status !== 'failed' || image.draft.committed)
+          ? image.draft.assetUrl : visibleProfile?.avatar || '',
+        header: image.draft?.field === 'header' && (image.status !== 'failed' || image.draft.committed)
+          ? image.draft.assetUrl : visibleProfile?.header || '',
+        tags: visibleProfile?.tags || [],
+        posts: visibleProfile?.statusesCount ?? null,
+        following: visibleProfile?.followingCount ?? null,
+        followers: visibleProfile?.followersCount ?? null,
+        joined: visibleProfile?.createdAt || '',
+      }}
+        editingImage={['picking', 'uploading', 'saving'].includes(image.status) ? image.field : null}
+        imageEditUnavailableReason={!controller.profileAvailable ? t('mobile.settings.profileUnavailable') : undefined}
+        onPickImage={field => void mobileProfileImages.pick(field)}
+      />
       <div className="settings-body">
-        {/* Profile header card — Avatar 64px + friendly identity + chevron + stats */}
-        <button
-          type="button"
-          className="settings-profile-trigger"
-          onClick={() => onOpenSetting('account-info')}
-        >
-          <div className="settings-profile-header-card">
-            <div className="settings-profile-header">
-              <MobileAvatar
-                size={64}
-                src={visibleProfile?.avatar}
-                identityKey={currentUserPtid || ''}
-                name={displayName || t('mobile.settings.notLoggedIn')}
-              >
-                {displayName ? displayName.slice(0, 2).toUpperCase() : '?'}
-              </MobileAvatar>
-              <div className="settings-profile-info">
-                <Text strong className="settings-profile-name">
-                  {displayName || t('mobile.settings.notLoggedIn')}
-                </Text>
-                <Text tone="secondary" className="settings-profile-subtitle">
-                  {profileSubtitle}
-                </Text>
-              </div>
-              <Icon iconId="chevron-right" size={20} className="settings-profile-chevron" />
-            </div>
-            <div className="settings-profile-stats">
-              <div className="settings-stat">
-                <Text strong className="settings-stat-value">{friendCount}</Text>
-                <Text tone="secondary" className="settings-stat-label">
-                  {t('mobile.settings.stats.friends')}
-                </Text>
-              </div>
-              <div className="settings-stat-divider" />
-              <div className="settings-stat">
-                <Text strong className="settings-stat-value">{groupCount}</Text>
-                <Text tone="secondary" className="settings-stat-label">
-                  {t('mobile.settings.stats.groups')}
-                </Text>
-              </div>
-              <div className="settings-stat-divider" />
-              <div className="settings-stat">
-                <Text strong className="settings-stat-value">{momentsCount}</Text>
-                <Text tone="secondary" className="settings-stat-label">
-                  {t('mobile.settings.stats.moments')}
-                </Text>
-              </div>
-            </div>
-          </div>
-        </button>
+        {image.errorKey ? <MobileNotice tone="error">
+          {t(image.errorKey)}
+          {image.draft ? <Button actionId="settings.image.retry" density="comfortable"
+            onActivate={() => void mobileProfileImages.retry()}>{t('common.action.retry')}</Button> : null}
+          <Button actionId="settings.image.discard" density="comfortable" emphasis="quiet"
+            onActivate={mobileProfileImages.discard}>{t('common.action.cancel')}</Button>
+        </MobileNotice> : null}
+        <ListSection inset aria-label={t('mobile.settings.credentials.title')}>
+          <SettingsNavigationRow actionId="me.credentials" settingId="credentials" label={t('mobile.settings.credentials.title')}
+            description={[credentialUsername, activeStationLabel].filter(Boolean).join(' · ')}
+            onActivate={() => onOpenSetting('credentials')} />
+        </ListSection>
+        <MePreferencesSection controller={notificationController} />
+        {notificationController.saveStatus === 'error' ? <DirtyBar
+          dirty={notificationController.dirty} conflict={notificationController.conflict}
+          saveStatus={notificationController.saveStatus} saveError={notificationController.saveError}
+          onSave={() => void notificationController.save()} onDiscard={notificationController.discard}
+          onReload={() => void notificationController.reload()} /> : null}
 
         {/* Setting groups (prototype-aligned) */}
         {settingGroups.map((group) => (
-          <div key={group.titleKey} className="settings-group-block">
-            <div className="settings-group-block-title">{t(group.titleKey)}</div>
-            <div className="settings-group-card">
-              {group.items.map((item, idx) => {
+          <ListSection key={group.titleKey} inset title={t(group.titleKey)}>
+              {group.items.map((item) => {
                 const displayValue = item.valueOverride ?? (item.valueKey ? t(item.valueKey) : undefined);
-                const iconStyle = { '--setting-tint': item.tint } as CSSProperties;
                 return (
-                  <button
-                    type="button"
+                  <SettingsNavigationRow actionId={`me.setting.${item.id}`} settingId={item.id}
                     key={item.labelKey}
-                    className={`setting-row ${idx > 0 ? 'setting-row--border' : ''}`}
-                    onClick={() => onOpenSetting(item.id)}
-                  >
-                    <span
-                      className="setting-row-icon"
-                      style={iconStyle}
-                    >
-                      <Icon iconId={item.icon} size={17} />
-                    </span>
-                    <Text className="setting-row-label">{t(item.labelKey)}</Text>
-                    {displayValue && (
-                      <Text tone="secondary" className="setting-row-value">
-                        {displayValue}
-                      </Text>
-                    )}
-                    <Icon iconId="chevron-right" size={17} className="setting-row-chevron" />
-                  </button>
+                    label={t(item.labelKey)} description={displayValue}
+                    onActivate={() => onOpenSetting(item.id)}
+                  />
                 );
               })}
-            </div>
-          </div>
+          </ListSection>
         ))}
+        <ListSection inset>
+          <SettingsNavigationRow actionId="me.notifications" label={t('mobile.notifications.title')} onActivate={onOpenNotifications} />
+        </ListSection>
 
         {/* Sign Out button */}
-        <button
-          type="button"
-          className="settings-sign-out"
-          onClick={requestLogout}
-          disabled={loggingOut}
-        >
+        <Button actionId="me.signout" fullWidth density="comfortable" emphasis="quiet" tone="danger"
+          leading={<Icon iconId="log-out" size={16} />} onActivate={requestLogout}
+          execution={loggingOut ? 'pending' : 'idle'}>
           {loggingOut ? t('mobile.settings.station.loggingOut') : t('mobile.settings.signOut')}
-        </button>
+        </Button>
       </div>
     </div>
   );

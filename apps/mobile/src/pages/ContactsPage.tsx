@@ -19,11 +19,13 @@ import {
   Text,
   TextArea,
   TextField,
-  Dialog,
+  BottomSheet,
+  Switch,
 } from '@peers-touch/ui';
 
 import { confirm, confirmDestructive } from '../app/feedback/mobileFeedback';
 import { useMobileI18n } from '../app/mobileI18n';
+import { useMobileNavigationStore } from '../app/navigation';
 import type {
   MobileChatDetailRoute,
   MobileOverlayRoute,
@@ -32,7 +34,6 @@ import { MobileAvatar } from '../components/MobileAvatar';
 import { MobileNotice } from '../components/MobileNotice';
 import { BoundedList } from '../components/BoundedList';
 import { useContactsSurfaceFixture } from '../acceptance/contactsSurfaceFixture';
-import { readRouteQuery, saveRouteQuery } from '../app/navigation/scrollRestoration';
 import { formatSocialError, useSocialStore } from '../features/social/socialStore';
 import {
   actorDisplayName,
@@ -46,13 +47,11 @@ import {
   requestSocialPeerProfiles,
 } from '../features/social/socialRuntime';
 import {
-  classifyPeopleSearchFeedback,
   friendRequestDecisionFence,
   type FriendRequestDecisionAction,
 } from '../features/social/contactInteractionState';
-import type { ActorSearchResult } from '../features/social/socialTypes';
+import { readableErrorMessage } from '../features/social/socialTypes';
 import {
-  dispatchSendFriendRequest,
   dispatchAcceptFriendRequest,
   dispatchCreateGroup,
   dispatchRejectFriendRequest,
@@ -61,6 +60,10 @@ import {
 import { dispatchBlockUser, dispatchUnblockUser } from '../features/chat/chatCommands';
 import { groupCommandOutcomeKey } from '../features/chat/groupCommandState';
 import { ContactsAcceptanceSurface } from './contacts/ContactsAcceptanceSurface';
+import { mobileContactPreferences } from '../runtimes/contactPreferencesRuntime';
+import { useContactPreferences } from '../features/social/useContactPreferences';
+import { ContactRemarkForm } from './contacts/ContactRemarkForm';
+import type { UpdateFriendConversationSettingsInput } from '../features/social/socialApiTypes';
 
 /** Maximum contacts mounted in one traversable window. */
 const CONTACT_WINDOW_SIZE = 100;
@@ -70,10 +73,12 @@ interface ContactsPageProps {
   readonly activeOverlay: MobileOverlayRoute | null;
   readonly onOpenChat: (route: MobileChatDetailRoute) => void;
   readonly onOpenContact: (actorPtid: string) => void;
+  readonly onFindPeople: () => void;
   readonly onOpenOverlay: (route: MobileOverlayRoute) => void;
   readonly onCloseOverlay: () => void;
   readonly onBack: () => void;
   readonly searchEntry?: ReactNode;
+  readonly listHeader?: ReactNode;
 }
 
 export function ContactsPage(props: ContactsPageProps) {
@@ -83,6 +88,7 @@ export function ContactsPage(props: ContactsPageProps) {
       <ContactsAcceptanceSurface
         key={`${fixture.surfaceId}:${fixture.revision}`}
         surfaceId={fixture.surfaceId}
+        listHeader={props.listHeader}
       />
     );
   }
@@ -94,34 +100,44 @@ function ContactsPageInner({
   activeOverlay,
   onOpenChat,
   onOpenContact,
+  onFindPeople,
   onOpenOverlay,
   onCloseOverlay,
   onBack,
   searchEntry,
+  listHeader,
 }: ContactsPageProps) {
   const { t } = useMobileI18n();
+  const preferences = useContactPreferences();
+  const [remarkOpen, setRemarkOpen] = useState(false);
+  const [nicknameDraft, setNicknameDraft] = useState('');
+  const [noteDraft, setNoteDraft] = useState('');
+  const [savingRemark, setSavingRemark] = useState(false);
+  const [savingContactSettings, setSavingContactSettings] = useState(false);
 
   // --- Local UI state ---
-  const [contactQuery, setContactQuery] = useState(() => readRouteQuery('tab:contacts'));
-  const [peopleQuery, setPeopleQuery] = useState('');
-  const [submittedPeopleQuery, setSubmittedPeopleQuery] = useState('');
-  const [selectedFederationId, setSelectedFederationId] = useState('');
+  const contactQuery = useMobileNavigationStore((state) => state.messageQueries.contacts);
+  const setMessageQuery = useMobileNavigationStore((state) => state.setMessageQuery);
+  const setContactQuery = (value: string) => setMessageQuery('contacts', value);
   const [groupName, setGroupName] = useState('');
   const [groupDescription, setGroupDescription] = useState('');
   const [selectedGroupMemberPtids, setSelectedGroupMemberPtids] = useState<string[]>([]);
   const [creatingGroup, setCreatingGroup] = useState(false);
   const [pendingGroupConversationId, setPendingGroupConversationId] = useState('');
   const [localActionError, setLocalActionError] = useState('');
-  const [sendingRequest, setSendingRequest] = useState(false);
   const [openingChat, setOpeningChat] = useState(false);
   const [requestDecisionRevision, setRequestDecisionRevision] = useState(0);
   const activeContactRef = useRef(activeContactPtid);
   const mountedRef = useRef(true);
   activeContactRef.current = activeContactPtid;
-  useEffect(() => () => {
-    activeContactRef.current = null;
-    mountedRef.current = false;
-  }, []);
+  useEffect(() => {
+    activeContactRef.current = activeContactPtid;
+    mountedRef.current = true;
+    return () => {
+      activeContactRef.current = null;
+      mountedRef.current = false;
+    };
+  }, [activeContactPtid]);
 
   // --- Narrow store selectors ---
   const authSession = useSocialStore((s) => s.authSession);
@@ -134,24 +150,25 @@ function ContactsPageInner({
   const error = useSocialStore((s) => s.error);
   const clearSocialError = useSocialStore((s) => s.clearError);
   const selectSession = useSocialStore((s) => s.selectSession);
+  const sessions = useSocialStore((s) => s.sessions);
+  const conversationSettings = useSocialStore((s) => s.conversationSettings);
+  const loadConversationSettings = useSocialStore((s) => s.loadConversationSettings);
+  const updateConversationSettings = useSocialStore((s) => s.updateConversationSettings);
   const peerProfiles = useSocialStore((s) => s.peerProfiles);
   const peerProfileLoading = useSocialStore((s) => s.peerProfileLoading);
   const peerProfileErrors = useSocialStore((s) => s.peerProfileErrors);
   const friendshipStatus = useSocialStore((s) => s.friendshipStatus);
-  const peopleResults = useSocialStore((s) => s.peopleSearchResults);
-  const peopleFederations = useSocialStore((s) => s.peopleSearchFederations);
-  const peopleFederationsError = useSocialStore((s) => s.peopleSearchFederationsError);
-  const peopleSearching = useSocialStore((s) => s.peopleSearchLoading);
-  const peopleError = useSocialStore((s) => s.peopleSearchError);
-  const searchPeople = useSocialStore((s) => s.searchPeople);
-  const clearPeopleSearch = useSocialStore((s) => s.clearPeopleSearch);
 
   // --- Projection data ---
   const peerOnline = useSocialStore((s) => s.peerOnline);
 
   const contacts = useMemo(
-    () => projectAcceptedContacts(friendRequests, currentUserPtid, peerOnline, peerProfiles),
-    [currentUserPtid, friendRequests, peerOnline, peerProfiles],
+    () => projectAcceptedContacts(friendRequests, currentUserPtid, peerOnline, peerProfiles)
+      .map(contact => ({
+        ...contact,
+        peerName: preferences.contacts[contact.peerPtid]?.nickname || contact.peerName,
+      })),
+    [currentUserPtid, friendRequests, peerOnline, peerProfiles, preferences.contacts],
   );
   const inboundRequests = useMemo(
     () => projectPendingInboundRequests(friendRequests, currentUserPtid),
@@ -164,20 +181,9 @@ function ContactsPageInner({
   const filteredContacts = useMemo(() => {
     const query = contactQuery.trim().toLowerCase();
     if (!query) return contacts;
-    return contacts.filter((c) => `${c.peerName} ${c.peerPtid}`.toLowerCase().includes(query));
-  }, [contactQuery, contacts]);
-  const pendingTargetPtids = useMemo(
-    () => new Set(sentRequests.map((request) => request.receiverPtid)),
-    [sentRequests],
-  );
-  const inboundTargetPtids = useMemo(
-    () => new Set(inboundRequests.map((request) => request.senderPtid)),
-    [inboundRequests],
-  );
-  const contactPtids = useMemo(
-    () => new Set(contacts.map((c) => c.peerPtid).filter(Boolean)),
-    [contacts],
-  );
+    return contacts.filter((c) => `${c.peerName} ${c.peerPtid} ${preferences.contacts[c.peerPtid]?.note ?? ''}`
+      .toLowerCase().includes(query));
+  }, [contactQuery, contacts, preferences.contacts]);
   const selectedContact = useMemo(
     () => contacts.find((contact) => contact.peerPtid === activeContactPtid) ?? null,
     [activeContactPtid, contacts],
@@ -194,22 +200,51 @@ function ContactsPageInner({
   const selectedProfileLoading = selectedContact ? Boolean(peerProfileLoading[selectedContact.peerPtid]) : false;
   const selectedProfileError = selectedContact ? peerProfileErrors[selectedContact.peerPtid] : null;
   const selectedBlocked = selectedContact ? Boolean(friendshipStatus[selectedContact.peerPtid]?.blocked) : false;
-  const requestFederationId = peopleFederations.some(
-    (federation) => federation.federationId === selectedFederationId,
-  ) ? selectedFederationId : peopleFederations.length === 1 ? peopleFederations[0].federationId : '';
+  const selectedSessionId = sessions.find(session =>
+    (session.participantAPtid === currentUserPtid && session.participantBPtid === activeContactPtid)
+    || (session.participantBPtid === currentUserPtid && session.participantAPtid === activeContactPtid))?.ulid;
+  const selectedSettings = selectedSessionId ? conversationSettings[selectedSessionId] : undefined;
   const requestDecisionScope = authSession
     ? `${authSession.stationPeerId}\u0000${authSession.actorRef.ptid}`
     : '';
+  const contactScopeRef = useRef(requestDecisionScope);
+  contactScopeRef.current = requestDecisionScope;
+  useEffect(() => {
+    setRemarkOpen(false);
+    setSavingRemark(false);
+    setSavingContactSettings(false);
+    setLocalActionError('');
+  }, [activeContactPtid, requestDecisionScope]);
+  useEffect(() => {
+    if (!selectedSessionId) return;
+    const scope = requestDecisionScope;
+    void loadConversationSettings(selectedSessionId).catch(error => {
+      if (contactScopeRef.current === scope && activeContactRef.current === activeContactPtid) {
+        setLocalActionError(readableErrorMessage(error, 'mobile.settings.dirty.saveFailed'));
+      }
+    });
+  }, [activeContactPtid, loadConversationSettings, requestDecisionScope, selectedSessionId]);
+  const updateContactSettings = async (patch: UpdateFriendConversationSettingsInput) => {
+    if (!selectedContact || savingContactSettings) return;
+    const ptid = selectedContact.peerPtid;
+    const scope = requestDecisionScope;
+    const current = () => contactScopeRef.current === scope && activeContactRef.current === ptid && mountedRef.current;
+    setSavingContactSettings(true);
+    setLocalActionError('');
+    try {
+      const conversationId = selectedSessionId ?? await dispatchOpenContactChat(ptid);
+      if (!current()) return;
+      await updateConversationSettings(conversationId, patch);
+    } catch (error) {
+      if (current()) setLocalActionError(readableErrorMessage(error, 'mobile.settings.dirty.saveFailed'));
+    } finally {
+      if (current()) setSavingContactSettings(false);
+    }
+  };
   const requestDecisionStates = useMemo(
     () => friendRequestDecisionFence.snapshot(requestDecisionScope),
     [requestDecisionRevision, requestDecisionScope],
   );
-  const peopleSearchFeedback = classifyPeopleSearchFeedback({
-    query: submittedPeopleQuery,
-    resultCount: peopleResults.length,
-    loading: peopleSearching,
-    error: peopleError,
-  });
 
   // --- Side effects ---
   useEffect(() => {
@@ -265,14 +300,6 @@ function ContactsPageInner({
   ]);
 
   // --- Command dispatchers ---
-  const closeFindPeople = () => {
-    onCloseOverlay();
-    setPeopleQuery('');
-    setSubmittedPeopleQuery('');
-    setSelectedFederationId('');
-    clearPeopleSearch();
-  };
-
   const closeCreateGroup = () => {
     if (pendingGroupConversationId) {
       clearGroupCommandOutcome(pendingGroupConversationId, 'create');
@@ -316,37 +343,6 @@ function ContactsPageInner({
           ? error.message
           : 'mobile.group.operationCreateFailed',
       ));
-    }
-  };
-
-  const runPeopleSearch = async (value: string) => {
-    const query = value.trim();
-    setSubmittedPeopleQuery(query);
-    await searchPeople(query, requestFederationId);
-  };
-
-  const sendRequestToResult = async (result: ActorSearchResult) => {
-    const receiverPtid = result.ptid;
-    if (!receiverPtid || !requestFederationId || peopleSearching || sendingRequest) return;
-    setLocalActionError('');
-    setSendingRequest(true);
-    try {
-      const command = await dispatchSendFriendRequest(
-        receiverPtid,
-        result.homeStationPeerId,
-        requestFederationId,
-        '',
-      );
-      if (!command.checkpointReady) {
-        setLocalActionError(t('mobile.contacts.requestUnconfirmed'));
-        return;
-      }
-      await searchPeople(peopleQuery, requestFederationId);
-    } catch (err) {
-      setLocalActionError(t(err instanceof Error && err.message === 'mobile.contacts.requestUnconfirmed'
-        ? err.message : 'mobile.contacts.requestFailed'));
-    } finally {
-      setSendingRequest(false);
     }
   };
 
@@ -432,14 +428,8 @@ function ContactsPageInner({
           : 'contacts.profile-unavailable'}
       >
         <header className="page-header">
-          <button
-            className="header-action"
-            type="button"
-            onClick={onBack}
-            aria-label={t('common.action.back')}
-          >
-            <Icon iconId="arrow-left" size={20} />
-          </button>
+          <IconButton actionId="contacts.back" iconId="arrow-left" iconSize={20}
+            emphasis="quiet" density="comfortable" onActivate={onBack} label={t('common.action.back')} />
           <h1 className="header-title compact">
             {selectedContact?.peerName || t('mobile.contacts.profile')}
           </h1>
@@ -453,7 +443,9 @@ function ContactsPageInner({
                 </MobileAvatar>
               </Spin>
               <div className="contact-profile-copy">
-                <Text strong className="contact-profile-name">{selectedProfile?.displayName || selectedContact.peerName}</Text>
+                <Text strong className="contact-profile-name">{selectedContact.peerName}</Text>
+                {preferences.contacts[selectedContact.peerPtid]?.nickname && selectedProfile?.displayName
+                  ? <Text tone="secondary">{selectedProfile.displayName}</Text> : null}
                 {selectedProfile?.acct || selectedProfile?.username ? <Text tone="secondary">{selectedProfile.acct || selectedProfile.username}</Text> : null}
                 {selectedProfile?.note ? <Text className="contact-profile-note">{selectedProfile.note}</Text> : null}
                 <Tag tone={selectedContact.peerOnline ? 'success' : 'neutral'}>
@@ -473,13 +465,40 @@ function ContactsPageInner({
               {selectedProfileError ? <Text tone="danger">{formatSocialError(selectedProfileError)}</Text> : null}
               {selectedBlocked ? <Tag tone="danger">{t('mobile.contacts.blocked')}</Tag> : null}
               {localActionError ? <MobileNotice tone="error">{localActionError}</MobileNotice> : null}
+              {preferences.errorKey ? <MobileNotice tone="error">
+                {t(preferences.errorKey)}
+                <Button actionId="contact-preferences-retry" density="comfortable"
+                  onActivate={() => void mobileContactPreferences.load()}>{t('common.action.retry')}</Button>
+              </MobileNotice> : null}
+              {preferences.contacts[selectedContact.peerPtid]?.note
+                ? <Text>{preferences.contacts[selectedContact.peerPtid].note}</Text> : null}
+              <div className="contact-setting-row">
+                <Text>{t('mobile.chat.muteNotifications')}</Text>
+                <Switch aria-label={t('mobile.chat.muteNotifications')} checked={Boolean(selectedSettings?.isMuted)}
+                  disabled={savingContactSettings || Boolean(selectedSessionId && !selectedSettings)}
+                  onCheckedChange={value => void updateContactSettings({ isMuted: value })} />
+              </div>
+              <div className="contact-setting-row">
+                <Text>{t('mobile.contacts.alertEnabled')}</Text>
+                <Switch aria-label={t('mobile.contacts.alertEnabled')} checked={selectedSettings?.alertEnabled ?? true}
+                  disabled={savingContactSettings || Boolean(selectedSessionId && !selectedSettings)}
+                  onCheckedChange={value => void updateContactSettings({ alertEnabled: value })} />
+              </div>
+              <Button actionId="contact-profile-remark" fullWidth density="comfortable"
+                availability={preferences.status !== 'ready'
+                  ? { kind: 'disabled', reason: t('mobile.contacts.preferencesWait') } : undefined}
+                onActivate={() => {
+                  setNicknameDraft(preferences.contacts[selectedContact.peerPtid]?.nickname ?? '');
+                  setNoteDraft(preferences.contacts[selectedContact.peerPtid]?.note ?? '');
+                  setRemarkOpen(true);
+                }}>{t('mobile.contacts.editRemark')}</Button>
               <Button
                 actionId="contact-profile-open-chat"
                 emphasis="primary"
                 fullWidth
                 execution={openingChat ? 'pending' : 'idle'}
                 availability={selectedBlocked
-                  ? { kind: 'disabled', reason: t('mobile.contacts.openChat') }
+                  ? { kind: 'disabled', reason: t('mobile.chat.blockedComposer') }
                   : undefined}
                 onActivate={() => void openContactChat(selectedContact)}
               >
@@ -506,6 +525,27 @@ function ContactsPageInner({
             <Empty description={t('mobile.contacts.unavailable')} />
           )}
         </div>
+        <BottomSheet open={remarkOpen} title={t('mobile.contacts.editRemark')}
+          onDismiss={() => { if (!savingRemark) setRemarkOpen(false); }}>
+          <ContactRemarkForm nickname={nicknameDraft} note={noteDraft} saving={savingRemark}
+            error={localActionError} onNicknameChange={setNicknameDraft} onNoteChange={setNoteDraft}
+            onSave={async () => {
+              if (!selectedContact || savingRemark) return;
+              const ptid = selectedContact.peerPtid;
+              const scope = requestDecisionScope;
+              const current = () => activeContactRef.current === ptid && contactScopeRef.current === scope && mountedRef.current;
+              setSavingRemark(true);
+              setLocalActionError('');
+              try {
+                const saved = await mobileContactPreferences.save(ptid, { nickname: nicknameDraft, note: noteDraft });
+                if (saved && current()) setRemarkOpen(false);
+              } catch {
+                if (current()) setLocalActionError(t('mobile.contacts.preferencesSaveFailed'));
+              } finally {
+                if (current()) setSavingRemark(false);
+              }
+            }} />
+        </BottomSheet>
       </div>
     );
   }
@@ -515,38 +555,30 @@ function ContactsPageInner({
   // -----------------------------------------------------------------------
   return (
     <div className="page-container" data-product-surface="contacts.list">
-      <header className="page-header">
+      {listHeader ?? <><header className="page-header">
         <h1 className="header-title">{t('mobile.contacts.title')}</h1>
         {searchEntry}
-        <button
-          className="header-action"
-          type="button"
-          onClick={() => onOpenOverlay({ routeId: 'overlay:create-group' })}
-          aria-label={t('mobile.group.create')}
-        >
-          <Icon iconId="users" size={20} />
-        </button>
-        <button
-          className="header-action"
-          type="button"
-          onClick={() => onOpenOverlay({ routeId: 'overlay:add-friend' })}
-          aria-label={t('mobile.contacts.findPeople')}
-        >
-          <Icon iconId="user-plus" size={20} />
-        </button>
+        <IconButton actionId="contacts.create-group" iconId="users" iconSize={20}
+          density="comfortable" emphasis="quiet" label={t('mobile.group.create')}
+          onActivate={() => onOpenOverlay({ routeId: 'overlay:create-group' })} />
+        <IconButton actionId="contacts.add" iconId="user-plus" iconSize={20}
+          density="comfortable" emphasis="quiet" label={t('mobile.contacts.findPeople')}
+          onActivate={onFindPeople} />
       </header>
 
       <div className="chat-search-bar">
         <TextField
+          appearance="search"
           value={contactQuery}
           className="contact-search-field"
           leading={<Icon iconId="search" size={16} className="chat-search-leading" />}
           clearable
-          onClear={() => { setContactQuery(''); saveRouteQuery('tab:contacts', ''); }}
+          onClear={() => setContactQuery('')}
           placeholder={t('mobile.contacts.searchPlaceholder')}
-          onValueChange={(value) => { setContactQuery(value); saveRouteQuery('tab:contacts', value); }}
+          onValueChange={setContactQuery}
         />
       </div>
+      </>}
 
       {localActionError ? <MobileNotice onClose={() => setLocalActionError('')}>{localActionError}</MobileNotice> : null}
       {error ? <MobileNotice onClose={clearSocialError}>{formatSocialError(error)}</MobileNotice> : null}
@@ -595,7 +627,7 @@ function ContactsPageInner({
                         emphasis="primary"
                         execution={acceptPending ? 'pending' : 'idle'}
                         availability={Boolean(decision)
-                          ? { kind: 'disabled', reason: t('mobile.contacts.acceptRequest') }
+                        ? { kind: 'disabled', reason: t('mobile.recovery.command.state.pending') }
                           : undefined}
                         onActivate={() => void handleAcceptRequest(request.requestId)}
                       />
@@ -606,7 +638,7 @@ function ContactsPageInner({
                         label={t('mobile.contacts.rejectRequest')}
                         execution={rejectPending ? 'pending' : 'idle'}
                         availability={Boolean(decision)
-                          ? { kind: 'disabled', reason: t('mobile.contacts.rejectRequest') }
+                        ? { kind: 'disabled', reason: t('mobile.recovery.command.state.pending') }
                           : undefined}
                         onActivate={() => void handleRejectRequest(request.requestId)}
                       />
@@ -629,7 +661,10 @@ function ContactsPageInner({
                     {index === 0 || displayPeerName(contact.peerName, contact.peerPtid, t)[0]?.toUpperCase() !== displayPeerName(rows[index - 1].peerName, rows[index - 1].peerPtid, t)[0]?.toUpperCase()
                       ? <div className="contact-letter">{displayPeerName(contact.peerName, contact.peerPtid, t)[0]?.toUpperCase() || '?'}</div>
                       : null}
-                      <div className="contact-item-row" data-focus-id={contact.peerPtid} tabIndex={0} role="button" onClick={() => onOpenContact(contact.peerPtid)} onKeyDown={(event) => { if (event.key === 'Enter') onOpenContact(contact.peerPtid); }}>
+                      <div className="contact-item-row">
+                        <Button actionId={`contacts.open.${contact.peerPtid}`} data-focus-id={contact.peerPtid}
+                          fullWidth emphasis="quiet" density="comfortable"
+                          onActivate={() => onOpenContact(contact.peerPtid)}>
                         <span className="conversation-avatar-frame">
                           <MobileAvatar src={contact.peerAvatar} size={44}>{displayPeerName(contact.peerName, contact.peerPtid, t).slice(0, 1)}</MobileAvatar>
                           {contact.peerOnline ? <span className="conversation-online-dot" aria-hidden="true" /> : null}
@@ -638,6 +673,7 @@ function ContactsPageInner({
                           <Text strong>{displayPeerName(contact.peerName, contact.peerPtid, t)}</Text>
                           <Text tone="secondary">{contact.peerOnline ? t('mobile.social.online') : t('mobile.social.offline')}</Text>
                         </div>
+                        </Button>
                       </div>
                   </div>
                 ))}</BoundedList>
@@ -653,7 +689,7 @@ function ContactsPageInner({
                     actionId="contacts-empty-find-people"
                     emphasis="primary"
                     leading={<Icon iconId="user-plus" size={16} />}
-                    onActivate={() => onOpenOverlay({ routeId: 'overlay:add-friend' })}
+                    onActivate={onFindPeople}
                   >
                     {t('mobile.contacts.findPeople')}
                   </Button>
@@ -685,209 +721,20 @@ function ContactsPageInner({
         </Spin>
       </section>
 
-      {/* --- Find People dialog --- */}
-      <Dialog
-        title={t('mobile.contacts.findPeople')}
-        open={activeOverlay?.routeId === 'overlay:add-friend'}
-        closeLabel={t('common.action.close')}
-        onDismiss={closeFindPeople}
-      >
-        <div
-          className="find-people-modal"
-          data-product-surface="contacts.add-friend"
-        >
-          <div className="people-search-row">
-            <span className="people-search-input">
-              <TextField
-                value={peopleQuery}
-                leading={<Icon iconId="search" size={16} className="people-search-leading" />}
-                clearable
-                onClear={() => {
-                  setPeopleQuery('');
-                  setSubmittedPeopleQuery('');
-                  clearPeopleSearch();
-                }}
-                placeholder={t('mobile.contacts.findPeoplePlaceholder')}
-                autoComplete="off"
-                disabled={!requestFederationId}
-                onEnter={() => void runPeopleSearch(peopleQuery)}
-                onValueChange={(value) => {
-                  setPeopleQuery(value);
-                  setSubmittedPeopleQuery('');
-                  clearPeopleSearch();
-                }}
-              />
-            </span>
-            <IconButton
-              actionId="people-search-run"
-              iconId="search"
-              iconSize={16}
-              label={t('mobile.contacts.search')}
-              execution={peopleSearching ? 'pending' : 'idle'}
-              availability={!peopleQuery.trim() || !requestFederationId
-                ? { kind: 'disabled', reason: t('mobile.contacts.search') }
-                : undefined}
-              onActivate={() => void runPeopleSearch(peopleQuery)}
-            />
-          </div>
-          {peopleFederationsError ? (
-            <MobileNotice tone="error">{t('mobile.contacts.federationsFailed')}</MobileNotice>
-          ) : peopleFederations.length === 0 ? (
-            <MobileNotice>{t('mobile.contacts.noFederation')}</MobileNotice>
-          ) : (
-            <div className="people-federation-chips" role="group" aria-label={t('mobile.contacts.federation')}>
-              {peopleFederations.map((federation) => {
-                const active = requestFederationId === federation.federationId;
-                return (
-                  <button
-                    key={federation.federationId}
-                    type="button"
-                    className={`people-federation-chip${active ? ' active' : ''}`}
-                    aria-pressed={active}
-                    onClick={() => {
-                      setSelectedFederationId(federation.federationId);
-                      clearPeopleSearch();
-                    }}
-                  >
-                    <Icon iconId="globe" size={14} />
-                    <span>{t('mobile.contacts.federation')}: {federation.name || federation.federationId}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-          {localActionError ? <MobileNotice tone="error">{localActionError}</MobileNotice> : null}
-          <Spin active={peopleSearching && peopleResults.length === 0}>
-            <div className="people-result-list">
-              {peopleResults.length > 0 ? (
-                peopleResults.map((result) => {
-                  const receiverPtid = result.ptid;
-                  const isSelf = !!currentUserPtid && receiverPtid === currentUserPtid;
-                  const alreadyPending = pendingTargetPtids.has(receiverPtid);
-                  const inboundPending = inboundTargetPtids.has(receiverPtid);
-                  const alreadyFriend = contactPtids.has(receiverPtid);
-                  const handle = result.federation?.handle
-                    || (result.username ? `@${result.username}` : receiverPtid);
-                  const stationLabel = result.homeStationPeerId
-                    ? `${result.homeStationPeerId.slice(0, 18)}…`
-                    : '';
-                  const actionUnavailable = isSelf || alreadyPending || inboundPending || alreadyFriend || peopleSearching || sendingRequest || !requestFederationId || !result.homeStationPeerId;
-                  return (
-                    <div className="people-result-card" key={receiverPtid || result.username}>
-                      <MobileAvatar src={result.avatar} size={44}>{displayPeerName(
-                        result.displayName || result.username, receiverPtid, t,
-                      ).slice(0, 1)}</MobileAvatar>
-                      <div className="people-result-copy">
-                        <div className="people-result-title">
-                          <Text strong truncate>{displayPeerName(
-                            result.displayName || result.username, receiverPtid, t,
-                          )}</Text>
-                          {result.federation ? (
-                            <Tag tone="success" className="people-result-verified"
-                              leading={<Icon iconId="shield-check" size={11} />}>{t('mobile.contacts.verified')}</Tag>
-                          ) : null}
-                        </div>
-                        <Text tone="secondary" truncate className="people-result-handle">{handle}</Text>
-                        {stationLabel ? (
-                          <Text tone="secondary" truncate className="people-result-station">
-                            {t('mobile.contacts.station')}: {stationLabel}
-                          </Text>
-                        ) : null}
-                      </div>
-                      <Button
-                        actionId="people-result-send-request"
-                        emphasis="primary"
-                        density="compact"
-                        className="people-result-action"
-                        execution={sendingRequest ? 'pending' : 'idle'}
-                        availability={actionUnavailable
-                          ? {
-                              kind: 'disabled',
-                              reason: isSelf ? t('mobile.contacts.self')
-                                : alreadyFriend ? t('mobile.contacts.alreadyFriend')
-                                : alreadyPending ? t('mobile.contacts.requestSent')
-                                : inboundPending ? t('mobile.contacts.requestPending')
-                                : t('mobile.contacts.sendRequest'),
-                            }
-                          : undefined}
-                        onActivate={() => sendRequestToResult(result)}
-                      >
-                        {isSelf ? t('mobile.contacts.self')
-                          : alreadyFriend ? t('mobile.contacts.alreadyFriend')
-                          : alreadyPending ? t('mobile.contacts.requestSent')
-                          : inboundPending ? t('mobile.contacts.requestPending')
-                          : t('mobile.contacts.sendRequest')}
-                      </Button>
-                    </div>
-                  );
-                })
-              ) : peopleSearchFeedback === 'loading' ? null : (
-                <div data-people-search-state={peopleSearchFeedback}>
-                  <Empty description={
-                    <div className="empty-copy">
-                      <Text>
-                        {peopleSearchFeedback === 'unresolved-federated-handle'
-                          ? t('mobile.contacts.resolveFailed', { handle: submittedPeopleQuery })
-                          : peopleSearchFeedback === 'remote-unavailable'
-                            ? t('common.stationPicker.status.offline')
-                            : peopleSearchFeedback === 'failed'
-                              ? t(peopleError?.context.message.startsWith('mobile.')
-                                ? peopleError.context.message
-                                : 'mobile.contacts.searchFailed')
-                              : peopleSearchFeedback === 'local-no-result'
-                                ? t('mobile.contacts.noPeopleResults')
-                                : t('mobile.contacts.findPeopleHint')}
-                      </Text>
-                      {peopleSearchFeedback !== 'idle' ? (
-                        <Button
-                          actionId="people-search-retry"
-                          emphasis="secondary"
-                          density="compact"
-                          onActivate={() => void runPeopleSearch(peopleQuery)}
-                        >
-                          {t(peopleSearchFeedback === 'local-no-result'
-                            ? 'common.action.search'
-                            : 'common.action.retry')}
-                        </Button>
-                      ) : null}
-                    </div>
-                  } />
-                </div>
-              )}
-            </div>
-          </Spin>
-        </div>
-      </Dialog>
-
-      <Dialog
+      <BottomSheet
         title={t('mobile.group.create')}
         open={activeOverlay?.routeId === 'overlay:create-group'}
-        closeLabel={t('common.action.cancel')}
         onDismiss={closeCreateGroup}
-        footer={
-          <div className="group-create-footer">
-            <Button
-              actionId="create-group-cancel"
-              emphasis="quiet"
-              onActivate={closeCreateGroup}
-            >
-              {t('common.action.cancel')}
-            </Button>
-            <Button
-              actionId="create-group-submit"
-              emphasis="primary"
-              execution={creatingGroup ? 'pending' : 'idle'}
-              availability={!groupName.trim()
-                || selectedGroupMemberPtids.length === 0
-                || creatingGroup
-                ? { kind: 'disabled', reason: t('mobile.group.create') }
-                : undefined}
-              onActivate={() => void submitCreateGroup()}
-            >
-              {t('mobile.group.create')}
-            </Button>
-          </div>
-        }
+        actions={[
+          { id: 'create-group-cancel', label: t('common.action.cancel'), onActivate: closeCreateGroup },
+          { id: 'create-group-submit', label: t('mobile.group.create'),
+            availability: !groupName.trim()
+              ? { kind: 'disabled', reason: t('mobile.group.nameRequired') }
+              : selectedGroupMemberPtids.length === 0
+                ? { kind: 'disabled', reason: t('mobile.group.initialMembersRequired') }
+                : creatingGroup ? { kind: 'disabled', reason: t('mobile.recovery.command.state.pending') } : undefined,
+            onActivate: () => void submitCreateGroup() },
+        ]}
       >
         <div
           className="group-create-form"
@@ -962,7 +809,7 @@ function ContactsPageInner({
             <Empty description={t('mobile.group.noInitialMembers')} />
           )}
         </div>
-      </Dialog>
+      </BottomSheet>
     </div>
   );
 }

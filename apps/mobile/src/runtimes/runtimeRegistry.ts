@@ -54,6 +54,8 @@ import {
   fenceAccessRuntimeProjection,
 } from './accessRuntime';
 import { createDeviceSettingsRuntimeDescriptor } from './deviceSettingsRuntime';
+import { createContactPreferencesRuntimeDescriptor } from './contactPreferencesRuntime';
+import { createProfileImageRuntimeDescriptor } from './profileImageRuntime';
 import { createDeviceLinkRuntimeDescriptor, fenceMobileDeviceLink } from './deviceLinkRuntime';
 import { installMobileNativeEventBridge } from './mobileNativeEventBridge';
 import { fetchLifecycleGeneration } from './nativeLifecycleBridge';
@@ -738,6 +740,8 @@ function createRecoveryProjectionDescriptor(): MobileRuntimeDescriptor {
 export function createMobileRuntimeDescriptors(): MobileRuntimeDescriptor[] {
   return [
     createDeviceSettingsRuntimeDescriptor(),
+    createContactPreferencesRuntimeDescriptor(),
+    createProfileImageRuntimeDescriptor(),
     createSecureStorageDescriptor(),
     createDeviceLinkRuntimeDescriptor(),
     createXConfigRuntimeDescriptor(),
@@ -884,6 +888,8 @@ export function readMobileRuntimeScopeProjection() {
     },
     navigation: {
       primaryRouteId: navigation.primaryRouteId,
+      messagePane: navigation.messagePane,
+      momentsPane: navigation.momentsPane,
       detailKeys: [...navigation.detailKeys],
       overlayRouteId: navigation.overlayRouteId,
     },

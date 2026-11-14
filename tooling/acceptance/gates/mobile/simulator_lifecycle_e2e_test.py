@@ -81,6 +81,7 @@ class FakeSession:
         self.action_payloads: list[tuple[str, dict[str, Any]]] = []
         self.navigation = {
             "primaryRouteId": "tab:chat",
+            "messagePane": "chats",
             "detailKeys": [],
             "overlayRouteId": None,
         }
@@ -138,6 +139,14 @@ class FakeSession:
         if kind == "primary":
             self.navigation = {
                 "primaryRouteId": payload["routeId"],
+                "messagePane": self.navigation["messagePane"],
+                "detailKeys": [],
+                "overlayRouteId": None,
+            }
+        elif kind == "messages":
+            self.navigation = {
+                "primaryRouteId": "tab:chat",
+                "messagePane": payload["pane"],
                 "detailKeys": [],
                 "overlayRouteId": None,
             }
@@ -152,8 +161,8 @@ class FakeSession:
                 "detail:contact-profile": "actorPtid",
                 "detail:moment": "postId",
                 "detail:setting": "settingId",
-            }[route_id]
-            key = f"{route_id}:{route[suffix_field]}"
+            }.get(route_id)
+            key = f"{route_id}:{route[suffix_field]}" if suffix_field else route_id
             current = [
                 item
                 for item in self.navigation["detailKeys"]
@@ -166,11 +175,13 @@ class FakeSession:
         elif kind == "reset":
             self.navigation = {
                 "primaryRouteId": "tab:chat",
+                "messagePane": "chats",
                 "detailKeys": [],
                 "overlayRouteId": None,
             }
         return {
             "primaryRouteId": self.navigation["primaryRouteId"],
+            "messagePane": self.navigation["messagePane"],
             "detailKeys": list(self.navigation["detailKeys"]),
             "overlayRouteId": self.navigation["overlayRouteId"],
         }
@@ -250,16 +261,18 @@ class NavigationProjectionTests(unittest.TestCase):
     def test_accepts_exact_descriptor_navigation_state(self) -> None:
         projection = validate_navigation_projection(
             {
-                "primaryRouteId": "tab:contacts",
+                "primaryRouteId": "tab:chat",
+                "messagePane": "contacts",
                 "detailKeys": ["detail:contact-profile:ptid:alice"],
                 "overlayRouteId": None,
             },
-            primary_route_id="tab:contacts",
+            primary_route_id="tab:chat",
             detail_keys=["detail:contact-profile:ptid:alice"],
             overlay_route_id=None,
         )
 
-        self.assertEqual(projection["primaryRouteId"], "tab:contacts")
+        self.assertEqual(projection["primaryRouteId"], "tab:chat")
+        self.assertEqual(projection["messagePane"], "contacts")
 
     def test_rejects_navigation_shape_or_state_drift(self) -> None:
         with self.assertRaisesRegex(GateError, "invalid shape"):
@@ -276,11 +289,12 @@ class NavigationProjectionTests(unittest.TestCase):
         with self.assertRaisesRegex(GateError, "overlay"):
             validate_navigation_projection(
                 {
-                    "primaryRouteId": "tab:contacts",
+                    "primaryRouteId": "tab:chat",
+                    "messagePane": "contacts",
                     "detailKeys": [],
-                    "overlayRouteId": "overlay:add-friend",
+                    "overlayRouteId": "overlay:notifications",
                 },
-                primary_route_id="tab:contacts",
+                primary_route_id="tab:chat",
                 detail_keys=[],
                 overlay_route_id=None,
             )
@@ -449,6 +463,7 @@ class SimulatorRuntimeLifecycleGateTests(unittest.TestCase):
             result["navigation"]["reset"],
             {
                 "primaryRouteId": "tab:chat",
+                "messagePane": "chats",
                 "detailKeys": [],
                 "overlayRouteId": None,
             },
@@ -462,6 +477,7 @@ class SimulatorRuntimeLifecycleGateTests(unittest.TestCase):
             [
                 "action:lifecycle.waitReady",
                 "action:navigation.snapshot",
+                "action:navigation.apply",
                 "action:navigation.apply",
                 "action:navigation.apply",
                 "action:navigation.apply",

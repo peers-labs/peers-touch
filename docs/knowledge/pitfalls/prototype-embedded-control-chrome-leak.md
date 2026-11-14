@@ -3,6 +3,8 @@ kind: pitfall
 title: Embedded controls leak square UA chrome into rounded glass frames
 status: active
 owns:
+  - packages/ui/web/src/fields.tsx
+  - packages/ui/web/src/styles.css
   - packages/prototypes/shared/ui-system/DesignDirections.tsx
   - packages/prototypes/shared/ui-system/design-directions.css
   - tooling/scripts/ui-system/craft-battery.mjs
@@ -75,6 +77,21 @@ next identical defect had to be noticed by a human again.
   search input plus the rounded host focus ring.
 
 ## How to detect a recurrence
+
+### Embedded composer touch height
+
+The 2026-11-13 whole-product native iOS run failed `chat.direct-thread`:
+the comfortable Message textarea measured 40px despite its 44px parent.
+Embedded framing had removed the textarea's minimum height, and auto-growth
+used only one 24px text line plus 16px padding. The parent's touch target
+does not enlarge its child's input hit area.
+
+The shared comfortable embedded textarea now inherits the 44px control token.
+Auto-growth clamps both row limits against the computed minimum height and
+re-measures when it changes. Page-level height overrides are forbidden.
+The craft battery's `composer-input-touch-height` guards the actual input;
+repeat the complete native usability inventory after the affected batch
+to verify real WebView hit areas and containment.
 
 ```sh
 node tooling/scripts/ui-system/evaluate-specimens.mjs \

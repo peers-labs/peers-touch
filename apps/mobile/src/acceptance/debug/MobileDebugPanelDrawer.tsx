@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Button, Drawer } from '@peers-touch/ui';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import { reconcilePrivateMoments } from '../../runtimes/privateMomentsRuntime';
@@ -153,63 +154,76 @@ export function MobileDebugPanelDrawer() {
 
   return (
     <>
-      <button
-        type="button"
+      <Button
+        actionId="mobile.debug.toggle"
+        density="comfortable"
         className="mobile-debug-toggle"
         data-acceptance-debug-toggle="true"
         aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
+        onActivate={() => setOpen((current) => !current)}
       >
         {t('mobile.debug.toggle')}
-      </button>
-      {open && (
-        <aside
-          className="mobile-debug-drawer"
-          data-acceptance-debug-panel="true"
-          aria-label={t('mobile.debug.title')}
-        >
-          <header className="mobile-debug-header">
-            <strong>{t('mobile.debug.title')}</strong>
-            <button
-              type="button"
-              className="mobile-debug-icon-button"
+      </Button>
+      <Drawer
+        open={open}
+        side="bottom"
+        width="100%"
+        className="mobile-debug-drawer"
+        title={t('mobile.debug.title')}
+        closeLabel={t('mobile.debug.close')}
+        onDismiss={() => setOpen(false)}
+        style={{
+          height: '85dvh',
+          maxHeight: 'calc(100dvh - var(--safe-area-top, 0px) - 12px)',
+        }}
+        contentStyle={{ overscrollBehavior: 'contain', touchAction: 'pan-y' }}
+        footer={
+          <div className="mobile-debug-footer">
+            <Button
+              actionId="mobile.debug.close"
+              density="comfortable"
               data-acceptance-debug-close="true"
-              aria-label={t('mobile.debug.close')}
-              onClick={() => setOpen(false)}
+              onActivate={() => setOpen(false)}
             >
-              ×
-            </button>
-          </header>
+              {t('mobile.debug.close')}
+            </Button>
+          </div>
+        }
+      >
+        <section data-acceptance-debug-panel="true">
           <div className="mobile-debug-actions">
-            <button
-              type="button"
-              className="mobile-debug-button"
+            <Button
+              actionId="mobile.debug.refresh"
+              density="comfortable"
               data-acceptance-debug-refresh="true"
-              disabled={loading}
-              onClick={() => void refresh()}
+              execution={loading ? 'pending' : 'idle'}
+              availability={loading ? { kind: 'disabled', reason: t('mobile.debug.refresh') } : undefined}
+              onActivate={() => void refresh()}
             >
               {t('mobile.debug.refresh')}
-            </button>
-            <button
-              type="button"
-              className="mobile-debug-button"
+            </Button>
+            <Button
+              actionId="mobile.debug.reconcile"
+              density="comfortable"
               data-acceptance-debug-reconcile="true"
-              disabled={reconcile.kind === 'running'}
-              onClick={() => void runReconcile()}
+              execution={reconcile.kind === 'running' ? 'pending' : 'idle'}
+              availability={reconcile.kind === 'running'
+                ? { kind: 'disabled', reason: t('mobile.debug.reconciling') } : undefined}
+              onActivate={() => void runReconcile()}
             >
               {reconcile.kind === 'running'
                 ? t('mobile.debug.reconciling')
                 : t('mobile.debug.reconcile')}
-            </button>
-            <button
-              type="button"
-              className="mobile-debug-button"
+            </Button>
+            <Button
+              actionId="mobile.debug.copy"
+              density="comfortable"
               data-acceptance-debug-copy="true"
-              disabled={!snapshot}
-              onClick={() => void copySnapshot()}
+              availability={!snapshot ? { kind: 'disabled', reason: t('mobile.debug.none') } : undefined}
+              onActivate={() => void copySnapshot()}
             >
               {copyLabel}
-            </button>
+            </Button>
           </div>
           {reconcile.kind === 'inactive' && (
             <p className="mobile-debug-notice" data-acceptance-debug-reconcile-outcome="inactive">
@@ -269,8 +283,8 @@ export function MobileDebugPanelDrawer() {
               </section>
             ))}
           </div>
-        </aside>
-      )}
+        </section>
+      </Drawer>
     </>
   );
 }

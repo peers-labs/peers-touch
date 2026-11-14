@@ -713,6 +713,7 @@ class MobileMessagingJourney:
             sender_session.call_action(
                 "messaging.attachment.stage",
                 {
+                    "conversationId": conversation_id,
                     "filename": "acceptance.txt",
                     "mimeType": "text/plain",
                     "bytesBase64": base64.b64encode(ATTACHMENT_BYTES).decode("ascii"),

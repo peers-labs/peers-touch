@@ -5,6 +5,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 mod search;
+mod attachment_stages;
+pub(crate) use attachment_stages::AdoptedComposerMessage;
 
 use messaging_core::attachment::{
     upload_commitment_fields, validate_chat_attachment_transfer_record,
@@ -2926,6 +2928,7 @@ impl MobileMessagingStore {
     ) -> Result<Self, String> {
         ensure_messaging_schema(&RusqliteMessagingSchema(&connection))?;
         create_mobile_messaging_adapter_schema(&connection)?;
+        attachment_stages::initialize(&connection)?;
         search::initialize(&mut connection)?;
         let search_changes = Arc::new(AtomicU64::new(0));
         let changes = search_changes.clone();
@@ -3479,6 +3482,12 @@ impl MobileMessagingStore {
                         ],
                     )
                     .map_err(|error| error.to_string())?;
+                // Transfer ownership and remove the composer-stage registration
+                // in the same transaction: a restart cannot submit it twice.
+                transaction.execute(
+                    "DELETE FROM mobile_attachment_source_stages WHERE source_local_ref=?1",
+                    params![transfer.source_local_ref],
+                ).map_err(|error| error.to_string())?;
             }
             Ok(())
         })
@@ -14977,9 +14986,28 @@ mod tests {
             duration_ms: 0,
             voice_note: None,
         };
+        let source_stage = messaging_core::proto::chat::AttachmentSourceStageRecord {
+            stage_id: ulid::Ulid::new().to_string(),
+            conversation_id: draft.conversation_id.clone(),
+            filename: upload.filename.clone(),
+            mime_type: upload.mime_type.clone(),
+            plaintext_size: upload.transfer.plaintext_size,
+            plaintext_sha256: upload.plaintext_sha256.clone(),
+            content_kind: upload.content_kind,
+            duration_ms: 0,
+            voice_note: None,
+        };
+        store.save_attachment_source_stage(&upload.transfer.source_local_ref, &source_stage).unwrap();
         store
             .create_message_draft_with_uploads(&draft, &[upload.clone()])
             .unwrap();
+        assert!(store.attachment_source_stage(&source_stage.stage_id).unwrap().is_none());
+        let adopted = store.adopted_composer_message(&draft.conversation_id, &draft.message_id)
+            .unwrap().expect("adoption recovers before upload completion");
+        assert_eq!(adopted.attachment_ids, vec![upload.transfer.attachment_id.clone()]);
+        assert_eq!(adopted.plaintext, draft.plaintext);
+        assert!(store.attachment_source_message("other-conversation", &upload.transfer.source_local_ref)
+            .unwrap().is_none());
         assert_eq!(
             store.next_due_attachment_upload(10).unwrap().as_deref(),
             Some("attachment-1")

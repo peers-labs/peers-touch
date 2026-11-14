@@ -11,7 +11,7 @@ export type ChatAttachmentDraftStatus =
 
 export interface MobileChatAttachmentDraft {
   readonly id: string;
-  readonly file: File;
+  readonly file?: File;
   readonly filename: string;
   readonly mimeType: string;
   readonly previewUrl: string;
@@ -19,6 +19,7 @@ export interface MobileChatAttachmentDraft {
   readonly status: ChatAttachmentDraftStatus;
   readonly voiceNote?: MessagingVoiceNoteMetadata;
   readonly attachment?: MessagingAttachmentStageProjection;
+  readonly previewHandle?: string;
 }
 
 export function patchChatAttachmentDraft(

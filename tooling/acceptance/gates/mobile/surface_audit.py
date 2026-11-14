@@ -14,6 +14,7 @@ INTERACTIVE_TYPES = {
     "XCUIElementTypeSecureTextField",
     "XCUIElementTypeSwitch",
     "XCUIElementTypeTextField",
+    "XCUIElementTypeTextView",
 }
 GEOMETRY_TOLERANCE_PX = 1
 SYSTEM_KEYBOARD_CONTROL_LABELS = {
@@ -138,6 +139,7 @@ def audit_keyboard_tree(markup: str) -> dict[str, Any]:
             if node.tag in {
                 "XCUIElementTypeTextField",
                 "XCUIElementTypeSecureTextField",
+                "XCUIElementTypeTextView",
             }
             and node.attrib.get("visible", "true") != "false"
         ),
@@ -147,6 +149,29 @@ def audit_keyboard_tree(markup: str) -> dict[str, Any]:
     text_field_rect = _rect(text_field) if text_field is not None else None
     if keyboard_rect is None or text_field_rect is None:
         raise GateError("iOS keyboard audit requires keyboard and text field")
+    raw_keyboard_rect = keyboard_rect
+    coordinate_space = "application"
+    application = next(
+        (node for node in root.iter() if node.tag == "XCUIElementTypeApplication"),
+        None,
+    )
+    application_rect = _rect(application) if application is not None else None
+    if application_rect is not None:
+        app_x, app_y, screen_width, screen_height = application_rect
+        x, y, width, height = keyboard_rect
+        if (
+            app_x == 0 and app_y == 0
+            and screen_width > screen_height
+            and height > screen_height
+            and 0 <= x < x + width <= screen_height
+            and 0 <= y < y + height <= screen_width
+        ):
+            # WDA LANDSCAPE is landscape-left. iOS can keep the entire keyboard
+            # subtree in portrait coordinates while the app/text field rotates.
+            # Transform that out-of-landscape, valid-portrait rectangle once;
+            # already rotated keyboard bounds retain their original coordinates.
+            keyboard_rect = (y, screen_height - x - width, height, width)
+            coordinate_space = "portrait-to-landscape-left"
     _, keyboard_top, _, _ = keyboard_rect
     _, text_top, _, text_height = text_field_rect
     if text_top + text_height > keyboard_top:
@@ -158,4 +183,7 @@ def audit_keyboard_tree(markup: str) -> dict[str, Any]:
     return {
         "keyboardTop": keyboard_top,
         "textFieldBottom": text_top + text_height,
+        "keyboardRect": dict(zip(("x", "y", "width", "height"), keyboard_rect)),
+        "rawKeyboardRect": dict(zip(("x", "y", "width", "height"), raw_keyboard_rect)),
+        "keyboardCoordinateSpace": coordinate_space,
     }

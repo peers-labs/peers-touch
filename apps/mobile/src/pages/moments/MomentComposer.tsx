@@ -28,9 +28,11 @@ import {
 import { useLifecycleKernel } from '../../app/lifecycle';
 import { useVisualKeyboardOverlap } from '../../app/layout/useVisualKeyboardOverlap';
 import { useMobileI18n } from '../../app/mobileI18n';
+import { useMobilePageDisposal } from '../../components/mobilePageLifetime';
 import type { MobileAuthSession } from '../../features/auth/authSession';
 import type { SocialIntentPort } from '../../features/social/socialIntents';
 import {
+  createNativeMediaRequestId,
   discardNativeMomentMedia,
   pickNativeMedia,
   uploadNativeMomentMedia,
@@ -173,26 +175,6 @@ function revokePreviewUrl(previewUrl: string): void {
   if (previewUrl.startsWith('blob:')) {
     URL.revokeObjectURL(previewUrl);
   }
-}
-
-const CROCKFORD_BASE32 = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-
-function createMomentMediaRequestId(): string {
-  const random = globalThis.crypto.getRandomValues(new Uint8Array(10));
-  let time = BigInt(Date.now());
-  let encodedTime = '';
-  for (let index = 0; index < 10; index += 1) {
-    encodedTime = CROCKFORD_BASE32[Number(time & 31n)] + encodedTime;
-    time >>= 5n;
-  }
-  let entropy = 0n;
-  for (const byte of random) entropy = (entropy << 8n) | BigInt(byte);
-  let encodedEntropy = '';
-  for (let index = 0; index < 16; index += 1) {
-    encodedEntropy = CROCKFORD_BASE32[Number(entropy & 31n)] + encodedEntropy;
-    entropy >>= 5n;
-  }
-  return encodedTime + encodedEntropy;
 }
 
 export function createRestoredMomentImages(
@@ -419,7 +401,7 @@ export function MomentComposer({
   }, [pendingImages]);
 
   // Cleanup preview URLs on unmount
-  useEffect(() => () => {
+  useMobilePageDisposal(() => {
     pendingImagesRef.current.forEach((item) => {
       revokePreviewUrl(item.previewUrl);
       if (item.stagedHandle && !retainStagedMediaOnUnmountRef.current) {
@@ -433,13 +415,7 @@ export function MomentComposer({
         });
       }
     });
-  }, [
-    session.actorRef.ptid,
-    session.deviceId,
-    session.lifecycleGeneration,
-    session.sessionId,
-    session.stationPeerId,
-  ]);
+  });
 
   const uploadingCount = useMemo(
     () => pendingImages.filter((item) => item.status === 'uploading').length,
@@ -668,7 +644,7 @@ export function MomentComposer({
         stationPeerId: session.stationPeerId,
         actorPtid: session.actorRef.ptid,
         sessionId: session.sessionId,
-        requestId: createMomentMediaRequestId(),
+        requestId: createNativeMediaRequestId(),
         surfaceKind: 'moment_media',
         capability: 'photo_library',
         deadlineMs: Date.now() + 5 * 60 * 1000,

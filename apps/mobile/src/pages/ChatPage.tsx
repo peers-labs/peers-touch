@@ -9,8 +9,8 @@
  * to preserve scroll anchors and keep DOM node count stable.
  */
 
-import { Component, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
-import { Button, Icon, Spin, Text, TextField } from '@peers-touch/ui';
+import { Component, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
+import { Button, Icon, Spin, Text } from '@peers-touch/ui';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { useShallow } from 'zustand/shallow';
 import {
@@ -22,11 +22,13 @@ import {
 
 import { confirm, confirmDestructive, notifySuccess } from '../app/feedback/mobileFeedback';
 import { useMobileI18n } from '../app/mobileI18n';
+import { useMobilePlatform } from '../services/platform/PlatformContext';
 import type { MobileChatDetailRoute } from '../app/navigation';
-import { readRouteQuery, saveRouteQuery } from '../app/navigation/scrollRestoration';
-import { useChatSurfaceFixture } from '../acceptance/chatSurfaceFixture';
+import { useMobileNavigationStore } from '../app/navigation';
+import { chatSurfaceFixtureRouteKind, useChatSurfaceFixture } from '../acceptance/chatSurfaceFixture';
 import type { BoundedListHandle } from '../components/BoundedList';
 import { MobileNotice } from '../components/MobileNotice';
+import { MobilePageLifetimeContext, useMobilePageDisposal } from '../components/mobilePageLifetime';
 import { MobileMessageAttachmentItem } from '../features/chat/MessageAttachment';
 import { AttachmentDetailHost } from '../features/chat/AttachmentDetailHost';
 import type { MobileAuthSession } from '../features/auth/authSession';
@@ -72,6 +74,7 @@ import {
   readChatDraftEnvelope,
   type ChatComposerDraft,
 } from '../features/chat/chatDraftEnvelope';
+import { recoveredComposerDraft } from '../features/chat/composerRecoveryProjection';
 import {
   isChatMessageCommandBusy,
   type ChatMessageCommandOutcome,
@@ -88,6 +91,9 @@ import { useChatMessageAnchor } from '../features/chat/useChatMessageAnchor';
 import { useChatReadCursor } from '../features/chat/useChatReadCursor';
 import { useMobileChatVoiceRecorder } from '../features/chat/useMobileChatVoiceRecorder';
 import { mobileCallManager } from '../features/call/callState';
+import {
+  mobileGroupCallManager, readMobileGroupCallRooms, subscribeMobileGroupCallRooms,
+} from '../features/call/groupCallRuntime';
 import {
   useConversationListProjection,
   conversationAvatar,
@@ -119,6 +125,9 @@ import {
 } from '../runtimes/chatStorageRuntime';
 import {
   messagingDiscardAttachmentStage,
+  messagingRestoreAttachmentStage,
+  messagingRecoverAttachmentComposer,
+  messagingReleaseAttachmentStagePreview,
   messagingStageAttachment,
   type MessagingAccountInput,
   type MessagingAttachmentStageProjection,
@@ -131,11 +140,12 @@ import {
 } from './chat/ChatPageContent';
 import {
   AttachmentDraftChip,
-  ComposerToolButton,
+  ChatMessageSelectionToolbar,
   EncryptedAttachmentReferenceChip,
   MessageCommandStatus,
   MessageDeliveryStatus,
 } from './chat/ChatMessagePresentation';
+import { MobileChatComposer } from './chat/MobileChatComposer';
 import {
   ChatMessageSectionBoundary,
   chatMessageSenderPtids,
@@ -175,7 +185,6 @@ const MOBILE_THREAD_COMPOSER_CAPABILITIES =
 const MOBILE_THREAD_VISUAL_VARS = mobileChatVisualCssVars(
   mobileChatLayoutForSurface('mobile-thread'),
 ) as CSSProperties;
-const MOBILE_COMPOSER_EMOJIS = ['😀', '😊', '😂', '😍', '👍', '🙏', '🎉', '🔥', '❤️', '✨', '😭', '🤔'] as const;
 /** Maximum messages mounted in one traversable window. */
 const MESSAGE_WINDOW_SIZE = 200;
 
@@ -196,7 +205,7 @@ type PendingComposerSubmission = {
 
 type ForwardMessageSource = {
   conversationId: string;
-  messageId: string;
+  messageIds: string[];
 };
 
 // ---------------------------------------------------------------------------
@@ -226,6 +235,7 @@ interface ChatPageProps {
   readonly activeDetail: MobileChatDetailRoute | null;
   readonly onStartConversation: () => void;
   readonly searchEntry?: ReactNode;
+  readonly listHeader?: ReactNode;
   readonly onOpenSearch?: (conversationId: string) => void;
   readonly onOpenConversation: (route: MobileChatDetailRoute) => void;
   readonly onBack: () => void;
@@ -234,11 +244,17 @@ interface ChatPageProps {
 export function ChatPage(props: ChatPageProps) {
   const { t } = useMobileI18n();
   const chatFixture = useChatSurfaceFixture();
+  const pageLifetime = useContext(MobilePageLifetimeContext);
   if (chatFixture.surfaceId) {
+    const pageRouteKind = !props.activeDetail ? 'list'
+      : props.activeDetail.routeId === 'detail:group-conversation' ? 'group' : 'direct';
+    if (pageLifetime?.visible === false
+      || chatSurfaceFixtureRouteKind(chatFixture.surfaceId) !== pageRouteKind) return null;
     return (
       <ChatAcceptanceSurface
         key={`${chatFixture.surfaceId}:${chatFixture.revision}`}
         surfaceId={chatFixture.surfaceId}
+        listHeader={props.listHeader}
       />
     );
   }
@@ -266,26 +282,40 @@ function ChatPageInner({
   onOpenConversation,
   onBack,
   searchEntry,
+  listHeader,
   onOpenSearch,
 }: ChatPageProps) {
   const { t } = useMobileI18n();
+  const platform = useMobilePlatform();
   const activeSessionUlid = activeDetail?.routeId === 'detail:chat-conversation'
     ? activeDetail.sessionUlid
     : null;
   const activeGroupUlid = activeDetail?.routeId === 'detail:group-conversation'
     ? activeDetail.groupUlid
     : null;
+  const groupCallRooms = useSyncExternalStore(subscribeMobileGroupCallRooms, readMobileGroupCallRooms, readMobileGroupCallRooms);
   const routeHasMessageAnchor = Boolean(
     activeDetail?.messageId || activeDetail?.threadRootMessageId,
   );
 
   // --- Local UI state (no business logic) ---
   const [draft, setDraft] = useState('');
-  const [conversationQuery, setConversationQuery] = useState(() => readRouteQuery('tab:chat'));
+  const conversationQuery = useMobileNavigationStore((state) => state.messageQueries.chats);
+  const setMessageQuery = useMobileNavigationStore((state) => state.setMessageQuery);
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const [composerEmojiOpen, setComposerEmojiOpen] = useState(false);
-  const [composerMoreOpen, setComposerMoreOpen] = useState(false);
-  const [attachmentDrafts, setAttachmentDrafts] = useState<MobileChatAttachmentDraft[]>([]);
+  const [recentEmojis, setRecentEmojis] = useState<string[]>([]);
+  const [composerSubmitting, setComposerSubmitting] = useState(false);
+  const [attachmentDrafts, setAttachmentDraftState] = useState<MobileChatAttachmentDraft[]>([]);
+  const attachmentDraftsRef = useRef<MobileChatAttachmentDraft[]>([]);
+  const discardedAttachmentDraftIdsRef = useRef(new Set<string>());
+  const setAttachmentDrafts = useCallback((
+    next: MobileChatAttachmentDraft[] | ((current: MobileChatAttachmentDraft[]) => MobileChatAttachmentDraft[]),
+  ) => {
+    const value = typeof next === 'function' ? next(attachmentDraftsRef.current) : next;
+    attachmentDraftsRef.current = value;
+    setAttachmentDraftState(value);
+  }, []);
   const [encryptedAttachmentRefs, setEncryptedAttachmentRefs] = useState<string[]>([]);
   const [pendingAttachmentSubmission, setPendingAttachmentSubmission] = useState<PendingComposerSubmission | null>(null);
   const [chatActionStates, setChatActionStates] = useState<Record<string, ChatActionState>>({});
@@ -300,6 +330,9 @@ function ChatPageInner({
   const [replyToMessageUlid, setReplyToMessageUlid] = useState('');
   const [threadRootMessageUlid, setThreadRootMessageUlid] = useState('');
   const [messageActionUlid, setMessageActionUlid] = useState('');
+  const [selectionActive, setSelectionActive] = useState(false);
+  const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
+  const [selectionBusy, setSelectionBusy] = useState(false);
   const [forwardMessageSource, setForwardMessageSource] = useState<ForwardMessageSource | null>(null);
   const [forwardPendingDestinationId, setForwardPendingDestinationId] = useState('');
   const [forwardError, setForwardError] = useState('');
@@ -350,6 +383,13 @@ function ChatPageInner({
   })));
   const activeConversationId = activeGroupUlid || activeSessionUlid || '';
   const authSession = useAuthStore((s) => s.session);
+  const draftScopeKey = authSession
+    ? `${authSession.stationPeerId}:${authSession.actorRef.ptid}:${authSession.deviceId}`
+    : '';
+  const draftSessionRef = useRef(authSession);
+  const translateRef = useRef(t);
+  draftSessionRef.current = authSession;
+  translateRef.current = t;
   const messageFlagKind = activeGroupUlid
     ? 'group'
     : activeSessionUlid
@@ -451,18 +491,34 @@ function ChatPageInner({
   const chatActionStateWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
   const conversationSettingsAttemptRef = useRef(0);
   const conversationSettingsPendingRef = useRef(false);
-  useEffect(() => () => { activeConversationKeyRef.current = ''; }, []);
+  useEffect(() => {
+    activeConversationKeyRef.current = activeConversationKey;
+    return () => { activeConversationKeyRef.current = ''; };
+  }, [activeConversationKey]);
   const pendingAttachmentSubmissionRef = useRef<PendingComposerSubmission | null>(null);
   const draftValueRef = useRef('');
   const replyToMessageUlidRef = useRef('');
   const encryptedAttachmentRefsRef = useRef<readonly string[]>([]);
+  const threadRootMessageUlidRef = useRef('');
   const draftLoadGenerationRef = useRef(0);
+  const initializedComposerScope = useRef('');
+  const restoredComposerScope = useRef('');
+  const initializedThreadScope = useRef('');
+  const draftScopeKeyRef = useRef(draftScopeKey);
+  draftScopeKeyRef.current = draftScopeKey;
   const draftWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const composerSubmittingRef = useRef(false);
+  const suspendedComposerRef = useRef<{
+    draft: ChatComposerDraft;
+    attachments: MobileChatAttachmentDraft[];
+  } | null>(null);
+  const emojiWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
   const draftPort = useMemo(() => getDraftRestorationPort(), []);
   activeConversationKeyRef.current = activeConversationKey;
   draftValueRef.current = draft;
   replyToMessageUlidRef.current = replyToMessageUlid;
   encryptedAttachmentRefsRef.current = encryptedAttachmentRefs;
+  threadRootMessageUlidRef.current = threadRootMessageUlid;
   const attachmentUploading = attachmentDrafts.some(
     (attachment) => attachment.status === 'uploading',
   );
@@ -471,8 +527,7 @@ function ChatPageInner({
   );
   const activeInputPanel = chatInputPanelState({
     emojiOpen: composerEmojiOpen,
-    attachmentOpen: composerMoreOpen
-      || attachmentDrafts.length > 0
+    attachmentOpen: attachmentDrafts.length > 0
       || encryptedAttachmentRefs.length > 0,
   });
   const chatBottomOcclusion = useChatBottomOcclusion({
@@ -544,11 +599,38 @@ function ChatPageInner({
 
   // --- Refs ---
   const composingRef = useRef(false);
-  const composerInputRef = useRef<HTMLInputElement | null>(null);
+  const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const lastCompositionEndRef = useRef(0);
   const lastTypingPulseRef = useRef(0);
   const typingIdleTimerRef = useRef<number | null>(null);
+  const emojiStorageKey = authSession
+    ? `chat.recent-emojis:${authSession.stationPeerId}:${authSession.actorRef.ptid}`
+    : '';
+  useEffect(() => {
+    let cancelled = false;
+    if (!emojiStorageKey) setRecentEmojis([]);
+    if (emojiStorageKey) {
+      void platform.secureStorage.get(emojiStorageKey).then(value => {
+        if (cancelled || !value) return;
+        try {
+          const parsed: unknown = JSON.parse(value);
+          if (Array.isArray(parsed)) setRecentEmojis(parsed.filter((item): item is string => typeof item === 'string').slice(0, 12));
+        } catch { /* Invalid preferences do not prevent composing a message. */ }
+      }).catch(() => undefined);
+    }
+    return () => { cancelled = true; };
+  }, [emojiStorageKey, platform]);
+  const rememberEmoji = (emoji: string) => {
+    const next = [emoji, ...recentEmojis.filter(item => item !== emoji)].slice(0, 12);
+    setRecentEmojis(next);
+    if (emojiStorageKey) {
+      emojiWriteQueueRef.current = emojiWriteQueueRef.current
+        .then(() => platform.secureStorage.set(emojiStorageKey, JSON.stringify(next)))
+        .catch(() => undefined);
+    }
+  };
 
   const enqueueDraftPersistence = useCallback((
     targetId: string,
@@ -557,9 +639,21 @@ function ChatPageInner({
     if (!authSession || !targetId) return;
     const stationPeerId = authSession.stationPeerId;
     const actorPtid = authSession.actorRef.ptid;
+    const snapshot: ChatComposerDraft = {
+      ...nextDraft,
+      stagedAttachmentIds: nextDraft.stagedAttachmentIds
+        ?? (targetId === activeConversationId
+          ? readyChatAttachmentStages(suspendedComposerRef.current?.attachments ?? attachmentDraftsRef.current).map(stage => stage.stageId)
+          : []),
+      threadRootMessageId: nextDraft.threadRootMessageId
+        ?? (targetId === activeConversationId ? threadRootMessageUlidRef.current : ''),
+      pendingMessageId: nextDraft.pendingMessageId
+        ?? (pendingAttachmentSubmissionRef.current?.conversationId === targetId
+          ? pendingAttachmentSubmissionRef.current.messageId : ''),
+    };
     draftWriteQueueRef.current = draftWriteQueueRef.current
       .then(async () => {
-        if (isChatComposerDraftEmpty(nextDraft)) {
+        if (isChatComposerDraftEmpty(snapshot)) {
           await draftPort.remove(
             stationPeerId,
             actorPtid,
@@ -571,16 +665,19 @@ function ChatPageInner({
         await draftPort.save(buildChatDraftEnvelope(
           { stationPeerId, actorPtid },
           targetId,
-          nextDraft,
+          snapshot,
           Date.now(),
         ));
       })
       .catch((draftError) => {
+        const currentSession = draftSessionRef.current;
+        if (!currentSession || currentSession.stationPeerId !== stationPeerId
+          || currentSession.actorRef.ptid !== actorPtid) return;
         setLocalActionError(
           `${t('mobile.recovery.draftRestore.title')}: ${formatChatOperationError(draftError)}`,
         );
       });
-  }, [authSession, draftPort, t]);
+  }, [activeConversationId, authSession, draftPort, t]);
 
   useEffect(() => {
     if (selectedConversationId !== (activeConversationId || null)) {
@@ -589,9 +686,12 @@ function ChatPageInner({
   }, [activeConversationId, selectSession, selectedConversationId]);
 
   useEffect(() => {
+    const scope = `${activeConversationId}:${draftScopeKey}:${routeHasMessageAnchor}`;
+    if (initializedThreadScope.current === scope) return;
+    initializedThreadScope.current = scope;
     // Route anchors own thread selection independently of composer restoration.
     if (!routeHasMessageAnchor) setThreadRootMessageUlid('');
-  }, [activeConversationId, authSession, routeHasMessageAnchor]);
+  }, [activeConversationId, draftScopeKey, routeHasMessageAnchor]);
 
   useEffect(() => {
     if (
@@ -607,42 +707,49 @@ function ChatPageInner({
 
   // --- Side effects: persist the old target, then restore the new target ---
   useEffect(() => {
+    const authSession = draftSessionRef.current;
+    const scope = `${draftScopeKey}:${activeConversationId}`;
+    if (restoredComposerScope.current === scope) return;
+    const preserveDraft = initializedComposerScope.current === scope;
+    initializedComposerScope.current = scope;
     const loadGeneration = draftLoadGenerationRef.current + 1;
     draftLoadGenerationRef.current = loadGeneration;
-    setActionSheetOpen(false);
-    setGroupManageOpen(false);
-    setComposerEmojiOpen(false);
-    setComposerMoreOpen(false);
-    setEditingMessage(null);
-    setReplyToMessageUlid('');
-    replyToMessageUlidRef.current = '';
-    setEncryptedAttachmentRefs([]);
-    encryptedAttachmentRefsRef.current = [];
-    setMessageActionUlid('');
-    setForwardMessageSource(null);
-    setForwardPendingDestinationId('');
-    setForwardError('');
-    setClearHistoryConfirmOpen(false);
-    setClearHistoryBusy(false);
-    conversationSettingsAttemptRef.current += 1;
-    conversationSettingsPendingRef.current = false;
-    setConversationSettingsState(IDLE_CONVERSATION_SETTINGS_FEEDBACK);
-    setLocalActionError('');
-    setAttachmentDrafts((drafts) => {
-      if (!pendingAttachmentSubmissionRef.current) {
-        void discardStagedAttachments(authSession, drafts).catch((discardError) => {
-          setLocalActionError(`${t('mobile.chat.attachmentUploadFailed')}: ${formatChatOperationError(discardError)}`);
-        });
-      }
-      drafts.forEach((item) => revokeObjectUrl(item.previewUrl));
-      return [];
-    });
-    pendingAttachmentSubmissionRef.current = null;
-    setPendingAttachmentSubmission(null);
-    setDraft('');
-    draftValueRef.current = '';
+    if (!preserveDraft) {
+      setActionSheetOpen(false);
+      setGroupManageOpen(false);
+      setComposerEmojiOpen(false);
+      composerSubmittingRef.current = false;
+      setComposerSubmitting(false);
+      suspendedComposerRef.current = null;
+      setEditingMessage(null);
+      setReplyToMessageUlid('');
+      replyToMessageUlidRef.current = '';
+      setEncryptedAttachmentRefs([]);
+      encryptedAttachmentRefsRef.current = [];
+      setMessageActionUlid('');
+      setSelectionActive(false);
+      setSelectedMessageIds([]);
+      setSelectionBusy(false);
+      setForwardMessageSource(null);
+      setForwardPendingDestinationId('');
+      setForwardError('');
+      setClearHistoryConfirmOpen(false);
+      setClearHistoryBusy(false);
+      conversationSettingsAttemptRef.current += 1;
+      conversationSettingsPendingRef.current = false;
+      setConversationSettingsState(IDLE_CONVERSATION_SETTINGS_FEEDBACK);
+      setLocalActionError('');
+      setAttachmentDrafts([]);
+      pendingAttachmentSubmissionRef.current = null;
+      setPendingAttachmentSubmission(null);
+      setDraft('');
+      draftValueRef.current = '';
+    }
 
-    if (!authSession || !activeConversationId) return;
+    if (!authSession || !activeConversationId) {
+      restoredComposerScope.current = scope;
+      return;
+    }
     const stationPeerId = authSession.stationPeerId;
     const actorPtid = authSession.actorRef.ptid;
     void draftWriteQueueRef.current
@@ -652,37 +759,103 @@ function ChatPageInner({
         MobileDraftSurfaceKind.CHAT_COMPOSER,
         activeConversationId,
       ))
-      .then((envelope) => {
-        const restored = envelope ? readChatDraftEnvelope(envelope) : null;
+      .then(async (envelope) => {
+        const saved = envelope ? readChatDraftEnvelope(envelope) : null;
+        const native = await messagingRecoverAttachmentComposer({
+          stationPeerId, actorPtid, conversationId: activeConversationId,
+          stageIds: saved?.stagedAttachmentIds ?? [],
+        });
+        const restored = recoveredComposerDraft(saved, native);
         if (
           draftLoadGenerationRef.current !== loadGeneration
-          || draftValueRef.current
-          || replyToMessageUlidRef.current
-          || encryptedAttachmentRefsRef.current.length > 0
-          || !restored
+          || (!preserveDraft && (draftValueRef.current
+            || replyToMessageUlidRef.current
+            || encryptedAttachmentRefsRef.current.length > 0
+            || attachmentDraftsRef.current.length > 0))
         ) {
           return;
         }
-        draftValueRef.current = restored.text;
-        replyToMessageUlidRef.current = restored.replyToMessageId;
-        encryptedAttachmentRefsRef.current = restored.encryptedAttachmentRefs;
-        setDraft(restored.text);
-        setReplyToMessageUlid(restored.replyToMessageId);
-        setEncryptedAttachmentRefs([...restored.encryptedAttachmentRefs]);
+        if (!preserveDraft) {
+          draftValueRef.current = restored.text;
+          replyToMessageUlidRef.current = restored.replyToMessageId;
+          encryptedAttachmentRefsRef.current = restored.encryptedAttachmentRefs;
+          setDraft(restored.text);
+          setReplyToMessageUlid(restored.replyToMessageId);
+          setEncryptedAttachmentRefs([...restored.encryptedAttachmentRefs]);
+          if (restored.threadRootMessageId) setThreadRootMessageUlid(restored.threadRootMessageId);
+          if (restored.pendingMessageId) {
+            const pending: PendingComposerSubmission = {
+              conversationId: activeConversationId,
+              messageId: restored.pendingMessageId,
+              attachmentIds: [...restored.encryptedAttachmentRefs],
+              submittedText: restored.text,
+              replyToMessageId: restored.replyToMessageId,
+              threadRootMessageId: restored.threadRootMessageId,
+            };
+            pendingAttachmentSubmissionRef.current = pending;
+            setPendingAttachmentSubmission(pending);
+          }
+        }
+        const recovered = await Promise.all(native.stages.map(async stage => {
+          const stageId = stage.stageId;
+          try {
+            const access = await messagingRestoreAttachmentStage({
+              stationPeerId, actorPtid, stageId,
+            });
+            return {
+              id: stageId, filename: access.stage.filename,
+              mimeType: access.stage.mimeType, previewUrl: access.assetUrl,
+              previewHandle: access.accessHandle,
+              voiceNote: access.stage.voiceNote, attempt: 0,
+              status: 'ready' as const, attachment: access.stage,
+            };
+          } catch (restoreError) {
+            if (draftLoadGenerationRef.current === loadGeneration) {
+              setLocalActionError(`${translateRef.current('mobile.recovery.draftRestore.title')}: ${formatChatOperationError(restoreError)}`);
+            }
+            // Keep a removable failed item, preserving its native identity.
+            return {
+              id: stageId, filename: stage.filename,
+              mimeType: stage.mimeType, previewUrl: '', attempt: 0,
+              status: 'failed' as const,
+              attachment: stage,
+            };
+          }
+        }));
+        if (draftLoadGenerationRef.current !== loadGeneration) {
+          recovered.forEach(item => releaseDraftPreview(authSession, item));
+          return;
+        }
+        setAttachmentDrafts(current => {
+          const present = new Set(current.flatMap(item => [item.id, item.attachment?.stageId]));
+          const added = recovered.filter(item => !present.has(item.id));
+          recovered.filter(item => present.has(item.id)).forEach(item => releaseDraftPreview(authSession, item));
+          return [...current, ...added];
+        });
+        restoredComposerScope.current = scope;
       })
       .catch((draftError) => {
         if (draftLoadGenerationRef.current !== loadGeneration) return;
         setLocalActionError(
-          `${t('mobile.recovery.draftRestore.title')}: ${formatChatOperationError(draftError)}`,
+          `${translateRef.current('mobile.recovery.draftRestore.title')}: ${formatChatOperationError(draftError)}`,
         );
       });
+    return () => {
+      draftLoadGenerationRef.current += 1;
+    };
   }, [
     activeConversationId,
     activeSessionUlid,
-    authSession,
+    draftScopeKey,
     draftPort,
-    t,
+    setAttachmentDrafts,
   ]);
+
+  useMobilePageDisposal(() => {
+    const session = draftSessionRef.current;
+    attachmentDraftsRef.current.forEach(item => releaseDraftPreview(session, item));
+    suspendedComposerRef.current?.attachments.forEach(item => releaseDraftPreview(session, item));
+  });
 
   useEffect(() => {
     if (
@@ -709,7 +882,7 @@ function ChatPageInner({
         pendingAttachmentSubmission.attachmentIds,
       )
     ) return;
-    attachmentDrafts.forEach((item) => revokeObjectUrl(item.previewUrl));
+    attachmentDrafts.forEach((item) => releaseDraftPreview(authSession, item));
     setAttachmentDrafts([]);
     if (draftValueRef.current === pendingAttachmentSubmission.submittedText) {
       draftValueRef.current = '';
@@ -718,10 +891,13 @@ function ChatPageInner({
       setDraft('');
       setReplyToMessageUlid('');
       setEncryptedAttachmentRefs([]);
+      pendingAttachmentSubmissionRef.current = null;
       enqueueDraftPersistence(activeConversationId, {
         text: '',
         replyToMessageId: '',
         encryptedAttachmentRefs: [],
+        stagedAttachmentIds: [],
+        pendingMessageId: '',
       });
     }
     pendingAttachmentSubmissionRef.current = null;
@@ -729,6 +905,7 @@ function ChatPageInner({
   }, [
     activeConversationId,
     attachmentDrafts,
+    authSession,
     enqueueDraftPersistence,
     messages,
     pendingAttachmentSubmission,
@@ -878,28 +1055,19 @@ function ChatPageInner({
     });
   }, [activeConversationId, editingMessage, enqueueDraftPersistence]);
 
-  const clearAttachmentDrafts = useCallback(() => {
-    pendingAttachmentSubmissionRef.current = null;
-    setPendingAttachmentSubmission(null);
-    setAttachmentDrafts((drafts) => {
-      drafts.forEach((item) => revokeObjectUrl(item.previewUrl));
-      return [];
-    });
-  }, []);
-
-  const clearComposerDraftAfterEdit = useCallback(() => {
-    draftValueRef.current = '';
-    replyToMessageUlidRef.current = '';
-    encryptedAttachmentRefsRef.current = [];
+  const restoreComposerAfterEdit = useCallback(() => {
+    const suspended = suspendedComposerRef.current;
+    const restored = suspended?.draft ?? { text: '', replyToMessageId: '', encryptedAttachmentRefs: [] };
+    draftValueRef.current = restored.text;
+    replyToMessageUlidRef.current = restored.replyToMessageId;
+    encryptedAttachmentRefsRef.current = restored.encryptedAttachmentRefs;
     setEditingMessage(null);
-    setDraft('');
-    setReplyToMessageUlid('');
-    setEncryptedAttachmentRefs([]);
-    enqueueDraftPersistence(activeConversationId, {
-      text: '',
-      replyToMessageId: '',
-      encryptedAttachmentRefs: [],
-    });
+    setDraft(restored.text);
+    setReplyToMessageUlid(restored.replyToMessageId);
+    setEncryptedAttachmentRefs([...restored.encryptedAttachmentRefs]);
+    setAttachmentDrafts(suspended?.attachments ?? []);
+    suspendedComposerRef.current = null;
+    enqueueDraftPersistence(activeConversationId, restored);
   }, [activeConversationId, enqueueDraftPersistence]);
 
   const applySendOutcome = useCallback((
@@ -908,6 +1076,7 @@ function ChatPageInner({
     attachments: MessagingAttachmentStageProjection[],
     outcome: MessagingSubmitCommandResult,
     context: ChatMessageSendContext,
+    submissionGeneration: number,
   ) => {
     validateSendOutcome(outcome, attachments.length);
     const submission = {
@@ -918,21 +1087,27 @@ function ChatPageInner({
       replyToMessageId: context.replyToMessageId,
       threadRootMessageId: context.threadRootMessageId,
     };
+    enqueueDraftPersistence(conversationId, {
+      text: submittedText,
+      replyToMessageId: context.replyToMessageId ?? '',
+      threadRootMessageId: context.threadRootMessageId ?? '',
+      encryptedAttachmentRefs: outcome.attachmentIds,
+      stagedAttachmentIds: [],
+      pendingMessageId: outcome.messageId,
+    });
+    if (draftLoadGenerationRef.current !== submissionGeneration
+      || activeConversationKeyRef.current !== `${activeGroupUlid ? 'group' : 'friend'}:${conversationId}`) return;
     encryptedAttachmentRefsRef.current = outcome.attachmentIds;
     setEncryptedAttachmentRefs(outcome.attachmentIds);
     setAttachmentDrafts((drafts) => (
       markChatAttachmentDraftsSubmitted(drafts)
     ));
-    enqueueDraftPersistence(conversationId, {
-      text: submittedText,
-      replyToMessageId: context.replyToMessageId ?? '',
-      encryptedAttachmentRefs: outcome.attachmentIds,
-    });
     pendingAttachmentSubmissionRef.current = submission;
     setPendingAttachmentSubmission(submission);
-  }, [enqueueDraftPersistence]);
+  }, [activeGroupUlid, enqueueDraftPersistence]);
 
   const submitMessage = useCallback(async () => {
+    if (composerSubmittingRef.current || pendingAttachmentSubmissionRef.current) return;
     const readyAttachments = readyChatAttachmentStages(attachmentDrafts);
     if (
       attachmentUploading
@@ -957,11 +1132,15 @@ function ChatPageInner({
       throw new Error(t('mobile.chat.blockedComposer'));
     }
     void emitTypingState(false);
-
+    const submissionKey = activeConversationKeyRef.current;
+    const submissionGeneration = draftLoadGenerationRef.current;
+    composerSubmittingRef.current = true;
+    setComposerSubmitting(true);
+    try {
     const activeKind = activeGroupConversation ? 'group' : 'friend';
     if (editingMessage?.kind === activeKind) {
       await dispatchEditMessage(activeConversationId, editingMessage.ulid, draft);
-      clearComposerDraftAfterEdit();
+      if (activeConversationKeyRef.current === submissionKey) restoreComposerAfterEdit();
       return;
     }
     const outcome = await dispatchSendMessage(
@@ -977,11 +1156,19 @@ function ChatPageInner({
         readyAttachments,
         outcome,
         sendContext,
+        submissionGeneration,
       );
     }
-  }, [activeConversation, activeConversationId, activeGroupConversation, applySendOutcome, attachmentDrafts, attachmentStagingFailed, attachmentUploading, clearComposerDraftAfterEdit, draft, editingMessage, emitTypingState, encryptedAttachmentRefs.length, friendshipStatus, replyToMessageUlid, t, threadRootMessageUlid]);
+    } finally {
+      if (draftLoadGenerationRef.current === submissionGeneration
+        && activeConversationKeyRef.current === submissionKey) {
+        composerSubmittingRef.current = false;
+        setComposerSubmitting(false);
+      }
+    }
+  }, [activeConversation, activeConversationId, activeGroupConversation, applySendOutcome, attachmentDrafts, attachmentStagingFailed, attachmentUploading, restoreComposerAfterEdit, draft, editingMessage, emitTypingState, encryptedAttachmentRefs.length, friendshipStatus, replyToMessageUlid, t, threadRootMessageUlid]);
 
-  const handleComposerKeyDown = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
+  const handleComposerKeyDown = useCallback((event: KeyboardEvent<HTMLTextAreaElement>) => {
     const native = event.nativeEvent;
     if (!shouldSendComposerEnter({
       key: event.key, shiftKey: event.shiftKey, isComposing: composingRef.current,
@@ -1000,8 +1187,14 @@ function ChatPageInner({
       if (removed.attachment) {
         await discardStagedAttachments(authSession, [removed]);
       }
-      revokeObjectUrl(removed.previewUrl);
+      discardedAttachmentDraftIdsRef.current.add(id);
       setAttachmentDrafts((drafts) => drafts.filter((item) => item.id !== id));
+      releaseDraftPreview(authSession, removed);
+      enqueueDraftPersistence(activeConversationId, {
+        text: draftValueRef.current, replyToMessageId: replyToMessageUlidRef.current,
+        encryptedAttachmentRefs: encryptedAttachmentRefsRef.current,
+        stagedAttachmentIds: attachmentDraftsRef.current.flatMap(item => item.attachment ? [item.attachment.stageId] : []),
+      });
       if (encryptedAttachmentRefsRef.current.length > 0) {
         updateEncryptedAttachmentRefs([]);
       }
@@ -1011,16 +1204,26 @@ function ChatPageInner({
   };
 
   const openMobileFilePicker = () => {
-    if (editingMessage || attachmentUploading || pendingAttachmentSubmission) return;
-    setComposerMoreOpen(false);
+    if (editingMessage || attachmentUploading || pendingAttachmentSubmission || composerSubmittingRef.current) return;
+    setComposerEmojiOpen(false);
     fileInputRef.current?.click();
+  };
+  const openMobileCamera = () => {
+    if (editingMessage || attachmentUploading || pendingAttachmentSubmission || composerSubmittingRef.current) return;
+    setComposerEmojiOpen(false);
+    cameraInputRef.current?.click();
   };
 
   const stageAttachmentDraft = async (
     item: MobileChatAttachmentDraft,
     uploadConversationKey: string,
   ) => {
-    if (!authSession) return;
+    if (!authSession || !item.file) return;
+    const uploadConversationId = activeConversationId;
+    const uploadGeneration = draftLoadGenerationRef.current;
+    const uploadScope = draftScopeKey;
+    const account = messagingAccountFromSession(authSession);
+    let completedAttachment: MessagingAttachmentStageProjection | undefined;
     setAttachmentDrafts((drafts) => patchChatAttachmentDraft(
       drafts,
       item.id,
@@ -1032,32 +1235,75 @@ function ChatPageInner({
     ));
     try {
       const attachment = await messagingStageAttachment({
-        ...messagingAccountFromSession(authSession),
+        ...account,
+        conversationId: uploadConversationId,
         file: item.file,
         voiceNote: item.voiceNote,
       });
-      if (uploadConversationKey !== activeConversationKeyRef.current) {
-        await discardStagedAttachments(authSession, [{
-          ...item,
-          attachment,
-          status: 'ready',
-        }]);
-        setAttachmentDrafts((drafts) => drafts.filter(
-          (candidate) => candidate.id !== item.id,
-        ));
-        revokeObjectUrl(item.previewUrl);
+      completedAttachment = attachment;
+      if (discardedAttachmentDraftIdsRef.current.delete(item.id)) {
+        await messagingDiscardAttachmentStage({ ...account, stageId: attachment.stageId });
         return;
       }
+      // This write is independent of the currently displayed route. Late
+      // completion restores to its originating conversation and exact account.
+      const persistStage = draftWriteQueueRef.current.then(async () => {
+        const envelope = await draftPort.load(account.stationPeerId, account.actorPtid,
+          MobileDraftSurfaceKind.CHAT_COMPOSER, uploadConversationId);
+        const old = envelope ? readChatDraftEnvelope(envelope) : null;
+        await draftPort.save(buildChatDraftEnvelope(account, uploadConversationId, {
+          text: old?.text ?? '', replyToMessageId: old?.replyToMessageId ?? '',
+          encryptedAttachmentRefs: old?.encryptedAttachmentRefs ?? [],
+          stagedAttachmentIds: [...(old?.stagedAttachmentIds ?? []), attachment.stageId],
+          threadRootMessageId: old?.threadRootMessageId,
+          pendingMessageId: old?.pendingMessageId,
+        }, Date.now()));
+      });
+      draftWriteQueueRef.current = persistStage.catch(() => undefined);
+      await persistStage;
+      if (uploadGeneration !== draftLoadGenerationRef.current
+        || uploadConversationKey !== activeConversationKeyRef.current) {
+        revokeObjectUrl(item.previewUrl);
+        // Returning to the same conversation before completion must not require
+        // another navigation to discover its newly committed source.
+        if (uploadScope === draftScopeKeyRef.current
+          && uploadConversationKey === activeConversationKeyRef.current) {
+          const generation = draftLoadGenerationRef.current;
+          const access = await messagingRestoreAttachmentStage({ ...account, stageId: attachment.stageId });
+          const recovered: MobileChatAttachmentDraft = {
+            id: attachment.stageId, filename: attachment.filename, mimeType: attachment.mimeType,
+            previewUrl: access.assetUrl, previewHandle: access.accessHandle,
+            voiceNote: attachment.voiceNote, attachment, status: 'ready', attempt: 1,
+          };
+          if (generation !== draftLoadGenerationRef.current
+            || attachmentDraftsRef.current.some(draft => draft.attachment?.stageId === attachment.stageId)) {
+            releaseDraftPreview(authSession, recovered);
+          } else setAttachmentDrafts(current => [...current, recovered]);
+        }
+        return;
+      }
+      const access = await messagingRestoreAttachmentStage({ ...account, stageId: attachment.stageId });
+      if (uploadGeneration !== draftLoadGenerationRef.current
+        || !attachmentDraftsRef.current.some(draft => draft.id === item.id)) {
+        releaseDraftPreview(authSession, { ...item, previewUrl: access.assetUrl,
+          previewHandle: access.accessHandle });
+        return;
+      }
+      releaseDraftPreview(authSession, item);
       setAttachmentDrafts((drafts) => patchChatAttachmentDraft(
         drafts,
         item.id,
-        { status: 'ready', attachment },
+        { status: 'ready', attachment, previewUrl: access.assetUrl,
+          previewHandle: access.accessHandle },
       ));
     } catch (uploadError) {
+      if (uploadGeneration !== draftLoadGenerationRef.current
+        || uploadConversationKey !== activeConversationKeyRef.current
+        || !attachmentDraftsRef.current.some(draft => draft.id === item.id)) return;
       setAttachmentDrafts((drafts) => patchChatAttachmentDraft(
         drafts,
         item.id,
-        { status: 'failed', attachment: undefined },
+        { status: 'failed', attachment: completedAttachment },
       ));
       setLocalActionError(`${t('mobile.chat.attachmentUploadFailed')}: ${formatChatOperationError(uploadError)}`);
     }
@@ -1067,6 +1313,34 @@ function ChatPageInner({
     if (pendingAttachmentSubmission || attachmentUploading) return;
     const retry = attachmentDrafts.find((item) => item.id === id);
     if (!retry || retry.status !== 'failed') return;
+    if (retry.attachment && authSession) {
+      const session = authSession;
+      const generation = draftLoadGenerationRef.current;
+      try {
+        const access = await messagingRestoreAttachmentStage({
+          ...messagingAccountFromSession(authSession), stageId: retry.attachment.stageId,
+        });
+        if (draftLoadGenerationRef.current !== generation
+          || !attachmentDraftsRef.current.some(item => item.id === id)) {
+          releaseDraftPreview(session, { ...retry, previewUrl: access.assetUrl,
+            previewHandle: access.accessHandle });
+          return;
+        }
+        releaseDraftPreview(session, retry);
+        setAttachmentDrafts(current => patchChatAttachmentDraft(current, id, {
+          status: 'ready', attachment: access.stage, filename: access.stage.filename,
+          mimeType: access.stage.mimeType, voiceNote: access.stage.voiceNote,
+          previewUrl: access.assetUrl, previewHandle: access.accessHandle,
+        }));
+        enqueueDraftPersistence(activeConversationId, {
+          text: draftValueRef.current, replyToMessageId: replyToMessageUlidRef.current,
+          encryptedAttachmentRefs: encryptedAttachmentRefsRef.current,
+        });
+      } catch (error) {
+        if (draftLoadGenerationRef.current === generation) setLocalActionError(formatChatOperationError(error));
+      }
+      return;
+    }
     if (encryptedAttachmentRefsRef.current.length > 0) {
       updateEncryptedAttachmentRefs([]);
     }
@@ -1074,7 +1348,7 @@ function ChatPageInner({
   };
 
   const handleMobileFilesSelected = async (files: FileList | null) => {
-    if (!files?.length || !authSession) return;
+    if (!files?.length || !authSession || editingMessage || pendingAttachmentSubmission || composerSubmittingRef.current) return;
     const conversationId = activeGroupUlid || activeSessionUlid || '';
     const uploadConversationKey = activeConversationKey;
     if (!conversationId) return;
@@ -1098,6 +1372,7 @@ function ChatPageInner({
       );
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = '';
+      if (cameraInputRef.current) cameraInputRef.current.value = '';
     }
   };
 
@@ -1132,7 +1407,6 @@ function ChatPageInner({
   }, [activeConversationKey, voiceRecorder.stopRecording]);
 
   const startVoiceRecording = () => {
-    setComposerMoreOpen(false);
     setComposerEmojiOpen(false);
     composerInputRef.current?.blur();
     setLocalActionError('');
@@ -1350,22 +1624,64 @@ function ChatPageInner({
 
   const forwardSelectedMessage = async (destination: MessageForwardDestination) => {
     if (!authSession || !forwardMessageSource || forwardPendingDestinationId) return;
+    const sourceKey = activeConversationKeyRef.current;
+    const remaining = [...forwardMessageSource.messageIds];
     setForwardError('');
     setForwardPendingDestinationId(destination.conversationId);
     try {
-      await dispatchForwardMessage(
-        authSession,
-        destination.kind,
-        forwardMessageSource.conversationId,
-        forwardMessageSource.messageId,
-        destination.conversationId,
-      );
+      while (remaining.length > 0) {
+        await dispatchForwardMessage(
+          authSession,
+          destination.kind,
+          forwardMessageSource.conversationId,
+          remaining[0],
+          destination.conversationId,
+        );
+        remaining.shift();
+        if (activeConversationKeyRef.current !== sourceKey) return;
+        setSelectedMessageIds(current => current.filter(id => remaining.includes(id)));
+      }
       setForwardMessageSource(null);
+      setSelectionActive(false);
+      setSelectedMessageIds([]);
     } catch {
-      setForwardError(t('mobile.chat.operationForwardFailed'));
+      if (activeConversationKeyRef.current === sourceKey) {
+        setForwardMessageSource({ ...forwardMessageSource, messageIds: remaining });
+        setForwardError(t('mobile.chat.operationForwardFailed'));
+      }
     } finally {
-      setForwardPendingDestinationId('');
+      if (activeConversationKeyRef.current === sourceKey) setForwardPendingDestinationId('');
     }
+  };
+  const toggleSelectedMessage = (messageId: string) => {
+    if (selectionBusy) return;
+    setSelectedMessageIds(current => current.includes(messageId) ? current.filter(id => id !== messageId) : [...current, messageId]);
+  };
+  const hideSelectedMessages = () => {
+    if (selectionBusy || selectedMessageIds.length === 0) return;
+    const ids = [...selectedMessageIds];
+    const key = activeConversationKeyRef.current;
+    void confirmDestructive({
+      title: t('mobile.chat.deleteForMeConfirmTitle'),
+      description: t('mobile.chat.deleteSelectedBody', { count: ids.length }),
+      confirmLabel: t('mobile.chat.deleteForMe'),
+      cancelLabel: t('common.action.cancel'),
+      onConfirm: async () => {
+        setSelectionBusy(true);
+        const remaining = [...ids];
+        try {
+          for (const id of ids) {
+            await dispatchHideMessageForMe(activeGroupUlid ? 'group' : 'friend', activeConversationId, id);
+            remaining.shift();
+            if (activeConversationKeyRef.current !== key) return;
+            setSelectedMessageIds([...remaining]);
+          }
+          setSelectionActive(false);
+        } finally {
+          if (activeConversationKeyRef.current === key) setSelectionBusy(false);
+        }
+      },
+    });
   };
 
   // -----------------------------------------------------------------------
@@ -1452,17 +1768,18 @@ function ChatPageInner({
               </div>
               {!threadRootMessageUlid ? (
                 <div className="chat-header-actions">
-                  {activeConversation && !activePeerBlocked ? (
+                  {(activeGroupConversation || (activeConversation && !activePeerBlocked)) ? (
                     <>
                       <button
                         className="header-action"
                         type="button"
+                        data-group-call-start={activeGroupConversation ? 'audio' : undefined}
+                        data-direct-call-start={activeConversation ? 'audio' : undefined}
                         onClick={() => {
                           void runChatOperation(
-                            () => mobileCallManager.startOutgoingCall(
-                              activeConversation.peerPtid,
-                              'audio',
-                            ),
+                            () => activeGroupConversation
+                              ? mobileGroupCallManager.joinGroupCall(activeGroupConversation.projection.conversationId, 'audio')
+                              : mobileCallManager.startOutgoingCall(activeConversation!.peerPtid, 'audio'),
                             'mobile.chat.callFailed',
                           );
                         }}
@@ -1473,12 +1790,13 @@ function ChatPageInner({
                       <button
                         className="header-action"
                         type="button"
+                        data-group-call-start={activeGroupConversation ? 'video' : undefined}
+                        data-direct-call-start={activeConversation ? 'video' : undefined}
                         onClick={() => {
                           void runChatOperation(
-                            () => mobileCallManager.startOutgoingCall(
-                              activeConversation.peerPtid,
-                              'video',
-                            ),
+                            () => activeGroupConversation
+                              ? mobileGroupCallManager.joinGroupCall(activeGroupConversation.projection.conversationId, 'video')
+                              : mobileCallManager.startOutgoingCall(activeConversation!.peerPtid, 'video'),
                             'mobile.chat.callFailed',
                           );
                         }}
@@ -1493,6 +1811,13 @@ function ChatPageInner({
               ) : null}
           </>
         </header>
+
+        {activeGroupUlid && groupCallRooms.has(activeGroupUlid) ? <div className="mobile-group-call-banner">
+          <Text>{t('mobile.groupCall.inProgress')}</Text>
+          <Button actionId="group-call.join" label={t('mobile.groupCall.join')} onActivate={() => {
+            void runChatOperation(() => mobileGroupCallManager.joinGroupCall(activeGroupUlid), 'mobile.chat.callFailed');
+          }} />
+        </div> : null}
 
         <ChatOverlayHost>
           <ChatActionSheet
@@ -1549,6 +1874,13 @@ function ChatPageInner({
             currentUserPtid={currentUserPtid}
             canEdit={selectedActionCanEdit}
             commandBusy={isChatMessageCommandBusy(selectedActionCommandOutcome)}
+            onCopyError={() => setLocalActionError(t('mobile.chat.copyFailed'))}
+            onSelect={() => {
+              if (!selectedActionMessage) return;
+              setSelectionActive(true);
+              setSelectedMessageIds([selectedActionMessage.ulid]);
+              setMessageActionUlid('');
+            }}
             onClose={() => setMessageActionUlid('')}
             onReply={() => {
               if (!selectedActionMessage) return;
@@ -1559,7 +1891,7 @@ function ChatPageInner({
               if (!selectedActionMessage) return;
               setForwardMessageSource({
                 conversationId: activeConversationId,
-                messageId: selectedActionMessage.ulid,
+                messageIds: [selectedActionMessage.ulid],
               });
               setMessageActionUlid('');
             }}
@@ -1594,8 +1926,16 @@ function ChatPageInner({
               );
             }}
             onEdit={() => {
-              if (!selectedActionMessage) return;
-              clearAttachmentDrafts();
+              if (!selectedActionMessage || composerSubmittingRef.current || pendingAttachmentSubmissionRef.current || attachmentUploading) return;
+              suspendedComposerRef.current = {
+                draft: {
+                  text: draftValueRef.current,
+                  replyToMessageId: replyToMessageUlidRef.current,
+                  encryptedAttachmentRefs: encryptedAttachmentRefsRef.current,
+                },
+                attachments: attachmentDrafts,
+              };
+              setAttachmentDrafts([]);
               setEditingMessage({
                 kind: isGroupThread ? 'group' : 'friend',
                 ulid: selectedActionMessage.ulid,
@@ -1748,6 +2088,12 @@ function ChatPageInner({
         ) : null}
         {localActionError ? <MobileNotice onClose={() => setLocalActionError('')}>{localActionError}</MobileNotice> : null}
 
+        {selectionActive && (
+          <ChatMessageSelectionToolbar count={selectedMessageIds.length} busy={selectionBusy}
+            onForward={() => setForwardMessageSource({ conversationId: activeConversationId, messageIds: selectedMessageIds })}
+            onHide={hideSelectedMessages}
+            onCancel={() => { setSelectionActive(false); setSelectedMessageIds([]); }} />
+        )}
         <ChatMessageSectionBoundary
           surfaceKey={`messages:${activeConversationKey}:${threadRootMessageUlid}`}
           background={actionState.background}
@@ -1806,6 +2152,13 @@ function ChatPageInner({
               'mobile.chat.operationReactionFailed',
             );
           }}
+          onOpenActions={message => {
+            setMessageActionUlid(message.ulid);
+            void refreshFriendMessageCommandOutcomes();
+          }}
+          selectionActive={selectionActive}
+          selectedIds={new Set(selectedMessageIds)}
+          onToggleSelection={toggleSelectedMessage}
         />
 
         {activePeerBlocked ? (
@@ -1822,56 +2175,49 @@ function ChatPageInner({
             </div>
           </footer>
         ) : (
-          <footer className="message-composer">
-            <div
-              className="message-composer-input-panels"
-              ref={chatBottomOcclusion.inputPanelRef}
-            >
-              {composerEmojiOpen ? (
-                <div className="message-composer-panel emoji-panel">
-                  {MOBILE_COMPOSER_EMOJIS.map((emoji) => (
-                    <button key={emoji} type="button" className="composer-emoji-button" aria-label={t('mobile.chat.composerEmoji')} onClick={() => { handleDraftChange(`${draftValueRef.current}${emoji}`); setComposerEmojiOpen(false); }}>{emoji}</button>
-                  ))}
-                </div>
-              ) : null}
-              {composerMoreOpen ? (
-                <div className="message-composer-panel more-panel">
-                  <ComposerToolButton icon={<Icon iconId="folder-open" size={16} />} label={t('mobile.chat.composerFile')} onClick={openMobileFilePicker} disabled={attachmentUploading || Boolean(editingMessage) || Boolean(pendingAttachmentSubmission)} />
-                  <ComposerToolButton icon={<Icon iconId="scissors" size={16} />} label={t('mobile.chat.composerScreenshot')} onClick={() => { setLocalActionError(t('mobile.chat.composerUnavailable')); setComposerMoreOpen(false); }} />
-                  <ComposerToolButton icon={<Icon iconId="mic" size={16} />} label={t('mobile.chat.composerVoice')} onClick={startVoiceRecording} disabled={attachmentUploading || Boolean(editingMessage) || Boolean(pendingAttachmentSubmission)} />
-                </div>
-              ) : null}
-              {voiceRecorder.recording ? (
-                <div
-                  className="message-composer-panel voice-recording-panel"
-                  data-product-surface="chat.voice-recording"
-                >
-                  <span className="voice-recording-status">
-                    <span className="voice-recording-dot" />
-                    <Text>{t('chat.social.composer.recording', { seconds: voiceRecorder.recordingSeconds })}</Text>
-                  </span>
-                  <span className="voice-recording-actions">
-                    <Button
-                      actionId="chat.voice.cancel"
-                      density="compact"
-                      leading={<Icon iconId="close" size={13} />}
-                      onActivate={() => voiceRecorder.stopRecording(true)}
-                    >
-                      {t('chat.social.composer.cancelRecord')}
-                    </Button>
-                    <Button
-                      actionId="chat.voice.finish"
-                      density="compact"
-                      emphasis="primary"
-                      leading={<Icon iconId="square" size={13} />}
-                      onActivate={() => voiceRecorder.stopRecording(false)}
-                    >
-                      {t('chat.social.composer.finishRecord')}
-                    </Button>
-                  </span>
-                </div>
-              ) : null}
-              {attachmentDrafts.length > 0 || encryptedAttachmentRefs.length > 0 ? (
+          <MobileChatComposer
+            key={activeConversationKey}
+            draft={draft}
+            placeholder={t(threadRootMessageUlid ? 'mobile.chat.threadReplyPlaceholder' : 'mobile.chat.messagePlaceholder')}
+            inputRef={composerInputRef}
+            composerRef={chatBottomOcclusion.composerRef}
+            inputPanelRef={chatBottomOcclusion.inputPanelRef}
+            inputProps={{
+              onFocus: () => setComposerEmojiOpen(false),
+              onCompositionStart: () => { composingRef.current = true; },
+              onCompositionEnd: () => { composingRef.current = false; lastCompositionEndRef.current = Date.now(); },
+              onKeyDown: handleComposerKeyDown,
+            }}
+            onDraftChange={handleDraftChange}
+            onSend={() => void runChatOperation(submitMessage, 'mobile.chat.operationSendFailed')}
+            sendDisabledReason={voiceRecorder.recording || composerSubmitting || !canSubmitChatComposerDraft({ text: draft, attachmentCount: readyChatAttachmentStages(attachmentDrafts).length, capabilities: MOBILE_THREAD_COMPOSER_CAPABILITIES }) || attachmentUploading || attachmentStagingFailed || encryptedAttachmentRefs.length > 0 || Boolean(pendingAttachmentSubmission)
+              ? t(attachmentStagingFailed ? 'mobile.chat.attachmentRetryBeforeSend' : attachmentUploading || pendingAttachmentSubmission || composerSubmitting ? 'mobile.chat.waitForAttachments' : voiceRecorder.recording ? 'mobile.chat.finishVoiceBeforeSend' : 'chat.social.composer.sendDisabled')
+              : undefined}
+            sending={composerSubmitting || attachmentUploading || Boolean(pendingAttachmentSubmission)}
+            toolsDisabled={voiceRecorder.recording || composerSubmitting || attachmentUploading || Boolean(editingMessage) || Boolean(pendingAttachmentSubmission)}
+            inputDisabled={voiceRecorder.recording || composerSubmitting || Boolean(pendingAttachmentSubmission)}
+            editing={Boolean(editingMessage)}
+            keyboardOpen={chatBottomOcclusion.keyboardOverlapHeight > 0}
+            title={headerTitle}
+            context={editingMessage
+              ? { text: t('mobile.chat.editing'), onCancel: restoreComposerAfterEdit }
+              : replyToMessageUlid ? {
+                  text: t('mobile.chat.replyingTo', { message: replyTargetMessage ? messageContentForSearch(replyTargetMessage, t) : t('mobile.chat.noPreview') }),
+                  onCancel: () => updateReplyContext(''),
+                } : undefined}
+            recording={voiceRecorder.recording ? {
+              seconds: voiceRecorder.recordingSeconds,
+              cancel: () => voiceRecorder.stopRecording(true),
+              finish: () => voiceRecorder.stopRecording(false),
+            } : undefined}
+            onChooseFile={openMobileFilePicker}
+            onTakePhoto={openMobileCamera}
+            onRecordVoice={startVoiceRecording}
+            emojiOpen={composerEmojiOpen}
+            onEmojiOpenChange={setComposerEmojiOpen}
+            recentEmojis={recentEmojis}
+            onEmojiUsed={rememberEmoji}
+            attachments={attachmentDrafts.length > 0 || encryptedAttachmentRefs.length > 0 ? (
                 <div
                   className="message-composer-panel attachment-draft-panel"
                   data-product-surface={attachmentUploading
@@ -1909,70 +2255,11 @@ function ChatPageInner({
                     : null}
                 </div>
               ) : null}
-            </div>
-            <div
-              className="message-composer-surface"
-              ref={chatBottomOcclusion.composerRef}
-            >
-              <span
-                className="chat-keyboard-context"
-                role="heading"
-                aria-level={1}
-              >
-                {headerTitle}
-              </span>
-              {editingMessage ? (
-                <div className="message-editing-banner">
-                  <Text tone="secondary" truncate>{t('mobile.chat.editing')}</Text>
-                  <button type="button" className="message-action-button light" onClick={() => { setEditingMessage(null); handleDraftChange(''); }} aria-label={t('common.action.cancel')}><Icon iconId="close" size={13} /></button>
-                </div>
-              ) : null}
-              {!editingMessage && replyToMessageUlid ? (
-                <div className="message-editing-banner message-reply-context">
-                  <Icon iconId="corner-up-left" size={14} />
-                  <Text tone="secondary" truncate>
-                    {t('mobile.chat.replyingTo', {
-                      message: replyTargetMessage
-                        ? messageContentForSearch(replyTargetMessage, t)
-                        : t('mobile.chat.noPreview'),
-                    })}
-                  </Text>
-                  <button type="button" className="message-action-button light" onClick={() => updateReplyContext('')} aria-label={t('common.action.cancel')}><Icon iconId="close" size={13} /></button>
-                </div>
-              ) : null}
-              <input ref={fileInputRef} className="visually-hidden-file-input" type="file" multiple onChange={(e) => { void handleMobileFilesSelected(e.target.files); }} />
-              <div className="message-composer-row">
-                {MOBILE_THREAD_COMPOSER_CAPABILITIES.emoji ? (
-                  <button type="button" className={`message-composer-tool ${composerEmojiOpen ? 'active' : ''}`} aria-label={t('mobile.chat.composerEmoji')} onClick={() => { composerInputRef.current?.blur(); setComposerEmojiOpen((o) => !o); setComposerMoreOpen(false); }} disabled={voiceRecorder.recording || Boolean(pendingAttachmentSubmission)}><Icon iconId="smile" size={18} /></button>
-                ) : null}
-                <span className="message-composer-input-frame">
-                  <TextField
-                    ref={composerInputRef}
-                    className="message-composer-input"
-                    value={draft}
-                    onValueChange={handleDraftChange}
-                    data-product-surface={chatBottomOcclusion.keyboardOverlapHeight > 0 ? 'chat.composer-keyboard' : undefined}
-                    onFocus={() => { setComposerEmojiOpen(false); setComposerMoreOpen(false); }}
-                    onCompositionStart={() => { composingRef.current = true; }} onCompositionEnd={() => { composingRef.current = false; lastCompositionEndRef.current = Date.now(); }}
-                    onKeyDown={handleComposerKeyDown} placeholder={t(threadRootMessageUlid ? 'mobile.chat.threadReplyPlaceholder' : 'mobile.chat.messagePlaceholder')} disabled={voiceRecorder.recording || Boolean(pendingAttachmentSubmission)} autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false}
-                  />
-                </span>
-                <button type="button" className={`message-composer-tool ${composerMoreOpen ? 'active' : ''}`} aria-label={t('mobile.chat.composerMore')} onClick={() => { composerInputRef.current?.blur(); setComposerMoreOpen((o) => !o); setComposerEmojiOpen(false); }} disabled={voiceRecorder.recording || Boolean(editingMessage) || Boolean(pendingAttachmentSubmission)}><Icon iconId="plus" size={18} /></button>
-                <Button
-                  actionId="chat.send-message"
-                  className="message-send-button"
-                  emphasis="primary"
-                  leading={<Icon iconId="send" size={16} />}
-                  aria-label={t('common.action.send')}
-                  availability={voiceRecorder.recording || !canSubmitChatComposerDraft({ text: draft, attachmentCount: readyChatAttachmentStages(attachmentDrafts).length, capabilities: MOBILE_THREAD_COMPOSER_CAPABILITIES }) || attachmentUploading || attachmentStagingFailed || encryptedAttachmentRefs.length > 0 || Boolean(pendingAttachmentSubmission)
-                    ? { kind: 'disabled', reason: t('chat.social.composer.sendDisabled') }
-                    : undefined}
-                  execution={attachmentUploading || Boolean(pendingAttachmentSubmission) ? 'pending' : 'idle'}
-                  onActivate={() => void runChatOperation(submitMessage, 'mobile.chat.operationSendFailed')}
-                />
-              </div>
-            </div>
-          </footer>
+            nativePickers={<>
+              <input ref={fileInputRef} className="visually-hidden-file-input" type="file" multiple onChange={e => { void handleMobileFilesSelected(e.target.files); }} />
+              <input ref={cameraInputRef} className="visually-hidden-file-input" type="file" accept="image/*" capture="environment" onChange={e => { void handleMobileFilesSelected(e.target.files); }} />
+            </>}
+          />
         )}
 
       </ChatThreadPageContent>
@@ -1992,8 +2279,7 @@ function ChatPageInner({
       socialError={error ? formatSocialError(error) : ''}
       groupError={''}
       onQueryChange={(nextQuery) => {
-        setConversationQuery(nextQuery);
-        saveRouteQuery('tab:chat', nextQuery);
+        setMessageQuery('chats', nextQuery);
       }}
       onDismissLocalError={() => setLocalActionError('')}
       onDismissSocialError={clearSocialError}
@@ -2001,6 +2287,7 @@ function ChatPageInner({
       onStartConversation={onStartConversation}
       onOpenConversation={openConversation}
       searchEntry={searchEntry}
+      listHeader={listHeader}
     />
   );
 }
@@ -2095,7 +2382,17 @@ function formatReleasedBytes(value: bigint): string {
   return `${amount.toFixed(amount >= 10 ? 1 : 2)} ${units[unit]}`;
 }
 
-function revokeObjectUrl(url: string) { if (url) URL.revokeObjectURL(url); }
+function revokeObjectUrl(url: string) { if (url.startsWith('blob:')) URL.revokeObjectURL(url); }
+
+function releaseDraftPreview(session: MobileAuthSession | null, draft: MobileChatAttachmentDraft) {
+  revokeObjectUrl(draft.previewUrl);
+  if (session && draft.previewHandle) {
+    void messagingReleaseAttachmentStagePreview({
+      ...messagingAccountFromSession(session),
+      handle: draft.previewHandle,
+    }).catch(() => undefined);
+  }
+}
 
 function validateSendOutcome(
   outcome: MessagingSubmitCommandResult,

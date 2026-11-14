@@ -13,6 +13,7 @@ import {
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import { MobileNotice } from '../../components/MobileNotice';
+import { useMobilePageDisposal } from '../../components/mobilePageLifetime';
 import { SocialActorAvatar } from '../../features/social/SocialActorAvatar';
 import { actorDisplayName } from '../../features/social/socialProjection';
 import { useSocialCirclesStore } from '../../features/social/socialCircles';
@@ -62,8 +63,8 @@ export function SocialCircleMemberPickerPage({
 
   useEffect(() => {
     void Promise.all([refreshMembers(circleId), refreshFederations()]);
-    return clearSearch;
-  }, [circleId, clearSearch, refreshFederations, refreshMembers]);
+  }, [circleId, refreshFederations, refreshMembers]);
+  useMobilePageDisposal(clearSearch);
 
   const submit = async () => {
     if (selected.size === 0 || pending) return;
@@ -125,6 +126,8 @@ export function SocialCircleMemberPickerPage({
         <div className="circle-picker-search">
           <span className="circle-picker-search-input">
             <TextField
+              appearance="search"
+              density="comfortable"
               value={query}
               data-acceptance-id="social-circle-member-search"
               leading={<Icon iconId="search" size={16} className="circle-picker-search-leading" />}

@@ -20,7 +20,7 @@ export function MobileApp({ scenario = 'default' }: { scenario?: ProductScenario
   // Own provider inside the phone frame so Dialog/Menu/Popover portals mount
   // within the phone screen (data-phone-body), not the outer board host.
   return (
-    <UIProvider theme="light" className="ma-scope pt-north-star"
+    <UIProvider theme="light" inputFocus="explicit" className="ma-scope pt-north-star"
       style={northStarVariables('light', { material: 'flat' })}>
       <MobileAppView scenario={scenario} />
     </UIProvider>

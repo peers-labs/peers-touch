@@ -709,6 +709,17 @@ fn validate_envelope(
 }
 
 fn validate_chat_payload(payload: &ChatDraftPayload) -> ReliabilityResult<()> {
+    if payload.staged_attachment_ids.len() > 128 {
+        return Err(ReliabilityError::invalid("too many staged draft attachments"));
+    }
+    let mut stage_ids = std::collections::HashSet::new();
+    for id in &payload.staged_attachment_ids {
+        if id.len() != 26 || !id.bytes().all(|byte| byte.is_ascii_alphanumeric())
+            || !stage_ids.insert(id)
+        {
+            return Err(ReliabilityError::invalid("invalid staged draft attachment identity"));
+        }
+    }
     validate_blob_references(
         payload
             .attachment_refs
@@ -922,6 +933,7 @@ mod tests {
                 attachment_refs: vec![EncryptedBlobReference {
                     blob_id: "encrypted-blob-1".to_string(),
                 }],
+                ..Default::default()
             })),
         }
     }

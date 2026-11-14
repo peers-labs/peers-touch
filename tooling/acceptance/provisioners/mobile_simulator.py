@@ -51,6 +51,7 @@ from tooling.acceptance.core import (
     verify_client_binding_observation,
 )
 from tooling.acceptance.core._paths import ENVIRONMENTS_DIR, REPO_ROOT
+from tooling.acceptance.core.evidence_store import write_current_artifact
 from tooling.acceptance.core.attestation import (
     commits_match,
     produce_service_attestation,
@@ -3963,6 +3964,7 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
             port = reservation.port
             reservation.release()
             server_url = f"http://{spec.appium_host}:{port}"
+            log_path = runtime_root / "logs" / "appium.log"
             process = self.executor.start(
                 (
                     spec.appium_executable,
@@ -3976,8 +3978,27 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
                 ),
                 cwd=self.repo_root,
                 env=env,
-                log_path=runtime_root / "logs" / "appium.log",
+                log_path=log_path,
             )
+
+            def retain_appium_log() -> None:
+                if not env.get("PT_ACCEPTANCE_RUN_ID") or not log_path.is_file():
+                    return
+                with log_path.open("rb") as source:
+                    source.seek(max(0, log_path.stat().st_size - 8 * 1024 * 1024))
+                    value = source.read().decode("utf-8", errors="replace")
+                write_current_artifact(
+                    "runtime/mobile-simulator/appium.log",
+                    redact_text(
+                        value.replace(ACTOR_PASSWORD, "[REDACTED]")
+                    ).encode("utf-8"),
+                    repo_root=self.repo_root,
+                    environment=env,
+                )
+
+            # Reverse cleanup stops the server before capturing its final output,
+            # then releases installations and deletes the temporary runtime.
+            self.register_cleanup("appium-log", retain_appium_log)
             self.register_cleanup("appium-process", process.stop)
             owned = True
         else:
@@ -8140,6 +8161,17 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
             )
             if isinstance(value, str):
                 chromedriver_executable = value
+        ios_launch = None
+        capture_native_output = None
+        if platform_name == "ios":
+            from tooling.acceptance.gates.mobile.simulator_native_output import ios_native_output_callbacks
+
+            ios_launch, capture_native_output = ios_native_output_callbacks(
+                directory=Path(_required_text(client, "storageRoot", "native-output:storage")) / "native-output",
+                client_id=client_id, device=_required_text(client, "device", "native-output:device"),
+                application_id=_required_text(application, "id", "native-output:application"),
+                writer=self.evidence_run, sensitive_values=self._raw_authority_values(),
+            )
         return SimulatorAppiumSession(
             UrllibAppiumTransport(
                 _required_text(
@@ -8210,6 +8242,8 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
                 ).items()
             },
             chromedriver_executable=chromedriver_executable,
+            ios_launch=ios_launch,
+            capture_native_output=capture_native_output,
         )
 
 

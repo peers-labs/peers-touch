@@ -25,6 +25,7 @@ export {
   applyMobileNavigationIntent,
   activeMobileDetailRoute,
   navigationLocationKey,
+  primaryNavigationLocationKey,
   readMobileNavigationProjection,
   resetMobileNavigation,
   useMobileNavigationStore,
@@ -36,6 +37,9 @@ export type {
   MobileNavigationProjection,
   MobileOverlayRoute,
   MobilePrimaryRouteId,
+  MobileMessagePaneId,
+  MobileMomentsPaneId,
+  MobileMomentsFeedScope,
   MobileSettingDetailId,
 } from './navigationStore';
 

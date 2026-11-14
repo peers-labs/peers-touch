@@ -9,7 +9,7 @@
  * a red phone-off that cancels the outbound attempt (iOS call-kit grammar).
  */
 import { useEffect } from 'react';
-import { Avatar, IconButton } from '@peers-touch/ui';
+import { Avatar, CallControl } from '@peers-touch/ui';
 import type { Action } from './state';
 import { ME, type AppState, type CallState } from './model';
 
@@ -67,12 +67,13 @@ export function CallScreen({ state, dispatch }: { state: AppState; dispatch: (a:
 
   if (call.status === 'idle') return null;
   const peer = peerOf(state);
+  const group = state.conversations.find((conversation) => conversation.id === call.conversationId)?.kind === 'group';
   const preActive = call.status === 'outgoing' || call.status === 'connecting';
   const active = call.status === 'active';
 
   return (
     <div className="ma-call" data-call-state={call.status} role="dialog" aria-modal="true" aria-label={`${peer.name} 通话`}>
-      <div className="ma-call-trust"><span className="ma-call-trust-dot" />端到端加密通话</div>
+      <div className="ma-call-trust"><span className="ma-call-trust-dot" />{group ? '传输受保护 · 群媒体服务器' : '端到端加密通话'}</div>
       <div className="ma-call-avatar">
         <div className="ma-call-avatar-frame"><Avatar name={peer.name[0] ?? '?'} size={96} background={peer.tone} /><span className="ma-call-ring" /></div>
         <div className="ma-call-copy">
@@ -82,35 +83,18 @@ export function CallScreen({ state, dispatch }: { state: AppState; dispatch: (a:
       </div>
       <div className="ma-call-controls">
         {preActive && (
-          <CallButton label="取消" danger onActivate={() => dispatch({ type: 'call/end' })} icon="phone-off" />
+          <CallControl actionId="ma.call.cancel" label="取消" tone="danger" onActivate={() => dispatch({ type: 'call/end' })} iconId="phone-off" />
         )}
         {active && <>
-          <CallButton label={call.micMuted ? '取消静音' : '静音'} selected={call.micMuted}
-            onActivate={() => dispatch({ type: 'call/toggleMic' })} icon={call.micMuted ? 'mic-off' : 'mic'} />
+          <CallControl actionId="ma.call.microphone" label={call.micMuted ? '取消静音' : '静音'} selected={call.micMuted}
+            onActivate={() => dispatch({ type: 'call/toggleMic' })} iconId={call.micMuted ? 'mic-off' : 'mic'} />
           {call.media === 'video' && (
-            <CallButton label={call.cameraOff ? '开启摄像头' : '关闭摄像头'} selected={call.cameraOff}
-              onActivate={() => dispatch({ type: 'call/toggleCamera' })} icon={call.cameraOff ? 'camera-off' : 'camera'} />
+            <CallControl actionId="ma.call.camera" label={call.cameraOff ? '开启摄像头' : '关闭摄像头'} selected={call.cameraOff}
+              onActivate={() => dispatch({ type: 'call/toggleCamera' })} iconId={call.cameraOff ? 'camera-off' : 'camera'} />
           )}
-          <CallButton label="挂断" danger onActivate={() => dispatch({ type: 'call/end' })} icon="phone-off" />
+          <CallControl actionId="ma.call.end" label="挂断" tone="danger" onActivate={() => dispatch({ type: 'call/end' })} iconId="phone-off" />
         </>}
       </div>
     </div>
-  );
-}
-
-function CallButton({ label, icon, onActivate, danger, selected }: {
-  label: string; icon: Parameters<typeof IconButton>[0]['iconId']; onActivate: () => void;
-  danger?: boolean; selected?: boolean;
-}) {
-  // The IconButton is the single interactive control; the caption beneath is
-  // decorative (aria-hidden, the control is already named) — the app composes
-  // the dial tile instead of hand-rolling a native button.
-  return (
-    <span className={`ma-call-btn${danger ? ' is-danger' : ''}${selected ? ' is-selected' : ''}`}>
-      <IconButton actionId={`ma.call.${icon}`} iconId={icon} iconSize={24} label={label}
-        aria-pressed={selected} emphasis="quiet" tone={danger ? 'danger' : undefined}
-        className="ma-call-btn-icon" onActivate={onActivate} />
-      <span className="ma-call-btn-label" aria-hidden="true">{label}</span>
-    </span>
   );
 }

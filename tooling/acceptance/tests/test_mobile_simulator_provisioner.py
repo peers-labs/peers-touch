@@ -3063,6 +3063,7 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
                         "deviceRole": "simulator",
                         "profile": "sim-ios",
                         "device": "raw-ios-udid",
+                        "storageRoot": "/tmp/sim-ios",
                         "ports": {
                             "wda-local": 8101,
                             "mjpeg": 9101,
@@ -3076,6 +3077,7 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
                         "deviceRole": "peer-simulator",
                         "profile": "sim-ios-peer",
                         "device": "raw-ios-peer-udid",
+                        "storageRoot": "/tmp/sim-ios-peer",
                         "ports": {
                             "wda-local": 8102,
                             "mjpeg": 9201,
@@ -3162,6 +3164,8 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
             self.contract,
         )
         provisioner._base_manifest = self._base_manifest()
+        provisioner.bind_evidence_run(self.evidence_run)  # type: ignore[arg-type]
+        provisioner._manifest = provisioner._base_manifest
 
         with patch(
             "tooling.acceptance.gates.mobile.simulator_e2e."
@@ -4936,6 +4940,41 @@ class MobileIOSLayoutSimulatorProvisionerTests(unittest.TestCase):
             f"simulator-delete:sim-ios-current:{device_id}",
             completed,
         )
+
+
+class MobileNativeOutputCaptureTests(unittest.TestCase):
+    def test_owned_output_generations_are_redacted_and_written_once(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            written: list[tuple[str, bytes, dict[str, Any]]] = []
+            owner = SimpleNamespace(
+                _raw_authority_values=lambda: ("test-session-secret",),
+                evidence_run=SimpleNamespace(write_bytes=lambda path, data, **kwargs:
+                                             written.append((path, data, kwargs))),
+            )
+            from tooling.acceptance.gates.mobile.simulator_native_output import ios_native_output_callbacks
+            launch, capture = ios_native_output_callbacks(
+                directory=Path(raw) / "native-output", client_id="sim-ios", device="owned-simulator",
+                application_id="com.peers.touch.mobile", writer=owner.evidence_run,
+                sensitive_values=owner._raw_authority_values(),
+            )
+            with patch.object(mobile_simulator_module.subprocess, "run",
+                              return_value=SimpleNamespace(returncode=0, stdout="", stderr="")) as run:
+                for generation in (1, 2):
+                    launch()
+                    argv = run.call_args.args[0]
+                    self.assertEqual(argv[-2:], ("owned-simulator", "com.peers.touch.mobile"))
+                    self.assertIn("--terminate-running-process", argv)
+                    root = Path(raw) / "native-output"
+                    (root / f"{generation}-stdout.log").write_text("station-route test-session-secret failed")
+                    (root / f"{generation}-stderr.log").write_text("native diagnostic")
+                    capture()
+                    capture()
+                    self.assertEqual(len(written), generation * 2)
+                self.assertEqual(run.call_count, 2)
+            self.assertEqual(len({path for path, _, _ in written}), 4)
+            self.assertTrue(all(b"test-session-secret" not in data for _, data, _ in written))
+            self.assertIn(b"station-route", written[0][1])
+            self.assertEqual(written[0][2]["role"], "mobile-native-stdout/sim-ios/1")
 
 
 if __name__ == "__main__":

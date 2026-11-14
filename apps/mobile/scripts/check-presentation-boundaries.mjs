@@ -32,7 +32,6 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(here, '..');
 const srcRoot = path.join(appRoot, 'src');
-const stylesheetPath = path.join(srcRoot, 'styles.css');
 const providerPath = path.join(
   srcRoot,
   'app',
@@ -51,12 +50,12 @@ const androidResRoot = path.join(
 );
 
 // Lowered per slice; never raised. See functional-coverage / plan.
-const BASELINE_ANTD_LOBEHUB_FILES = 40;
+const BASELINE_ANTD_LOBEHUB_FILES = 0;
 // Lowered as the realignment lands: native template purple reached zero in
 // the first foundation pass; the stylesheet brand count dropped when the body
 // canvas moved to the neutral north-star value.
-const BASELINE_BRAND_CSS_REFS = 30;
-const BASELINE_BRAND_INLINE_REFS = 1;
+const BASELINE_BRAND_CSS_REFS = 0;
+const BASELINE_BRAND_INLINE_REFS = 0;
 const BASELINE_NATIVE_PURPLE_REFS = 0;
 
 const PRESENTATION_FREE_DIRS = new Set(['runtimes', 'services', 'storage']);
@@ -64,7 +63,8 @@ const SOURCE_RE = /\.(ts|tsx)$/;
 const UI_IMPORT_RE = /from\s*['"]@peers-touch\/ui['"]/;
 const CSS_IMPORT_RE = /import\s+['"][^'"]+\.css['"]/;
 const ANTD_IMPORT_RE = /from\s+['"]antd['"]|from\s+['"]@lobehub\/ui['"]/;
-const BRAND_VAR_RE = /var\(--brand-[a-z-]+\)/g;
+// Count both definitions/aliases and consumers, across every presentation file.
+const BRAND_VAR_RE = /--brand-[a-z-]+/g;
 const NATIVE_PURPLE_RE = /purple_(200|500|700)/g;
 
 function walk(dir) {
@@ -111,11 +111,10 @@ for (const file of files) {
   }
 }
 
-// G3: private palette consumption inside the legacy stylesheet.
-const stylesheet = fs.existsSync(stylesheetPath)
-  ? fs.readFileSync(stylesheetPath, 'utf8')
-  : '';
-const brandCssRefs = countMatches(BRAND_VAR_RE, stylesheet);
+// G3: every stylesheet is covered; a page-local CSS import cannot hide debt.
+const brandCssRefs = walkFiles(srcRoot, /\.css$/).reduce(
+  (total, file) => total + countMatches(BRAND_VAR_RE, fs.readFileSync(file, 'utf8')), 0,
+);
 
 // G4: stock Material purple in the generated Android resources.
 const nativeXmlFiles = walkFiles(androidResRoot, /\.xml$/);

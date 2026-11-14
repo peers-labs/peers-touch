@@ -31,12 +31,10 @@ export type { AudienceKind, ReactionKind };
 /** Trust reason mirrors shared moments-data (why a post reached the viewer). */
 export type TrustReason = 'self' | 'following' | 'mutual' | 'circle' | 'public';
 
-// Bottom slots mirror the REAL mobile shell (MobileShell TAB_ICON_MAP):
-// messages → moments → contacts → identity/settings. The desktop rail folds
-// contacts inside messages; mobile real product gives contacts their own tab,
-// and real functionality wins (ADR-4). Search is not a tab: each surface owns
-// an in-place scope filter (header icon morphs into the field in place).
-export type TabId = 'chats' | 'moments' | 'contacts' | 'settings';
+// Confirmed navigation: messages / moments / me, with chats and contacts as
+// top-level segments inside messages. Search filters the selected pane.
+export type TabId = 'chats' | 'moments' | 'settings';
+export type ChatPane = 'chats' | 'contacts';
 export type MediaKind = 'audio' | 'video';
 
 /** A secondary page pushed over a tab. Only one level deep — enhanced chains
@@ -44,9 +42,8 @@ export type MediaKind = 'audio' | 'video';
     as another pushed page. */
 export type ContactTarget = { kind: 'person' | 'group'; id: string };
 export type Route =
-  | { tab: 'chats'; conversationId?: string }
+  | { tab: 'chats'; conversationId?: string; contactDetail?: ContactTarget; findPeople?: boolean }
   | { tab: 'moments' }
-  | { tab: 'contacts'; contactDetail?: ContactTarget }
   | { tab: 'settings'; setting?: 'credentials' | 'station' | 'about' };
 
 export interface MemberTile {
@@ -139,10 +136,12 @@ export type CallState =
 /** Bottom-sheet overlays owned by the messages surface. They are global state
     (like composerOpen) because the host suppresses the tab bar while a sheet
     physically covers the tab-bar strip. */
-export type ChatsSheet = 'none' | 'add-contact' | 'start-group';
+export type ChatsSheet = 'none' | 'start-group';
 
 export interface AppState {
   route: Route;
+  /** Retain the messages scope when a contact detail is pushed and popped. */
+  chatPane: ChatPane;
   chatsSheet: ChatsSheet;
   composerOpen: boolean;
   composerDraft: string;
@@ -412,6 +411,7 @@ export function createInitialState(scenario: ProductScenario = 'default'): AppSt
   const injectedAccess = scenarioAccess(scenario);
   const state: AppState = {
     route: { tab: 'chats' },
+    chatPane: 'chats',
     chatsSheet: 'none',
     composerOpen: false,
     composerDraft: '',

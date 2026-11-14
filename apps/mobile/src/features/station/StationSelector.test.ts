@@ -27,9 +27,9 @@ describe('StationSelector removal contract', () => {
   it('requires an explicit destructive confirmation before removing a Station', () => {
     expect(source).toContain('setPendingRemoval(entry)');
     expect(source).toContain('open={pendingRemoval !== null}');
-    expect(source).toContain('onClick={confirmStationRemoval}');
+    expect(source).toContain('onActivate={confirmStationRemoval}');
     expect(source).toContain('onDismiss={() => setPendingRemoval(null)}');
-    expect(source).toContain('className="entry-confirmation-button danger"');
+    expect(source).toMatch(/actionId="station.remove.confirm"[\s\S]*?tone="danger"/);
     expect(source).toContain('data-product-surface="entry.station-remove-confirm"');
   });
 
@@ -101,7 +101,7 @@ describe('StationSelector X Config suggestions', () => {
     expect(source).toContain('data-x-config-seed-id');
     expect(source).toContain('common.stationPicker.suggestions');
     expect(source).toContain('common.stationPicker.suggestionStale');
-    expect(source).toContain('disabled={!suggestion.actionable || selecting}');
+    expect(source).toContain('availability={!suggestion.actionable || selectingSuggestionId !== null');
   });
 
   it('removes a suggestion only when a verified route owns the same origin', () => {

@@ -1247,6 +1247,7 @@ class MixedNativeRuntime:
         self,
         client_id: str,
         *,
+        conversation_id: str,
         filename: str,
         mime_type: str,
         bytes_base64: str,
@@ -1259,6 +1260,7 @@ class MixedNativeRuntime:
                 client_id,
                 "messaging.attachment.stage",
                 {
+                    "conversationId": conversation_id,
                     "filename": filename,
                     "mimeType": mime_type,
                     "bytesBase64": bytes_base64,

@@ -8,11 +8,15 @@ import {
 export type MobilePrimaryRouteId =
   | 'tab:chat'
   | 'tab:moments'
-  | 'tab:contacts'
   | 'tab:settings';
+
+export type MobileMessagePaneId = 'chats' | 'contacts';
+export type MobileMomentsPaneId = 'feed' | 'circles';
+export type MobileMomentsFeedScope = 'home' | 'explore';
 
 export type MobileSettingDetailId =
   | 'account-info'
+  | 'credentials'
   | 'notifications'
   | 'privacy-security'
   | 'safety-number'
@@ -39,6 +43,9 @@ export type MobileDetailRoute =
     }
   | {
       readonly routeId: 'detail:search';
+    }
+  | {
+      readonly routeId: 'detail:find-people';
     }
   | {
       readonly routeId: 'detail:contact-profile';
@@ -85,13 +92,33 @@ export type MobileChatDetailRoute = Extract<
 
 export type MobileOverlayRoute =
   | {
-      readonly routeId: 'overlay:add-friend';
+      readonly routeId: 'overlay:notifications';
     }
   | {
       readonly routeId: 'overlay:create-group';
     };
 
 export type MobileNavigationIntent =
+  | {
+      readonly kind: 'moments';
+      readonly pane: MobileMomentsPaneId;
+    }
+  | {
+      readonly kind: 'moments.search';
+      readonly pane: MobileMomentsPaneId;
+      readonly query: string;
+      readonly open: boolean;
+    }
+  | {
+      readonly kind: 'messages.search';
+      readonly pane: MobileMessagePaneId;
+      readonly query: string;
+      readonly open: boolean;
+    }
+  | {
+      readonly kind: 'messages';
+      readonly pane: MobileMessagePaneId;
+    }
   | {
       readonly kind: 'primary';
       readonly routeId: MobilePrimaryRouteId;
@@ -116,15 +143,31 @@ export type MobileNavigationIntent =
 
 export interface MobileNavigationProjection {
   readonly primaryRouteId: MobilePrimaryRouteId;
+  readonly messagePane: MobileMessagePaneId;
+  readonly momentsPane: MobileMomentsPaneId;
   readonly detailKeys: readonly string[];
   readonly overlayRouteId: MobileOverlayRoute['routeId'] | null;
 }
 
 interface MobileNavigationState {
   readonly primaryRouteId: MobilePrimaryRouteId;
+  readonly messagePane: MobileMessagePaneId;
+  readonly messageSearchOpen: boolean;
+  readonly messageQueries: Readonly<Record<MobileMessagePaneId, string>>;
+  readonly momentsPane: MobileMomentsPaneId;
+  readonly momentsFeedScope: MobileMomentsFeedScope;
+  readonly momentsSearchOpen: boolean;
+  readonly momentsQueries: Readonly<Record<MobileMomentsPaneId, string>>;
   readonly detailStack: readonly MobileDetailRoute[];
   readonly overlayRoute: MobileOverlayRoute | null;
   navigatePrimary: (routeId: MobilePrimaryRouteId) => void;
+  navigateMessages: (pane: MobileMessagePaneId) => void;
+  setMessageSearchOpen: (open: boolean) => void;
+  setMessageQuery: (pane: MobileMessagePaneId, query: string) => void;
+  navigateMoments: (pane: MobileMomentsPaneId) => void;
+  setMomentsFeedScope: (scope: MobileMomentsFeedScope) => void;
+  setMomentsSearchOpen: (open: boolean) => void;
+  setMomentsQuery: (pane: MobileMomentsPaneId, query: string) => void;
   pushDetail: (route: MobileDetailRoute) => void;
   popDetail: () => void;
   openOverlay: (route: MobileOverlayRoute) => void;
@@ -136,6 +179,13 @@ const INITIAL_PRIMARY_ROUTE: MobilePrimaryRouteId = 'tab:chat';
 
 export const useMobileNavigationStore = create<MobileNavigationState>((set) => ({
   primaryRouteId: INITIAL_PRIMARY_ROUTE,
+  messagePane: 'chats',
+  messageSearchOpen: false,
+  messageQueries: { chats: '', contacts: '' },
+  momentsPane: 'feed',
+  momentsFeedScope: 'home',
+  momentsSearchOpen: false,
+  momentsQueries: { feed: '', circles: '' },
   detailStack: [],
   overlayRoute: null,
 
@@ -147,6 +197,31 @@ export const useMobileNavigationStore = create<MobileNavigationState>((set) => (
       overlayRoute: null,
     });
   },
+
+  navigateMessages: (messagePane) => {
+    set({
+      primaryRouteId: 'tab:chat',
+      messagePane,
+      messageSearchOpen: false,
+      detailStack: [],
+      overlayRoute: null,
+    });
+  },
+
+  setMessageSearchOpen: (messageSearchOpen) => set({ messageSearchOpen }),
+  setMessageQuery: (pane, query) => set((state) => ({
+    messageQueries: { ...state.messageQueries, [pane]: query },
+  })),
+
+  navigateMoments: (momentsPane) => set({
+    primaryRouteId: 'tab:moments', momentsPane, momentsSearchOpen: false,
+    detailStack: [], overlayRoute: null,
+  }),
+  setMomentsFeedScope: (momentsFeedScope) => set({ momentsFeedScope }),
+  setMomentsSearchOpen: (momentsSearchOpen) => set({ momentsSearchOpen }),
+  setMomentsQuery: (pane, query) => set(state => ({
+    momentsQueries: { ...state.momentsQueries, [pane]: query },
+  })),
 
   pushDetail: (route) => {
     requireDescriptor(route.routeId, 'detail');
@@ -179,6 +254,13 @@ export const useMobileNavigationStore = create<MobileNavigationState>((set) => (
   reset: () => {
     set({
       primaryRouteId: INITIAL_PRIMARY_ROUTE,
+      messagePane: 'chats',
+      messageSearchOpen: false,
+      messageQueries: { chats: '', contacts: '' },
+      momentsPane: 'feed',
+      momentsFeedScope: 'home',
+      momentsSearchOpen: false,
+      momentsQueries: { feed: '', circles: '' },
       detailStack: [],
       overlayRoute: null,
     });
@@ -202,6 +284,7 @@ export function navigationLocationKey(
     case 'detail:group-conversation':
       return `${route.routeId}:${route.groupUlid}${route.messageId ? `:${route.messageId}` : ''}`;
     case 'detail:search':
+    case 'detail:find-people':
       return route.routeId;
     case 'detail:contact-profile':
       return `${route.routeId}:${route.actorPtid}`;
@@ -218,10 +301,22 @@ export function navigationLocationKey(
       return `${route.routeId}:${route.circleId}`;
     case 'detail:setting':
       return `${route.routeId}:${route.settingId}`;
-    case 'overlay:add-friend':
     case 'overlay:create-group':
+    case 'overlay:notifications':
       return route.routeId;
   }
+}
+
+/** Primary panes retain independent scroll and focus contexts. */
+export function primaryNavigationLocationKey(
+  state: Pick<MobileNavigationState, 'primaryRouteId' | 'messagePane'>
+    & Partial<Pick<MobileNavigationState, 'momentsPane' | 'momentsFeedScope'>>,
+): string {
+  if (state.primaryRouteId === 'tab:chat') return `tab:chat:${state.messagePane}`;
+  if (state.primaryRouteId === 'tab:moments') {
+    return `tab:moments:${state.momentsPane ?? 'feed'}:${state.momentsFeedScope ?? 'home'}`;
+  }
+  return state.primaryRouteId;
 }
 
 export function resetMobileNavigation(): void {
@@ -232,6 +327,8 @@ export function readMobileNavigationProjection(): MobileNavigationProjection {
   const navigation = useMobileNavigationStore.getState();
   return {
     primaryRouteId: navigation.primaryRouteId,
+    messagePane: navigation.messagePane,
+    momentsPane: navigation.momentsPane,
     detailKeys: navigation.detailStack.map(navigationLocationKey),
     overlayRouteId: navigation.overlayRoute?.routeId ?? null,
   };
@@ -242,6 +339,20 @@ export function applyMobileNavigationIntent(
 ): MobileNavigationProjection {
   const navigation = useMobileNavigationStore.getState();
   switch (intent.kind) {
+    case 'moments':
+      navigation.navigateMoments(intent.pane);
+      break;
+    case 'moments.search':
+      navigation.setMomentsQuery(intent.pane, intent.query);
+      navigation.setMomentsSearchOpen(intent.open);
+      break;
+    case 'messages.search':
+      navigation.setMessageQuery(intent.pane, intent.query);
+      navigation.setMessageSearchOpen(intent.open);
+      break;
+    case 'messages':
+      navigation.navigateMessages(intent.pane);
+      break;
     case 'primary':
       navigation.navigatePrimary(intent.routeId);
       break;

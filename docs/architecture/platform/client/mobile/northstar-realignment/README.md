@@ -2,7 +2,7 @@
 
 > **Status**: draft (awaiting architecture + plan acceptance)
 > **Version**: 0.1
-> **Created**: 2026-11-09 · **Updated**: 2026-11-09
+> **Created**: 2026-11-09 · **Updated**: 2026-11-13
 > **Owner**: Mobile / Client Architecture
 > **Module root**: `docs/architecture/platform/client/mobile/northstar-realignment`
 > **Code roots governed**: `apps/mobile/src/**` (presentation), `packages/prototypes/mobile/chat/**`
@@ -30,16 +30,18 @@ This produces three concrete defects:
    the real app.** The real app owns 106 acceptance actions / 157 fixture
    surfaces / a 162-surface whole-product inventory, but no current-source iOS
    evidence exists in this worktree (all mobile-simulator gates are `UNPROVEN`).
-3. **Prototype and real structure diverge.** Real shell is four tabs
-   (chat/moments/contacts/settings); the prototype shows three and contains
-   fake/dead controls and omits real surfaces (friend requests, incoming call,
-   notification center). The prototype is therefore no longer a faithful
-   north-star.
+3. **The real shell diverges from confirmed navigation.** The accepted shell
+   has three bottom destinations (messages/moments/me), with chats and contacts
+   as top subtabs inside messages. The real app currently has four bottom tabs.
+   Existing route structure is migration input, not authority to override this
+   design. Real capabilities absent from the fixture (friend requests,
+   incoming call, notification center) still require presentation coverage.
 
 This module defines the target architecture for **one** presentation system
 (peers-ui north-star) consumed by the real app, a **functional-point coverage
 contract** that maps every prototype point to a real owner and an acceptance
-gate, and a **real-wins reconciliation** rule that corrects the prototype.
+gate, and a reconciliation rule that preserves real behavior while implementing
+the confirmed navigation and visual design.
 
 ## 2. Scope
 
@@ -54,7 +56,8 @@ In scope:
   re-skinned, not re-architected.
 - Map all prototype functional points to real feature owners and iOS Simulator
   acceptance evidence; fill only genuine presentation/contract gaps.
-- Reconcile the prototype to the real product where they conflict.
+- Align shell navigation to the confirmed three destinations and messages
+  subtabs; reconcile fixture capabilities with real runtime ownership.
 
 Out of scope:
 
@@ -84,7 +87,8 @@ A single version of the mobile product, rendered with one design system
 (`@peers-touch/ui` north-star), where every functional point visible in the
 prototype is backed by the real runtime and proven on an iOS Simulator
 exact-source build, and the prototype again matches the real product's
-structure — not the reverse.
+confirmed navigation. Runtime behavior is owned by the real product; existing
+tab count does not supersede the user's design.
 
 ## 5. Upstream / governing sources
 

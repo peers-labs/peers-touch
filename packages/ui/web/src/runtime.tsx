@@ -2,23 +2,25 @@ import { Activity, Component, createContext, useContext, useEffect, useRef, type
 import { geometry } from '@peers-touch/ui-tokens';
 import { Alert } from './feedback';
 import { Button } from './actions';
+import { isEditableFocusTarget, restoreNavigationFocus, useInputFocusPolicy } from './focus';
 
 export interface FocusBoundaryProps extends HTMLAttributes<HTMLDivElement> {active:boolean;restore?:boolean;}
 export function FocusBoundary({active,restore=true,children,...props}:FocusBoundaryProps) {
   const root=useRef<HTMLDivElement>(null);
+  const inputFocus=useInputFocusPolicy();
   useEffect(()=>{
     const element=root.current;if(!active||!element)return;
     const doc=element.ownerDocument,previous=doc.activeElement as HTMLElement|null;
     const selector='button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],[tabindex]:not([tabindex="-1"])';
     const targets=()=>[...element.querySelectorAll<HTMLElement>(selector)].filter(n=>!n.closest('[hidden],[inert]')&&n.getClientRects().length);
-    (targets()[0]??element).focus();
+    (targets().find(target=>inputFocus==='automatic'||!isEditableFocusTarget(target))??element).focus();
     const key=(event:KeyboardEvent)=>{if(event.key!=='Tab')return;const list=targets();
       if(!list.length){event.preventDefault();element.focus();return;}
       if(event.shiftKey&&(doc.activeElement===list[0]||doc.activeElement===element)){event.preventDefault();list[list.length-1]?.focus();}
       else if(!event.shiftKey&&doc.activeElement===list[list.length-1]){event.preventDefault();list[0].focus();}};
     element.addEventListener('keydown',key);
-    return()=>{element.removeEventListener('keydown',key);if(restore&&previous?.isConnected)previous.focus();};
-  },[active,restore]);
+    return()=>{element.removeEventListener('keydown',key);if(restore)restoreNavigationFocus(previous);};
+  },[active,restore,inputFocus]);
   return <div {...props} ref={root} tabIndex={-1}>{children}</div>;
 }
 export function RenderSuspension({active,children}: {active:boolean;children:ReactNode}) {

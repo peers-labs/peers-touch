@@ -9,6 +9,7 @@ import (
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/domain"
 	domainrepository "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/domain/repository"
+	"github.com/peers-labs/peers-touch/station/frame/core/facility/mediaaccess"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -379,6 +380,9 @@ func (r *Repository) Revoke(
 			return nil
 		}
 
+		if err := mediaaccess.RevokeDevice(ctx, ptid, deviceID); err != nil {
+			return fmt.Errorf("actor device media ejection was not confirmed: %w", err)
+		}
 		result := tx.Model(&ActorDeviceModel{}).
 			Where("id = ? AND revoked = ?", model.ID, false).
 			Updates(map[string]interface{}{

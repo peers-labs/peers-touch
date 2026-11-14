@@ -78,7 +78,11 @@ export interface SocialProjectionRuntimeDependencies {
   readonly ingestCallSignal: (
     event: Extract<RealtimeWireEvent, { kind: 'call-signal' }>,
   ) => void;
+  readonly ingestGroupCallRoom?: (
+    event: Extract<RealtimeWireEvent, { kind: 'group-call-room' }>,
+  ) => void;
   readonly reportError: (operation: string, error: unknown) => void;
+  readonly reconcileCircles?: () => Promise<void>;
 }
 
 export interface SocialProjectionRuntimeController {
@@ -281,6 +285,9 @@ export function createSocialProjectionRuntime(
       case 'social':
         await socialStore.reconcile();
         if (getSocialStore().error) throw getSocialStore().error;
+        // The circle store owns its failure projection; a circle read failure
+        // cannot make unrelated Social content disappear or close its admission.
+        await dependencies.reconcileCircles?.();
         return true;
       case 'moments': {
         const reconciled = await momentsFeed.reconcile();
@@ -430,6 +437,10 @@ export function createSocialProjectionRuntime(
   }
 
   function ingestRealtimeEvent(event: RealtimeWireEvent): void {
+    if (event.kind === 'group-call-room') {
+      dependencies.ingestGroupCallRoom?.(event);
+      return;
+    }
     if (event.kind === 'call-signal') {
       dependencies.ingestCallSignal(event);
       return;
@@ -689,6 +700,7 @@ function toIngressEvents(event: RealtimeWireEvent): SocialIngressEvent[] {
         },
       }];
     case 'call-signal':
+    case 'group-call-room':
       return [];
   }
 }

@@ -250,6 +250,26 @@ button.pt-link:hover:not(:disabled){background:var(--pt-subtle)}
 .pt-field-frame:focus-within{border-color:var(--pt-focus);box-shadow:0 0 0 2px var(--pt-primarySubtle)}
 .pt-field-frame[data-invalid=true]{border-color:var(--pt-danger)}
 .pt-field-frame[data-disabled=true]{background:var(--pt-subtle);color:var(--pt-secondary)}
+.pt-field-frame[data-appearance=search]{
+  border-color:var(--pt-border);
+  transition:border-color var(--pt-motion-surface) var(--pt-motion-searchFocus),box-shadow var(--pt-motion-surface) var(--pt-motion-searchFocus);
+}
+.pt-field-frame[data-appearance=search]:focus-within:not([data-disabled=true]):not([data-invalid=true]){
+  border-color:color-mix(in srgb,var(--pt-accent) 32%,var(--pt-border));
+  box-shadow:0 0 0 2px color-mix(in srgb,var(--pt-accent) 9%,transparent);
+}
+.pt-field-frame[data-appearance=search][data-invalid=true]:focus-within{box-shadow:0 0 0 2px var(--pt-dangerSubtle)}
+.pt-field-frame[data-appearance=search][data-reveal=true]{animation:pt-search-reveal var(--pt-motion-searchReveal) ease-out}
+.pt-field-frame[data-appearance=search][data-density=compact]{min-height:var(--pt-control-searchCompact)}
+.pt-field-frame[data-appearance=search][data-density=compact] .pt-input{min-height:24px;padding:0;font-size:13px}
+.pt-field-frame[data-density=comfortable]{min-height:var(--pt-control-comfortable)}
+.pt-field-frame[data-density=comfortable] .pt-input{font-size:16px}
+@media(pointer:coarse){.pt-field-frame[data-appearance=search] .pt-input{font-size:16px}}
+@keyframes pt-search-reveal{from{opacity:0}to{opacity:1}}
+@media(prefers-reduced-motion:reduce){
+  .pt-field-frame[data-appearance=search]{transition:none}
+  .pt-field-frame[data-appearance=search][data-reveal=true]{animation:none}
+}
 .pt-field-frame :where(input,textarea,select):focus-visible{outline:none}
 .pt-field-frame :where(.pt-field-frame){border:0;border-radius:0;box-shadow:none;padding:0;background:transparent}
 /* Buttons embedded in a field are quiet chrome, never a second bordered box
@@ -454,6 +474,11 @@ button.pt-link:hover:not(:disabled){background:var(--pt-subtle)}
 .pt-shortcut{display:inline-flex;gap:var(--pt-space-xxs)}.pt-shortcut kbd{padding:2px 5px;border:1px solid var(--pt-border);border-radius:var(--pt-radius-xs);font:12px var(--pt-mono)}
 .pt-image-trigger{border:0;background:transparent;padding:0;cursor:zoom-in}.pt-image-viewport{overflow:auto;display:grid;place-items:center;min-height:240px;padding:var(--pt-space-xl)}
 .pt-image-viewport img{max-height:60vh;object-fit:contain}.pt-media-player video{width:100%;max-height:70vh}.pt-media-player audio{width:100%}
+.pt-call-control{display:flex;flex-direction:column;align-items:center;gap:10px;min-width:64px;max-width:100px;color:var(--pt-white)}
+.pt-call-control-button.pt-button{width:64px;height:64px;min-height:64px;border-radius:50%;border-color:transparent;background:color-mix(in srgb,var(--pt-white) 14%,transparent);color:var(--pt-white)}
+.pt-call-control-button.pt-button[data-tone=danger]{background:var(--pt-danger);color:var(--pt-white)}
+.pt-call-control[data-selected] .pt-call-control-button.pt-button{background:var(--pt-white);color:var(--pt-mediaStage)}
+.pt-call-control-label{font-size:12.5px;line-height:1.4;text-align:center;overflow-wrap:anywhere;color:var(--pt-mediaStageText)}
 /* File picking: the OS file input is visually hidden; the label carries a
    fully custom dashed zone/button so no native "Choose File" chrome shows. */
 .pt-file-picker{display:inline-flex}
@@ -491,7 +516,16 @@ button.pt-link:hover:not(:disabled){background:var(--pt-subtle)}
 .pt-calendar-day{min-height:72px;padding:var(--pt-space-xs);border:1px solid var(--pt-border);display:flex;flex-direction:column;gap:var(--pt-space-xxs)}
 .pt-autocomplete-results{margin:0;padding:var(--pt-space-xxs);list-style:none;border:1px solid var(--pt-border);border-radius:var(--pt-radius-md);max-height:240px;overflow:auto}
 .pt-autocomplete-results [aria-selected=true]{background:var(--pt-primarySubtle)}.pt-autocomplete-results .pt-button{width:100%;justify-content:flex-start}
-.pt-field-frame[data-framing=embedded]{border-color:transparent;background:transparent}
+.pt-field-frame[data-appearance=composer]{display:flex;align-items:flex-end;gap:var(--pt-space-xxs);min-width:0;padding:var(--pt-composer-inset);border-radius:var(--pt-composer-radius);background:var(--pt-subtle);border:1px solid var(--pt-border);transition:border-color var(--pt-motion-surface) var(--pt-motion-searchFocus),box-shadow var(--pt-motion-surface) var(--pt-motion-searchFocus)}
+.pt-field-frame[data-appearance=composer]:focus-within{border-color:color-mix(in srgb,var(--pt-accent) 32%,var(--pt-border));box-shadow:0 0 0 2px color-mix(in srgb,var(--pt-accent) 9%,transparent)}
+.pt-field-frame[data-appearance=composer][data-invalid=true]{border-color:var(--pt-danger)}
+.pt-ui .pt-field-frame[data-framing=embedded]{flex:1;min-width:0;min-height:0;border:0;background:transparent;box-shadow:none;padding:0}
+.pt-ui .pt-field-frame[data-framing=embedded]:focus-within{box-shadow:none}
+.pt-field-frame[data-framing=embedded] .pt-textarea{flex:none;min-height:0;max-height:none;width:100%;box-sizing:border-box;padding:8px 4px;resize:none}
+.pt-field-frame[data-framing=embedded] .pt-textarea[data-density=comfortable]{min-height:var(--pt-control-comfortable)}
+.pt-field-frame[data-appearance=composer] .pt-button[data-emphasis=primary]{background:var(--pt-primary);color:var(--pt-onPrimary)}
+.pt-field-frame[data-appearance=composer] .pt-button[data-emphasis=primary]:hover:not([aria-disabled=true]){background:var(--pt-primaryHover)}
+.pt-textarea[data-density=comfortable]{font-size:16px}
 .pt-slider{min-width:0}.pt-slider input{width:100%;accent-color:var(--pt-primary)}.pt-slider-ticks{display:flex;justify-content:space-between;font-size:11px;color:var(--pt-secondary)}
 .pt-select-group{padding:var(--pt-space-xs);font-size:12px;color:var(--pt-secondary)}
 .pt-character-count{white-space:nowrap;align-self:flex-end;padding:0 var(--pt-space-sm) 4px;font-size:12px;line-height:16px;color:var(--pt-secondary);font-variant-numeric:tabular-nums}
@@ -508,5 +542,9 @@ button.pt-link:hover:not(:disabled){background:var(--pt-subtle)}
 .pt-textarea-accessory .pt-file-picker[data-disabled=true] .pt-file-button{opacity:.45;pointer-events:none}
 .pt-textarea-accessory-count{font-size:12px;line-height:16px;color:var(--pt-secondary);font-variant-numeric:tabular-nums}
 .pt-choice-actions{display:flex;flex-direction:column;gap:var(--pt-space-xs)}
+.pt-emoji-picker{display:flex;flex-direction:column;gap:var(--pt-space-xxs);min-width:0}
+.pt-emoji-picker-label{font-size:12px;color:var(--pt-secondary)}
+.pt-emoji-picker-grid{display:grid;grid-template-columns:repeat(6,var(--pt-control-comfortable));gap:var(--pt-space-xxs)}
+.pt-emoji-picker-grid .pt-button{padding:0;font-size:21px}
 @media(prefers-reduced-motion:reduce){.pt-ui *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 @media(pointer:coarse){.pt-ui .pt-icon-button,.pt-ui .pt-select-option,.pt-ui .pt-check-label,.pt-ui .pt-button,.pt-ui .pt-field-frame{min-height:var(--pt-control-comfortable)}.pt-ui .pt-icon-button,.pt-ui .pt-check-label{min-width:var(--pt-control-comfortable)}.pt-ui .pt-switch{width:var(--pt-control-comfortable);height:var(--pt-control-comfortable)}}

@@ -1,6 +1,7 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(unix)]
@@ -25,6 +26,8 @@ use crate::error::{MobileError, MobileResult};
 use crate::platform::lifecycle_bridge;
 use crate::platform::secure_storage::SecureStorage;
 use crate::runtime::oauth::session::authenticated_native_session;
+use crate::runtime::oauth::session::{current_authenticated_native_session, AuthenticatedNativeSession};
+use messaging_native_filesystem::file_access::AttachmentFileAccess;
 use crate::runtime::station_transport::{upload_native_file, NativeFileUpload};
 use crate::secure_content::private_mention::domain_hmac_sha256;
 use crate::secure_content::proto::common::v1::EncryptedMediaDescriptor;
@@ -38,6 +41,32 @@ const MAX_MIME_LENGTH: usize = 255;
 const COPY_BUFFER_BYTES: usize = 64 * 1024;
 const MAX_MOMENT_CIPHERTEXT_BYTES: u64 = 32 * 1024 * 1024;
 const MOMENT_MEDIA_SURFACE: &str = "moment_media";
+const PROFILE_IMAGE_SURFACE: &str = "profile_image";
+const MAX_PROFILE_IMAGE_BYTES: u64 = 8 * 1024 * 1024;
+
+#[derive(Default)]
+pub struct ProfileImageRuntime {
+    access: AttachmentFileAccess,
+    scope: Mutex<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProfileImageInput {
+    station_peer_id: String,
+    actor_ptid: String,
+    session_id: String,
+    device_id: String,
+    lifecycle_generation: u64,
+    handle: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileImagePreview {
+    pub asset_url: String,
+    pub access_handle: String,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -157,7 +186,7 @@ pub async fn pick<R: Runtime>(
     storage: &SecureStorage,
     input: MediaPickInput,
 ) -> MobileResult<MediaPickProjection> {
-    let _session = authenticated_native_session(
+    let session = authenticated_native_session(
         storage,
         &input.station_peer_id,
         &input.actor_ptid,
@@ -203,12 +232,23 @@ pub async fn pick<R: Runtime>(
         });
     }
 
-    let root = staging_root(
+    // Profile drafts never migrate to another session of the same account.
+    if input.surface_kind == PROFILE_IMAGE_SURFACE {
+        let current = current_authenticated_native_session(storage)?;
+        if profile_scope_key(&session) != profile_scope_key(&current) {
+            cleanup_native_items(&response.items);
+            return Err(picker_error("profile image session changed"));
+        }
+    }
+    let mut root = staging_root(
         app,
         &input.station_peer_id,
         &input.actor_ptid,
         &input.surface_kind,
     )?;
+    if input.surface_kind == PROFILE_IMAGE_SURFACE {
+        root = root.join(profile_scope_key(&session));
+    }
     let staged = stage_selected_items(&root, &input, &response);
     cleanup_native_items(&response.items);
     let items = staged?;
@@ -219,6 +259,194 @@ pub async fn pick<R: Runtime>(
         items,
         error_code: None,
     })
+}
+
+fn profile_scope_key(session: &AuthenticatedNativeSession) -> String {
+    scope_digest_parts(
+        session.station_peer_id(),
+        session.actor_ptid(),
+        &format!("{}|{}|{}", session.session_id(), session.device_id(), session.lifecycle_generation()),
+    )
+}
+
+fn profile_input_session(
+    storage: &SecureStorage,
+    input: &ProfileImageInput,
+) -> MobileResult<AuthenticatedNativeSession> {
+    let session = current_authenticated_native_session(storage)?;
+    if session.station_peer_id() != input.station_peer_id
+        || session.actor_ptid() != input.actor_ptid
+        || session.session_id() != input.session_id
+        || session.device_id() != input.device_id
+        || session.lifecycle_generation() != input.lifecycle_generation
+    {
+        return Err(picker_error("profile image session changed"));
+    }
+    Ok(session)
+}
+
+fn profile_image_root<R: Runtime>(
+    app: &AppHandle<R>,
+    session: &AuthenticatedNativeSession,
+) -> MobileResult<PathBuf> {
+    Ok(staging_root(app, session.station_peer_id(), session.actor_ptid(), PROFILE_IMAGE_SURFACE)?
+        .join(profile_scope_key(session)))
+}
+
+fn verified_profile_image(
+    root: &Path,
+    handle: &str,
+) -> MobileResult<(StagedMediaMetadata, PathBuf, &'static str, &'static str)> {
+    let metadata = load_staged_metadata(root, handle)?;
+    if metadata.media_kind != "image" || metadata.byte_length > MAX_PROFILE_IMAGE_BYTES {
+        return Err(picker_error("profile image size or media kind is invalid"));
+    }
+    let path = root.join(format!("{handle}.stage"));
+    let file_metadata = fs::symlink_metadata(&path)
+        .map_err(|_| picker_error("profile image file is unavailable"))?;
+    if !file_metadata.is_file() || file_metadata.file_type().is_symlink()
+        || file_metadata.len() != metadata.byte_length
+    {
+        return Err(picker_error("profile image file is invalid"));
+    }
+    let mut file = File::open(&path).map_err(|_| picker_error("profile image file is unavailable"))?;
+    let mut prefix = [0_u8; 12];
+    file.read_exact(&mut prefix).map_err(|_| picker_error("profile image format is invalid"))?;
+    let (mime, extension) = if prefix.starts_with(b"\x89PNG\r\n\x1a\n") {
+        ("image/png", "png")
+    } else if prefix.starts_with(&[0xff, 0xd8, 0xff]) {
+        ("image/jpeg", "jpg")
+    } else if prefix.starts_with(b"GIF87a") || prefix.starts_with(b"GIF89a") {
+        ("image/gif", "gif")
+    } else if &prefix[..4] == b"RIFF" && &prefix[8..12] == b"WEBP" {
+        ("image/webp", "webp")
+    } else {
+        return Err(MobileError::coded("MOBILE_PROFILE_IMAGE_FORMAT", "mobile.settings.profile.imageFormat"));
+    };
+    let mut hasher = Sha256::new();
+    hasher.update(prefix);
+    let mut buffer = [0_u8; COPY_BUFFER_BYTES];
+    let mut size = prefix.len() as u64;
+    loop {
+        let read = file.read(&mut buffer).map_err(|_| picker_error("profile image read failed"))?;
+        if read == 0 { break; }
+        size += read as u64;
+        if size > metadata.byte_length { return Err(picker_error("profile image file changed")); }
+        hasher.update(&buffer[..read]);
+    }
+    if size != metadata.byte_length || <[u8; 32]>::from(hasher.finalize()) != decode_sha256(&metadata.sha256_base64)? {
+        return Err(picker_error("profile image integrity verification failed"));
+    }
+    Ok((metadata, path, mime, extension))
+}
+
+pub fn preview_profile_image<R: Runtime>(
+    app: &AppHandle<R>,
+    storage: &SecureStorage,
+    runtime: &ProfileImageRuntime,
+    owner: &str,
+    input: ProfileImageInput,
+) -> MobileResult<ProfileImagePreview> {
+    let session = profile_input_session(storage, &input)?;
+    let scope = profile_scope_key(&session);
+    let root = profile_image_root(app, &session)?;
+    let (metadata, path, mime, extension) = verified_profile_image(&root, &input.handle)?;
+    {
+        let mut current = runtime.scope.lock().map_err(|_| picker_error("profile preview is unavailable"))?;
+        if *current != scope {
+            runtime.access.revoke_grants();
+            *current = scope.clone();
+        }
+    }
+    let handle = runtime.access.grant(
+        owner, &metadata.handle, &root, &path,
+        &format!("{}.{}", metadata.handle, extension), mime,
+        metadata.byte_length, &decode_sha256(&metadata.sha256_base64)?,
+    ).map_err(picker_error)?;
+    if profile_input_session(storage, &input).is_err()
+        || runtime.scope.lock().map_err(|_| picker_error("profile preview is unavailable"))?.as_str() != scope
+    {
+        runtime.access.release(owner, &handle);
+        return Err(picker_error("profile image session changed"));
+    }
+    #[cfg(target_os = "android")]
+    let asset_url = format!("http://profile-image.localhost/{handle}");
+    #[cfg(not(target_os = "android"))]
+    let asset_url = format!("profile-image://localhost/{handle}");
+    Ok(ProfileImagePreview { asset_url, access_handle: handle })
+}
+
+pub async fn upload_profile_image<R: Runtime>(
+    app: &AppHandle<R>,
+    storage: &SecureStorage,
+    input: ProfileImageInput,
+) -> MobileResult<String> {
+    let session = profile_input_session(storage, &input)?;
+    let root = profile_image_root(app, &session)?;
+    let (metadata, path, mime, extension) = verified_profile_image(&root, &input.handle)?;
+    let uploaded = upload_native_file(
+        &session, "profile_image_upload", &path, &format!("{}.{}", metadata.handle, extension),
+        mime, "avatar", "public", metadata.byte_length,
+        &hex_digest(&decode_sha256(&metadata.sha256_base64)?),
+    ).await?;
+    profile_input_session(storage, &input)?;
+    // Profiles use the OSS resource URL, never the encrypted-object CID.
+    let origin = reqwest::Url::parse(session.station_origin()).map_err(|_| picker_error("profile station origin is invalid"))?;
+    let image_url = origin.join(&uploaded.url).map_err(|_| picker_error("profile upload URL is invalid"))?;
+    if uploaded.url.is_empty() || image_url.origin() != origin.origin()
+        || image_url.path() != "/sub-oss/file"
+        || !image_url.username().is_empty() || image_url.password().is_some()
+        || image_url.fragment().is_some()
+        || !image_url.query_pairs().any(|(key, value)| key == "key" && !value.is_empty())
+    {
+        return Err(picker_error("profile upload resource URL is invalid"));
+    }
+    Ok(format!("{}?{}", image_url.path(), image_url.query().unwrap_or_default()))
+}
+
+pub fn discard_profile_image<R: Runtime>(
+    app: &AppHandle<R>, storage: &SecureStorage, input: ProfileImageInput,
+) -> MobileResult<()> {
+    let session = profile_input_session(storage, &input)?;
+    let root = profile_image_root(app, &session)?;
+    if Ulid::from_string(&input.handle).is_err() { return Err(picker_error("profile image handle is invalid")); }
+    cleanup_staged_handle(&root, &input.handle);
+    Ok(())
+}
+
+impl ProfileImageRuntime {
+    pub fn release(&self, owner: &str, handle: &str) {
+        self.access.release(owner, handle);
+    }
+
+    pub fn asset_response(
+        &self, storage: &SecureStorage, owner: &str, request: &tauri::http::Request<Vec<u8>>,
+    ) -> tauri::http::Response<Vec<u8>> {
+        let result = (|| {
+            let head = request.method() == tauri::http::Method::HEAD;
+            if !head && request.method() != tauri::http::Method::GET { return Err(picker_error("profile image method is invalid")); }
+            let current = current_authenticated_native_session(storage)?;
+            let scope = profile_scope_key(&current);
+            if self.scope.lock().map_err(|_| picker_error("profile preview is unavailable"))?.as_str() != scope {
+                self.access.revoke_grants();
+                return Err(picker_error("profile image session changed"));
+            }
+            let asset = self.access.read_asset(owner, request.uri().path().trim_start_matches('/'), None, head)
+                .map_err(picker_error)?;
+            if profile_scope_key(&current_authenticated_native_session(storage)?) != scope {
+                self.access.revoke_grants();
+                return Err(picker_error("profile image session changed"));
+            }
+            Ok(asset)
+        })();
+        let response = tauri::http::Response::builder()
+            .header("cache-control", "no-store").header("x-content-type-options", "nosniff");
+        match result {
+            Ok(asset) => response.status(200).header("content-type", asset.mime_type)
+                .header("content-length", asset.total).body(asset.bytes).expect("profile image response"),
+            Err(_) => response.status(404).body(Vec::new()).expect("profile image unavailable response"),
+        }
+    }
 }
 
 pub async fn upload_moment_media<R: Runtime>(
@@ -249,6 +477,7 @@ pub async fn upload_moment_media<R: Runtime>(
         "moment_media_upload",
         &prepared.ciphertext_path,
         &format!("{}.bin", metadata.handle),
+        "application/octet-stream",
         "moments",
         "public",
         prepared.ciphertext_size,
@@ -523,7 +752,7 @@ fn validate_request(input: &MediaPickInput, generation: u64, now_ms: u64) -> Mob
     if Ulid::from_string(&input.request_id).is_err()
         || !matches!(
             input.surface_kind.as_str(),
-            "chat_attachment" | "moment_media"
+            "chat_attachment" | "moment_media" | "profile_image"
         )
         || !matches!(
             input.capability.as_str(),
@@ -540,6 +769,15 @@ fn validate_request(input: &MediaPickInput, generation: u64, now_ms: u64) -> Mob
         || input.accepted_media_kinds.len() > 3
     {
         return Err(picker_error("native media picker request is invalid"));
+    }
+    if input.surface_kind == PROFILE_IMAGE_SURFACE
+        && (input.max_item_count != 1
+            || input.max_total_bytes > MAX_PROFILE_IMAGE_BYTES
+            || input.accepted_media_kinds.len() != 1
+            || input.accepted_media_kinds[0] != "image"
+            || !matches!(input.capability.as_str(), "photo_library" | "camera"))
+    {
+        return Err(picker_error("profile image picker request is invalid"));
     }
     if input
         .accepted_media_kinds
@@ -1063,6 +1301,7 @@ mod tests {
             NativeFileUpload {
                 reference: "oss://self/cas/image".to_string(),
                 size: prepared.ciphertext_size,
+                url: "https://media.example.test/image".to_string(),
             },
         )
         .unwrap();

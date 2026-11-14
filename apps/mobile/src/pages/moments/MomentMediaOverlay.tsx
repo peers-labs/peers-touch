@@ -1,8 +1,9 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { useEffect, useMemo, useState } from 'react';
-import { Button, Icon, Spin } from '@peers-touch/ui';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Button, Icon, Spin, restoreNavigationFocus } from '@peers-touch/ui';
 
 import { useMobileI18n } from '../../app/mobileI18n';
+import { useMobilePageDisposal } from '../../components/mobilePageLifetime';
 import { isAccessGranted } from '../../features/auth/authSession';
 import { useAuthStore } from '../../features/auth/authStore';
 import type { SocialIntentPort } from '../../features/social/socialIntents';
@@ -61,8 +62,13 @@ export function MomentMediaOverlay({
     source: null,
     objectUrl: false,
   });
+  const loaded = useRef<{ selection: MomentMediaSelection; attempt: number; gateway: typeof gateway } | null>(null);
+  const previewUrl = useRef<string | null>(null);
 
   useEffect(() => {
+    if (loaded.current?.selection === selection
+      && loaded.current.attempt === attempt
+      && loaded.current.gateway === gateway) return;
     const controller = new AbortController();
     let active = true;
     let objectUrl: string | null = null;
@@ -99,6 +105,9 @@ export function MomentMediaOverlay({
           if (result.objectUrl) URL.revokeObjectURL(result.source);
           return;
         }
+        if (previewUrl.current) URL.revokeObjectURL(previewUrl.current);
+        previewUrl.current = result.objectUrl ? result.source : null;
+        loaded.current = { selection, attempt, gateway };
         setState({ status: 'ready', ...result });
       })
       .catch((error) => {
@@ -114,13 +123,16 @@ export function MomentMediaOverlay({
     return () => {
       active = false;
       controller.abort();
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [attempt, gateway, intents, selection]);
 
-  useEffect(() => () => {
-    selection.returnFocus?.focus();
-  }, [selection.returnFocus]);
+  useMobilePageDisposal(() => {
+    if (previewUrl.current) URL.revokeObjectURL(previewUrl.current);
+    previewUrl.current = null;
+    if (selection.returnFocus?.isConnected && !selection.returnFocus.closest('[hidden]')) {
+      restoreNavigationFocus(selection.returnFocus);
+    }
+  });
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {

@@ -21,6 +21,17 @@
 | MS-J07 | Interrupted work and degraded recovery | MS-C05, MS-C08, MS-C10, MS-C12, MS-C14 |
 | MS-J08 | Whole-product foreground walkthrough | MS-C01..MS-C10, MS-C14, MS-C15 |
 
+Single-call proof belongs to the original mixed call-resolution runtime:
+Mobile incoming/outgoing audio and video require real RTP progress on both
+clients, native media controls, ICE renegotiation, chat receiver readback while
+the call is active, and released tracks after hangup. Simulator startup retains
+the owned native app's redacted stdout/stderr as immutable run artifacts before
+Appium teardown and Simulator deletion, including entry failures before login.
+Diagnostics do not qualify an unavailable Station or replace a surface journey.
+The whole-product Gate and bound simulator provisioner use the same
+`simulator_native_output.ios_native_output_callbacks` capture owner, with
+run-owned temporary storage and cleanup after evidence capture.
+
 ## 2. MS-J01 First Station Entry
 
 1. User opens Mobile without an active Station.
@@ -59,7 +70,7 @@ the restore decision is pending.
 
 ## 4. MS-J03 Conversation Work
 
-1. User opens Chats and sees Station-backed friend and group conversation projections.
+1. User opens Messages, selects the Chats top scope, and sees Station-backed friend and group conversation projections. The bottom destinations are Messages, Moments, and Me.
 2. Search filters the projected list without changing authoritative data.
 3. User opens a conversation; the detail surface hides the bottom tab bar.
 4. History loads while preserving the current scroll anchor.
@@ -86,7 +97,7 @@ text messaging. A sibling device that loses resolution stops ringing and shows
 
 ## 5. MS-J04 Contact And Group Work
 
-1. User opens Contacts and sees pending requests, friends, and groups.
+1. User opens the Contacts top scope within Messages and sees pending requests, friends, and groups. It has independent query, scroll and focus state; opening a profile or its conversation and returning preserves that scope.
 2. User searches local contacts or resolves a federated handle.
 3. User accepts/rejects a request or sends a new request.
 4. User opens a profile and may start a conversation or manage block state.
@@ -154,7 +165,8 @@ discard, or a new explicit save after reconciliation.
 
 | Product behavior | Mobile contract |
 |---|---|
-| Primary navigation | Bottom tabs with same-frame visible feedback |
+| Primary navigation | Three bottom destinations: Messages, Moments, Me; horizontal page swipes follow that order without wrapping; Chats/Contacts top scopes within Messages, with same-frame visible feedback |
+| Native continuity | Visited views and headers persist across navigation; hidden work pauses; no full-page refresh/loading reset or post-paint scroll jump |
 | Detail navigation | Stack semantics; tab bar hidden for immersive detail |
 | Context actions | Bottom sheet or dedicated page |
 | Live call | Shell-owned full-screen overlay; Direct conversation remains the context owner |
@@ -164,6 +176,24 @@ discard, or a new explicit save after reconciliation.
 | Background freshness | Push/wakeup marks stale; resume performs authoritative sync |
 | Large lists | Virtualized or bounded rendering with preserved anchors |
 | Accessibility | Screen-reader order, dynamic text, focus restoration, reduced motion, and labeled icon actions |
+
+Acceptance-build diagnostics use the shared UI overlay host. Debug opens a
+bounded bottom Drawer with a pinned 44px close control, a scrollable body,
+safe-area clearance, explicit close and outside/Escape dismissal. Closing
+restores the existing product tree and scroll position. The launcher stays
+above bottom navigation controls. Global touch handlers must not cancel rapid
+button activation; double-tap zoom prevention belongs to `touch-action:
+manipulation`, while the existing native gesture guard prevents pinch zoom.
+
+Primary page swipes use the shared `useMobileTabSwipe` arbitration and the same
+navigation/exit intent as bottom-tab taps. Vertical scrolling, taps, long presses,
+editable controls and nested horizontal scrollers retain their own gestures.
+An established horizontal pan is judged by direction and displacement, without
+a total-duration cutoff. A stationary hold before pan recognition remains the
+page's long-press action.
+Detail views, immersive media and open overlays do not switch primary modules.
+The gesture changes the retained active view without rebuilding it or moving
+the entire page during the drag; returning preserves scroll, draft and query.
 
 ## 10. MS-J08 Whole-Product Foreground Walkthrough
 
@@ -191,6 +221,25 @@ primary action, current scope, state meaning, and recovery path without
 interpreting internal identifiers. Text and controls must fit at supported
 viewport and text-size cells; the keyboard, safe area, tab bar, composer,
 sheet, modal, notice, and system status area must not obscure one another.
+
+Find People is a pushed detail page (`detail:find-people`), with a peers-ui
+navigation bar, top search field and explicit search scope above an independently
+scrolling results list. The bottom tab bar is hidden. Keyboard viewport changes
+resize the page through the shared visual-keyboard projection; they do not move
+search into a bottom sheet. Back returns to the original Messages pane.
+The software keyboard opens only when the user activates an editable input,
+including by hardware-keyboard navigation. Opening a page, revealing search,
+replying/editing, selecting an emoji, sending, or dismissing a modal must not
+activate an input. Navigation preserves drafts, queries and selection without
+restoring editable focus. Non-editable accessibility focus remains available.
+Mobile selects the shared `UIProvider inputFocus="explicit"` policy; modal
+entry focuses its reading container, with normal Tab navigation inside it.
+Station actor search is the default and remains available without Federation
+membership. Explicit Federation search and full remote handles use the selected
+real Federation context. Discovery grants no relationship authority: requests
+require an observed Federation, canonical actor identity and Home Station.
+Loading, no-result, failure/retry and duplicate/request states preserve the
+entered query; a scope change or page teardown invalidates stale replies.
 
 The walkthrough fails on any reachable surface that:
 

@@ -22,6 +22,7 @@ export function MobileNorthStarProvider({ children }: { children: ReactNode }) {
   return (
     <UIProvider
       theme="light"
+      inputFocus="explicit"
       className="m-northstar"
       style={northStarVariables('light', { material: 'flat' })}
       feedback={mobileFeedbackChannel}

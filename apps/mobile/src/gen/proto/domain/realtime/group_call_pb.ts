@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/realtime/group_call.proto.
  */
 export const file_domain_realtime_group_call: GenFile = /*@__PURE__*/
-  fileDesc("CiBkb21haW4vcmVhbHRpbWUvZ3JvdXBfY2FsbC5wcm90bxIdcGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEioQEKHUdyb3VwQ2FsbEF1dGhvcml0eUpvaW5SZXF1ZXN0EhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoCRISCgphY3Rvcl9wdGlkGAIgASgJEiMKG3NvdXJjZV9ob21lX3N0YXRpb25fcGVlcl9pZBgDIAEoCRIVCg1mZWRlcmF0aW9uX2lkGAQgASgJEhcKD2F1dGhvcml0eV9lcG9jaBgFIAEoBCKgAQoeR3JvdXBDYWxsQXV0aG9yaXR5Sm9pblJlc3BvbnNlEk8KCGRlY2lzaW9uGAEgASgOMj0ucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuR3JvdXBDYWxsQXV0aG9yaXR5Sm9pbkRlY2lzaW9uEgsKA3VybBgCIAEoCRINCgV0b2tlbhgDIAEoCRIRCglyb29tX25hbWUYBCABKAkqugEKHkdyb3VwQ2FsbEF1dGhvcml0eUpvaW5EZWNpc2lvbhIyCi5HUk9VUF9DQUxMX0FVVEhPUklUWV9KT0lOX0RFQ0lTSU9OX1VOU1BFQ0lGSUVEEAASMQotR1JPVVBfQ0FMTF9BVVRIT1JJVFlfSk9JTl9ERUNJU0lPTl9BVVRIT1JJWkVEEAESMQotR1JPVVBfQ0FMTF9BVVRIT1JJVFlfSk9JTl9ERUNJU0lPTl9OT1RfTUVNQkVSEAJCT1pNZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWwvcmVhbHRpbWU7cmVhbHRpbWViBnByb3RvMw");
+  fileDesc("CiBkb21haW4vcmVhbHRpbWUvZ3JvdXBfY2FsbC5wcm90bxIdcGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEiiQIKHUdyb3VwQ2FsbEF1dGhvcml0eUpvaW5SZXF1ZXN0EhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoCRISCgphY3Rvcl9wdGlkGAIgASgJEiMKG3NvdXJjZV9ob21lX3N0YXRpb25fcGVlcl9pZBgDIAEoCRIVCg1mZWRlcmF0aW9uX2lkGAQgASgJEhcKD2F1dGhvcml0eV9lcG9jaBgFIAEoBBJNCg5lbmRwb2ludF9ncmFudBgGIAEoCzI1LnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLkdyb3VwQ2FsbEVuZHBvaW50R3JhbnQSFwoPYWN0b3JfZGV2aWNlX2lkGAcgASgJItABCh5Hcm91cENhbGxBdXRob3JpdHlKb2luUmVzcG9uc2USTwoIZGVjaXNpb24YASABKA4yPS5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5Hcm91cENhbGxBdXRob3JpdHlKb2luRGVjaXNpb24SCwoDdXJsGAIgASgJEg0KBXRva2VuGAMgASgJEhEKCXJvb21fbmFtZRgEIAEoCRIQCghncmFudF9pZBgFIAEoCRIcChRwYXJ0aWNpcGFudF9pZGVudGl0eRgGIAEoCSKRAgoWR3JvdXBDYWxsRW5kcG9pbnRHcmFudBIQCghncmFudF9pZBgBIAEoCRIXCg9jb252ZXJzYXRpb25faWQYAiABKAkSEgoKYWN0b3JfcHRpZBgDIAEoCRIXCg9hY3Rvcl9kZXZpY2VfaWQYBCABKAkSEgoKc2Vzc2lvbl9pZBgFIAEoCRIcChRob21lX3N0YXRpb25fcGVlcl9pZBgGIAEoCRIhChlhdXRob3JpdHlfc3RhdGlvbl9wZWVyX2lkGAcgASgJEhUKDWZlZGVyYXRpb25faWQYCCABKAkSFwoPYXV0aG9yaXR5X2Vwb2NoGAkgASgEEhoKEmV4cGlyZXNfYXRfdW5peF9tcxgKIAEoAyKWAgofR3JvdXBDYWxsRW5kcG9pbnRDb250cm9sUmVxdWVzdBJJCgRraW5kGAEgASgOMjsucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuR3JvdXBDYWxsRW5kcG9pbnRDb250cm9sS2luZBJECgVncmFudBgCIAEoCzI1LnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLkdyb3VwQ2FsbEVuZHBvaW50R3JhbnQSUAoKcm9vbV9xdWVyeRgDIAEoCzI8LnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLkdyb3VwQ2FsbEF1dGhvcml0eUpvaW5SZXF1ZXN0EhAKCHJvb21fc2lkGAQgASgJIpwBCiBHcm91cENhbGxFbmRwb2ludENvbnRyb2xSZXNwb25zZRIPCgdhbGxvd2VkGAEgASgIEg8KB2VqZWN0ZWQYAiABKAgSEwoLcm9vbV9hY3RpdmUYAyABKAgSEQoJcm9vbV9uYW1lGAQgASgJEhAKCHJvb21fc2lkGAUgASgJEhwKFGRlY2xpbmVkX2FjdG9yX3B0aWRzGAYgAygJKroBCh5Hcm91cENhbGxBdXRob3JpdHlKb2luRGVjaXNpb24SMgouR1JPVVBfQ0FMTF9BVVRIT1JJVFlfSk9JTl9ERUNJU0lPTl9VTlNQRUNJRklFRBAAEjEKLUdST1VQX0NBTExfQVVUSE9SSVRZX0pPSU5fREVDSVNJT05fQVVUSE9SSVpFRBABEjEKLUdST1VQX0NBTExfQVVUSE9SSVRZX0pPSU5fREVDSVNJT05fTk9UX01FTUJFUhACKqMCChxHcm91cENhbGxFbmRwb2ludENvbnRyb2xLaW5kEjAKLEdST1VQX0NBTExfRU5EUE9JTlRfQ09OVFJPTF9LSU5EX1VOU1BFQ0lGSUVEEAASLworR1JPVVBfQ0FMTF9FTkRQT0lOVF9DT05UUk9MX0tJTkRfQ0hFQ0tfSE9NRRABEjUKMUdST1VQX0NBTExfRU5EUE9JTlRfQ09OVFJPTF9LSU5EX1JFVk9LRV9BVVRIT1JJVFkQAhIwCixHUk9VUF9DQUxMX0VORFBPSU5UX0NPTlRST0xfS0lORF9ST09NX1NUQVRVUxADEjcKM0dST1VQX0NBTExfRU5EUE9JTlRfQ09OVFJPTF9LSU5EX0RFQ0xJTkVfSU5WSVRBVElPThAEQk9aTWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsL3JlYWx0aW1lO3JlYWx0aW1lYgZwcm90bzM");
 
 /**
  * GroupCallAuthorityJoinRequest carries one authenticated Home Station request
@@ -43,6 +43,16 @@ export type GroupCallAuthorityJoinRequest = Message<"peers_touch.model.realtime.
    * @generated from field: uint64 authority_epoch = 5;
    */
   authorityEpoch: bigint;
+
+  /**
+   * @generated from field: peers_touch.model.realtime.v1.GroupCallEndpointGrant endpoint_grant = 6;
+   */
+  endpointGrant?: GroupCallEndpointGrant | undefined;
+
+  /**
+   * @generated from field: string actor_device_id = 7;
+   */
+  actorDeviceId: string;
 };
 
 /**
@@ -75,6 +85,16 @@ export type GroupCallAuthorityJoinResponse = Message<"peers_touch.model.realtime
    * @generated from field: string room_name = 4;
    */
   roomName: string;
+
+  /**
+   * @generated from field: string grant_id = 5;
+   */
+  grantId: string;
+
+  /**
+   * @generated from field: string participant_identity = 6;
+   */
+  participantIdentity: string;
 };
 
 /**
@@ -83,6 +103,145 @@ export type GroupCallAuthorityJoinResponse = Message<"peers_touch.model.realtime
  */
 export const GroupCallAuthorityJoinResponseSchema: GenMessage<GroupCallAuthorityJoinResponse> = /*@__PURE__*/
   messageDesc(file_domain_realtime_group_call, 1);
+
+/**
+ * The Home resolves the endpoint from Session and commits this authorization
+ * while the Session and Actor Device mutation fences remain held.
+ *
+ * @generated from message peers_touch.model.realtime.v1.GroupCallEndpointGrant
+ */
+export type GroupCallEndpointGrant = Message<"peers_touch.model.realtime.v1.GroupCallEndpointGrant"> & {
+  /**
+   * @generated from field: string grant_id = 1;
+   */
+  grantId: string;
+
+  /**
+   * @generated from field: string conversation_id = 2;
+   */
+  conversationId: string;
+
+  /**
+   * @generated from field: string actor_ptid = 3;
+   */
+  actorPtid: string;
+
+  /**
+   * @generated from field: string actor_device_id = 4;
+   */
+  actorDeviceId: string;
+
+  /**
+   * @generated from field: string session_id = 5;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: string home_station_peer_id = 6;
+   */
+  homeStationPeerId: string;
+
+  /**
+   * @generated from field: string authority_station_peer_id = 7;
+   */
+  authorityStationPeerId: string;
+
+  /**
+   * @generated from field: string federation_id = 8;
+   */
+  federationId: string;
+
+  /**
+   * @generated from field: uint64 authority_epoch = 9;
+   */
+  authorityEpoch: bigint;
+
+  /**
+   * @generated from field: int64 expires_at_unix_ms = 10;
+   */
+  expiresAtUnixMs: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.realtime.v1.GroupCallEndpointGrant.
+ * Use `create(GroupCallEndpointGrantSchema)` to create a new message.
+ */
+export const GroupCallEndpointGrantSchema: GenMessage<GroupCallEndpointGrant> = /*@__PURE__*/
+  messageDesc(file_domain_realtime_group_call, 2);
+
+/**
+ * @generated from message peers_touch.model.realtime.v1.GroupCallEndpointControlRequest
+ */
+export type GroupCallEndpointControlRequest = Message<"peers_touch.model.realtime.v1.GroupCallEndpointControlRequest"> & {
+  /**
+   * @generated from field: peers_touch.model.realtime.v1.GroupCallEndpointControlKind kind = 1;
+   */
+  kind: GroupCallEndpointControlKind;
+
+  /**
+   * @generated from field: peers_touch.model.realtime.v1.GroupCallEndpointGrant grant = 2;
+   */
+  grant?: GroupCallEndpointGrant | undefined;
+
+  /**
+   * @generated from field: peers_touch.model.realtime.v1.GroupCallAuthorityJoinRequest room_query = 3;
+   */
+  roomQuery?: GroupCallAuthorityJoinRequest | undefined;
+
+  /**
+   * @generated from field: string room_sid = 4;
+   */
+  roomSid: string;
+};
+
+/**
+ * Describes the message peers_touch.model.realtime.v1.GroupCallEndpointControlRequest.
+ * Use `create(GroupCallEndpointControlRequestSchema)` to create a new message.
+ */
+export const GroupCallEndpointControlRequestSchema: GenMessage<GroupCallEndpointControlRequest> = /*@__PURE__*/
+  messageDesc(file_domain_realtime_group_call, 3);
+
+/**
+ * @generated from message peers_touch.model.realtime.v1.GroupCallEndpointControlResponse
+ */
+export type GroupCallEndpointControlResponse = Message<"peers_touch.model.realtime.v1.GroupCallEndpointControlResponse"> & {
+  /**
+   * @generated from field: bool allowed = 1;
+   */
+  allowed: boolean;
+
+  /**
+   * @generated from field: bool ejected = 2;
+   */
+  ejected: boolean;
+
+  /**
+   * @generated from field: bool room_active = 3;
+   */
+  roomActive: boolean;
+
+  /**
+   * @generated from field: string room_name = 4;
+   */
+  roomName: string;
+
+  /**
+   * @generated from field: string room_sid = 5;
+   */
+  roomSid: string;
+
+  /**
+   * @generated from field: repeated string declined_actor_ptids = 6;
+   */
+  declinedActorPtids: string[];
+};
+
+/**
+ * Describes the message peers_touch.model.realtime.v1.GroupCallEndpointControlResponse.
+ * Use `create(GroupCallEndpointControlResponseSchema)` to create a new message.
+ */
+export const GroupCallEndpointControlResponseSchema: GenMessage<GroupCallEndpointControlResponse> = /*@__PURE__*/
+  messageDesc(file_domain_realtime_group_call, 4);
 
 /**
  * @generated from enum peers_touch.model.realtime.v1.GroupCallAuthorityJoinDecision
@@ -109,3 +268,39 @@ export enum GroupCallAuthorityJoinDecision {
  */
 export const GroupCallAuthorityJoinDecisionSchema: GenEnum<GroupCallAuthorityJoinDecision> = /*@__PURE__*/
   enumDesc(file_domain_realtime_group_call, 0);
+
+/**
+ * @generated from enum peers_touch.model.realtime.v1.GroupCallEndpointControlKind
+ */
+export enum GroupCallEndpointControlKind {
+  /**
+   * @generated from enum value: GROUP_CALL_ENDPOINT_CONTROL_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: GROUP_CALL_ENDPOINT_CONTROL_KIND_CHECK_HOME = 1;
+   */
+  CHECK_HOME = 1,
+
+  /**
+   * @generated from enum value: GROUP_CALL_ENDPOINT_CONTROL_KIND_REVOKE_AUTHORITY = 2;
+   */
+  REVOKE_AUTHORITY = 2,
+
+  /**
+   * @generated from enum value: GROUP_CALL_ENDPOINT_CONTROL_KIND_ROOM_STATUS = 3;
+   */
+  ROOM_STATUS = 3,
+
+  /**
+   * @generated from enum value: GROUP_CALL_ENDPOINT_CONTROL_KIND_DECLINE_INVITATION = 4;
+   */
+  DECLINE_INVITATION = 4,
+}
+
+/**
+ * Describes the enum peers_touch.model.realtime.v1.GroupCallEndpointControlKind.
+ */
+export const GroupCallEndpointControlKindSchema: GenEnum<GroupCallEndpointControlKind> = /*@__PURE__*/
+  enumDesc(file_domain_realtime_group_call, 1);

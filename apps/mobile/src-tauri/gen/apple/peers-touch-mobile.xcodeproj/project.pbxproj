@@ -155,6 +155,7 @@
 		E8E542B0DA8D5A847DEFC65D /* credential_envelope.rs */ = {isa = PBXFileReference; path = credential_envelope.rs; sourceTree = "<group>"; };
 		ED5CBDD96180964D2B0D8658 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
 		EE8B009CF540C29ED3D8142D /* lib.rs */ = {isa = PBXFileReference; path = lib.rs; sourceTree = "<group>"; };
+		F9E80F01632F6FE94CDEE75B /* attachment_stages.rs */ = {isa = PBXFileReference; path = attachment_stages.rs; sourceTree = "<group>"; };
 		FBA453103F046EF8AAD0B88D /* engine.rs */ = {isa = PBXFileReference; path = engine.rs; sourceTree = "<group>"; };
 		FD5CE4FAFCCFB425B5FA52C2 /* deep_link.rs */ = {isa = PBXFileReference; path = deep_link.rs; sourceTree = "<group>"; };
 		FF9E72339349B89BA05A5470 /* projection.rs */ = {isa = PBXFileReference; path = projection.rs; sourceTree = "<group>"; };
@@ -494,6 +495,7 @@
 		D5D4E049218112636C865B60 /* adapter */ = {
 			isa = PBXGroup;
 			children = (
+				F9E80F01632F6FE94CDEE75B /* attachment_stages.rs */,
 				AA8E009E220999103F9170B5 /* search.rs */,
 			);
 			path = adapter;

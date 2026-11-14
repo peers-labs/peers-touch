@@ -371,11 +371,22 @@ behavior, VoiceOver/TalkBack, or physical-device performance.
 
 ### 8.2 Required Same-Station Product Gates
 
-`mobile-simulator-social-convergence-e2e` and
+`mobile-simulator-social-convergence-e2e`, `mobile-simulator-chat-e2e`, and
 `mobile-simulator-chat-contacts-e2e` use
 `mobile-direct-simulator` with two isolated simulator clients and two actors
 bound to one source-attested disposable Station. They exercise the shared
 `MobileMessagingJourney` through production Harness actions.
+
+The `chat` scenario executes the complete original Direct and Group message,
+attachment, interaction, search, receipt and restart journey. It has its own
+Gate identity and does not run contact preferences or native profile images.
+It continues with the same two clients through Direct and Group native Photo
+Library cancel/select/send, decoded receiver images, real microphone recording,
+playable drafts, and receiver audio playback. Hidden retained Chat trees cannot
+satisfy its UI selectors. Photo-picker and receiver captures accompany the
+results; staging bytes or opening an attachment alone does not satisfy media proof.
+The existing `chat-contacts` scenario continues to require those extensions.
+Selecting `chat` cannot supply proof for `chat-contacts`.
 
 Successful execution is recorded as `PASS / DONE / PROVEN` for the declared
 simulator scenario. The same environment also owns the required recovery,
@@ -533,6 +544,14 @@ The native Gate runner provides optional physical-device diagnostics:
    data, provider browser session leases, provider account leases, physical
    device leases, correlation channel, client profile leases, environment
    profile lease, deployment leases.
+
+Simulator runs retain the last 8 MiB of the owned Appium server log at
+`runtime/mobile-simulator/appium.log` in the original run's evidence store.
+Reverse cleanup stops the server, captures and redacts its final log, then
+releases app installations and temporary storage. This also preserves session
+creation failures that occur before Peers launches or exposes its Harness.
+Standalone provisioner checks without an Acceptance run context do not publish
+run artifacts.
 
 `mobile-native.yaml.scenarios` is the resource-selection authority for this
 shared environment. The access scenario retains four clients, two Stations,

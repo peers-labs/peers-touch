@@ -11,7 +11,7 @@
 | ADR-1 | Consume `@peers-touch/ui` in the real app | draft |
 | ADR-2 | Drop blue-purple gradient; ink primary + pine accent | draft |
 | ADR-3 | Reuse the peers-ui feedback channel (no second dialog/toast) | draft |
-| ADR-4 | Real product wins structural conflicts; prototype reconciled | draft |
+| ADR-4 | Confirmed navigation governs presentation; preserve real capabilities | navigation confirmed 2026-11-13; remaining capability mapping draft |
 | ADR-5 | iOS Simulator target; progressive gates | draft |
 | ADR-6 | Webview compatibility is evidence-bound | draft |
 | ADR-7 | Delivery units must satisfy a fixed vertical closure (no schedule here) | draft |
@@ -70,23 +70,30 @@
 - **Reversal**: none anticipated; if a need arises the channel cannot express,
   extend the shared peers-ui channel rather than fork it.
 
-## ADR-4 Real product wins structural conflicts; prototype is reconciled
+## ADR-4 Confirmed navigation governs presentation; preserve real capabilities
 
-- **Context [F]**: prototype 3 tabs vs real 4 tabs; Moments nav differs;
-  prototype is outgoing-call-only and has dead controls, while the real app
-  already implements incoming call, friend requests, block, and group admin.
-- **Decision**: keep and re-skin the real surfaces (REAL-RESTYLE); correct the
-  prototype to real shell/navigation and real action ownership; remove
-  prototype-only fakes; only mount/build UI for genuine owner-backed gaps
-  (notification center; credentials detail).
-- **Rationale**: owner's explicit rule; a north-star contradicting the shipped
-  product is misleading; real behavior is never degraded to a fixture.
-- **Rejected alternative**: rebuilding already-real UI or carrying prototype
-  fakes into the product.
-- **Consequences**: prototype loses controls and changes shape; no new fake
-  surface enters the app.
-- **Reversal**: only if a "fake" point is later proven to have a real owner, in
-  which case it re-enters as REAL-GAP-PRESENT with evidence.
+- **Context [F]**: the user reconfirmed on 2026-11-13 that chats and contacts
+  share messages, distinguished by top subtabs; bottom navigation is
+  messages/moments/me. Commit `2431345e1` wrongly split contacts into a fourth
+  bottom tab. The earlier rule conflated existing implementation structure
+  with accepted design and cannot govern shell navigation.
+- **Decision**: restore the prototype's three destinations and shared
+  chats/contacts header. Store messages pane selection across pushed details
+  and tab changes. Migrate the real shell to that navigation while preserving
+  contacts, friend requests, group administration, search, badges, and native
+  back behavior. Keep real runtime/action ownership; remove fixture-only
+  fake controls and mount genuine owner-backed presentation gaps.
+- **Rationale**: confirmed product design governs navigation and appearance;
+  real runtime ownership governs capability and behavior.
+- **Rejected alternatives**: forcing four bottom tabs because the app already
+  renders them; dropping contacts capabilities to reduce tab count; carrying
+  fixture data or fake success into production.
+- **Consequences**: prototype shell is restored; real `MobileShell` navigation
+  remains a required migration item, with fixtures/selectors updated together.
+  This correction does not claim native App alignment or whole-product proof.
+- **Reversal**: navigation changes require a new explicit product decision;
+  a proven real owner can restore a previously removed fake capability as
+  REAL-GAP-PRESENT, without changing the confirmed shell.
 
 ## ADR-5 iOS Simulator is the acceptance target for this pass; progressive gates
 
@@ -95,7 +102,7 @@
   gates need reviewed remote Station profiles; this worktree's gates are UNPROVEN.
 - **Decision**: target the iOS Simulator cell; station-free build/layout/
   lifecycle gates run without external services; Station-backed scenario gates
-  run per delivery unit with a supplied non-stable profile; the full 162-surface
+  run per delivery unit with a supplied non-stable profile; the full 166-surface
   whole-product gate runs only at program delivery. Android stays separate.
 - **Rationale**: matches owner-selected strength; keeps early iterations on
   reproducible station-free evidence; avoids claiming whole-Mobile readiness.
@@ -132,3 +139,26 @@
 - **Consequences**: the plan is the single place a slice/order exists and can
   change through plan governance without amending architecture.
 - **Reversal**: none; the invariant persists even if the plan is restructured.
+
+## ADR-8 Native navigation retains bounded visited views
+
+- **Context**: active-only rendering remounted headers/controllers on every
+  switch. Whole-page Settings loading and post-paint scroll restoration
+  produced the refresh/jitter experience explicitly rejected on 2026-11-14.
+- **Decision**: use one `MobileNavigationHost` with React 19.2 Activity:
+  three visited primary frames, two nested Messages panes, and four last
+  current-stack detail views. Preserve the Messages header/tabbar; restore
+  scroll before paint; keep background readback section-local.
+- **Ownership**: navigation owns presentation retention, feature runtimes
+  own freshness, and `MobilePageActivity` owns retained presentation assets.
+  Hidden Effects/capture stop; media pauses; eviction or identity replacement
+  disposes retained assets. Session identity fences the entire cache.
+- **Rejected alternatives**: fade animations over remounts; keeping every
+  page/effect active; caching an unbounded detail history; lowering native
+  keyboard or continuity assertions.
+- **Consequences**: a bounded DOM/resource cost replaces repeated remount
+  cost. Activity reactivation must be distinguished from first initialization.
+  Deep stack eviction requires external recovery and never drops back-route
+  identity. Source checks alone cannot claim native continuity.
+- **Reversal**: change the bound only with native memory/performance evidence;
+  the user's no-refresh/no-jitter product contract remains.

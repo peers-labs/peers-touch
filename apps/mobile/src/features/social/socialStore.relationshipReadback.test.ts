@@ -26,6 +26,23 @@ afterEach(() => {
 });
 
 describe('Social relationship authoritative readback', () => {
+  it('does not publish delayed conversation settings into a replacement session', async () => {
+    let finish!: (value: unknown) => void;
+    const response = new Promise(resolve => { finish = resolve; });
+    const gateway = {
+      getConversationSettings: vi.fn(() => response),
+      updateConversationSettings: vi.fn(() => response),
+    } as unknown as SocialGateway;
+    useSocialStore.setState({ authSession: session, socialGateway: gateway, conversationSettings: {} });
+    const read = useSocialStore.getState().loadConversationSettings('conversation-a');
+    const write = useSocialStore.getState().updateConversationSettings('conversation-a', { isMuted: true });
+    useSocialStore.setState({ authSession: { ...session, sessionId: 'replacement' }, socialGateway: {} as SocialGateway });
+    finish({ ok: true, data: { sessionUlid: 'conversation-a', isMuted: true,
+      isPinned: false, alertEnabled: true, background: 'default' } });
+    await Promise.all([read, write]);
+    expect(useSocialStore.getState().conversationSettings).toEqual({});
+  });
+
   it('publishes follow state only after the status endpoint confirms it', async () => {
     const gateway = relationshipGateway({
       targetPtid: 'ptid:bob',

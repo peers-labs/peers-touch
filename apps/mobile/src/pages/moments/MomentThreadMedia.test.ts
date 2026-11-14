@@ -35,6 +35,8 @@ describe('mobile Moment thread and media ownership', () => {
     expect(overlay).toContain('intents.openPrivateMedia');
     expect(overlay).toContain("media?.state !== 'MEDIA_READY'");
     expect(overlay).toContain('URL.revokeObjectURL');
-    expect(overlay).toContain('selection.returnFocus?.focus()');
+    expect(overlay).toContain('useMobilePageDisposal');
+    expect(overlay).toContain('selection.returnFocus?.isConnected');
+    expect(overlay).toContain('restoreNavigationFocus(selection.returnFocus)');
   });
 });

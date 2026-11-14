@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button, Icon, Spin } from '@peers-touch/ui';
 
 import {
@@ -12,6 +12,7 @@ import { useChatSurfaceFixture } from '../acceptance/chatSurfaceFixture';
 import { useContactsSurfaceFixture } from '../acceptance/contactsSurfaceFixture';
 import { useMomentsSurfaceFixture } from '../acceptance/momentsSurfaceFixture';
 import { useSettingsSurfaceFixture } from '../acceptance/settingsSurfaceFixture';
+import { MobilePageActivity } from './mobilePageLifetime';
 
 interface MobileRouteBoundaryProps {
   readonly routeId: string;
@@ -44,7 +45,7 @@ export function MobileRouteBoundary({
   ) || (
     Boolean(contactsFixture.surfaceId)
       && (
-        routeId === 'tab:contacts'
+        routeId === 'tab:chat'
         || routeId === 'detail:contact-profile'
       )
   ) || (
@@ -76,15 +77,15 @@ export function MobileRouteBoundary({
     setRetryFailed(false);
   }, [routeId]);
 
-  if (
-    status === 'ready'
-    || fixtureOwnsRoute
-    || nativeTransitionPreservesTree
-  ) return children;
-
   const starting = status === 'pending'
     || status === 'bootstrapping'
     || status === 'resuming';
+  const warmed = useRef(false);
+  if (status === 'ready' || fixtureOwnsRoute) warmed.current = true;
+  const available = status === 'ready'
+    || fixtureOwnsRoute
+    || nativeTransitionPreservesTree
+    || (warmed.current && starting);
   const preparing = starting || retrying;
   const retryable = Boolean(
     descriptor
@@ -110,7 +111,9 @@ export function MobileRouteBoundary({
     }
   }
 
-  return (
+  return <>
+    <MobilePageActivity visible={available}>{(available || warmed.current) ? children : null}</MobilePageActivity>
+    {available ? null : (
     <div
       className="page-container"
       data-acceptance-id="mobile-route-unavailable"
@@ -183,5 +186,6 @@ export function MobileRouteBoundary({
         ) : null}
       </section>
     </div>
-  );
+    )}
+  </>;
 }

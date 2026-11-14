@@ -248,7 +248,8 @@ describe('Mobile Acceptance Harness', () => {
       surfaceId: 'contacts.profile',
     });
     await expect(harness['navigation.snapshot']()).resolves.toMatchObject({
-      primaryRouteId: 'tab:contacts',
+      primaryRouteId: 'tab:chat',
+      messagePane: 'contacts',
       detailKeys: ['detail:contact-profile:ptid:acceptance-contact'],
       overlayRouteId: null,
     });
@@ -258,7 +259,8 @@ describe('Mobile Acceptance Harness', () => {
       surfaceId: 'contacts.group-role-denied',
     });
     await expect(harness['navigation.snapshot']()).resolves.toMatchObject({
-      primaryRouteId: 'tab:contacts',
+      primaryRouteId: 'tab:chat',
+      messagePane: 'contacts',
       detailKeys: [],
       overlayRouteId: 'overlay:create-group',
     });
@@ -273,7 +275,8 @@ describe('Mobile Acceptance Harness', () => {
       surfaceId: null,
     });
     await expect(harness['navigation.snapshot']()).resolves.toMatchObject({
-      primaryRouteId: 'tab:contacts',
+      primaryRouteId: 'tab:chat',
+      messagePane: 'contacts',
       detailKeys: [],
       overlayRouteId: null,
     });
@@ -1047,14 +1050,18 @@ describe('Mobile Acceptance Harness', () => {
 
     await expect(harness['navigation.snapshot']()).resolves.toEqual({
       primaryRouteId: 'tab:chat',
+      messagePane: 'chats',
+      momentsPane: 'feed',
       detailKeys: [],
       overlayRouteId: null,
     });
     await expect(harness['navigation.apply']({
-      kind: 'primary',
-      routeId: 'tab:contacts',
+      kind: 'messages',
+      pane: 'contacts',
     })).resolves.toMatchObject({
-      primaryRouteId: 'tab:contacts',
+      primaryRouteId: 'tab:chat',
+      messagePane: 'contacts',
+      momentsPane: 'feed',
       detailKeys: [],
       overlayRouteId: null,
     });
@@ -1062,9 +1069,11 @@ describe('Mobile Acceptance Harness', () => {
       kind: 'overlay.open',
       route: { routeId: 'overlay:create-group' },
     })).resolves.toMatchObject({
-      primaryRouteId: 'tab:contacts',
+      primaryRouteId: 'tab:chat',
+      messagePane: 'contacts',
       detailKeys: [],
       overlayRouteId: 'overlay:create-group',
+      momentsPane: 'feed',
     });
     await expect(harness['navigation.apply']({
       kind: 'detail.push',
@@ -1133,9 +1142,24 @@ describe('Mobile Acceptance Harness', () => {
     );
     await expect(harness['navigation.snapshot']()).resolves.toEqual({
       primaryRouteId: 'tab:chat',
+      messagePane: 'chats',
+      momentsPane: 'feed',
       detailKeys: [],
       overlayRouteId: null,
     });
+  });
+
+  it('routes Moments panes and search through the same production owner', async () => {
+    const harness = createMobileAcceptanceHarness();
+    await expect(harness['navigation.apply']({ kind: 'moments', pane: 'circles' }))
+      .resolves.toMatchObject({ primaryRouteId: 'tab:moments', momentsPane: 'circles' });
+    await expect(harness['navigation.apply']({
+      kind: 'moments.search', pane: 'circles', query: 'Friends', open: true,
+    })).resolves.toMatchObject({ momentsPane: 'circles' });
+    await expect(harness['navigation.apply']({ kind: 'moments', pane: 'invalid' }))
+      .rejects.toThrow('acceptance.mobile.invalidInput:navigation.moments.pane');
+    await expect(harness['navigation.snapshot']())
+      .resolves.toMatchObject({ primaryRouteId: 'tab:moments', momentsPane: 'circles' });
   });
 
   it('routes Messaging actions through the active account-scoped native API', async () => {
@@ -1320,6 +1344,20 @@ describe('Mobile Acceptance Harness', () => {
             storageRef: 'private-storage-ref',
             ciphertextSize: 20,
             availabilityState: 'local',
+          }, {
+            attachmentId: 'voice-attachment',
+            filename: 'recording.m4a',
+            mimeType: 'audio/mp4',
+            plaintextSize: 9800,
+            contentKind: 0,
+            durationMs: 0,
+            voiceNote: {
+              durationMs: 2400,
+              codec: 'audio/mp4;codecs=mp4a.40.2',
+              waveform: [8, 15, 8],
+            },
+            objectId: 'voice-object',
+            storageRef: 'private-voice-storage-ref',
           }],
           state: 'delivered',
           timestampUnixMs: 10,
@@ -1334,6 +1372,14 @@ describe('Mobile Acceptance Harness', () => {
     expect(projection.messages['conversation-1'][0]).not.toHaveProperty('senderDeviceId');
     expect(projection.messages['conversation-1'][0].attachments[0]).not.toHaveProperty('storageRef');
     expect(projection.messages['conversation-1'][0].attachments[0]).not.toHaveProperty('objectId');
+    const voice = projection.messages['conversation-1'][0].attachments[1];
+    expect(voice.voiceNote).toEqual({
+      durationMs: 2400,
+      codec: 'audio/mp4;codecs=mp4a.40.2',
+      waveform: [8, 15, 8],
+    });
+    expect(voice).not.toHaveProperty('storageRef');
+    expect(voice).not.toHaveProperty('objectId');
     expect(projection.messages['conversation-1'][0].plaintext).toBe('acceptance-message');
   });
 

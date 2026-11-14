@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import unittest
@@ -26,6 +27,104 @@ from tooling.acceptance.provisioners.mobile_simulator import (
 
 
 class MixedClientAcceptanceContractTest(unittest.TestCase):
+    def test_mobile_media_requires_both_rtp_directions_and_video_decode(self) -> None:
+        for kind, invalid in (
+            ("audio", ""), ("video", ""), ("audio", "bytesReceived"),
+            ("audio", "packetsSent"), ("video", "framesDecoded"),
+            ("video", "framesEncoded"), ("video", "callId"), ("audio", "remoteTracks"),
+            ("audio", "duplicateAudio"), ("audio", "pausedAudio"),
+            ("audio", "audioPlayback"), ("video", "unboundLocalVideo"),
+            ("video", "videoDimensions"), ("video", "videoPlayback"),
+            ("video", "unmutedVideo"), ("video", "hiddenVideo"),
+            ("video", "desktopUnboundLocalVideo"),
+        ):
+            with self.subTest(kind=kind, invalid=invalid):
+                counters = {key: 10 for key in (
+                    "bytesSent", "bytesReceived", "packetsSent", "packetsReceived", "framesEncoded", "framesDecoded",
+                )}
+                before = {
+                    "callId": "call-1", "connectionState": "connected",
+                    "media": {"audio": dict(counters), "video": dict(counters)},
+                    "presentation": {
+                        "audibleRemoteCount": 1,
+                        "remoteAudio": [{"bound": True, "muted": False, "paused": False,
+                                         "currentTime": 1}],
+                        "localVideo": [], "remoteVideo": [],
+                    },
+                }
+                if kind == "video":
+                    video = {"bound": True, "muted": True, "paused": False,
+                             "readyState": 4, "currentTime": 1,
+                             "videoWidth": 640, "videoHeight": 480, "width": 160, "height": 120}
+                    for role in ("localVideo", "remoteVideo"):
+                        before["presentation"][role] = [dict(video)]
+                after = copy.deepcopy(before)
+                for media in after["media"].values():
+                    for key in media:
+                        media[key] += 1
+                for role in ("remoteAudio", "localVideo", "remoteVideo"):
+                    for element in after["presentation"][role]:
+                        element["currentTime"] += 1
+                mobile_after = copy.deepcopy(after)
+                tracks = [{"kind": media_kind, "readyState": "live"} for media_kind in ("audio", "video")]
+                snapshot = {"callId": "call-1", "state": "active_here",
+                            "localTracks": tracks, "remoteTracks": tracks}
+                mobile_snapshot = copy.deepcopy(snapshot)
+                if invalid == "callId":
+                    mobile_after["callId"] = "other-call"
+                elif invalid == "remoteTracks":
+                    mobile_snapshot["remoteTracks"] = []
+                elif invalid == "duplicateAudio":
+                    mobile_after["presentation"]["audibleRemoteCount"] = 2
+                elif invalid == "pausedAudio":
+                    mobile_after["presentation"]["remoteAudio"][0]["paused"] = True
+                elif invalid == "audioPlayback":
+                    mobile_after["presentation"]["remoteAudio"][0]["currentTime"] = 1
+                elif invalid == "unboundLocalVideo":
+                    mobile_after["presentation"]["localVideo"][0]["bound"] = False
+                elif invalid == "desktopUnboundLocalVideo":
+                    after["presentation"]["localVideo"][0]["bound"] = False
+                elif invalid == "videoDimensions":
+                    mobile_after["presentation"]["remoteVideo"][0]["videoWidth"] = 0
+                elif invalid == "videoPlayback":
+                    mobile_after["presentation"]["remoteVideo"][0]["currentTime"] = 1
+                elif invalid == "unmutedVideo":
+                    mobile_after["presentation"]["remoteVideo"][0]["muted"] = False
+                elif invalid == "hiddenVideo":
+                    mobile_after["presentation"]["remoteVideo"][0]["width"] = 0
+                elif invalid:
+                    mobile_after["media"][kind][invalid] = 10
+                stats_reads: dict[str, int] = {}
+
+                class Runtime:
+                    @staticmethod
+                    def call_action(client_id, action, _payload):
+                        if action == "callSnapshot":
+                            return {"snapshot": mobile_snapshot if client_id == "sim-ios" else snapshot}
+                        stats_reads[client_id] = stats_reads.get(client_id, 0) + 1
+                        return before if stats_reads[client_id] == 1 else (
+                            mobile_after if client_id == "sim-ios" else after
+                        )
+
+                gate = object.__new__(CallResolutionGate)
+                gate.runtime = Runtime()
+                gate.ptids = {"desktop-alice": "ptid:alice", "sim-ios": "ptid:bob"}
+
+                def wait_once(predicate, *_args):
+                    value = predicate()
+                    if value is None:
+                        raise GateError("RTP observation rejected")
+                    return value
+
+                with patch("tooling.acceptance.gates.chat.lifecycle_call_resolution.wait_until",
+                           side_effect=wait_once):
+                    if invalid:
+                        with self.assertRaisesRegex(GateError, "RTP observation rejected"):
+                            gate.progressing_media("call-1", kind)
+                    else:
+                        value = gate.progressing_media("call-1", kind)
+                        self.assertEqual(value["after"]["sim-ios"], mobile_after)
+
     def test_environment_declares_desktop_mobile_topology(self) -> None:
         contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / "chat-mixed-native.yaml"

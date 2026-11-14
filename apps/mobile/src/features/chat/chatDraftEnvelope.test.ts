@@ -44,6 +44,9 @@ describe('Chat draft generated contract', () => {
         'attachment-encrypted-2',
       ],
       savedAtMs: 1_700_000_000_000,
+      stagedAttachmentIds: [],
+      pendingMessageId: '',
+      threadRootMessageId: '',
     });
   });
 

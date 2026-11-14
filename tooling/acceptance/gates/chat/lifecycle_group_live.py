@@ -1,219 +1,79 @@
 #!/usr/bin/env python3
-"""Prove a three-participant group audio/video call on Native Desktop."""
+"""Prove group media and permission withdrawal on native Desktop and Mobile."""
 
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
-import json
-import os
-import random
+import dataclasses
 import time
 from typing import Any
+from urllib.parse import urlsplit
 
-from tooling.acceptance.core import AcceptanceGate, ActorRuntime, DriverError, GateError
-from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
-from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
-from tooling.acceptance.drivers.tauri import TauriSession
+from tooling.acceptance.core import AcceptanceGate, GateError
+from tooling.acceptance.gates.chat.mixed_native_runtime import MixedNativeRuntime
 from tooling.acceptance.gates.chat.native_support import (
-    DEV_ACCOUNT_PASSWORD,
-    NativeClientLifecycleLedger,
-    async_harness,
     cleanup_preserving_primary_failure,
-    commits_match,
-    is_native_tauri_url,
-    native_runtime_source_identity,
-    read_station_version,
-    runtime_station_service,
-    selected_native_runtime,
-    shared_federation_id,
     verify_runtime_fixture_ready,
-    wait_until,
 )
-
+from tooling.acceptance.fixtures.chat_native_reset import (
+    restart_acceptance_group_sfu,
+    restart_acceptance_station,
+)
 
 GATE_ID = "chat-lifecycle-group-live-e2e"
 ACTORS = ("alice", "bob", "charlie")
+CLIENTS = {"alice": "desktop-alice", "bob": "desktop-bob", "charlie": "sim-ios-peer"}
+DESKTOP_RUNTIME_IDENTITY = "desktop-macos-native"
 STEP_TIMEOUT = 120.0
 REQUIRED_ASSERTIONS = {
-    "group_call_native_runtime",
-    "group_call_actor_isolation",
-    "group_call_room_converged",
-    "group_call_audio_media_live",
-    "group_call_mute_converged",
-    "group_call_audio_released",
-    "group_call_video_media_live",
-    "group_call_camera_converged",
-    "group_call_late_join_converged",
-    "group_call_video_released",
+    "group_call_native_runtime", "group_call_actor_isolation",
+    "group_call_room_converged", "group_call_audio_media_live",
+    "group_call_mute_converged", "group_call_audio_released",
+    "group_call_video_media_live", "group_call_camera_converged",
+    "group_call_late_join_converged", "group_call_video_released",
+    "group_call_member_removal_ejected", "group_call_restart_converged",
+    "group_call_session_revocation_ejected", "group_call_device_revocation_ejected",
+    "group_call_revoked_token_replay_denied",
+    "group_call_signal_reconnect_converged",
+    "group_call_refreshed_token_replay_denied",
+    "group_call_authority_restart_replay_denied",
+    "group_call_sfu_restart_replay_denied",
+    "group_call_sfu_restart_media_recovered",
+    "group_call_member_token_replay_denied",
+    "group_call_session_token_replay_denied",
 }
 
 
-def _snapshot(client: TauriSession) -> dict[str, Any] | None:
-    result = async_harness(client, "groupCallSnapshot", {}, timeout=15)
-    if not isinstance(result, dict):
-        return None
-    snapshot = result.get("snapshot")
-    return snapshot if isinstance(snapshot, dict) else None
-
-
-def _wait_connected(
-    client: TauriSession,
-    participant_count: int,
-) -> dict[str, Any]:
-    result = wait_until(
-        lambda: (
-            snapshot
-            if (
-                (snapshot := _snapshot(client))
-                and snapshot.get("state") == "connected"
-                and len(snapshot.get("participants") or []) == participant_count
-            )
-            else None
-        ),
-        f"group call connected with {participant_count} participants",
-        timeout=STEP_TIMEOUT,
-        interval=0.5,
-    )
-    if not isinstance(result, dict):
-        raise GateError("group call snapshot did not converge")
-    return result
-
-
-def _all_connected_with_participant_state(
-    clients: dict[str, TauriSession],
-    *,
-    participant_count: int,
-    actor_ptid: str,
-    field: str,
-    expected: bool,
-) -> dict[str, dict[str, Any]] | None:
-    snapshots = {
-        actor: _snapshot(client)
-        for actor, client in clients.items()
-    }
+def _rtp_delta(before: dict[str, Any], after: dict[str, Any], *,
+               actor_ptid: str, peer_ptids: set[str], video: bool) -> dict[str, Any] | None:
+    """Require media progress on every sender/receiver edge, in one RTC session."""
     if not all(
-        isinstance(snapshot, dict)
-        and snapshot.get("state") == "connected"
-        and len(snapshot.get("participants") or []) == participant_count
-        and any(
-            participant.get("actorPtid") == actor_ptid
-            and participant.get(field) is expected
-            for participant in snapshot.get("participants") or []
-        )
-        for snapshot in snapshots.values()
-    ):
+        item.get("connected") is True and item.get("canPublish") is True
+        and item.get("canSubscribe") is True and item.get("roomSid")
+        and item.get("participantSid") for item in (before, after)
+    ) or before["roomSid"] != after["roomSid"] or before["participantSid"] != after["participantSid"]:
         return None
-    return {
-        actor: snapshot
-        for actor, snapshot in snapshots.items()
-        if isinstance(snapshot, dict)
-    }
-
-
-def _surface_media(client: TauriSession) -> dict[str, Any] | None:
-    value = client.execute_script(
-        """
-        const surface = document.querySelector('[data-group-call-surface]');
-        if (!surface) return null;
-        const media = (selector) => Array.from(
-          surface.querySelectorAll(selector),
-        ).map((element) => {
-          const stream = element.srcObject;
-          return {
-            actorPtid: element.getAttribute('aria-label') || '',
-            readyState: Number(element.readyState || 0),
-            liveTracks: stream instanceof MediaStream
-              ? stream.getTracks()
-                .filter((track) => track.readyState === 'live')
-                .map((track) => track.kind)
-              : [],
-          };
-        });
-        return {
-          state: surface.getAttribute('data-group-call-state') || '',
-          displayMode:
-            surface.getAttribute('data-group-call-display-mode') || '',
-          audio: media('[data-group-call-remote-audio]'),
-          video: media('[data-group-call-participant] video'),
-        };
-        """
-    )
-    return value if isinstance(value, dict) else None
-
-
-def _has_remote_audio(surface: object, count: int) -> bool:
-    if not isinstance(surface, dict):
-        return False
-    audio = surface.get("audio")
-    return isinstance(audio, list) and sum(
-        isinstance(item, dict) and "audio" in (item.get("liveTracks") or [])
-        for item in audio
-    ) >= count
-
-
-def _has_video(surface: object, count: int) -> bool:
-    if not isinstance(surface, dict):
-        return False
-    video = surface.get("video")
-    return isinstance(video, list) and sum(
-        isinstance(item, dict) and "video" in (item.get("liveTracks") or [])
-        for item in video
-    ) >= count
-
-
-def _all_surfaces_with_media(
-    clients: dict[str, TauriSession],
-    *,
-    video: bool,
-) -> dict[str, dict[str, Any]] | None:
-    surfaces = {
-        actor: _surface_media(clients[actor])
-        for actor in ACTORS
-    }
-    if not all(
-        _has_remote_audio(surface, len(ACTORS) - 1)
-        and (not video or _has_video(surface, len(ACTORS)))
-        for surface in surfaces.values()
-    ):
-        return None
-    return {
-        actor: surface
-        for actor, surface in surfaces.items()
-        if isinstance(surface, dict)
-    }
-
-
-def _media_harness(
-    client: TauriSession,
-    runtime_binding: NativeDesktopRuntimeBinding,
-    method: str,
-    payload: dict[str, Any],
-    *,
-    timeout: float = 45.0,
-) -> Any:
-    if client.process_id is None:
-        raise GateError(f"{method} has no owning Native process")
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(
-            async_harness,
-            client,
-            method,
-            payload,
-            timeout,
-        )
-        while True:
-            try:
-                return future.result(timeout=0.1)
-            except FutureTimeoutError:
-                try:
-                    runtime_binding.native_adapter.accept_media_capture_permission_to_process(
-                        client.process_id
-                    )
-                except DriverError as permission_error:
-                    try:
-                        return future.result(timeout=2)
-                    except FutureTimeoutError:
-                        raise permission_error
+    def key(row: dict[str, Any]) -> tuple[str, ...]:
+        return tuple(str(row.get(field) or "") for field in ("actorPtid", "trackSid", "kind", "direction"))
+    old = {key(row): row for row in before.get("tracks", []) if isinstance(row, dict)}
+    deltas = []
+    for row in after.get("tracks", []):
+        if not isinstance(row, dict) or key(row) not in old:
+            continue
+        previous = old[key(row)]
+        delta = {field: int(row.get(field) or 0) - int(previous.get(field) or 0)
+                 for field in ("bytes", "packets", "frames")}
+        if delta["bytes"] > 0 and delta["packets"] > 0 and (
+            row.get("kind") != "video" or delta["frames"] > 0
+        ):
+            deltas.append({**dict(zip(("actorPtid", "trackSid", "kind", "direction"), key(row))), **delta})
+    kinds = {"audio", "video"} if video else {"audio"}
+    for direction, actors in (("outbound", {actor_ptid}), ("inbound", peer_ptids)):
+        if not all(any(row["direction"] == direction and row["actorPtid"] == actor
+                       and row["kind"] == kind for row in deltas)
+                   for actor in actors for kind in kinds):
+            return None
+    return {"roomSid": after["roomSid"], "participantSid": after["participantSid"], "deltas": deltas}
 
 
 class LifecycleGroupLiveGate(AcceptanceGate):
@@ -223,537 +83,375 @@ class LifecycleGroupLiveGate(AcceptanceGate):
     spec = ("CHAT-J09", "chat-group-live-lifecycle")
     report_path = None
 
-    def __init__(
-        self,
-        *,
-        manifest: dict[str, Any],
-        actor_manifest: dict[str, Any],
-        runtime_binding: NativeDesktopRuntimeBinding,
-    ) -> None:
+    def __init__(self, *, runtime: MixedNativeRuntime | None = None) -> None:
         super().__init__()
-        self.manifest = manifest
-        self.actor_manifest = actor_manifest
-        self.runtime_binding = runtime_binding
-        source = manifest.get("source")
-        self.tested_commit = str(
-            source.get("commit") if isinstance(source, dict) else ""
-        )
-        self.workspace_digest = str(
-            source.get("workspaceDigest") if isinstance(source, dict) else ""
-        )
-        self.station_url = str(
-            runtime_station_service(manifest, "alice").get("endpoint") or ""
-        ).rstrip("/")
-        self.client_specs = {
-            str(client.get("id")): client
-            for client in manifest.get("clients", [])
-            if isinstance(client, dict)
-        }
-        self.actor_specs = {
-            str(actor.get("role")): actor
-            for actor in actor_manifest.get("actors", [])
-            if isinstance(actor, dict)
-        }
-        if set(self.client_specs) != set(ACTORS):
-            raise GateError("group call requires Alice, Bob, and Charlie clients")
-        if set(self.actor_specs) != set(ACTORS):
-            raise GateError("group call requires Alice, Bob, and Charlie actors")
-        self.clients: dict[str, TauriSession] = {}
-        self.runtime_instances: list[TauriSession] = []
-        self.client_lifecycles = NativeClientLifecycleLedger()
-        self.ptids: dict[str, str] = {}
-        self.device_ids: dict[str, str] = {}
+        self.runtime = runtime or MixedNativeRuntime.from_environment(GATE_ID)
+        self.runtime_binding = self.runtime.desktop_binding
+        self.report.manifest = self.runtime.manifest
+        self.report.station_url = str(self.runtime.manifest["services"]["station-primary"]["endpoint"])
         self.steps: list[dict[str, Any]] = []
-        self.report.manifest = manifest
-        self.report.station_url = self.station_url
-        self.report.runtime.update(
-            {
-                "runtimeCell": runtime_binding.cell_id,
-                "journey": "chat-group-live-lifecycle",
-                "steps": self.steps,
-                "cleanup": {},
-            }
-        )
+        self.report.runtime.update({
+            "runtimeCell": "desktop-macos-native+ios-simulator",
+            "journey": "chat-group-live-lifecycle", "steps": self.steps, "cleanup": {},
+        })
 
-    def step(self, name: str, action: Any, client: str = "") -> Any:
+    def step(self, name: str, action: Any, actor: str = "") -> Any:
         started = time.monotonic()
+        record = {"step": name, "client": actor, "status": "pass"}
         try:
-            value = action()
+            return action()
         except Exception as error:
-            self.steps.append(
-                {
-                    "step": name,
-                    "client": client,
-                    "status": "fail",
-                    "durationMs": int((time.monotonic() - started) * 1000),
-                    "error": str(error),
-                }
-            )
+            record.update(status="fail", error=str(error))
             raise
-        self.steps.append(
-            {
-                "step": name,
-                "client": client,
-                "status": "pass",
-                "durationMs": int((time.monotonic() - started) * 1000),
-            }
-        )
-        return value
+        finally:
+            record["durationMs"] = int((time.monotonic() - started) * 1000)
+            self.steps.append(record)
 
-    def start_client(self, actor: str) -> None:
-        client = self.runtime_binding.create_bound_session(
-            actor,
-            NativeLaunchOptions(
-                window_slot=ACTORS.index(actor),
-                window_count=len(ACTORS),
-            ),
-        )
-        self.runtime_instances.append(client)
-        expected_ptid = str(self.actor_specs[actor].get("ptid") or "")
-        self.client_lifecycles.register(client, expected_ptid)
-        self.client_lifecycles.mark_live(client)
-        self.register_driver(client)
-        account_ref = str(self.actor_specs[actor].get("accountRef") or "")
-        login = async_harness(
-            client,
-            "loginWithPassword",
-            {
-                "account": account_ref.removeprefix("station-account:"),
-                "password": DEV_ACCOUNT_PASSWORD,
-            },
-            timeout=30,
-        )
-        if not (login or {}).get("authenticated"):
-            raise GateError(f"{actor} login did not authenticate")
-        self.client_lifecycles.mark_authenticated(client)
-        hydration = async_harness(client, "hydrateActiveActor", {}, timeout=30)
-        actor_ptid = str((hydration or {}).get("actorPtid") or "")
-        if actor_ptid != expected_ptid:
-            raise GateError(
-                f"{actor} identity mismatch expected={expected_ptid} actual={actor_ptid}"
-            )
-        device = async_harness(client, "getRealtimeDevice", {})
-        device_id = str((device or {}).get("deviceId") or "")
-        if not device_id:
-            raise GateError(f"{actor} messaging device ID is missing")
-        self.clients[actor] = client
-        self.ptids[actor] = actor_ptid
-        self.device_ids[actor] = device_id
-        self.report.add_actor(
-            ActorRuntime(
-                name=actor,
-                runtime=self.runtime_binding.cell_id,
-                port=client.port,
-                gateway_port=client.gateway_port,
-                profile=client.profile,
-                storage_root=client.storage_root,
-                pid=client.process_id,
-            )
-        )
+    def action(self, actor: str, name: str, payload: dict[str, Any] | None = None) -> Any:
+        return self.runtime.call_action(CLIENTS[actor], name, payload or {}, timeout=45)
 
-    def verify_fixture_ready(self) -> bool:
-        verify_runtime_fixture_ready(self.manifest, self.actor_manifest)
-        return True
+    def snapshot(self, actor: str) -> dict[str, Any]:
+        result = self.action(actor, "groupCallSnapshot")
+        if not isinstance(result, dict) or not isinstance(result.get("snapshot"), dict):
+            raise GateError(f"{actor} has no group-call snapshot")
+        return result["snapshot"]
 
-    def source_identity(self, station_live: dict[str, Any]) -> dict[str, Any]:
-        identity = native_runtime_source_identity(
-            gate_id=self.gate_id,
-            manifest=self.manifest,
-            runtime_binding=self.runtime_binding,
-            station_live=station_live,
-        )
-        self.report.runtime.update(
-            {
-                "runtimeCellRunId": identity["runtimeCell"].get("runId"),
-                "sourceIdentity": identity,
-            }
-        )
-        return identity
+    def media(self, actor: str) -> dict[str, Any]:
+        result = self.action(actor, "groupCallMediaStats")
+        if not isinstance(result, dict) or not isinstance(result.get("media"), dict):
+            raise GateError(f"{actor} has no SDK media observation")
+        return result["media"]
 
-    def cleanup_clients(self) -> dict[str, Any]:
-        errors: list[dict[str, str]] = []
-        for client in reversed(self.runtime_instances):
-            errors.extend(self.client_lifecycles.release(client))
-        for actor, client in self.clients.items():
-            if not self.save_app_log(client, actor):
-                errors.append(
-                    {
-                        "resource": f"log:{client.profile}",
-                        "error": "Native client log was not exported",
-                    }
-                )
-        cleanup = self.runtime_binding.finalize_cleanup(
-            self.runtime_instances,
-            self.client_specs,
-        )
-        binding_errors = cleanup.get("cleanupErrors")
-        if isinstance(binding_errors, list):
-            errors.extend(item for item in binding_errors if isinstance(item, dict))
-        cleanup["cleanupErrors"] = errors
-        if errors or not all(
-            cleanup.get(key)
-            for key in (
-                "portsReleased",
-                "processesReleased",
-                "storageReleased",
-                "logsReleased",
-            )
-        ):
-            raise GateError(
-                f"Native group call cleanup failed: {json.dumps(cleanup, sort_keys=True)}"
-            )
-        self.report.runtime["cleanup"] = cleanup
-        return cleanup
+    def sfu_service(self, sfu_url: str) -> dict[str, Any]:
+        host = urlsplit(sfu_url).hostname
+        services = [
+            service for service in self.runtime.manifest["services"].values()
+            if isinstance(service, dict) and service.get("kind") == "station"
+            and host and urlsplit(str(service.get("endpoint") or "")).hostname == host
+        ]
+        if len(services) != 1:
+            raise GateError("Actual group SFU must belong to exactly one bound Station host")
+        return services[0]
 
-    def wait_mls_readiness(self) -> None:
+    def connected(self, actors: tuple[str, ...] = ACTORS) -> dict[str, Any]:
+        def read() -> dict[str, Any] | None:
+            values = {actor: self.snapshot(actor) for actor in actors}
+            expected = {self.runtime.identities[CLIENTS[actor]].ptid for actor in actors}
+            if all(value.get("state") == "connected"
+                   and len(value.get("participants", [])) == len(actors)
+                   and {p.get("actorPtid") for p in value.get("participants", [])} == expected
+                   for value in values.values()):
+                return values
+            return None
+        return self.runtime.wait_until(read, "native group roster", timeout_seconds=STEP_TIMEOUT)
+
+    def click(self, actor: str, selector: str) -> None:
+        session = self.runtime.desktop_session(CLIENTS[actor])
+        def activate() -> None:
+            if session is not None:
+                session.find_element(selector, timeout=30).click()
+            else:
+                value = self.runtime._required_mobile_binding().semantic_click(CLIENTS[actor], selector)
+                if value.get("activated") is not True:
+                    raise GateError(f"{actor} could not activate {selector}")
+        self.step("ui.action", activate, actor)
+        self.steps[-1]["selector"] = selector
+
+    def control(self, actor: str, name: str) -> None:
+        selector = (f'[data-group-call-control="{name}"]'
+                    if self.runtime.desktop_session(CLIENTS[actor]) is not None
+                    else f'[data-action-id="group-call.{name}"]')
+        self.click(actor, selector)
+
+    def join(self, actor: str, group_id: str, kind: str) -> None:
+        client_id = CLIENTS[actor]
+        session = self.runtime.desktop_session(client_id)
+        if session is None:
+            self.action(actor, "navigation.apply", {
+                "kind": "detail.push", "route": {"routeId": "detail:group-conversation", "groupUlid": group_id},
+            })
+            # Use the actual Mobile header button; no fixture or simulated join.
+            self.click(actor, f'[data-group-call-start="{kind}"]')
+            return
+        # Native capture permissions must be handled while the SDK awaits them.
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(self.action, actor, "groupCallStart", {
+                "groupUlid": group_id, "mediaKind": kind,
+            })
+            while True:
+                try:
+                    future.result(timeout=0.1)
+                    break
+                except FutureTimeoutError:
+                    if session.process_id is None:
+                        raise GateError("Desktop group capture has no owning process")
+                    self.runtime.desktop_binding.native_adapter.accept_media_capture_permission_to_process(session.process_id)
+
+    def join_all(self, group_id: str, kind: str) -> dict[str, Any]:
         for actor in ACTORS:
-            wait_until(
-                lambda actor=actor: (
-                    state
-                    if (
-                        isinstance(
-                            state := async_harness(
-                                self.clients[actor],
-                                "mlsReadiness",
-                                {},
-                                timeout=10,
-                            ),
-                            dict,
-                        )
-                        and state.get("active") is True
-                        and int(state.get("availableKeyPackages") or 0) > 0
-                    )
-                    else None
-                ),
-                f"{actor} MLS readiness",
-                timeout=STEP_TIMEOUT,
-                interval=1,
-            )
+            self.join(actor, group_id, kind)
+        return self.connected()
 
-    def create_group(self) -> str:
-        federation_id = shared_federation_id(self.clients, ACTORS)
-        result = async_harness(
-            self.clients["alice"],
-            "createGroup",
-            {
-                "name": "Group Live Acceptance",
-                "federationId": federation_id,
-                "memberPtids": [self.ptids["bob"], self.ptids["charlie"]],
-            },
-            timeout=60,
-        )
-        group_id = str((result or {}).get("groupUlid") or "")
-        if not group_id:
-            raise GateError(f"group creation failed: {result}")
-        return group_id
+    def live_media(self, *, video: bool, actors: tuple[str, ...] = ACTORS) -> dict[str, Any]:
+        before = {actor: self.media(actor) for actor in actors}
+        def read() -> dict[str, Any] | None:
+            result = {}
+            for actor in actors:
+                observation = self.media(actor)
+                ptid = self.runtime.identities[CLIENTS[actor]].ptid
+                delta = _rtp_delta(before[actor], observation, actor_ptid=ptid,
+                    peer_ptids={self.runtime.identities[CLIENTS[other]].ptid for other in actors if other != actor},
+                    video=video)
+                if delta is None:
+                    # Newly subscribed tracks need their first baseline.
+                    if observation.get("participantSid") == before[actor].get("participantSid"):
+                        known = {row.get("trackSid") for row in before[actor].get("tracks", [])}
+                        before[actor]["tracks"].extend(row for row in observation.get("tracks", [])
+                                                     if row.get("trackSid") not in known)
+                    return None
+                result[actor] = delta
+            return result
+        result = self.runtime.wait_until(read, "all native RTP edges progress", timeout_seconds=STEP_TIMEOUT)
+        # Media proof also requires the production receiver surface.
+        for actor in actors:
+            selector = '[data-group-call-surface][data-group-call-state="connected"]'
+            session = self.runtime.desktop_session(CLIENTS[actor])
+            if session is not None:
+                surface = session.find_element(selector)
+                if video and surface.get_attribute("data-group-call-display-mode") == "compact":
+                    self.click(actor, '[data-group-call-display-mode-target="expanded"]')
+            else:
+                value = self.runtime._required_mobile_binding().semantic_observe(CLIENTS[actor], selector)
+                if value.get("matched") is not True:
+                    raise GateError("Mobile live media surface is absent")
+            self.capture(actor, "video" if video else "audio")
+        return result
 
-    def add_member(self, group_id: str) -> dict[str, Any]:
-        projections: dict[str, Any] = {}
+    def capture(self, actor: str, phase: str) -> None:
+        session = self.runtime.desktop_session(CLIENTS[actor])
+        if session is not None:
+            self.save_screenshot(session, f"{actor}-{phase}")
+            self.save_dom(session, f"{actor}-{phase}")
+        else:
+            binding = self.runtime._required_mobile_binding()
+            captures = self.report.runtime.setdefault("mobileCaptures", [])
+            captures.append({
+                "actor": actor, "phase": phase,
+                "screenshot": binding.capture_screenshot(CLIENTS[actor], phase).to_dict(),
+                "dom": binding.capture_web_dom(CLIENTS[actor], phase).to_dict(),
+            })
+
+    def participant_state(self, actor: str, field: str, expected: bool) -> dict[str, Any]:
+        ptid = self.runtime.identities[CLIENTS[actor]].ptid
+        def read() -> dict[str, Any] | None:
+            values = self.connected()
+            return values if all(any(p.get("actorPtid") == ptid and p.get(field) is expected
+                                     for p in value["participants"]) for value in values.values()) else None
+        return self.runtime.wait_until(read, f"{actor} {field} converges", timeout_seconds=STEP_TIMEOUT)
+
+    def released(self, actor: str) -> dict[str, Any]:
+        def read() -> dict[str, Any] | None:
+            snapshot, media = self.snapshot(actor), self.media(actor)
+            if snapshot.get("state") in {"idle", "failed"} and not media.get("connected") \
+                    and media.get("localLiveTracks") == 0 and not media.get("tracks"):
+                return {"state": snapshot["state"], "media": media}
+            return None
+        return self.runtime.wait_until(read, f"{actor} media released", timeout_seconds=STEP_TIMEOUT)
+
+    def leave_all(self) -> dict[str, Any]:
         for actor in ACTORS:
-            projections[actor] = wait_until(
-                lambda actor=actor: (
-                    value
-                    if (
-                        isinstance(
-                            value := async_harness(
-                                self.clients[actor],
-                                "syncGroup",
-                                {"groupUlid": group_id},
-                                timeout=30,
-                            ),
-                            dict,
-                        )
-                        and set(value.get("memberPtids") or [])
-                        == set(self.ptids.values())
-                    )
-                    else None
-                ),
-                f"{actor} group membership",
-                timeout=180,
-                interval=1,
-            )
-        return projections
+            self.control(actor, "leave")
+        return {actor: self.released(actor) for actor in ACTORS}
 
-    def _start_call(
-        self,
-        actor: str,
-        group_id: str,
-        media_kind: str,
-    ) -> None:
-        if self.runtime_binding is None:
-            raise GateError("Native Desktop runtime binding is required")
-        _media_harness(
-            self.clients[actor],
-            self.runtime_binding,
-            "groupCallStart",
-            {"groupUlid": group_id, "mediaKind": media_kind},
-        )
+    def ejected(self, actor: str, remaining: tuple[str, ...]) -> dict[str, Any]:
+        return {"released": self.released(actor), "remaining": self.connected(remaining)}
 
-    def _join_all(
-        self,
-        group_id: str,
-        media_kind: str,
-    ) -> dict[str, dict[str, Any]]:
-        for actor in ACTORS:
-            self._start_call(actor, group_id, media_kind)
-        return {
-            actor: _wait_connected(self.clients[actor], len(ACTORS))
-            for actor in ACTORS
-        }
-
-    def _leave_all(self) -> dict[str, dict[str, Any]]:
-        released: dict[str, dict[str, Any]] = {}
-        for actor in ACTORS:
-            result = async_harness(
-                self.clients[actor], "groupCallLeave", {}, timeout=15
-            )
-            snapshot = result.get("snapshot") if isinstance(result, dict) else None
-            if not isinstance(snapshot, dict):
-                raise GateError(f"{actor} group call leave returned no snapshot")
-            released[actor] = snapshot
-        return released
-
-    def _set_display_mode(self, actor: str, mode: str) -> None:
-        clicked = self.clients[actor].execute_script(
-            """
-            const target = arguments[0];
-            const button = document.querySelector(
-              `[data-group-call-display-mode-target="${target}"]`,
-            );
-            if (!(button instanceof HTMLElement)) return false;
-            button.click();
-            return true;
-            """,
-            mode,
-        )
-        if clicked is not True:
-            raise GateError(f"{actor} cannot select group call mode {mode}")
+    def cleanup(self) -> dict[str, Any]:
+        errors: list[str] = []
+        for actor in ("alice", "bob"):
+            if self.runtime.desktop_session(CLIENTS[actor]) is not None:
+                try:
+                    self.action(actor, "groupCallProbeClear")
+                except Exception:
+                    errors.append(f"{actor}: group-call probe cleanup failed")
+        result = self.runtime.cleanup(save_desktop_log=self.save_app_log)
+        result.setdefault("cleanupErrors", []).extend(errors)
+        return result
 
     def run(self) -> dict[str, Any]:
-        version = self.step(
-            "station.identity",
-            lambda: read_station_version(self.station_url),
-        )
-        live_commit = str(version.get("build_commit") or "")
-        if not commits_match(live_commit, self.tested_commit):
-            raise GateError(
-                "Station/client commit mismatch: "
-                f"station={live_commit or 'missing'} client={self.tested_commit}"
-            )
-        source_identity = self.source_identity(version)
-        self.step("fixture.reset", self.verify_fixture_ready)
-
-        order = list(ACTORS)
-        random.SystemRandom().shuffle(order)
-        cleanup: dict[str, Any] = {}
-        group_id = ""
         evidence: dict[str, Any] = {}
+        self.report.runtime["groupLive"] = evidence
         try:
-            for actor in order:
-                self.step(
-                    "client.authenticated",
-                    lambda actor=actor: self.start_client(actor),
-                    actor,
-                )
-            self.assert_condition(
-                "group_call_native_runtime",
-                all(
-                    is_native_tauri_url(client.get_current_url())
-                    for client in self.clients.values()
-                ),
-            )
-            self.assert_condition(
-                "group_call_actor_isolation",
-                len(set(self.ptids.values())) == len(ACTORS),
-            )
-            self.step("mls.readiness", self.wait_mls_readiness)
-            group_id = self.step("group.create", self.create_group, "alice")
-            projections = self.step(
-                "group.visible",
-                lambda: self.add_member(group_id),
-                "alice",
-            )
-            if set(projections) != set(ACTORS):
-                raise GateError("group is not visible to all call participants")
+            self.step("fixture.reset", lambda: verify_runtime_fixture_ready(
+                self.runtime.manifest, self.runtime.actor_manifest))
+            for index, actor in enumerate(ACTORS):
+                self.step("client.authenticated", lambda actor=actor, index=index:
+                    self.runtime.start_client(CLIENTS[actor], window_slot=index, window_count=3), actor)
+                self.report.add_actor(dataclasses.replace(self.runtime.actor_runtime(CLIENTS[actor]), name=actor))
+            identities = {actor: self.runtime.identities[CLIENTS[actor]] for actor in ACTORS}
+            source = self.step("station.identity", self.runtime.source_identity)
+            self.report.runtime["sourceIdentity"] = source
+            source["mobileBinary"] = self.action("charlie", "build.identity")
+            self.report.runtime["mobileBindingProofRefs"] = self.runtime.access_evidence[
+                CLIENTS["charlie"]]["bindingProofRefs"]
+            self.assert_condition("group_call_native_runtime",
+                identities["charlie"].runtime == "tauri-ios-simulator"
+                and all(identities[actor].runtime == DESKTOP_RUNTIME_IDENTITY for actor in ("alice", "bob")))
+            self.assert_condition("group_call_actor_isolation", len({value.ptid for value in identities.values()}) == 3)
+            if len({value.federation_id for value in identities.values()}) != 1:
+                raise GateError("Group participants do not share a Federation")
+            group_id = self.step("group.create", lambda: self.runtime.create_group(
+                CLIENTS["alice"], (CLIENTS["bob"], CLIENTS["charlie"]),
+                federation_id=identities["alice"].federation_id,
+                name=f"Group Live {time.time_ns()}", timeout_seconds=STEP_TIMEOUT))
+            evidence["groupId"] = group_id
+            evidence["clients"] = {actor: {"id": CLIENTS[actor], "runtime": value.runtime,
+                "ptid": value.ptid, "stationServiceId": value.station_service_id} for actor, value in identities.items()}
+            audio = self.step("group-call.audio.join", lambda: self.join_all(group_id, "audio"))
+            evidence["audio"] = audio
+            self.assert_condition("group_call_room_converged",
+                len({value["roomName"] for value in audio.values()}) == 1)
+            evidence["audioMedia"] = self.step("group-call.audio.media", lambda: self.live_media(video=False))
+            self.assert_condition("group_call_audio_media_live", True)
+            self.control("charlie", "microphone")
+            evidence["mute"] = self.participant_state("charlie", "isMicEnabled", False)
+            self.assert_condition("group_call_mute_converged", True)
+            evidence["audioReleased"] = self.leave_all()
+            self.assert_condition("group_call_audio_released", True)
 
-            audio = self.step(
-                "group-call.audio.join",
-                lambda: self._join_all(group_id, "audio"),
-            )
-            room_names = {item.get("roomName") for item in audio.values()}
-            self.assert_condition(
-                "group_call_room_converged",
-                len(room_names) == 1 and "" not in room_names,
-                json.dumps(audio, sort_keys=True),
-            )
-            audio_media = wait_until(
-                lambda: _all_surfaces_with_media(
-                    self.clients,
-                    video=False,
-                ),
-                "bilateral group audio media",
-                timeout=STEP_TIMEOUT,
-                interval=0.5,
-            )
-            self.assert_condition(
-                "group_call_audio_media_live",
-                bool(audio_media),
-                json.dumps(audio_media, sort_keys=True),
-            )
-            async_harness(
-                self.clients["charlie"],
-                "groupCallToggleMic",
-                {"enabled": False},
-                timeout=15,
-            )
-            muted = wait_until(
-                lambda: _all_connected_with_participant_state(
-                    self.clients,
-                    participant_count=len(ACTORS),
-                    actor_ptid=self.ptids["charlie"],
-                    field="isMicEnabled",
-                    expected=False,
-                ),
-                "Charlie mute state on all group call participants",
-                timeout=STEP_TIMEOUT,
-                interval=0.5,
-            )
-            self.assert_condition(
-                "group_call_mute_converged",
-                all(
-                    any(
-                        participant.get("actorPtid") == self.ptids["charlie"]
-                        and participant.get("isMicEnabled") is False
-                        for participant in snapshot.get("participants") or []
-                    )
-                    for snapshot in muted.values()
-                ),
-                json.dumps(muted, sort_keys=True),
-            )
-            audio_released = self._leave_all()
-            self.assert_condition(
-                "group_call_audio_released",
-                all(item.get("state") == "idle" for item in audio_released.values()),
-            )
-
-            video = self.step(
-                "group-call.video.join",
-                lambda: self._join_all(group_id, "video"),
-            )
-            for actor in ACTORS:
-                self._set_display_mode(actor, "expanded")
-            video_media = wait_until(
-                lambda: _all_surfaces_with_media(
-                    self.clients,
-                    video=True,
-                ),
-                "three-client group video media",
-                timeout=STEP_TIMEOUT,
-                interval=0.5,
-            )
-            self.assert_condition(
-                "group_call_video_media_live",
-                bool(video_media),
-                json.dumps(video_media, sort_keys=True),
-            )
-            async_harness(
-                self.clients["bob"],
-                "groupCallToggleCamera",
-                {"enabled": False},
-                timeout=15,
-            )
-            camera_off = wait_until(
-                lambda: _all_connected_with_participant_state(
-                    self.clients,
-                    participant_count=len(ACTORS),
-                    actor_ptid=self.ptids["bob"],
-                    field="isCameraEnabled",
-                    expected=False,
-                ),
-                "Bob camera state on all group call participants",
-                timeout=STEP_TIMEOUT,
-                interval=0.5,
-            )
-            self.assert_condition(
-                "group_call_camera_converged",
-                all(
-                    any(
-                        participant.get("actorPtid") == self.ptids["bob"]
-                        and participant.get("isCameraEnabled") is False
-                        for participant in snapshot.get("participants") or []
-                    )
-                    for snapshot in camera_off.values()
-                ),
-                json.dumps(camera_off, sort_keys=True),
-            )
-            async_harness(
-                self.clients["charlie"], "groupCallLeave", {}, timeout=15
-            )
             for actor in ("alice", "bob"):
-                _wait_connected(self.clients[actor], len(ACTORS) - 1)
-            self._start_call("charlie", group_id, "video")
-            late_join = {
-                actor: _wait_connected(self.clients[actor], len(ACTORS))
-                for actor in ACTORS
-            }
-            self.assert_condition(
-                "group_call_late_join_converged",
-                all(len(item.get("participants") or []) == len(ACTORS) for item in late_join.values()),
-            )
-            video_released = self._leave_all()
-            self.assert_condition(
-                "group_call_video_released",
-                all(item.get("state") == "idle" for item in video_released.values()),
-            )
-            evidence = {
-                "groupId": group_id,
-                "audio": audio,
-                "audioMedia": audio_media,
-                "mute": muted,
-                "video": video,
-                "videoMedia": video_media,
-                "cameraOff": camera_off,
-                "lateJoin": late_join,
-            }
-            self.report.runtime["groupLive"] = evidence
-            for actor in ACTORS:
-                self.save_screenshot(self.clients[actor], actor)
-                self.save_dom(self.clients[actor], actor)
+                self.action(actor, "groupCallProbeArm")
+            evidence["video"] = self.step("group-call.video.join", lambda: self.join_all(group_id, "video"))
+            evidence["videoMedia"] = self.step("group-call.video.media", lambda: self.live_media(video=True))
+            self.assert_condition("group_call_video_media_live", True)
+            before_reconnect = {actor: self.media(actor) for actor in ACTORS}
+            evidence["signalReconnect"] = self.step("group-call.signal-reconnect",
+                lambda: self.action("bob", "groupCallSignalReconnect"))
+            evidence["reconnected"] = self.connected()
+            evidence["reconnectMedia"] = self.live_media(video=True)
+            self.assert_condition("group_call_signal_reconnect_converged",
+                evidence["signalReconnect"].get("observedReconnecting") is True
+                and all(before_reconnect[actor]["participantSid"] ==
+                        evidence["reconnectMedia"][actor]["participantSid"] for actor in ACTORS))
+            for actor in ("alice", "bob"):
+                self.runtime.wait_until(
+                    lambda actor=actor: self.action(actor, "groupCallProbeStatus").get("hasRefreshedToken") is True,
+                    f"{actor} SFU-generated refreshed JWT", timeout_seconds=STEP_TIMEOUT)
+            self.control("charlie", "camera")
+            evidence["cameraOff"] = self.participant_state("charlie", "isCameraEnabled", False)
+            self.assert_condition("group_call_camera_converged", True)
+            self.control("charlie", "leave")
+            self.released("charlie")
+            self.connected(("alice", "bob"))
+            self.join("charlie", group_id, "video")
+            evidence["lateJoin"] = self.connected()
+            self.assert_condition("group_call_late_join_converged", True)
+
+            member_sid = self.media("bob")["participantSid"]
+            self.runtime.remove_group_member(CLIENTS["alice"], group_id, identities["bob"].ptid)
+            evidence["memberRemoval"] = self.step("group-call.member-removal",
+                lambda: self.ejected("bob", ("alice", "charlie")))
+            self.assert_condition("group_call_member_removal_ejected", True)
+            for phase, token_kind in (("memberReplay", "initial"), ("memberRefreshedReplay", "refreshed")):
+                evidence[phase] = self.step(f"group-call.{phase}", lambda token_kind=token_kind:
+                    self.action("bob", "groupCallReplayProbe", {
+                        "previousSid": member_sid, "tokenKind": token_kind, "consume": False}))
+            self.assert_condition("group_call_member_token_replay_denied",
+                all(evidence[phase].get("denied") is True for phase in ("memberReplay", "memberRefreshedReplay")))
+            self.runtime.add_group_member(CLIENTS["alice"], group_id, identities["bob"].ptid)
+            self.action("bob", "groupCallProbeArm")
+            self.join("bob", group_id, "video")
+            self.connected()
+            self.runtime.wait_until(
+                lambda: self.action("bob", "groupCallProbeStatus").get("hasRefreshedToken") is True,
+                "new grant SFU-generated refreshed JWT", timeout_seconds=STEP_TIMEOUT)
+            self.action("charlie", "groupCallLeave")
+            self.runtime.restart_client(CLIENTS["charlie"])
+            self.released("charlie")
+            self.join("charlie", group_id, "video")
+            evidence["restart"] = self.connected()
+            evidence["restartMedia"] = self.live_media(video=True)
+            self.assert_condition("group_call_restart_converged", True)
+
+            original_sid = self.media("bob")["participantSid"]
+            self.runtime.revoke_current_device(CLIENTS["bob"])
+            evidence["deviceRevocation"] = self.step("group-call.device-revoke",
+                lambda: self.ejected("bob", ("alice", "charlie")))
+            self.assert_condition("group_call_device_revocation_ejected", True)
+            evidence["replay"] = self.step("group-call.revoked-token-replay", lambda:
+                self.action("bob", "groupCallReplayProbe", {"previousSid": original_sid, "consume": False}))
+            self.assert_condition("group_call_revoked_token_replay_denied",
+                evidence["replay"].get("denied") is True)
+            evidence["refreshedReplay"] = self.step("group-call.refreshed-token-replay", lambda:
+                self.action("bob", "groupCallReplayProbe", {
+                    "previousSid": original_sid, "tokenKind": "refreshed", "consume": False}))
+            self.assert_condition("group_call_refreshed_token_replay_denied",
+                evidence["refreshedReplay"].get("denied") is True)
+            authority_service = self.runtime.manifest["services"][identities["alice"].station_service_id]
+            evidence["authorityRestart"] = self.step("group-call.authority-restart", lambda:
+                restart_acceptance_station(authority_service["endpoint"], source["orchestrator"]["commit"]))
+            evidence["authorityRestartReplay"] = self.step("group-call.authority-restart-replay", lambda:
+                self.action("bob", "groupCallReplayProbe", {
+                    "previousSid": original_sid, "tokenKind": "refreshed", "consume": False}))
+            self.assert_condition("group_call_authority_restart_replay_denied",
+                evidence["authorityRestartReplay"].get("denied") is True)
+            sfu_url = self.action("bob", "groupCallProbeStatus").get("url")
+            if not isinstance(sfu_url, str) or not sfu_url:
+                raise GateError("Actual production grant SFU URL is unavailable")
+            sfu_service = self.sfu_service(sfu_url)
+            evidence["sfuRestart"] = self.step("group-call.sfu-restart", lambda:
+                restart_acceptance_group_sfu(sfu_service, sfu_url))
+            evidence["sfuRestartReplay"] = self.step("group-call.sfu-restart-replay", lambda:
+                self.action("bob", "groupCallReplayProbe", {
+                    "previousSid": original_sid, "tokenKind": "refreshed", "consume": False}))
+            self.assert_condition("group_call_sfu_restart_replay_denied",
+                evidence["sfuRestartReplay"].get("denied") is True)
+            remaining = ("alice", "charlie")
+            self.action("alice", "groupCallProbeArm")
+            for actor in remaining:
+                self.action(actor, "groupCallLeave")
+                self.released(actor)
+                self.join(actor, group_id, "video")
+            evidence["sfuRecovered"] = self.step("group-call.sfu-rejoin",
+                lambda: self.connected(remaining))
+            evidence["sfuRecoveryMedia"] = self.step("group-call.sfu-recovery-media",
+                lambda: self.live_media(video=True, actors=remaining))
+            self.assert_condition("group_call_sfu_restart_media_recovered", True)
+            self.runtime.wait_until(
+                lambda: self.action("alice", "groupCallProbeStatus").get("hasRefreshedToken") is True,
+                "recovered Alice SFU-generated refreshed JWT", timeout_seconds=STEP_TIMEOUT)
+            # Session logout uses the original owner and its native lifecycle ledger.
+            session_sid = self.media("alice")["participantSid"]
+            self.action("alice", "sessionLogout")
+            self.runtime.mark_desktop_auth_revoked(CLIENTS["alice"])
+            evidence["sessionRevocation"] = self.step("group-call.session-revoke",
+                lambda: self.ejected("alice", ("charlie",)))
+            self.assert_condition("group_call_session_revocation_ejected", True)
+            for phase, token_kind in (("sessionReplay", "initial"), ("sessionRefreshedReplay", "refreshed")):
+                evidence[phase] = self.step(f"group-call.{phase}", lambda token_kind=token_kind:
+                    self.action("alice", "groupCallReplayProbe", {
+                        "previousSid": session_sid, "tokenKind": token_kind, "consume": False}))
+            self.assert_condition("group_call_session_token_replay_denied",
+                all(evidence[phase].get("denied") is True for phase in ("sessionReplay", "sessionRefreshedReplay")))
+            self.control("charlie", "leave")
+            evidence["videoReleased"] = {actor: self.released(actor) for actor in ACTORS}
+            self.assert_condition("group_call_video_released", True)
         finally:
             cleanup = cleanup_preserving_primary_failure(
-                self.cleanup_clients,
-                self.report,
-                "Native group live",
-            )
-            self.report.runtime["steps"] = self.steps
-
-        assertion_names = {item.name for item in self.report.assertions}
-        missing = REQUIRED_ASSERTIONS - assertion_names
-        if missing:
-            raise GateError(f"group live assertions are missing: {sorted(missing)}")
-        return {
-            "runtimeCell": self.runtime_binding.cell_id,
-            "journey": "chat-group-live-lifecycle",
-            "testedCommit": self.tested_commit,
-            "testedWorkspaceDigest": self.workspace_digest,
-            "stationLive": version,
-            "sourceIdentity": source_identity,
-            "launchOrder": order,
-            "groupId": group_id,
-            "steps": self.steps,
-            "cleanup": cleanup,
-            "groupLive": evidence,
-        }
+                self.cleanup,
+                self.report, "Native mixed group live")
+            self.report.runtime["cleanup"] = cleanup
+        if cleanup.get("cleanupErrors"):
+            raise GateError("Group native runtime cleanup failed")
+        return dict(self.report.runtime)
 
 
 def main() -> int:
-    selected = selected_native_runtime(GATE_ID)
-    gate: AcceptanceGate = LifecycleGroupLiveGate(
-        manifest=selected.manifest,
-        actor_manifest=selected.actor_manifest,
-        runtime_binding=selected.binding,
-    )
-    return gate.execute()
+    status = LifecycleGroupLiveGate().execute()
+    if status != 0:
+        return status
+    from tooling.acceptance.gates.chat.lifecycle_group_live_e2e import main as validate
+    return validate()
 
 
 if __name__ == "__main__":

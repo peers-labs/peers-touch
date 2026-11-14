@@ -29,6 +29,7 @@ function render() {
         onOpenChat={() => undefined} onOpenContact={() => undefined}
         onOpenOverlay={() => undefined} onCloseOverlay={() => undefined}
         onBack={() => undefined}
+        onFindPeople={() => undefined}
       />
     </UIProvider>,
   );

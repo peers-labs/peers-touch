@@ -1,10 +1,13 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
+import { create } from '@bufbuild/protobuf';
 import {
   Button,
   Checkbox,
   Empty,
   Icon,
+  IconButton,
   type IconId,
+  ListSection,
   Spin,
   Switch,
   Tag,
@@ -25,6 +28,12 @@ import {
 import { useMobileI18n } from '../../app/mobileI18n';
 import { MobileAvatar } from '../../components/MobileAvatar';
 import { MobileNotice } from '../../components/MobileNotice';
+import { NotificationPreferenceSchema } from '../../gen/proto/domain/notification/notification_pb';
+import { MeIdentityHeader } from './MeIdentityHeader';
+import { MePreferencesSection } from './MePreferencesSection';
+import { SettingsNavigationRow } from './SettingsNavigationRow';
+import { AccountCredentialsSection } from './AccountCredentialsSection';
+import { mobileClipboard } from '../../services/platform/mobileClipboard';
 
 const FIXTURE_ACCOUNT_INITIALS = 'AC';
 const FIXTURE_ACCOUNT_NAME = 'Alice Chen';
@@ -37,6 +46,7 @@ const FIXTURE_STATION_NAME = 'Product Station';
 
 const SETTING_LABELS: Record<MobileSettingDetailId, string> = {
   'account-info': 'mobile.settings.accountInfo',
+  credentials: 'mobile.settings.credentials.title',
   notifications: 'mobile.settings.section.notifications',
   'privacy-security': 'mobile.settings.privacySecurity',
   'safety-number': 'mobile.settings.safetyNumber',
@@ -54,6 +64,7 @@ const SUMMARY_DETAILS: ReadonlyArray<{
   readonly iconId: IconId;
   readonly value?: string;
 }> = [
+  { id: 'credentials', iconId: 'identity-fingerprint' },
   { id: 'account-info', iconId: 'user' },
   { id: 'notifications', iconId: 'bell' },
   { id: 'privacy-security', iconId: 'shield' },
@@ -111,6 +122,9 @@ function SettingsFixtureSummary({
   const { t } = useMobileI18n();
   const loading = surfaceId === 'settings.summary-loading';
   const failed = surfaceId === 'settings.summary-error';
+  const [preferences, setPreferences] = useState([
+    create(NotificationPreferenceSchema, { enabled: true, soundEnabled: true }),
+  ]);
 
   return (
     <div
@@ -118,17 +132,14 @@ function SettingsFixtureSummary({
       data-product-surface={background ? undefined : surfaceId}
       aria-hidden={background || undefined}
     >
-      <header className="page-header">
-        <h1 className="header-title">{t('mobile.settings.title')}</h1>
-        <button
-          type="button"
-          className="header-action"
-          aria-label={t('mobile.settings.accountInfo')}
-          onClick={() => openSetting('account-info')}
-        >
-          <Icon iconId="user" size={20} />
-        </button>
-      </header>
+      <h1 className="visually-hidden">{t('mobile.settings.title')}</h1>
+      {!loading && !failed ? <MeIdentityHeader model={{
+        actorPtid: 'ptid:acceptance-alice', displayName: FIXTURE_ACCOUNT_NAME,
+        handle: '@alice', avatar: '', header: '', tags: ['Builder'],
+        posts: 34, following: 12, followers: 128, joined: '2025-01-01T00:00:00Z',
+      }} editingImage={null}
+        imageEditUnavailableReason={t('mobile.settings.profileUnavailable')}
+        onPickImage={() => undefined} /> : null}
       <div className="settings-body settings-fixture-summary">
         {loading ? (
           <FixtureState>
@@ -149,63 +160,27 @@ function SettingsFixtureSummary({
           </FixtureState>
         ) : (
           <>
-            <div className="settings-profile-header-card">
-              <div className="settings-profile-header">
-                <MobileAvatar className="settings-fixture-avatar" size={64} name={FIXTURE_ACCOUNT_NAME}>
-                  {FIXTURE_ACCOUNT_INITIALS}
-                </MobileAvatar>
-                <div className="settings-profile-info">
-                  <Text strong className="settings-profile-name">
-                    {FIXTURE_ACCOUNT_NAME}
-                  </Text>
-                  <Text tone="secondary" className="settings-profile-subtitle">
-                    {t('mobile.settings.connected')}
-                  </Text>
-                </div>
-                <Icon iconId="chevron-right" size={20} />
-              </div>
-              <div className="settings-profile-stats">
-                {[
-                  ['128', 'mobile.settings.stats.friends'],
-                  ['12', 'mobile.settings.stats.groups'],
-                  ['34', 'mobile.settings.stats.moments'],
-                ].map(([value, label], index) => (
-                  <span className="settings-fixture-stat-fragment" key={label}>
-                    {index > 0 ? <span className="settings-stat-divider" /> : null}
-                    <span className="settings-stat">
-                      <Text strong className="settings-stat-value">{value}</Text>
-                      <Text tone="secondary" className="settings-stat-label">
-                        {t(label)}
-                      </Text>
-                    </span>
-                  </span>
-                ))}
-              </div>
-            </div>
-            <div className="settings-group-card">
-              {SUMMARY_DETAILS.map((item, index) => (
-                <button
-                  type="button"
-                  className={`setting-row ${index > 0 ? 'setting-row--border' : ''}`}
-                  data-settings-fixture-open={item.id}
-                  key={item.id}
-                  onClick={() => openSetting(item.id)}
-                >
-                  <span className="setting-row-icon"><Icon iconId={item.iconId} size={17} /></span>
-                  <Text className="setting-row-label">{t(SETTING_LABELS[item.id])}</Text>
-                  {item.value ? <Text tone="secondary">{item.value}</Text> : null}
-                  <Icon iconId="chevron-right" size={17} />
-                </button>
+            <ListSection inset>
+              <SettingsNavigationRow actionId="me.credentials" settingId="credentials"
+                label={t(SETTING_LABELS.credentials)} description={`@alice · ${FIXTURE_STATION_NAME}`}
+                onActivate={() => openSetting('credentials')} />
+            </ListSection>
+            <MePreferencesSection controller={{
+              preferences, loading: false, unavailable: false, saveStatus: 'idle',
+              patch: (field, value) => setPreferences(rows => rows.map(row => create(NotificationPreferenceSchema, { ...row, [field]: value }))),
+            }} />
+            <ListSection inset title={t('mobile.settings.group.general')}>
+              {SUMMARY_DETAILS.filter(item => item.id !== 'credentials').map(item => (
+                <SettingsNavigationRow actionId={`me.setting.${item.id}`} settingId={item.id}
+                  key={item.id} label={t(SETTING_LABELS[item.id])} description={item.value}
+                  onActivate={() => openSetting(item.id)} />
               ))}
-            </div>
-            <button
-              type="button"
-              className="settings-sign-out"
-              data-settings-fixture-logout
-              onClick={() => setSettingsSurfaceFixture('settings.logout-confirm')}
-            >
+            </ListSection>
+            <Button actionId="me.signout" density="comfortable" fullWidth emphasis="quiet" tone="danger"
+              data-settings-fixture-logout leading={<Icon iconId="log-out" size={16} />}
+              onActivate={() => setSettingsSurfaceFixture('settings.logout-confirm')}>
               {t('mobile.settings.signOut')}
-            </button>
+            </Button>
           </>
         )}
       </div>
@@ -241,15 +216,10 @@ function SettingsFixtureDetail({
       aria-hidden={background || undefined}
     >
       <header className="page-header">
-        <button
-          type="button"
-          className="header-action"
+        <IconButton actionId="settings.back" iconId="arrow-left" emphasis="quiet" density="comfortable"
           data-settings-fixture-back
-          aria-label={t('common.action.back')}
-          onClick={back}
-        >
-          <Icon iconId="arrow-left" size={20} />
-        </button>
+          label={t('common.action.back')}
+          onActivate={back} />
         <h1 className="header-title compact">{t(SETTING_LABELS[settingId])}</h1>
       </header>
       <div className="settings-detail-body settings-fixture-detail">
@@ -383,6 +353,15 @@ function SettingsFixtureContent({
   readonly surfaceId: SettingsSurfaceFixtureId;
 }) {
   const { t } = useMobileI18n();
+  const [copyingField, setCopyingField] = useState<'username' | 'ptid' | null>(null);
+  if (settingId === 'credentials') {
+    return <AccountCredentialsSection username="@alice" actorPtid="ptid:acceptance-alice"
+      stationName={FIXTURE_STATION_NAME} copyingField={copyingField}
+      onCopy={(field, value) => {
+        setCopyingField(field);
+        void mobileClipboard.writeText(value).finally(() => setCopyingField(null)).catch(() => undefined);
+      }} />;
+  }
   if (settingId === 'account-info') {
     return (
       <SettingsSection iconId="user" title={t('mobile.settings.section.profile')}>

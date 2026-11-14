@@ -226,7 +226,7 @@
       "synthetic_paths": [
         "apps/desktop/src-tauri/src/application/x_config",
         "apps/desktop/src/runtimes/xConfigRuntime.ts",
-        "apps/desktop/src/components/common/StationPicker.tsx",
+        "apps/desktop/src/pages/login/StationSetupPanel.tsx",
         "apps/mobile/src-tauri/src/runtime/x_config.rs",
         "apps/mobile/src/runtimes/runtimeRegistry.ts",
         "apps/mobile/src/features/station/StationSelector.tsx"

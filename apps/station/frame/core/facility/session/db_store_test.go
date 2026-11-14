@@ -7,10 +7,79 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/peers-labs/peers-touch/station/frame/core/facility/mediaaccess"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+type testMediaSessionFence struct {
+	err error
+	ids []string
+}
+
+func (f *testMediaSessionFence) RevokeDevice(context.Context, string, string) error { return nil }
+func (f *testMediaSessionFence) ReconcileConversation(context.Context, mediaaccess.ConversationScope) error {
+	return nil
+}
+func (f *testMediaSessionFence) RevokeSessions(_ context.Context, ids []string) error {
+	f.ids = append(f.ids, ids...)
+	return f.err
+}
+
+func TestDBStoreSessionRevocationWaitsForMediaEjection(t *testing.T) {
+	store, _ := newSQLiteDBStore(t)
+	ctx := context.Background()
+	sess := newPersistentTestSession("media-session", 41)
+	sess.Data["device_type"] = string(DeviceTypeMobile)
+	require.NoError(t, store.Set(ctx, sess.ID, sess))
+	fence := &testMediaSessionFence{err: context.DeadlineExceeded}
+	mediaaccess.Register(fence)
+	t.Cleanup(func() { mediaaccess.Register(nil) })
+	_, err := store.RevokeByUserAndDevice(ctx, 41,
+		DeviceBinding{StationPeerID: "station-test", DeviceID: "installation-test"}, "logout")
+	require.Error(t, err)
+	valid, _ := store.CheckSessionValid(ctx, sess.ID)
+	require.True(t, valid, "Session mutation committed without confirmed media ejection")
+	require.Equal(t, []string{sess.ID}, fence.ids)
+	fence.err = nil
+	count, err := store.RevokeByUserAndDevice(ctx, 41,
+		DeviceBinding{StationPeerID: "station-test", DeviceID: "installation-test"}, "logout")
+	require.NoError(t, err)
+	require.Equal(t, int64(1), count)
+	valid, _ = store.CheckSessionValid(ctx, sess.ID)
+	require.False(t, valid)
+}
+
+func TestDBStoreMediaSessionFenceUsesPersistedBindingAndRejectsRevocation(t *testing.T) {
+	store, db := newSQLiteDBStore(t)
+	ctx := context.Background()
+	require.NoError(t, db.Exec("ALTER TABLE touch_actor ADD COLUMN ptid TEXT").Error)
+	require.NoError(t, db.Exec("UPDATE touch_actor SET ptid = ? WHERE id = ?", "ptid:media", 41).Error)
+	sess := newPersistentTestSession("media-binding", 41)
+	sess.Data["device_type"] = string(DeviceTypeMobile)
+	require.NoError(t, store.Set(ctx, sess.ID, sess))
+	called := 0
+	issue := func(tx *gorm.DB, binding MediaSession) error {
+		called++
+		require.NotNil(t, tx)
+		require.Equal(t, sess.ID, binding.SessionID)
+		require.Equal(t, "installation-test", binding.DeviceID)
+		return nil
+	}
+	require.NoError(t, store.WithMediaSessionFence(ctx, sess.ID, "ptid:media", "station-test", issue))
+	active, err := store.MediaSessionActive(ctx, sess.ID, "ptid:media", "installation-test", "station-test")
+	require.NoError(t, err)
+	require.True(t, active)
+	require.Error(t, store.WithMediaSessionFence(ctx, sess.ID, "ptid:other", "station-test", issue))
+	require.Error(t, store.WithMediaSessionFence(ctx, sess.ID, "ptid:media", "station-other", issue))
+	require.NoError(t, db.Model(&SessionRecord{}).Where("session_id = ?", sess.ID).Update("revoked", true).Error)
+	require.ErrorIs(t, store.WithMediaSessionFence(ctx, sess.ID, "ptid:media", "station-test", issue), ErrSessionRevoked)
+	require.Equal(t, 1, called)
+	active, err = store.MediaSessionActive(ctx, sess.ID, "ptid:media", "installation-test", "station-test")
+	require.NoError(t, err)
+	require.False(t, active)
+}
 
 func TestDBStoreSetRoundTripsAuthorizationMetadataIdempotently(t *testing.T) {
 	store, db := newSQLiteDBStore(t)

@@ -28,7 +28,7 @@
   justify-content: center;
   border-radius: 8px;
   background: #fff;
-  color: var(--brand-primary);
+  color: var(--pt-accent);
 }
 
 .private-moment-recovery[data-private-moment-state='DELETED_OR_REVOKED']
@@ -69,7 +69,7 @@
   border: 0;
   border-radius: 8px;
   background: #fff;
-  color: var(--brand-primary);
+  color: var(--pt-accent);
   font: inherit;
   font-size: 12px;
   font-weight: 700;

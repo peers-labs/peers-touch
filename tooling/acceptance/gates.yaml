@@ -517,15 +517,25 @@
       "description": "Run two isolated Native Desktop clients and prove one-to-one audio and video call lifecycle: ring, accept, reject, no-answer, mic/camera toggle, hangup, text during call, and resource release."
     },
     "chat-lifecycle-group-live-e2e": {
-      "command": "python3 -m tooling.acceptance.gates.chat.lifecycle_group_live && python3 -m tooling.acceptance.gates.chat.lifecycle_group_live_e2e",
+      "argv": ["python3", "-m", "tooling.acceptance.gates.chat.lifecycle_group_live"],
       "timeout_seconds": 2400,
-      "environment": "native-tauri-embedded-webdriver",
-      "provisioner": "native-tauri-embedded-webdriver",
+      "environment": "chat-mixed-native",
+      "provisioner": "chat-mixed-native",
       "requiredRuntimeCells": [
         "desktop-macos-native"
       ],
+      "ephemeralCapabilities": ["mobile.simulator.appium-session"],
+      "e2e": {
+        "journeys": [{"id": "chat-group-live-lifecycle", "uses": ["tooling/acceptance/gates/chat/lifecycle_group_live.py#LifecycleGroupLiveGate.run"]}],
+        "implementations": [
+          {"ref": "tooling/acceptance/gates/chat/lifecycle_group_live.py#LifecycleGroupLiveGate.run", "purpose": "Execute native group media and withdrawal assertions on existing mixed clients", "lifetime": "scenario", "dependsOn": ["tooling/acceptance/gates/chat/mixed_native_runtime.py#MixedNativeRuntime.start_client", "tooling/acceptance/gates/chat/mixed_native_runtime.py#MixedNativeRuntime.call_action", "tooling/acceptance/gates/mobile/simulator_runtime_binding.py#MobileSimulatorRuntimeBinding.semantic_click"], "invalidatedBy": ["source", "oracle", "action-plan"]},
+          {"ref": "tooling/acceptance/gates/chat/mixed_native_runtime.py#MixedNativeRuntime.start_client", "purpose": "Reuse isolated native clients and canonical actor binding", "lifetime": "suite", "dependsOn": [], "invalidatedBy": ["source", "environment", "fixture", "client", "session"]},
+          {"ref": "tooling/acceptance/gates/chat/mixed_native_runtime.py#MixedNativeRuntime.call_action", "purpose": "Reuse production Desktop and Mobile Harness dispatch", "lifetime": "implementation", "dependsOn": [], "invalidatedBy": ["source", "toolchain"]},
+          {"ref": "tooling/acceptance/gates/mobile/simulator_runtime_binding.py#MobileSimulatorRuntimeBinding.semantic_click", "purpose": "Reuse parent-owned Mobile native semantic UI operations", "lifetime": "implementation", "dependsOn": [], "invalidatedBy": ["source", "toolchain"]}
+        ]
+      },
       "tier": "env-evidence",
-      "description": "Run three isolated Native Desktop clients and prove same-Station group audio and video calls with live remote media, mute/camera convergence, late join, leave, and resource release."
+      "description": "Run three isolated actors across Native Desktop and iOS on federated Stations; prove audio/video RTP progress, native controls, late join, member/device/session withdrawal, consumed-token replay denial, restart and media release."
     },
     "chat-native-current-profile-two-client-e2e": {
       "argv": ["python3", "-m", "tooling.acceptance.gates.chat.native_current_profile_two_client_entry"],
@@ -1536,6 +1546,17 @@
       "description": "Run two isolated exact-source Native Desktop clients from one canonical worktree through bidirectional Direct messaging, live transcript updates, per-conversation unread state, restart-stable previews, paged history, message-identity-preserving retry, authoritative Station identity and presence, immediate local background preview with durable persistence, canonical local message search, and irreversible current-device conversation clearing."
     },
     "chat-lifecycle-call-resolution-e2e": {
+      "e2e": {
+        "journeys": [
+          {"id": "call-resolution-multi-device", "uses": ["tooling/acceptance/gates/chat/lifecycle_call_resolution.py#CallResolutionGate.run"]},
+          {"id": "mobile-direct-call-media", "uses": ["tooling/acceptance/gates/chat/lifecycle_call_resolution.py#CallResolutionGate.prove_mobile_media"]}
+        ],
+        "implementations": [
+          {"ref": "tooling/acceptance/gates/chat/mixed_native_runtime.py#MixedNativeRuntime.start_client", "purpose": "Reuse isolated native clients and authenticated Station bindings", "lifetime": "suite", "dependsOn": [], "invalidatedBy": ["source", "environment", "fixture", "client", "session"]},
+          {"ref": "tooling/acceptance/gates/chat/lifecycle_call_resolution.py#CallResolutionGate.run", "purpose": "Execute original multi-device arbitration followed by four Mobile media scenarios", "lifetime": "suite", "dependsOn": ["tooling/acceptance/gates/chat/mixed_native_runtime.py#MixedNativeRuntime.start_client"], "invalidatedBy": ["source", "environment", "fixture", "client", "oracle"]},
+          {"ref": "tooling/acceptance/gates/chat/lifecycle_call_resolution.py#CallResolutionGate.prove_mobile_media", "purpose": "Prove real RTP, Mobile UI controls, ICE restart, chat receiver and release", "lifetime": "scenario", "dependsOn": ["tooling/acceptance/gates/chat/mixed_native_runtime.py#MixedNativeRuntime.start_client"], "invalidatedBy": ["source", "client", "oracle", "action-plan"]}
+        ]
+      },
       "argv": [
         "python3",
         "-m",
@@ -1548,7 +1569,7 @@
       "environment": "chat-mixed-native",
       "provisioner": "chat-mixed-native",
       "tier": "env-evidence",
-      "description": "Prove multi-device call resolution: dual-ring first-terminal-action-wins, handled-elsewhere, concurrent accept/reject, duplicate/reconnect resilience across Desktop + Mobile."
+      "description": "Prove multi-device call arbitration plus Mobile incoming/outgoing audio/video RTP, real controls, ICE restart, chat receiver and media release on one Desktop + Mobile runtime."
     },
     "chat-lifecycle-mixed-client-same-station-e2e": {
       "argv": [
@@ -2807,6 +2828,19 @@
       "description": "Prove the Mobile runtime graph start, suspend, resume, restart, monotonic generation, descriptor-owned navigation state, visible-app survival, isolation, and cleanup on pinned iOS Simulator cells without claiming Station/session, visible route layout, Android, or physical OS lifecycle behavior."
     },
     "mobile-simulator-station-lifecycle-e2e": {
+      "e2e": {
+        "journeys": [{
+          "id": "mobile-station-lifecycle",
+          "uses": ["tooling/acceptance/gates/mobile/simulator_station_lifecycle_e2e.py#SimulatorStationLifecycleGate.execute"]
+        }],
+        "implementations": [{
+          "ref": "tooling/acceptance/gates/mobile/simulator_station_lifecycle_e2e.py#SimulatorStationLifecycleGate.execute",
+          "purpose": "Execute the original source-bound dual-simulator Station lifecycle journey",
+          "lifetime": "suite",
+          "dependsOn": [],
+          "invalidatedBy": ["source", "environment", "fixture", "client", "oracle"]
+        }]
+      },
       "argv": [
         "python3",
         "-m",
@@ -2832,6 +2866,23 @@
       "description": "Prove the current iPhone 17 Simulator launch-surface layout, keyboard avoidance, localization, accessible naming, orientation, and cleanup."
     },
     "mobile-simulator-whole-product-usability-e2e": {
+      "e2e": {
+        "journeys": [
+          {
+            "id": "mobile-whole-product-surfaces",
+            "uses": ["tooling/acceptance/gates/mobile/simulator_whole_product_usability_e2e.py#SimulatorWholeProductUsabilityGate.execute"]
+          }
+        ],
+        "implementations": [
+          {
+            "ref": "tooling/acceptance/gates/mobile/simulator_whole_product_usability_e2e.py#SimulatorWholeProductUsabilityGate.execute",
+            "purpose": "Reuse the complete native Mobile inventory and real interaction journey",
+            "lifetime": "suite",
+            "dependsOn": [],
+            "invalidatedBy": ["source", "environment", "fixture", "client", "oracle"]
+          }
+        ]
+      },
       "command": "python3 -m tooling.acceptance.gates.mobile.simulator_whole_product_usability_e2e",
       "timeout_seconds": 10800,
       "environment": "mobile-direct-simulator",
@@ -2840,6 +2891,19 @@
       "description": "Walk the complete registered Mobile surface inventory in a foreground iOS Simulator and prove human-readable identity, valid actions, accessibility, viewport containment, and non-occlusion."
     },
     "mobile-simulator-social-convergence-e2e": {
+      "e2e": {
+        "journeys": [{
+          "id": "mobile-social-convergence",
+          "uses": ["tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.execute"]
+        }],
+        "implementations": [{
+          "ref": "tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.execute",
+          "purpose": "Execute the original two-actor Messaging convergence scenario",
+          "lifetime": "suite",
+          "dependsOn": [],
+          "invalidatedBy": ["source", "environment", "fixture", "client", "oracle"]
+        }]
+      },
       "command": "python3 -m tooling.acceptance.gates.mobile.simulator_social_e2e --scenario social-convergence",
       "timeout_seconds": 2400,
       "environment": "mobile-direct-simulator",
@@ -2847,7 +2911,41 @@
       "tier": "env-evidence",
       "description": "Prove required two-actor same-Station Mobile Messaging convergence on source-bound simulator cells."
     },
+    "mobile-simulator-chat-e2e": {
+      "e2e": {
+        "journeys": [{
+          "id": "mobile-direct-and-group-chat",
+          "uses": ["tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.execute"]
+        }],
+        "implementations": [{
+          "ref": "tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.execute",
+          "purpose": "Execute the original Direct and Group sender/receiver journey without profile or contact-preference extensions",
+          "lifetime": "suite",
+          "dependsOn": [],
+          "invalidatedBy": ["source", "environment", "fixture", "client", "oracle"]
+        }]
+      },
+      "command": "python3 -m tooling.acceptance.gates.mobile.simulator_social_e2e --scenario chat",
+      "timeout_seconds": 2400,
+      "environment": "mobile-direct-simulator",
+      "provisioner": "mobile-direct-simulator",
+      "tier": "env-evidence",
+      "description": "Prove same-Station Direct and Group messaging, interactions, attachments, search, receipts and restart readback on the original two-actor simulator journey."
+    },
     "mobile-simulator-chat-contacts-e2e": {
+      "e2e": {
+        "journeys": [{
+          "id": "mobile-chat-contacts",
+          "uses": ["tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.execute"]
+        }],
+        "implementations": [{
+          "ref": "tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.execute",
+          "purpose": "Execute the original contact, Direct and Group sender/receiver journey",
+          "lifetime": "suite",
+          "dependsOn": [],
+          "invalidatedBy": ["source", "environment", "fixture", "client", "oracle"]
+        }]
+      },
       "command": "python3 -m tooling.acceptance.gates.mobile.simulator_social_e2e --scenario chat-contacts",
       "timeout_seconds": 2400,
       "environment": "mobile-direct-simulator",
@@ -2856,6 +2954,19 @@
       "description": "Prove required same-Station contact, Direct, Group, interaction, attachment, search, receipt, and restart readback on simulator cells."
     },
     "mobile-simulator-recovery-e2e": {
+      "e2e": {
+        "journeys": [{
+          "id": "mobile-recovery",
+          "uses": ["tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.execute"]
+        }],
+        "implementations": [{
+          "ref": "tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.execute",
+          "purpose": "Execute the original process restart, draft and receiver delivery recovery scenario",
+          "lifetime": "suite",
+          "dependsOn": [],
+          "invalidatedBy": ["source", "environment", "fixture", "client", "oracle"]
+        }]
+      },
       "argv": ["python3", "-m", "tooling.acceptance.gates.mobile.simulator_social_e2e", "--scenario", "recovery"],
       "ephemeralCapabilities": ["mobile.station-outage"],
       "timeout_seconds": 3600,
@@ -2873,6 +2984,19 @@
       "description": "Prove the required same-Station simulator recovery surface from a production draft-recovery trigger with native screenshot and WebView DOM evidence."
     },
     "mobile-simulator-moments-e2e": {
+      "e2e": {
+        "journeys": [{
+          "id": "mobile-moments",
+          "uses": ["tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.execute"]
+        }],
+        "implementations": [{
+          "ref": "tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.execute",
+          "purpose": "Execute the original two-actor Moments publication and interaction scenario",
+          "lifetime": "suite",
+          "dependsOn": [],
+          "invalidatedBy": ["source", "environment", "fixture", "client", "oracle"]
+        }]
+      },
       "command": "python3 -m tooling.acceptance.gates.mobile.simulator_social_e2e --scenario moments",
       "timeout_seconds": 2400,
       "environment": "mobile-direct-simulator",
@@ -2881,6 +3005,19 @@
       "description": "Prove same-Station two-actor Moments publish, feed, reaction, comment, reply, rollback, and draft restart behavior on the required simulator pair."
     },
     "mobile-simulator-settings-e2e": {
+      "e2e": {
+        "journeys": [{
+          "id": "mobile-settings",
+          "uses": ["tooling/acceptance/gates/mobile/simulator_settings_e2e.py#SimulatorSettingsGate.execute"]
+        }],
+        "implementations": [{
+          "ref": "tooling/acceptance/gates/mobile/simulator_settings_e2e.py#SimulatorSettingsGate.execute",
+          "purpose": "Execute the original Profile, Notification and device setting readback journey",
+          "lifetime": "suite",
+          "dependsOn": [],
+          "invalidatedBy": ["source", "environment", "fixture", "client", "oracle"]
+        }]
+      },
       "argv": [
         "python3",
         "-m",

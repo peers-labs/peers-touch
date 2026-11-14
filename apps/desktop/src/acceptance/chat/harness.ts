@@ -33,8 +33,9 @@ import {
   AttachmentFileAction,
   AttachmentFileActionRequestSchema,
 } from '../../gen/proto/domain/chat/attachment_pb';
-import { groupCallManager } from '../../modules/groupCall';
+import { groupCallManager, groupCallAdmissionProbe } from '../../modules/groupCall';
 import { callP2p } from '../../modules/p2p/callP2p';
+import { readCallMediaPresentation } from '@peers-touch/client-chat-core';
 import { newSendIntentId } from '../../utils/messagingSendIntent';
 import { registerAcceptanceHarness } from '../registry';
 import { requireCanonicalAcceptancePtid } from './identity';
@@ -406,6 +407,10 @@ export function installAcceptanceHarness(): void {
   registerAcceptanceHarness('chat', {
     logout: (input: { actorPtid: string }) =>
       nativeAcceptanceBridge.logout(input),
+    async sessionLogout() {
+      await identityRuntime.logout();
+      return { loggedOut: true };
+    },
 
     engineInteractionSnapshot: (input: {
       actorPtid: string;
@@ -1537,6 +1542,19 @@ export function installAcceptanceHarness(): void {
       return { actorPtid: myPtid, peerPtid, snapshot };
     },
 
+    async callMediaStats({ peerPtid }: { peerPtid: string }) {
+      const myPtid = activeActorPtid();
+      const snapshot = callP2p.getCall(myPtid, peerPtid);
+      return {
+        ...await callP2p.getCallMediaStats(myPtid, peerPtid),
+        presentation: readCallMediaPresentation(document.querySelector('[data-chat-call-surface]'), {
+          localVideo: '[data-chat-call-local-video]',
+          remoteVideo: '[data-chat-call-remote-video]',
+          remoteAudio: '[data-chat-call-remote-audio]',
+        }, { local: snapshot?.localStream, remote: snapshot?.remoteStream }),
+      };
+    },
+
     async callToggleMic({ peerPtid, muted }: { peerPtid: string; muted: boolean }) {
       const myPtid = activeActorPtid();
       callP2p.toggleMic(myPtid, peerPtid, muted);
@@ -1603,7 +1621,7 @@ export function installAcceptanceHarness(): void {
     },
 
     async groupCallLeave() {
-      groupCallManager.leaveGroupCall();
+      await groupCallManager.leaveGroupCall();
       return {
         actorPtid: activeActorPtid(),
         snapshot: groupCallManager.getSnapshot(),
@@ -1628,9 +1646,32 @@ export function installAcceptanceHarness(): void {
 
     async groupCallSnapshot() {
       return {
-        actorPtid: activeActorPtid(),
+        actorPtid: activeSessionActorPtid(),
         snapshot: groupCallManager.getSnapshot(),
       };
+    },
+    async groupCallMediaStats() {
+      return { actorPtid: activeSessionActorPtid(), media: await groupCallManager.readMediaStats() };
+    },
+    async groupCallProbeArm() {
+      groupCallAdmissionProbe.arm();
+      return { armed: true };
+    },
+    async groupCallProbeStatus() {
+      return groupCallAdmissionProbe.status();
+    },
+    async groupCallSignalReconnect() {
+      return groupCallAdmissionProbe.reconnect();
+    },
+    async groupCallReplayProbe({
+      previousSid, tokenKind = 'initial', consume = true,
+    }: { previousSid: string; tokenKind?: 'initial' | 'refreshed'; consume?: boolean }) {
+      if (tokenKind !== 'initial' && tokenKind !== 'refreshed') throw new Error('call.replayProbeUnavailable');
+      return groupCallAdmissionProbe.replay(previousSid, tokenKind, consume);
+    },
+    async groupCallProbeClear() {
+      groupCallAdmissionProbe.clear();
+      return { cleared: true };
     },
   });
 }

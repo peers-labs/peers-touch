@@ -236,6 +236,15 @@ impl ObjectTransferControl {
         self.shutdown.store(true, Ordering::Release);
     }
 
+    pub fn is_transfer_active(&self, transfer_id: &str) -> Result<bool, ObjectTransferFailure> {
+        self.active_transfer_ids
+            .lock()
+            .map(|active| active.contains(transfer_id))
+            .map_err(|_| ObjectTransferFailure::from(
+                "secure content object transfer admission lock is poisoned".to_string(),
+            ))
+    }
+
     pub fn request_shutdown_and_wait(&self, timeout: Duration) -> bool {
         self.request_shutdown();
         let deadline = Instant::now() + timeout;
@@ -994,16 +1003,16 @@ impl ObjectTransferWorker {
         expected_plaintext_sha256: &[u8; 32],
         cache_ref: &str,
         now_unix_ms: i64,
-    ) -> Result<(), ObjectTransferFailure> {
-        let _permit = self
-            .control
-            .try_admit(transfer_id)
-            .map_err(|error| match error {
-                AdmissionError::AlreadyActive => {
-                    ObjectTransferFailure::from("transfer is active".to_string())
-                }
-                AdmissionError::Failure(failure) => failure,
-            })?;
+    ) -> Result<ObjectTransferProgress, ObjectTransferFailure> {
+        let _permit = match self.control.try_admit(transfer_id) {
+            Ok(permit) => permit,
+            Err(AdmissionError::AlreadyActive) => {
+                return Ok(ObjectTransferProgress::Deferred {
+                    next_attempt_at_unix_ms: now_unix_ms,
+                });
+            }
+            Err(AdmissionError::Failure(failure)) => return Err(failure),
+        };
         let transfer = self.required_transfer(transfer_id)?;
         if transfer.direction != ObjectTransferDirection::Download
             || transfer.state != ObjectTransferState::Complete
@@ -1020,7 +1029,13 @@ impl ObjectTransferWorker {
             cache_ref,
             now_unix_ms,
         )
-        .map(|_| ())
+        .map(|ready| if ready {
+            ObjectTransferProgress::Complete
+        } else {
+            ObjectTransferProgress::Deferred {
+                next_attempt_at_unix_ms: now_unix_ms,
+            }
+        })
     }
 
     /// Caller holds the transfer permit. Completion may still have verified
@@ -2401,8 +2416,9 @@ mod tests {
         let store = Arc::new(TestStore::default());
         store.insert(download_record);
         let control = Arc::new(ObjectTransferControl::new());
+        let completed = store.record("concurrent-finalization-transfer");
         let worker = ObjectTransferWorker::with_control(
-            store,
+            store.clone(),
             Arc::new(MemoryTransport::new()),
             blobs.clone(),
             Arc::new(TestCodec),
@@ -2415,6 +2431,17 @@ mod tests {
             .unwrap();
         let plaintext_hash = Sha256::digest(&plaintext).into();
 
+        assert!(control.is_transfer_active("concurrent-finalization-transfer").unwrap());
+        assert!(!control.is_transfer_active("another-transfer").unwrap());
+        assert_eq!(
+            worker.restore_download_cache(
+                "concurrent-finalization-transfer", &descriptor, &plaintext_hash, &cache, 10,
+            ).unwrap(),
+            ObjectTransferProgress::Deferred { next_attempt_at_unix_ms: 10 },
+        );
+        assert_eq!(store.record("concurrent-finalization-transfer"), completed);
+        assert_eq!(blobs.bytes(&plaintext_staging_ref(&cache)).unwrap(), plaintext);
+        assert_eq!(blobs.bytes(&partial).unwrap(), b"stale ciphertext");
         assert_eq!(
             worker
                 .run_download_once(
@@ -2433,10 +2460,11 @@ mod tests {
         assert!(blobs.exists(&plaintext_staging_ref(&cache)).unwrap());
 
         drop(permit);
+        assert!(!control.is_transfer_active("concurrent-finalization-transfer").unwrap());
 
         assert_eq!(
             worker
-                .run_download_once(
+                .restore_download_cache(
                     "concurrent-finalization-transfer",
                     &descriptor,
                     &plaintext_hash,
@@ -3024,12 +3052,12 @@ mod tests {
         assert!(!blobs.exists(&partial).unwrap());
         let commitment = store.record("evicted-download-transfer").descriptor_sha256;
         blobs.remove(&cache).unwrap();
-        worker
+        assert_eq!(worker
             .restore_download_cache(
                 "evicted-download-transfer", &descriptor,
                 &Sha256::digest(&plaintext).into(), &cache, 20,
             )
-            .unwrap();
+            .unwrap(), ObjectTransferProgress::Deferred { next_attempt_at_unix_ms: 20 });
         let queued = store.record("evicted-download-transfer");
         assert_eq!(queued.state, ObjectTransferState::Queued);
         assert_eq!(queued.completed_chunk_bitmap, vec![0]);

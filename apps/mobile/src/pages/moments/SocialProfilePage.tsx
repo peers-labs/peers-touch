@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Empty, Icon, Spin, Tag, Text } from '@peers-touch/ui';
 
 import { useMobileI18n } from '../../app/mobileI18n';
@@ -60,6 +60,7 @@ export function SocialProfilePage({
     (state) => state.authoredFeeds[actorPtid],
   );
   const loadAuthoredPosts = useSocialStore((state) => state.loadAuthoredPosts);
+  const requestedProfile = useRef('');
 
   const [action, setAction] = useState('');
   const [actionError, setActionError] = useState('');
@@ -91,6 +92,8 @@ export function SocialProfilePage({
       : '';
 
   useEffect(() => {
+    if (requestedProfile.current === actorPtid) return;
+    requestedProfile.current = actorPtid;
     setReactionPickerPostId(null);
     void requestSocialPeerProfile(actorPtid);
     if (!isSelf) {

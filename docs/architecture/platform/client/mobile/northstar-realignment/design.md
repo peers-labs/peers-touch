@@ -14,16 +14,16 @@
 | Claim | Class | Evidence |
 |---|---|---|
 | Real app has real MLS/X3DH/social/secure-content/oauth/call runtimes via Tauri→Rust→Station | **[F]** | `apps/mobile/src-tauri/src/{messaging,social,secure_content,runtime}`, `runtimes/runtimeRegistry.ts` |
-| Real web presentation uses antd v6 + @lobehub/ui + private 5106-line `styles.css`, and does NOT depend on `@peers-touch/ui` | **[F]** | `apps/mobile/package.json`, `src/styles.css`, `src/app/MobileThemeProvider.tsx` |
+| Real Mobile already consumes `@peers-touch/ui` through `MobileNorthStarProvider`; antd/lobehub dependencies are removed. Remaining work is product composition and private control chrome, not initial provider adoption | **[F]** | `apps/mobile/package.json`, `src/styles.css`, `src/app/MobileNorthStarProvider.tsx` |
 | `@peers-touch/ui` is source-only ESM, React 19 peer, styles scoped under `.pt-ui` (no `:root`/global pollution), CSS auto-injected by `UIProvider` | **[F]** | `packages/ui/web/{package.json,src/provider.tsx,src/styles.css}` |
 | peers-ui ships one application feedback channel: `createFeedbackChannel()` provides `notify`, promise-based `requestConfirmation`, `requestChoice`, and a serial queue; `FeedbackHost` is mounted through `UIProvider`'s `feedback` slot | **[F]** | `packages/ui/web/src/application-feedback.tsx:24-87`, `provider.tsx:26,83` |
 | Desktop and the mobile prototype already consume peers-ui with zero Vite alias; prototype renders peers-ui at real 390pt width | **[F]** | `apps/desktop/src/main.tsx`, `packages/prototypes/mobile/chat/{package.json,src/MobileApp.tsx}` |
-| antd/lobehub appear in 40 mobile files; imperative usages are `Modal.confirm/success` (12 sites) and `message.*` (17 sites) | **[F]** | grep inventory across `apps/mobile/src` |
+| Old UI imports and brand token definitions/aliases/consumers are now guarded at zero across every Mobile TS/TSX/CSS file | **[F]** | `apps/mobile/scripts/check-presentation-boundaries.mjs` |
 | North-star primary is neutral ink with pine accent; the private `#667eea→#764ba2` gradient has no token | **[F]** | `packages/ui/tokens/src/north-star-theme.ts`, `apps/mobile/src/styles.css:1-33,227` |
-| Real shell is 4 tabs; prototype is 3 tabs. Real UI already has incoming-call accept/decline, inbound/outbound friend requests, block/unblock, and group admin; the prototype is outgoing-call-only and omits them | **[F]** | `MobileShell.tsx:453`, `call/MobileCallSurface.tsx:42-110`, `ContactsPage.tsx:118-185,392-407`, `chat/ChatOverlayHost.tsx:749-900`; prototype `CallScreen.tsx:7-9` |
-| Genuine presentation gaps over real owners are narrow: `MobileNotificationCenter` is complete but unmounted; credentials/encryption detail is a thin placeholder | **[F]** | `components/MobileNotificationCenter.tsx` (zero importers); `pages/SettingsPage.tsx:473-496` |
+| Real and prototype shell use three bottom destinations; production Chats/Contacts scopes and their queries/return locations live under Messages. Real requests, group administration and Direct call owners remain active | **[F]** | `MobileShell.tsx`, `app/navigation/navigationStore.ts`, `ContactsPage.tsx`, `chat/ChatOverlayHost.tsx`, prototype `app/screens.tsx` |
+| Notification center is mounted through the Shell overlay; Me has profile statistics, native image edits and public credential copy. Functional native proof remains required | **[F]** | `components/{MobileNotificationCenter,MobileShell}.tsx`, `pages/settings/`, `runtimes/profileImageRuntime.ts` |
 | `safety-number` and `chat-background` are intentionally unavailable this release and have no owner | **[F]** | `pages/SettingsPage.tsx:489-496`, parent `design.md §12.7` |
-| Acceptance harness: 106 registered actions; fixture surfaces across six fixtures; whole-product inventory is 162 surfaces (22+4+13+35+25+31+32) | **[F]** | `src/acceptance/{contracts,registry,actions}.ts`, `tooling/acceptance/gates/mobile/whole_product_surface_inventory.json:53` |
+| Acceptance harness: fixture surfaces across six fixtures; whole-product inventory is 166 surfaces (22+4+13+38+26+31+32) | **[F]** | `src/acceptance/{contracts,registry,actions}.ts`, `tooling/acceptance/gates/mobile/whole_product_surface_inventory.json` |
 | No current-source iOS gate evidence in this worktree; gates are UNPROVEN (worktree-external store, not repo-verifiable) | **[X]** | `~/Library/Application Support/PeersTouch/acceptance/9c2993be5961ea8b` |
 | iOS gate pins iOS 26.5 + iPhone 17; toolchain (Xcode/Appium/drivers/rust target) installed but the 26.5 runtime presence is unverified | **[X]/[F]** | `provisioners/mobile_simulator.py`, `environments/mobile-simulator.yaml` |
 | Product gates require a reviewed non-stable remote Station profile in sibling `env` repo; whole-product needs foreground simulator | **[X]** | `mobile-direct-simulator.yaml`, `mobile-station-lifecycle-simulator.yaml` |
@@ -53,6 +53,16 @@ deleted (ADR-2).
 
 ### 2.2 Layering (unchanged dependency direction)
 
+Find People follows the user-confirmed dedicated-page contract in
+`../experience-contract.md`: `FindPeoplePage` owns transient query, explicit
+Station/Federation scope and request progress; `FindPeopleSurface` is the shared
+production/acceptance renderer. `socialStore.searchPeople` owns typed discovery
+and stale-reply fencing. Station search uses the existing profile gateway's
+actor-search operation, independently of Federation membership. The prototype
+uses the same top-search/result-list composition and models request outcomes
+with local fixtures. Native keyboard, real directory and request proof remain
+required before completion.
+
 ```text
 pages/ + components/   ── consume @peers-touch/ui primitives + --pt-* tokens
   features/*           ── presentation state/adapters; may import ui
@@ -60,6 +70,115 @@ pages/ + components/   ── consume @peers-touch/ui primitives + --pt-* tokens
   runtimes/ services/  ── MUST NOT import @peers-touch/ui (presentation-free)
   Tauri/Rust           ── unchanged
 ```
+
+### Composer recovery ownership
+
+M08 requires unsent image/file/voice drafts to survive route changes and
+process restart. Source inspection verified that completed sources previously
+had only an in-memory registration and startup deleted unowned files.
+The native Messaging SQLCipher store now owns completed
+`AttachmentSourceStageRecord` commitments; the Engine's map owns incomplete
+byte streams only. Completion syncs bytes before recording their commitment.
+Transfer adoption removes the stage row in the same transaction as the
+pending message and upload records. Explicit discard removes only an unadopted
+stage. Startup cleanup preserves both registered stages and transfer sources.
+
+`ChatDraftPayload` keeps device-local stage IDs separate from encrypted
+object references, and retains thread context and pending message identity.
+The presentation restores stages through verified native file grants; no
+filesystem path, File serialization, or preview URL is stored in the envelope.
+Grants expire/revoke under the existing Engine activation and presentation
+owner. Station/actor scope and device-native storage remain unchanged.
+Language changes and same-identity token refresh do not reset the composer.
+Admission is bounded at 128 ready stages / 512 MiB per native store; capacity
+failure leaves existing sources intact and returns `FILE_DRAFT_CAPACITY`.
+
+Architecture review: the source and draft have distinct ownership, and transfer
+adoption is atomic; retaining a second completed-stage cache or persisting
+browser object URLs would violate the target. The remaining crash boundary
+between completion and envelope save is closed by the record's conversation
+owner: restoration lists its committed sources even without a web envelope.
+Ready is published only after its source ID has been written to the envelope.
+Between transfer adoption and envelope update, the original source reference
+resolves the existing native pending message, including attachments not yet
+uploaded; it cannot become a second send. Source checks must cover reopen, explicit discard,
+adoption, corrupt bytes and cross-scope denial; native proof additionally
+requires draft restore followed by verified receiver delivery.
+
+Search result presentation is owned by `pages/MobileSearchResult`. The Search
+page supplies its live actor/conversation projection and action; deterministic
+Chat surfaces supply fixture facts to the same component and stylesheet.
+Snippet and metadata wrap at maximum text size. A separate single-line fixture
+result cannot substitute for the production presentation.
+
+### Contact preference ownership
+
+M09 local contact nickname/note use the existing L2 `(mobile, station, actor)`
+`config.preference` repository through `mobilePersonalizationScope`. The
+`contact-preferences` runtime owns readback and serialized writes, depends on
+session, and clears its projection on identity replacement/teardown. Delayed
+reads and writes cannot change the incoming identity's projection. Contacts and
+Chat consume one typed name projection for display and local search; this does
+not change the peer's profile or the member's own group nickname.
+
+Mute and alerts remain L1 conversation-member settings through the existing
+Social Gateway. Contact details may establish the real direct conversation on
+the user's setting action, then submit a partial update. Gateway readbacks are
+fenced to their originating session and gateway. Neither setting is copied
+into the local contact preference record.
+
+### Profile images and notification ownership
+
+The Me hero projects canonical profile statistics. Public username/PTID/Station
+facts render only in a selected credential detail; copy uses the platform
+clipboard action. Avatar and cover selection use the same native picker on iOS
+and Android. Rust owns session-bound opaque stages, validates bytes and
+PNG/JPEG/GIF/WebP format under 8 MiB, and issues expiring preview grants.
+`profile-images` owns one retained choice, upload, observed profile revision,
+authoritative readback and asset readiness. Conflict/failure retains the choice
+for explicit retry; cancellation preserves the previous choice. Session
+replacement and teardown revoke grants and discard owned stages, including
+picker results that return late. Write admission is checked again after upload.
+
+The Shell owns one notification overlay. Social runtime/Gateway owns retained
+page-window refresh, pagination, read/all-read/delete, and authoritative
+validation. Session, Gateway and current-read tokens fence projections.
+Overlay pending/error state is also session-fenced; a late old operation cannot
+unlock or report errors in a new session. Routes retain the original
+conversation/message or post/comment target. These source contracts require
+native picker, clipboard, notification and restart Journeys before product
+completion.
+
+The original `chat-contacts` Journey exercises credential-copy controls,
+reads the selected Simulator's native pasteboard, edits the real contact
+remark form, restarts the application, then observes Contacts/Chats and peer
+isolation. The original `recovery` Journey retains file/audio sources through
+SIGKILL and Station restart, sends from the restored composer and opens the
+receiver attachments. The original `moments` Journey produces a comment
+mention through Social, opens its original post/comment from the notification,
+and checks read/delete against the retained owner projection. File-input selection in the recovery Journey
+does not prove the native picker or recorded voice capture; those remain
+separate required native observations.
+
+Native photo selection uses PHPicker on iOS and the system Photo Picker on
+Android 13+, with the platform content chooser on older Android. The document
+picker remains the document capability. Selected iOS bytes retain their source
+extension through native copying so the existing type/format validator sees the
+actual image or video; the old `.stage` suffix erased this information and
+rejected image selections. PHPicker copies ephemeral item-provider URLs before
+their callback returns, then applies the original count, size, digest and
+session-bound stage validation. Late callbacks clean only their own request's
+imports. The system photo picker does not require broad photo-library access.
+
+The original `chat-contacts` Journey now seeds the owned Simulator photo
+library, cancels and operates the real avatar/cover pickers, observes decoded
+Me images and authoritative profile revisions, restarts the native application
+and restores the original images. The original `recovery` Journey additionally
+records real microphone input, sends from the composer and verifies receiver
+voice metadata and openable bytes. The `moments` Journey produces 31 distinct
+real mention notifications to cross the 30-row page boundary, operates load
+more and all-read, then restarts and reads both persisted pages. These are
+required runtime observations, not claims of passed native proof.
 
 Forbidden (new, in addition to `../module-layout.md §6`):
 
@@ -99,15 +218,22 @@ Coexistence rules while surfaces migrate one by one:
   `lucide-react` is replaced progressively by peers `Icon/IconId`; icon churn is
   tracked, not gating.
 
-### 2.5 Real-wins reconciliation (prototype follows the product)
+### 2.5 Confirmed design and real capability reconciliation
 
-The prototype is corrected to the real structure; the real app is never
-degraded to match a fixture:
+The confirmed design governs presentation; real owners govern behavior:
 
-- Shell/tab structure: adopt **4 tabs** (chat/moments/contacts/settings) and
-  the real navigation descriptors; drop the prototype 3-tab/Me shape.
-- Moments navigation: real feed + dedicated circles routes win over the
-  prototype same-screen segmented form.
+- Shell/tab structure: **three bottom destinations** (messages/moments/me).
+  Chats and contacts share messages and use **top subtabs**. Contact/group
+  details are pushed within messages and return to the selected pane. The
+  real app's existing four-tab descriptors must migrate with native back,
+  search, badges, requests and group capabilities preserved. They cannot
+  override the user-confirmed navigation (ADR-4, 2026-11-13).
+- Moments navigation: the confirmed **Feed / Circles top subtabs** own the
+  primary pane. Local searches replace that same header band; pane, query,
+  feed scope and scroll/focus context survive pushed details and tab return.
+  Explore and global/federated search remain explicit secondary actions.
+  Incoming circle-list routes consume the same Circle renderer; circle and
+  member details keep their real route and authority owners.
 - Real UI the prototype merely lacks is **kept as-is and re-skinned**, not
   rebuilt: incoming-call accept/decline, friend request in/out, block/unblock,
   and group admin already exist over real owners (REAL-RESTYLE).
@@ -118,9 +244,58 @@ degraded to match a fixture:
   built notification center, and give credentials/encryption a real detail over
   its identity owner. `safety-number`/`chat-background` stay unavailable (no
   owner this release) and are not fabricated.
+- Me uses the confirmed cover/overlapping-avatar hero and profile-backed
+  posts/following/follower/joined facts. Public username, PTID and station facts
+  move to the credentials detail; copies use the native system-action port.
+  Image edits use the native `profile_image` picker surface, hash-verified
+  session-scoped stages and WebView-owned opaque preview grants. They upload
+  publicly through existing OSS, carry an observed profile revision through the
+  existing profile mutation, and require readback before releasing the preview.
+  Failed edits retain their stage for explicit retry or discard; stale sessions
+  cannot commit them. JPEG/PNG/GIF/WebP images are bounded to 8 MiB.
+- Notification center is an on-demand overlay. The notification store fences
+  reads/mutations by session and gateway, retains the loaded page window on
+  readback, and confirms read/delete results. Object navigation happens on
+  click before awaiting the read mutation. Unknown targets have a concrete
+  unavailable reason; they are never routed to a generic conversation.
 - Prototype-only cosmetic settings with no real owner (fake auto-lock behavior,
   per-contact switches bound to globals) are removed from the prototype rather
   than faked in the app.
+
+### 2.5.1 Native view continuity
+
+The 2026-11-14 user correction prohibits a webpage-refresh experience
+throughout Mobile. Navigation is one bounded presentation owner:
+`MobileNavigationHost` retains visited primary frames (three destinations,
+two nested Messages panes) and the last four current-stack details. The
+Messages header and bottom navigation remain mounted. Popped details are
+removed; older stack views are evicted with external draft/scroll recovery.
+
+React 19.2 Activity preserves hidden DOM and local state while suspending
+Effects/subscriptions. Normal cleanup stops recording, typing, timers,
+observers and pending page reads. DOM audio/video pauses at the frame.
+Presentation assets use the frame-owned `useMobilePageDisposal` boundary so
+hiding a view does not revoke a displayed draft URL; child removal or eviction
+releases it. Nested visibility inherits the parent.
+
+The retained tree's identity includes Station, actor, device, lifecycle
+generation and Session. A new identity destroys the old tree and restoration
+metadata. Same-identity warm resume keeps the page. Initial unavailable routes
+stay closed; transient re-preparation of a previously ready route retains
+content. Real runtime failure suspends the content and keeps the original
+retry/back surface, without discarding the retained controller.
+
+Leaf-frame layout effects restore scroll/focus before paint. Compound frames
+delegate to the nested host so a pane change cannot overwrite another pane's
+position with the newly selected scroll owner. Settings keeps
+its identity/navigation layout while permission/version/preference readback
+updates the corresponding sections. Reactivation must not clear initialized
+chat drafts, directory results, or editable setting/circle drafts. Runtime
+freshness remains outside page lifetime.
+
+Verification requires current-source native DOM identity, scroll/header
+continuity, frame-bound and hidden-resource observations. Source and
+prototype checks do not substitute for that native Journey.
 
 ### 2.6 Acceptance closure (real functional points)
 
@@ -140,7 +315,7 @@ Every functional point receives, in order of strength:
 No migrated slice is "done" without classes 1–2 green and at least one
 exact-source iOS functional Journey at `FUNCTIONAL_PASS` for that surface.
 Whole-Mobile completion additionally requires the Android cell (out of scope
-here) and the full 162-surface whole-product gate.
+here) and the full 166-surface whole-product gate.
 
 ---
 
@@ -152,7 +327,12 @@ prototype point → real owner (runtime/service/Rust command/acceptance action)
 → disposition → primary evidence gate. Disposition is one of:
 
 - **REAL-RESTYLE**: real behavior exists; migrate presentation, keep behavior.
-- **CONFLICT-REAL-WINS**: prototype diverged; fix prototype, adopt real.
+- **CONFIRMED-DESIGN-ALIGN**: implement the accepted presentation/navigation
+  while retaining real runtime capabilities (three bottom destinations and
+  top chats/contacts subtabs inside messages).
+- **CONFLICT-REAL-WINS**: fixture capability differs from real behavior;
+  reconcile to the real owner. Existing shell tab count does not override
+  confirmed navigation.
 - **REAL-GAP-PRESENT**: real owner exists but UI is hidden/placeholder; add UI
   over the real owner (no mock).
 - **PROTOTYPE-FAKE-REMOVE**: prototype-only fake with no owner; remove from

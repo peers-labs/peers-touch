@@ -1,24 +1,28 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Badge, Icon, Spin } from '@peers-touch/ui';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Badge, Button, Icon, IconButton, Menu, MobileTabBar, Segmented, Spin, TextField, useMobileTabSwipe } from '@peers-touch/ui';
 import type { IconId } from '@peers-touch/ui';
 
 import { useMobileI18n } from '../app/mobileI18n';
 import {
   activeMobileDetailRoute,
   navigationLocationKey,
+  primaryNavigationLocationKey,
   primaryTabDescriptors,
   requestSettingsExit,
-  restoreFocusTarget,
   saveScrollPosition,
   saveFocusTarget,
-  restoreScrollPosition,
+  clearAllScrollPositions,
   useMobileNavigationStore,
   type MobileDetailRoute,
   type MobileOverlayRoute,
   type MobilePrimaryRouteId,
+  type MobileMessagePaneId,
+  type MobileMomentsPaneId,
+  type MobileMomentsFeedScope,
 } from '../app/navigation';
 import { ChatPage } from '../pages/ChatPage';
 import { ContactsPage } from '../pages/ContactsPage';
+import { FindPeoplePage } from '../pages/FindPeoplePage';
 import { MomentsPage } from '../pages/MomentsPage';
 import { SocialCircleDetailPage } from '../pages/moments/SocialCircleDetailPage';
 import { SocialCircleMemberPickerPage } from '../pages/moments/SocialCircleMemberPickerPage';
@@ -39,25 +43,28 @@ import {
 } from '../features/chat/chatActionState';
 import { MobileRouteBoundary } from './MobileRouteBoundary';
 import { MobileCallSurface } from './call/MobileCallSurface';
+import { MobileGroupCallSurface } from './call/MobileGroupCallSurface';
+import { MobileNotificationCenter } from './MobileNotificationCenter';
 import { useMobilePlatform } from '../services/platform/PlatformContext';
 import { mobileSearchActions } from '../runtimes/searchRuntime';
 import { SearchEntry } from './SearchEntry';
+import { MobileNavigationHost } from './MobileNavigationHost';
+import { mobileAuthScopeKey } from '../features/auth/mobileAuthIdentity';
 
 const SearchPage = lazy(() => import('../pages/SearchPage').then(module => ({ default: module.SearchPage })));
 
-type TabId = 'chat' | 'moments' | 'contacts' | 'settings';
+type TabId = 'chat' | 'moments' | 'settings';
 
 const TAB_ICON_MAP: Record<TabId, IconId> = {
   chat: 'message-circle',
   moments: 'sparkles',
-  contacts: 'users',
   settings: 'circle-user',
 };
 
 /** Map navigation descriptor route IDs to local tab IDs. */
 function routeIdToTabId(routeId: string): TabId | null {
   const suffix = routeId.replace('tab:', '');
-  if (suffix === 'chat' || suffix === 'moments' || suffix === 'contacts' || suffix === 'settings') {
+  if (suffix === 'chat' || suffix === 'moments' || suffix === 'settings') {
     return suffix;
   }
   return null;
@@ -67,9 +74,9 @@ function detailRouteToTabId(route: MobileDetailRoute | null): TabId | null {
   switch (route?.routeId) {
     case 'detail:chat-conversation':
     case 'detail:group-conversation':
-      return 'chat';
     case 'detail:contact-profile':
-      return 'contacts';
+    case 'detail:find-people':
+      return 'chat';
     case 'detail:moment':
     case 'detail:social-search':
     case 'detail:social-profile':
@@ -97,6 +104,10 @@ function renderPage(
   onBack: () => void,
   onMomentsImmersiveVisibilityChange: (visible: boolean) => void,
   onOpenSearch: (conversationId?: string) => void,
+  messagePane: MobileMessagePaneId,
+  messageHeader: ReactNode,
+  onMomentsPaneChange: (pane: MobileMomentsPaneId, scope?: MobileMomentsFeedScope) => void,
+  onOpenNotifications: () => void,
 ) {
   if (activeDetail?.routeId === 'detail:search') {
     return <Suspense fallback={<div className="mobile-route-state" role="status"><Spin active /></div>}>
@@ -104,8 +115,31 @@ function renderPage(
     </Suspense>;
   }
   const searchEntry = <SearchEntry onOpen={() => onOpenSearch()} />;
+  if (activeDetail?.routeId === 'detail:find-people') {
+    return <FindPeoplePage onBack={onBack} />;
+  }
   switch (tabId) {
     case 'chat':
+      if (!activeDetail) return <MessagesPage
+        activeOverlay={activeOverlay}
+        onStartConversation={onStartConversation} onOpenDetail={onOpenDetail}
+        onOpenOverlay={onOpenOverlay} onCloseOverlay={onCloseOverlay}
+        onBack={onBack}
+        onOpenSearch={onOpenSearch} messagePane={messagePane} messageHeader={messageHeader}
+      />;
+      if (activeDetail?.routeId === 'detail:contact-profile') {
+        return <ContactsPage
+          activeContactPtid={activeDetail?.routeId === 'detail:contact-profile' ? activeDetail.actorPtid : null}
+          activeOverlay={activeOverlay}
+          onOpenChat={onOpenDetail}
+          onOpenContact={(actorPtid) => onOpenDetail({ routeId: 'detail:contact-profile', actorPtid })}
+          onFindPeople={() => onOpenDetail({ routeId: 'detail:find-people' })}
+          onOpenOverlay={onOpenOverlay}
+          onCloseOverlay={onCloseOverlay}
+          onBack={onBack}
+          listHeader={messageHeader}
+        />;
+      }
       return (
         <ChatPage
           activeDetail={
@@ -119,6 +153,7 @@ function renderPage(
           onOpenConversation={onOpenDetail}
           searchEntry={searchEntry}
           onOpenSearch={onOpenSearch}
+          listHeader={messageHeader}
         />
       );
     case 'moments':
@@ -182,32 +217,12 @@ function renderPage(
           onOpenSearch={() => onOpenDetail({
             routeId: 'detail:social-search',
           })}
-          onOpenCircles={() => onOpenDetail({
-            routeId: 'detail:social-circles',
-          })}
+          onOpenCircle={onOpenDetail}
+          onPaneChange={onMomentsPaneChange}
+          onOpenNotifications={onOpenNotifications}
+          onOpenGlobalSearch={() => onOpenSearch()}
           onImmersiveVisibilityChange={onMomentsImmersiveVisibilityChange}
           onBack={onBack}
-          searchEntry={searchEntry}
-        />
-      );
-    case 'contacts':
-      return (
-        <ContactsPage
-          activeContactPtid={
-            activeDetail?.routeId === 'detail:contact-profile'
-              ? activeDetail.actorPtid
-              : null
-          }
-          activeOverlay={activeOverlay}
-          onOpenChat={onOpenDetail}
-          onOpenContact={(actorPtid) => onOpenDetail({
-            routeId: 'detail:contact-profile',
-            actorPtid,
-          })}
-          onOpenOverlay={onOpenOverlay}
-          onCloseOverlay={onCloseOverlay}
-          onBack={onBack}
-          searchEntry={searchEntry}
         />
       );
     case 'settings':
@@ -228,10 +243,41 @@ function renderPage(
           onChangeStation={props.onChangeStation}
           onChangeStationRoute={props.onChangeStationRoute}
           onLogout={props.onLogout}
-          searchEntry={searchEntry}
+          onOpenNotifications={onOpenNotifications}
         />
       );
   }
+}
+
+function MessagesPage(options: {
+  activeOverlay: MobileOverlayRoute | null;
+  onStartConversation: () => void;
+  onOpenDetail: (route: MobileDetailRoute) => void;
+  onOpenOverlay: (route: MobileOverlayRoute) => void;
+  onCloseOverlay: () => void;
+  onBack: () => void;
+  onOpenSearch: (conversationId?: string) => void;
+  messagePane: MobileMessagePaneId;
+  messageHeader: ReactNode;
+}) {
+  const {
+    activeOverlay, onOpenDetail, onOpenOverlay, onCloseOverlay, onBack,
+    onStartConversation, onOpenSearch, messagePane, messageHeader,
+  } = options;
+  const content = messagePane === 'contacts'
+    ? <ContactsPage activeContactPtid={null} activeOverlay={activeOverlay}
+        onOpenChat={onOpenDetail}
+        onOpenContact={actorPtid => onOpenDetail({ routeId: 'detail:contact-profile', actorPtid })}
+        onFindPeople={onStartConversation} onOpenOverlay={onOpenOverlay}
+        onCloseOverlay={onCloseOverlay} onBack={onBack} listHeader={<></>} />
+    : <ChatPage activeDetail={null} onStartConversation={onStartConversation}
+        onBack={onBack} onOpenConversation={onOpenDetail}
+        searchEntry={<SearchEntry onOpen={() => onOpenSearch()} />}
+        onOpenSearch={onOpenSearch} listHeader={<></>} />;
+  return <div className="mobile-messages-page">
+    {messageHeader}
+    <MobileNavigationHost primary={{ key: `tab:chat:${messagePane}`, content }} />
+  </div>;
 }
 
 export interface MobileShellProps {
@@ -255,14 +301,26 @@ export function MobileShell(props: MobileShellProps) {
   const { t, language } = useMobileI18n();
   const platform = useMobilePlatform();
   const authSession = useAuthStore((state) => state.session);
+  const identityKey = authSession
+    ? `${mobileAuthScopeKey(authSession)}|${authSession.sessionId}`
+    : 'signed-out';
+  const previousIdentity = useRef(identityKey);
+  if (previousIdentity.current !== identityKey) {
+    clearAllScrollPositions();
+    previousIdentity.current = identityKey;
+  }
   const primaryRouteId = useMobileNavigationStore(
     (state) => state.primaryRouteId,
   );
   const detailStack = useMobileNavigationStore((state) => state.detailStack);
+  const messagePane = useMobileNavigationStore((state) => state.messagePane);
   const activeOverlay = useMobileNavigationStore((state) => state.overlayRoute);
   const navigatePrimary = useMobileNavigationStore(
     (state) => state.navigatePrimary,
   );
+  const navigateMessages = useMobileNavigationStore((state) => state.navigateMessages);
+  const navigateMoments = useMobileNavigationStore((state) => state.navigateMoments);
+  const setMomentsFeedScope = useMobileNavigationStore((state) => state.setMomentsFeedScope);
   const pushDetail = useMobileNavigationStore((state) => state.pushDetail);
   const popDetail = useMobileNavigationStore((state) => state.popDetail);
   const openOverlay = useMobileNavigationStore((state) => state.openOverlay);
@@ -308,26 +366,13 @@ export function MobileShell(props: MobileShellProps) {
 
   const activeDetail = activeMobileDetailRoute({ detailStack });
   const activeTab = routeIdToTabId(primaryRouteId) ?? 'chat';
-  const renderedTab = detailRouteToTabId(activeDetail) ?? activeTab;
 
   const saveCurrentLocation = useCallback(() => {
     const state = useMobileNavigationStore.getState();
     const detail = activeMobileDetailRoute(state);
-    const locationKey = navigationLocationKey(
-      detail ?? state.primaryRouteId,
-    );
+    const locationKey = detail ? navigationLocationKey(detail) : primaryNavigationLocationKey(state);
     saveScrollPosition(locationKey, contentRef.current);
     saveFocusTarget(locationKey);
-  }, []);
-
-  const restoreLocation = useCallback((
-    route: MobilePrimaryRouteId | MobileDetailRoute,
-  ) => {
-    requestAnimationFrame(() => {
-      const locationKey = navigationLocationKey(route);
-      restoreScrollPosition(locationKey, contentRef.current);
-      restoreFocusTarget(locationKey, contentRef.current);
-    });
   }, []);
 
   const switchTab = useCallback((tabId: TabId) => {
@@ -335,33 +380,46 @@ export function MobileShell(props: MobileShellProps) {
     requestSettingsExit(() => {
       saveCurrentLocation();
       navigatePrimary(routeId);
-      restoreLocation(routeId);
     });
-  }, [navigatePrimary, restoreLocation, saveCurrentLocation]);
+  }, [navigatePrimary, saveCurrentLocation]);
 
   const startConversation = useCallback(() => {
-    const routeId: MobilePrimaryRouteId = 'tab:contacts';
     requestSettingsExit(() => {
       saveCurrentLocation();
-      navigatePrimary(routeId);
-      openOverlay({ routeId: 'overlay:add-friend' });
-      restoreLocation(routeId);
+      pushDetail({ routeId: 'detail:find-people' });
     });
-  }, [navigatePrimary, openOverlay, restoreLocation, saveCurrentLocation]);
+  }, [pushDetail, saveCurrentLocation]);
+
+  const switchMessagePane = useCallback((pane: MobileMessagePaneId) => {
+    saveCurrentLocation();
+    navigateMessages(pane);
+  }, [navigateMessages, saveCurrentLocation]);
+
+  const switchMomentsPane = useCallback((pane: MobileMomentsPaneId, scope?: MobileMomentsFeedScope) => {
+    saveCurrentLocation();
+    navigateMoments(pane);
+    if (scope) setMomentsFeedScope(scope);
+  }, [navigateMoments, saveCurrentLocation, setMomentsFeedScope]);
+
+  const openNotifications = useCallback(() => {
+    requestSettingsExit(() => openOverlay({ routeId: 'overlay:notifications' }));
+  }, [openOverlay]);
+
+  const openMessageOverlay = useCallback((route: MobileOverlayRoute) => {
+    saveCurrentLocation();
+    navigateMessages('contacts');
+    openOverlay(route);
+  }, [navigateMessages, openOverlay, saveCurrentLocation]);
 
   const openDetail = useCallback((route: MobileDetailRoute) => {
     saveCurrentLocation();
     pushDetail(route);
-    restoreLocation(route);
-  }, [pushDetail, restoreLocation, saveCurrentLocation]);
+  }, [pushDetail, saveCurrentLocation]);
 
   const closeDetail = useCallback(() => {
     saveCurrentLocation();
     popDetail();
-    const state = useMobileNavigationStore.getState();
-    const nextRoute = activeMobileDetailRoute(state) ?? state.primaryRouteId;
-    restoreLocation(nextRoute);
-  }, [popDetail, restoreLocation, saveCurrentLocation]);
+  }, [popDetail, saveCurrentLocation]);
 
   const openSearch = useCallback((conversationId = '') => {
     requestSettingsExit(() => {
@@ -383,6 +441,16 @@ export function MobileShell(props: MobileShellProps) {
         requestSettingsExit(closeDetail);
         return;
       }
+      if (state.primaryRouteId === 'tab:chat' && state.messageSearchOpen) {
+        state.setMessageSearchOpen(false);
+        state.setMessageQuery(state.messagePane, '');
+        return;
+      }
+      if (state.primaryRouteId === 'tab:moments' && state.momentsSearchOpen) {
+        state.setMomentsSearchOpen(false);
+        state.setMomentsQuery(state.momentsPane, '');
+        return;
+      }
       void platform.systemActions.execute({ kind: 'return_to_system' })
         .catch(() => undefined);
     }).then((release) => {
@@ -398,60 +466,133 @@ export function MobileShell(props: MobileShellProps) {
     };
   }, [closeDetail, platform]);
 
-  const hideTabbar = activeDetail !== null || momentsImmersive;
+  const hideTabbar = activeDetail !== null || activeOverlay !== null || momentsImmersive;
+  const swipeTabs = useMemo(() => primaryTabDescriptors.map(descriptor =>
+    routeIdToTabId(descriptor.routeId)!,
+  ), []);
+  useMobileTabSwipe({
+    root: contentRef, enabled: !hideTabbar, items: swipeTabs, value: activeTab,
+    onValueChange: switchTab,
+  });
+  const messageHeader = <MessagesHeader
+    pane={messagePane} contactBadge={contactBadge} onPaneChange={switchMessagePane}
+    onOpenOverlay={openMessageOverlay} onFindPeople={startConversation}
+    onGlobalSearch={() => openSearch()} onOpenNotifications={openNotifications} />;
+  const page = (tab: TabId, detail: MobileDetailRoute | null) => (
+    <MobileRouteBoundary routeId={detail?.routeId ?? `tab:${tab}`} onBack={closeDetail}>
+      {renderPage(tab, props, authSession, detail, activeOverlay,
+        startConversation, openDetail, openOverlay, closeOverlay, closeDetail,
+        setMomentsImmersive, openSearch, messagePane, messageHeader,
+        switchMomentsPane, openNotifications)}
+    </MobileRouteBoundary>
+  );
 
   return (
     <div
       className={`mobile-shell ${hideTabbar ? 'tabbar-hidden' : ''}`}
-      data-product-surface={`shell.${activeTab}-tab`}
+      data-product-surface={activeTab === 'chat' && messagePane === 'contacts'
+        ? 'shell.contacts-pane' : `shell.${activeTab}-tab`}
+      data-message-pane={activeTab === 'chat' ? messagePane : undefined}
     >
       <div className="mobile-content" ref={contentRef}>
-        <MobileRouteBoundary
-          routeId={activeDetail?.routeId ?? primaryRouteId}
-          onBack={closeDetail}
-        >
-          {renderPage(
-            renderedTab,
-            props,
-            authSession,
-            activeDetail,
-            activeOverlay,
-            startConversation,
-            openDetail,
-            openOverlay,
-            closeOverlay,
-            closeDetail,
-            setMomentsImmersive,
-            openSearch,
-          )}
-        </MobileRouteBoundary>
+        <MobileNavigationHost key={identityKey}
+          primary={{ key: primaryRouteId,
+            locationKey: primaryNavigationLocationKey(useMobileNavigationStore.getState()),
+            content: page(activeTab, null) }}
+          details={detailStack.map(detail => ({
+            key: navigationLocationKey(detail),
+            content: page(detailRouteToTabId(detail) ?? activeTab, detail),
+          }))} />
       </div>
 
-      {!hideTabbar ? <nav className="mobile-tabbar">
-        {primaryTabDescriptors.map((descriptor) => {
-          const tabId = routeIdToTabId(descriptor.routeId);
-          if (!tabId) return null;
-          const tabIconId = TAB_ICON_MAP[tabId];
-          const isActive = activeTab === tabId;
-          const badgeCount = tabId === 'chat' ? chatBadge : tabId === 'contacts' ? contactBadge : 0;
-          return (
-            <button
-              key={tabId}
-              className={`tabbar-item ${isActive ? 'active' : ''}`}
-              data-route-id={descriptor.routeId}
-              onClick={() => switchTab(tabId)}
-              type="button"
-              aria-pressed={isActive}
-            >
-              <Badge count={badgeCount}>
-                <Icon iconId={tabIconId} size={24} strokeWidth={isActive ? 2.2 : 1.7} />
-              </Badge>
-              <span className="tabbar-label">{t(descriptor.labelKey)}</span>
-            </button>
-          );
+      <div className="mobile-tabbar-host" hidden={hideTabbar}><MobileTabBar
+        value={activeTab}
+        ariaLabel={t('mobile.navigation.primary')}
+        items={primaryTabDescriptors.map((descriptor) => {
+          const id = routeIdToTabId(descriptor.routeId)!;
+          return { id, routeId: descriptor.routeId, label: t(descriptor.labelKey),
+            icon: TAB_ICON_MAP[id], badgeCount: id === 'chat' ? chatBadge + contactBadge : 0 };
         })}
-      </nav> : null}
+        onValueChange={(id) => switchTab(id as TabId)}
+      /></div>
       <MobileCallSurface />
+      <MobileGroupCallSurface />
+      {activeOverlay?.routeId === 'overlay:notifications' ? (
+        <MobileNotificationCenter
+          key={`${authSession?.sessionId}:${authSession?.lifecycleGeneration}`}
+          open
+          onClose={closeOverlay}
+          onOpenDetail={openDetail}
+          onOpenContacts={() => switchMessagePane('contacts')}
+        />
+      ) : null}
     </div>
   );
+}
+
+/** Same header band owns both scopes; searching replaces only its controls. */
+function MessagesHeader({ pane, contactBadge, onPaneChange, onOpenOverlay, onFindPeople, onGlobalSearch, onOpenNotifications }: {
+  pane: MobileMessagePaneId;
+  contactBadge: number;
+  onPaneChange: (pane: MobileMessagePaneId) => void;
+  onOpenOverlay: (route: MobileOverlayRoute) => void;
+  onFindPeople: () => void;
+  onGlobalSearch: () => void;
+  onOpenNotifications: () => void;
+}) {
+  const { t } = useMobileI18n();
+  const searchOpen = useMobileNavigationStore((state) => state.messageSearchOpen);
+  const query = useMobileNavigationStore((state) => state.messageQueries[pane]);
+  const setQuery = useMobileNavigationStore((state) => state.setMessageQuery);
+  const setSearchOpen = useMobileNavigationStore((state) => state.setMessageSearchOpen);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const closeSearch = () => {
+    setQuery(pane, '');
+    setSearchOpen(false);
+    requestAnimationFrame(() => trigger.current?.focus({ preventScroll: true }));
+  };
+  return <header className="mobile-messages-header" data-rail-search={searchOpen ? 'active' : 'idle'}>
+    <h1 className="visually-hidden">{t('mobile.tab.chat')}</h1>
+    {searchOpen ? <>
+      <div className="mobile-messages-search">
+        <TextField appearance="search" reveal density="comfortable"
+          data-focus-id={`messages.search.${pane}`}
+          leading={<Icon iconId="search" size={18} />}
+          value={query} onValueChange={(value) => setQuery(pane, value)}
+          placeholder={t(pane === 'contacts' ? 'mobile.contacts.searchPlaceholder' : 'mobile.chat.searchPlaceholder')}
+          aria-label={t(pane === 'contacts' ? 'mobile.contacts.searchPlaceholder' : 'mobile.chat.searchPlaceholder')}
+          onKeyDown={(event) => { if (event.key === 'Escape') closeSearch(); }} />
+      </div>
+      <Button actionId="messages.search.cancel" emphasis="quiet" density="comfortable" onActivate={closeSearch}>
+        {t('common.action.cancel')}
+      </Button>
+    </> : <>
+      <div className="mobile-messages-scopes">
+        <Segmented<MobileMessagePaneId> label={t('mobile.messages.scope')} density="comfortable"
+          value={pane} onValueChange={(value) => { if (value) onPaneChange(value); }}
+          options={[
+            { value: 'chats', label: t('mobile.chat.title'),
+              attributes: { 'data-message-pane-target': 'chats' } as React.HTMLAttributes<HTMLButtonElement> },
+            { value: 'contacts', label: <Badge count={contactBadge}>{t('mobile.tab.contacts')}</Badge>,
+              attributes: { 'data-message-pane-target': 'contacts' } as React.HTMLAttributes<HTMLButtonElement> },
+          ]} />
+      </div>
+      <IconButton ref={trigger} actionId="messages.search.open" iconId="search" iconSize={19}
+        label={t('search.label')} emphasis="quiet" density="comfortable" data-focus-id="messages.search.open"
+        onActivate={() => setSearchOpen(true)} />
+      <Menu placement="bottom" actions={[
+        { id: 'messages.add-friend', label: t('mobile.contacts.findPeople'), leading: <Icon iconId="user-plus" size={18} />,
+          onActivate: onFindPeople },
+        { id: 'messages.create-group', label: t('mobile.group.create'), leading: <Icon iconId="users" size={18} />,
+          onActivate: () => onOpenOverlay({ routeId: 'overlay:create-group' }) },
+        { id: 'messages.global-search', label: t('mobile.search.global'), leading: <Icon iconId="search" size={18} />,
+          onActivate: onGlobalSearch },
+        { id: 'messages.notifications', label: t('mobile.notifications.title'), leading: <Icon iconId="bell" size={18} />,
+          onActivate: onOpenNotifications },
+      ]}>
+        <IconButton actionId="messages.new" iconId="plus" iconSize={22} label={t('mobile.chat.startConversation')}
+          emphasis="quiet" density="comfortable" />
+      </Menu>
+    </>}
+  </header>;
 }

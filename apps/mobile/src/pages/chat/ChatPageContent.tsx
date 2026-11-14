@@ -62,6 +62,7 @@ interface ChatConversationListPageContentProps {
   readonly onStartConversation: () => void;
   readonly onOpenConversation: (conversation: MobileConversation) => void;
   readonly searchEntry?: ReactNode;
+  readonly listHeader?: ReactNode;
 }
 
 export function ChatConversationListPageContent({
@@ -79,6 +80,7 @@ export function ChatConversationListPageContent({
   onStartConversation,
   onOpenConversation,
   searchEntry,
+  listHeader,
 }: ChatConversationListPageContentProps) {
   const { t } = useMobileI18n();
   const productSurface = loading && items.length === 0
@@ -95,7 +97,7 @@ export function ChatConversationListPageContent({
 
   return (
     <div className="page-container" data-product-surface={productSurface}>
-      <header className="page-header">
+      {listHeader ?? <><header className="page-header">
         <h1 className="header-title">{t('mobile.chat.title')}</h1>
         {searchEntry}
         <button
@@ -110,6 +112,7 @@ export function ChatConversationListPageContent({
 
       <div className="chat-search-bar">
         <TextField
+          appearance="search"
           className="chat-search-field"
           value={query}
           onValueChange={onQueryChange}
@@ -120,6 +123,7 @@ export function ChatConversationListPageContent({
           aria-label={t('mobile.chat.searchPlaceholder')}
         />
       </div>
+      </>}
 
       {localError ? <MobileNotice onClose={onDismissLocalError}>{localError}</MobileNotice> : null}
       {socialError ? <MobileNotice onClose={onDismissSocialError}>{socialError}</MobileNotice> : null}

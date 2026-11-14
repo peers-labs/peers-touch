@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { KeyRound, RefreshCw } from 'lucide-react';
+import { restoreNavigationFocus } from '@peers-touch/ui';
 
 type RecoveryFailureKind = 'no-backup' | 'generic';
 type BackupCheckState =
@@ -52,7 +53,7 @@ export function ActorIdentityRecoveryOverlay({
     primaryActionRef.current?.focus();
     return () => {
       if (previousFocus instanceof HTMLElement && previousFocus.isConnected) {
-        previousFocus.focus();
+        restoreNavigationFocus(previousFocus);
       }
     };
   }, []);

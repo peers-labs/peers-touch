@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 import type { DismissReason, MenuAction, OverlayPlacement } from '@peers-touch/ui-contracts';
 import { nextEnabledIndex, asActionTone } from '@peers-touch/ui-semantics';
 import { useOverlayHost } from './provider';
+import { useInputFocusPolicy } from './focus';
 
 /** Re-exported so consumers can type menu action arrays from the package entry
  *  without taking a direct dependency on @peers-touch/ui-contracts. */
@@ -62,7 +63,7 @@ function fixedContainingBlock(el: HTMLElement, win: Window): { x: number; y: num
   }
   return { x: 0, y: 0, w: win.innerWidth, h: win.innerHeight };
 }
-interface OverlayLayerProps {
+interface OverlayLayerProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children' | 'inputMode'> {
   children: ReactNode;
   open: boolean;
   kind: 'tooltip' | 'popover' | 'menu' | 'dialog' | 'drawer' | 'sheet';
@@ -80,9 +81,10 @@ interface OverlayLayerProps {
 }
 function OverlayLayer({
   children, open, kind, anchor, anchorPoint, placement = 'bottom', inputMode = 'keyboard', onDismiss,
-  label, labelledBy, describedBy, className = '', style, dismissOutside = true,
+  label, labelledBy, describedBy, className = '', style, dismissOutside = true, ...rootAttributes
 }: OverlayLayerProps) {
   const host = useOverlayHost();
+  const inputFocus = useInputFocusPolicy();
   const id = useId();
   const root = useRef<HTMLDivElement>(null);
   const dismiss = useRef(onDismiss);
@@ -151,7 +153,9 @@ function OverlayLayer({
     win.addEventListener('resize', positionPopup);
     doc.addEventListener('scroll', positionPopup, true);
     if (kind !== 'tooltip' && (modal || inputMode === 'keyboard')) {
-      (root.current?.querySelector<HTMLElement>('[autofocus]') ??
+      (inputFocus === 'explicit' && modal ? root.current :
+        root.current?.querySelector<HTMLElement>('[autofocus]') ??
+        (kind === 'sheet' ? root.current : null) ??
         (modal ? root.current?.querySelector<HTMLElement>('input:not(:disabled),textarea:not(:disabled),select:not(:disabled)') : null) ??
         root.current?.querySelector<HTMLElement>(focusable) ?? root.current)?.focus();
     }
@@ -183,9 +187,9 @@ function OverlayLayer({
       doc.removeEventListener('pointerdown', pointerdown, true);
       if (kind !== 'tooltip' && previous?.isConnected && (modal || inputMode === 'keyboard')) host.restoreFocus(previous);
     };
-  }, [open, host, id, modal, anchor, anchorPoint, placement, kind, inputMode, dismissOutside]);
+  }, [open, host, id, modal, anchor, anchorPoint, placement, kind, inputMode, inputFocus, dismissOutside]);
   if (!open || !host.element) return null;
-  const content = <div ref={root} id={id} className={`pt-overlay pt-${kind} ${className}`}
+  const content = <div {...rootAttributes} ref={root} id={id} className={`pt-overlay pt-${kind} ${className}`}
     data-placement={placement}
     role={modal ? 'dialog' : kind === 'menu' ? 'menu' : kind === 'tooltip' ? 'tooltip' : undefined}
     aria-modal={modal || undefined} aria-label={label} aria-labelledby={labelledBy} aria-describedby={describedBy}
@@ -371,7 +375,7 @@ export interface BottomSheetAction {
   availability?: import('@peers-touch/ui-contracts').Availability;
   onActivate: () => void;
 }
-export interface BottomSheetProps {
+export interface BottomSheetProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title' | 'inputMode'> {
   open: boolean;
   onDismiss: (reason: DismissReason) => void;
   title: ReactNode;
@@ -381,10 +385,10 @@ export interface BottomSheetProps {
   label?: string;
   className?: string;
 }
-export function BottomSheet({ open, onDismiss, title, children, actions, label, className = '' }: BottomSheetProps) {
+export function BottomSheet({ open, onDismiss, title, children, actions, label, className = '', ...rootAttributes }: BottomSheetProps) {
   const titleId = useId();
   return (
-    <OverlayLayer open={open} kind="sheet" labelledBy={titleId}
+    <OverlayLayer {...rootAttributes} open={open} kind="sheet" labelledBy={titleId}
       className={`pt-bottom-sheet ${className}`} onDismiss={onDismiss} label={label}>
       <span className="pt-sheet-grip" aria-hidden="true" />
       <h2 id={titleId} className="pt-sheet-title">{title}</h2>

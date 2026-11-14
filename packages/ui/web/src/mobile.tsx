@@ -133,6 +133,7 @@ export function MobileNavBar({ title, onBack, backLabel, actions, className = ''
  * desktop rail badge. */
 export interface MobileTabItem {
   id: string;
+  routeId?: string;
   label: string;
   icon: IconId;
   badgeCount?: number;
@@ -153,6 +154,7 @@ export function MobileTabBar({ items, value, onValueChange, ariaLabel = '主导�
             <Badge count={item.badgeCount} tone="danger" showZero={false}>
               <IconButton actionId={`mobile.tab.${item.id}`} iconId={item.icon} iconSize={24}
                 label={item.label} emphasis="quiet" aria-current={active ? 'page' : undefined}
+              data-route-id={item.routeId}
                 data-tab-active={active || undefined}
                 onActivate={() => onValueChange(item.id)} />
             </Badge>

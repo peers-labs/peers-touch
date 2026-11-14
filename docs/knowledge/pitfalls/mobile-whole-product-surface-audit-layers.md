@@ -5,11 +5,18 @@ status: active
 owns:
   - tooling/acceptance/gates/mobile/simulator_whole_product_usability_e2e.py
   - tooling/acceptance/gates/mobile/simulator_whole_product_usability_e2e_test.py
+  - tooling/acceptance/gates/mobile/surface_audit.py
+  - tooling/acceptance/gates/mobile/surface_audit_test.py
   - packages/ui/web/src/selection.tsx
   - packages/ui/web/src/styles.css
   - apps/mobile/src/components/recovery/RecoveryOverlayHost.tsx
   - apps/mobile/src/pages/contacts/ContactsAcceptanceSurface.tsx
   - apps/mobile/src/styles.css
+  - apps/mobile/src/pages/contacts/FindPeopleSurface.tsx
+  - apps/mobile/src/acceptance/debug/
+  - apps/mobile/src/app/installMobileWebGuards.ts
+  - apps/mobile/src/pages/chat/ChatAcceptanceSurface.tsx
+  - apps/mobile/src/pages/chat/ChatOverlayHost.tsx
 referenced-by: []
 related:
   - docs/knowledge/pitfalls/mobile-parity-design-system-selector-drift.md
@@ -92,6 +99,39 @@ neutralizes its `pointer-events` while measuring and skips the toggle itself,
 then restores hit-testing. Never hide the defect by moving the product
 control; the overlay is test infrastructure.
 
+The retained Chat list and active detail both subscribe to the fixture state.
+A fixture overlay must render only on its matching, visible route; otherwise
+both pages portal the same modal into the shared UI host, and the later scrim
+occludes the first modal's controls. `ChatPage` checks the page lifetime and
+list/direct/group route kind before rendering the selected fixture.
+
+Place a BottomSheet's surface attributes on its dialog root through the
+primitive's HTML attribute API. Its body may be taller than the viewport while
+the dialog remains bounded and scrollable; measuring that content body as the
+surface incorrectly reports clipping. The browser lifetime owner checks one
+modal, dialog containment, actual touch scrolling to the last action, dismissal
+and no automatic editing focus. The native inventory must still be rerun.
+
+Chat loading/empty/search-empty markers exclude the retained Messages header.
+Their control scope includes the page, just like launch notices, so search and
+new-conversation actions remain part of the usability audit.
+
+The diagnostic panel itself must remain usable. Its old fixed right drawer
+placed a small close button in the system safe area and let the flex log body
+grow beyond the clipped application. It now composes the shared bottom Drawer:
+the primitive owns dismissal, focus and the shrinking scroll body; the app
+provides diagnostics and safe-area geometry. The launcher no longer overlaps
+bottom navigation.
+
+The same touch regression exposed a global `touchend` handler that cancelled
+every second touch within 300ms, swallowing a rapid open/close sequence. Delete
+that double-tap handler; retain CSS `touch-action: manipulation` and the pinch
+gesture guard. The existing browser lifetime owner loads the actual guards and
+Debug component, checks rapid touch close, real touch scrolling, fixed close
+geometry, outside/Escape dismissal and restored underlying actions at narrow
+portrait and landscape sizes. Native Debug controls are exercised by the
+original whole-product Gate before the full inventory walk.
+
 ### Flex centering clips bottom actions in short landscape viewports
 
 An overlay taller than a landscape viewport, combined with
@@ -113,6 +153,62 @@ evidence-backed assertions via `self.assert_condition(...)` and bind
 restate conditions already validated against captured evidence, never
 hard-coded `True`.
 
+### Keyboard captures require an actual native keyboard
+
+The 2026-11-14 run stopped at `chat.list-search` because the collector allowed
+height contraction only for the message composer. Chat and Contacts searches
+also focus native text fields. Their entry actions now touch the native field
+and wait for the keyboard before capture. Height contraction is accepted only
+for these declared input actions, with unchanged width, positive integer
+height, a real native keyboard and a text field above it. Width drift, height
+growth, missing keyboard and occluded input remain failures.
+
+Capture screenshot, redacted DOM/accessibility and `capture-observation.json`
+before checking findings. A failed surface must retain both expected and actual
+geometry; no interaction PASS artifact is emitted for the failure.
+
+Keyboard activation can fail before normal capture begins. The original
+inventory owner also captures entry failures: native screenshot/AX, DOM and
+active-input/layout/visual-viewport geometry, then rethrows the original error.
+Never clear the application before saving that failed native state.
+
+The subsequent landscape search run reported `textFieldBottom=105` and
+`keyboardTop=75`, although its screenshot showed the complete input above the
+keyboard. The application/text field were in landscape coordinates
+(`874x402`, input `y=65,height=40`); the entire keyboard subtree retained
+portrait coordinates (`x=2,y=75,width=162,height=724`).
+The installed WDA maps `LANDSCAPE` to landscape-left. The shared keyboard audit
+normalizes a keyboard rectangle only when it escapes the landscape bounds but
+fits the corresponding portrait bounds: `(x,y,w,h)` becomes
+`(y,screenHeight-x-w,h,w)`. That observation becomes
+`x=75,y=238,width=724,height=162`, matching the native screenshot.
+Retain raw and normalized rectangles plus the coordinate-space decision in
+the audit evidence. Already landscape-shaped keyboard bounds remain unchanged.
+Regression checks must reject both a field below the normalized keyboard top
+and a genuine application-coordinate keyboard at `y=75`; normalization must
+not waive actual input occlusion.
+
+The next run reached `contacts.add-friend-empty` but its shared search field
+was read-only in `ContactsFixturePeople`, so iOS correctly withheld the keyboard.
+Fixture result states may be deterministic, but their input must remain editable
+like the live page. The shared Find People surface no longer exposes a fixture
+read-only switch; the Contacts render regression checks every declared people
+state for an enabled, editable input. Keep the native keyboard requirement.
+
+### Station rows must compose inside the Button content container
+
+`station-entry-main` and `station-suggestion` put the Button's single content
+container into an 18px grid column. The saved Station name measured 0px wide
+and its status escaped the button. Remove those outer icon-column grids and
+use the primitive's flex content with the app-owned flexible label slot.
+Never override `.pt-button-content` in app CSS.
+
+`apps/mobile/scripts/check-navigation-lifetime.mjs` renders the actual
+StationSelector with saved/recommended Stations, short/long names, narrow
+portrait and landscape viewports, and 1.35x text. It checks readable label
+width, trailing status containment, icon size and touch targets. This browser
+regression is component evidence; repeat the native inventory for product proof.
+
 ## Triage recipe
 
 1. Read `mobile-whole-product/surface-evidence.json` — `findings[]` names the
@@ -126,6 +222,12 @@ hard-coded `True`.
 4. Each viewport cell (`portrait-normal`, `portrait-maximum-text`,
    `landscape-normal`) is captured independently; maximum-text runs the
    1.35x font scaling and exposes clipping that normal text size hides.
+   Reapply the selected size after entering every surface: fixtures and
+   navigation replace DOM nodes after the cell is configured. Restore all
+   previously scaled inline styles first, measure every baseline before any
+   write, then scale. Otherwise later surfaces remain at normal size or
+   inherited/repeated multipliers compound. A maximum-text capture with no
+   scalable content must fail before collecting its evidence.
 
 ## How to detect a recurrence
 

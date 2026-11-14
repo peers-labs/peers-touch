@@ -103,7 +103,7 @@ export function DeviceLinkScreen() {
           {context}
           {phase !== 'failed' && !needsNewComparison ? (
             <div className="mobile-device-link-progress" role="status">
-              <Spin size="small" />
+              <Spin active size="small" />
               <Text>{t(progressKey)}</Text>
             </div>
           ) : null}

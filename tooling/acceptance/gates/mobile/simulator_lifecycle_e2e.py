@@ -151,6 +151,7 @@ def validate_navigation_projection(
 ) -> dict[str, Any]:
     if not isinstance(value, dict) or set(value) != {
         "primaryRouteId",
+        "messagePane",
         "detailKeys",
         "overlayRouteId",
     }:
@@ -164,6 +165,8 @@ def validate_navigation_projection(
         raise GateError("Mobile navigation projection contains sensitive data")
     if value["primaryRouteId"] != primary_route_id:
         raise GateError("Mobile primary navigation route is inconsistent")
+    if value["messagePane"] not in {"chats", "contacts"}:
+        raise GateError("Mobile message pane is inconsistent")
     if value["detailKeys"] != detail_keys:
         raise GateError("Mobile detail navigation stack is inconsistent")
     if value["overlayRouteId"] != overlay_route_id:
@@ -292,9 +295,12 @@ class SimulatorRuntimeLifecycleGate(
                 {
                     "name": f"{prefix}:descriptor-navigation-routes-primary-and-overlay",
                     "passed": navigation.get("contacts", {}).get("primaryRouteId")
-                    == "tab:contacts"
+                    == "tab:chat"
+                    and navigation.get("contacts", {}).get("messagePane") == "contacts"
+                    and navigation.get("findPeople", {}).get("detailKeys")
+                    == ["detail:find-people"]
                     and navigation.get("findPeople", {}).get("overlayRouteId")
-                    == "overlay:add-friend"
+                    is None
                     and navigation.get("createGroup", {}).get("overlayRouteId")
                     == "overlay:create-group"
                     and navigation.get("overlayClosed", {}).get("overlayRouteId")
@@ -455,9 +461,9 @@ class SimulatorRuntimeLifecycleGate(
             "contacts": validate_navigation_projection(
                 session.call_action(
                     "navigation.apply",
-                    {"kind": "primary", "routeId": "tab:contacts"},
+                    {"kind": "messages", "pane": "contacts"},
                 ),
-                primary_route_id="tab:contacts",
+                primary_route_id="tab:chat",
                 detail_keys=[],
                 overlay_route_id=None,
             ),
@@ -465,13 +471,19 @@ class SimulatorRuntimeLifecycleGate(
                 session.call_action(
                     "navigation.apply",
                     {
-                        "kind": "overlay.open",
-                        "route": {"routeId": "overlay:add-friend"},
+                        "kind": "detail.push",
+                        "route": {"routeId": "detail:find-people"},
                     },
                 ),
-                primary_route_id="tab:contacts",
+                primary_route_id="tab:chat",
+                detail_keys=["detail:find-people"],
+                overlay_route_id=None,
+            ),
+            "peopleClosed": validate_navigation_projection(
+                session.call_action("navigation.apply", {"kind": "detail.pop"}),
+                primary_route_id="tab:chat",
                 detail_keys=[],
-                overlay_route_id="overlay:add-friend",
+                overlay_route_id=None,
             ),
             "createGroup": validate_navigation_projection(
                 session.call_action(
@@ -481,7 +493,7 @@ class SimulatorRuntimeLifecycleGate(
                         "route": {"routeId": "overlay:create-group"},
                     },
                 ),
-                primary_route_id="tab:contacts",
+                primary_route_id="tab:chat",
                 detail_keys=[],
                 overlay_route_id="overlay:create-group",
             ),
@@ -490,7 +502,7 @@ class SimulatorRuntimeLifecycleGate(
                     "navigation.apply",
                     {"kind": "overlay.close"},
                 ),
-                primary_route_id="tab:contacts",
+                primary_route_id="tab:chat",
                 detail_keys=[],
                 overlay_route_id=None,
             ),
@@ -533,7 +545,7 @@ class SimulatorRuntimeLifecycleGate(
                     "navigation.apply",
                     {"kind": "detail.push", "route": route},
                 ),
-                primary_route_id="tab:contacts",
+                primary_route_id="tab:chat",
                 detail_keys=expected_keys,
                 overlay_route_id=None,
             )
@@ -542,7 +554,7 @@ class SimulatorRuntimeLifecycleGate(
                 "navigation.apply",
                 {"kind": "detail.pop"},
             ),
-            primary_route_id="tab:contacts",
+            primary_route_id="tab:chat",
             detail_keys=[
                 "detail:contact-profile:ptid:acceptance-contact",
                 "detail:setting:privacy-security",

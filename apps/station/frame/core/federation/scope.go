@@ -41,7 +41,8 @@ const (
 	// RealtimeCallResolutionScope authenticates caller readback at the callee Home Station.
 	RealtimeCallResolutionScope = "realtime-call-resolution-read"
 	// GroupCallAuthorityJoinScope authenticates Conversation Authority token issuance.
-	GroupCallAuthorityJoinScope = "group-call-authority-join"
+	GroupCallAuthorityJoinScope   = "group-call-authority-join"
+	GroupCallEndpointControlScope = "group-call-endpoint-control"
 	// SocialPrivateObjectReadScope authenticates one bounded private-object range read.
 	SocialPrivateObjectReadScope = "social-private-object-read"
 
@@ -318,6 +319,18 @@ var peerScopes = []scope.Scope{
 				ClaimAuthorityEpoch,
 				ClaimSourceStationPeerID,
 				ClaimTargetStationPeerID,
+				ClaimCanonicalRequestSHA256,
+			},
+		},
+	},
+	{
+		Name:        GroupCallEndpointControlScope,
+		Description: "check Home endpoint authorization or confirm Authority media ejection",
+		Policy: scope.Policy{
+			TTLMax: time.Minute, AudienceRequired: true,
+			AllowedClaimKeys: []string{
+				ClaimActorPTID, ClaimCanonicalRequestSHA256,
+				ClaimSourceStationPeerID, ClaimTargetStationPeerID,
 			},
 		},
 	},

@@ -31,11 +31,11 @@ def assert_surface(page: Page, expected: str) -> dict:
           const device = document.querySelector('.mp-device-screen');
           if (!surface || !device) return null;
           const a = surface.getBoundingClientRect(), d = device.getBoundingClientRect();
-          const controls = [...surface.querySelectorAll('.ma-call-btn')].map(tile => {
-            const icon = tile.querySelector('.ma-call-btn-icon').getBoundingClientRect();
-            const label = tile.querySelector('.ma-call-btn-label').getBoundingClientRect();
+          const controls = [...surface.querySelectorAll('.pt-call-control')].map(tile => {
+            const icon = tile.querySelector('.pt-call-control-button').getBoundingClientRect();
+            const label = tile.querySelector('.pt-call-control-label').getBoundingClientRect();
             return {
-              label: tile.querySelector('.ma-call-btn-icon').getAttribute('aria-label'),
+              label: tile.querySelector('.pt-call-control-button').getAttribute('aria-label'),
               width: icon.width, height: icon.height,
               // Every dial tile, including its caption, must clear the device
               // screen bottom edge — a clipped 挂断/静音 tile is the regression

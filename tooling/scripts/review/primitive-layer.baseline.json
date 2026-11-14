@@ -697,32 +697,22 @@
       ".pt-button",
       ".pt-button",
       ".pt-button",
-      ".pt-button",
       ".pt-button-content",
       ".pt-button-content",
       ".pt-button-content",
       ".pt-button-content",
-      ".pt-button-content",
-      ".pt-field-frame",
-      ".pt-field-frame",
-      ".pt-field-frame",
-      ".pt-field-frame",
       ".pt-field-frame",
       ".pt-field-frame",
       ".pt-icon-button",
       ".pt-icon-button",
       ".pt-icon-button",
       ".pt-icon-button",
-      ".pt-icon-button",
-      ".pt-input",
-      ".pt-input",
       ".pt-input",
       ".pt-list-section",
       ".pt-list-section",
       ".pt-list-section",
       ".pt-mobile-statusbar",
-      ".pt-mobile-tabbar",
-      ".pt-textarea"
+      ".pt-mobile-tabbar"
     ],
     "packages/prototypes/mobile/chat/src/mobilePrototype.css": [
       ".pt-select"
@@ -907,11 +897,6 @@
     "packages/prototypes/portal/src/App.tsx": [
       "classList",
       "classList"
-    ],
-    "packages/prototypes/shared/ui-system/chat/ChatComposer.tsx": [
-      "style.height",
-      "style.height",
-      "style.overflowY"
     ]
   }
 }

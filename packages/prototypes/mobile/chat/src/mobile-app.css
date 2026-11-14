@@ -10,16 +10,18 @@
 
 .ma-body{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 
+.ma-navigation-frame{display:flex;flex:1;min-height:0;flex-direction:column;overflow:hidden}
+.ma-tabbar-host{flex:0 0 auto}
+.ma-tabbar-host[hidden]{display:none}
+
 .ma-page{flex:1;min-height:0;display:flex;flex-direction:column;overflow-y:auto}
 
-.ma-rail-header{flex-shrink:0;display:flex;align-items:center;gap:8px;height:52px;box-sizing:border-box;padding:10px 14px 6px}
+.ma-rail-header{flex-shrink:0;display:flex;align-items:center;gap:8px;min-height:52px;box-sizing:border-box;padding:0 14px}
 
-/* Rail header: the surface title is the PRIMARY group; the auto margin pushes
-   the fixed-width tool tiles (search/＋) to the right edge (主在前，次靠右).
-   Matches the real mobile page-header typography. */
-.ma-rail-title{flex:1 1 auto;min-width:0;margin:0;font-size:17px;font-weight:600;
-  letter-spacing:0;color:var(--pt-text);text-align:start;white-space:nowrap;
-  overflow:hidden;text-overflow:ellipsis}
+/* Messages scopes lead the row; the elastic gap pushes search/＋ to the
+   right. Segmented owns control appearance and keyboard/touch behavior. */
+.ma-rail-tabs{flex:0 0 auto;min-width:0;margin-right:auto}
+.ma-subnav-label{display:inline-flex;align-items:center;gap:5px}
 
 .ma-rail-icon-tile,.ma-rail-icon-tile:hover,.ma-rail-icon-tile:active{border-color:transparent;background:transparent}
 
@@ -27,23 +29,12 @@
 
 .ma-rail-icon-tile:hover{color:var(--pt-text);background:var(--pt-subtle)}
 
-.ma-rail-search{flex:1 1 auto;min-width:0;display:flex;animation:ma-rail-search-in .16s cubic-bezier(.22,1,.36,1)}
-
-@keyframes ma-rail-search-in{0%{opacity:0;transform:translate(6px)}to{opacity:1;transform:none}}
-
-.ma-rail-search .pt-field-frame{flex:1;min-width:0;height:34px;min-height:34px;border-radius:var(--pt-radius-md)}
-
-.ma-rail-search .pt-input{min-height:0;height:24px;padding:0;font-size:13px}
+.ma-rail-search{flex:1 1 auto;min-width:0;display:grid}
 
 /* One cancel affordance per active search: a borderless text button (iOS
    grammar). The in-field clearable ✕ is removed so two identical crosses never
    sit side by side; cancel clears the query and exits the search row. */
-.ma-search-cancel{flex:0 0 auto;min-height:34px;padding:0 6px;border-color:transparent;background:transparent;color:var(--pt-secondary);font-size:14px;box-shadow:none}
-.ma-search-cancel:hover,.ma-search-cancel:active{border-color:transparent;background:var(--pt-subtle);color:var(--pt-text)}
-
-@media(prefers-reduced-motion:reduce){.ma-rail-search{animation:none}}
-
-.ma-rail-search{animation:none}
+.ma-search-cancel{flex:0 0 auto}
 
 .ma-contacts{flex:1;min-height:0;overflow-y:auto}
 
@@ -152,11 +143,9 @@
    all live inside it (no separately outlined input — that read as a clipped
    second box). The zone keeps the stream's top rule and the bottom safe area. */
 .ma-composer{
-  flex-shrink:0;min-width:0;display:flex;align-items:flex-end;gap:6px;
+  flex-shrink:0;min-width:0;
   margin:8px 10px calc(8px + env(safe-area-inset-bottom));
-  padding:7px 6px;border-radius:16px;background:var(--pt-subtle);
 }
-.ma-composer:focus-within{box-shadow:0 0 0 2px color-mix(in srgb,var(--pt-primary) 30%,transparent)}
 
 .ma-composer-tools{flex:0 0 auto;display:inline-flex;align-items:center;gap:1px;align-self:flex-end}
 
@@ -164,22 +153,6 @@
    The wrap is a <span>, so it must become a flex item/container itself or its
    flex:1 is ignored (inline boxes don't flex). */
 .ma-composer-input-wrap{flex:1 1 auto;min-width:0;display:flex;align-items:flex-end}
-.ma-composer .pt-field-frame{flex:1 1 auto;min-width:0;background:transparent;border:0;box-shadow:none;padding:0}
-.ma-composer .pt-field-frame:focus-within{box-shadow:none}
-.ma-composer .pt-textarea{
-  display:block;width:100%;
-  background:transparent;border:0;outline:0;resize:none;
-  font-family:inherit;font-size:14px;line-height:1.5;color:var(--pt-text);text-align:start;
-  min-height:0;max-height:none;
-  height:var(--ma-composer-height, auto);
-  overflow-y:var(--ma-composer-overflow, hidden);
-  padding:4px 2px;
-}
-.ma-composer textarea:focus-visible{outline:none}
-/* Send is a squircle, never a circle — circles are the small tool glyphs. */
-.ma-composer [data-action-id='ma.send'].pt-icon-button{
-  flex-shrink:0;align-self:flex-end;width:36px;height:36px;border-radius:12px;
-}
 
 .ma-sr-file{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 
@@ -324,7 +297,7 @@
 
 .ma-moments-page{overflow:hidden}
 
-.ma-moments-subbar{flex-shrink:0;display:flex;align-items:center;gap:8px;padding:8px 10px 10px;flex-wrap:nowrap}
+.ma-moments-subbar{flex-shrink:0;display:flex;align-items:center;gap:8px;min-height:62px;box-sizing:border-box;padding:8px 10px 10px;flex-wrap:nowrap}
 
 /* Primary nav never shrinks/wraps (主在前). */
 .ma-scope-island{flex:0 0 auto}
@@ -337,10 +310,7 @@
 /* Active search REPLACES the whole row — same grammar as the chat rail morph:
    the field fills every pixel except the fixed close tile, so it never sits
    in a narrow slot beside the segmented and ＋. */
-.ma-subbar-search{flex:1 1 auto;min-width:0;display:flex;animation:ma-rail-search-in .16s cubic-bezier(.22,1,.36,1)}
-.ma-subbar-search .pt-field-frame{flex:1;min-width:0;height:34px;min-height:34px}
-.ma-subbar-search .pt-input{min-height:0;height:24px;padding:0;font-size:13px}
-@media(prefers-reduced-motion:reduce){.ma-subbar-search{animation:none}}
+.ma-subbar-search{flex:1 1 auto;min-width:0;display:grid}
 
 .ma-subbar-add{flex-shrink:0;width:36px;height:36px;border-color:transparent;background:transparent;color:var(--pt-secondary)}
 
@@ -543,17 +513,21 @@
 
 .ma-call-controls{flex:0 0 auto;display:flex;align-items:flex-start;justify-content:center;gap:32px;width:100%}
 
-.ma-call-btn{color:inherit;display:flex;flex-direction:column;align-items:center;gap:10px}
 
-.ma-call-btn-icon{width:64px;height:64px;min-height:64px;border-radius:999px;display:grid;place-items:center;background:#ffffff24}
 
-.ma-call-btn-label{font-size:12.5px;color:var(--pt-mediaStageText)}
 
-.ma-call-btn.is-danger .ma-call-btn-icon{background:var(--pt-danger)}
 
-.ma-call-btn.is-selected .ma-call-btn-icon{background:var(--pt-white);color:var(--pt-mediaStage)}
 
 .ma-detail-body{flex:1;min-height:0;overflow-y:auto}
+
+.ma-find-people{overflow:hidden}
+.ma-find-people-controls{flex:0 0 auto;display:flex;flex-direction:column;gap:12px;padding:12px 16px 16px;border-bottom:1px solid var(--pt-border)}
+.ma-find-people-search{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px}
+.ma-find-people-results{flex:1;min-height:0;overflow-y:auto;padding:0 16px 16px}
+.ma-find-people-row{display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:12px;padding:16px 0;border-bottom:1px solid var(--pt-border)}
+.ma-find-people-copy{min-width:0;display:flex;flex-direction:column;gap:4px}
+.ma-find-people-copy>*{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ma-find-people-copy>span{color:var(--pt-secondary);font-size:13px}
 
 .ma-detail-hero{display:flex;flex-direction:column;align-items:center;gap:6px;padding:22px 16px 16px}
 

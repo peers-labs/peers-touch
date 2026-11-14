@@ -705,6 +705,9 @@ importers:
       linkedom:
         specifier: 0.18.12
         version: 0.18.12
+      livekit-client:
+        specifier: 2.22.3
+        version: 2.22.3(@types/dom-mediacapture-record@1.0.22)
       pdfjs-dist:
         specifier: 6.4.299
         version: 6.4.299

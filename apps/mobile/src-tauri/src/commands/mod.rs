@@ -34,6 +34,9 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
         crate::messaging::commands::messaging_activate,
         crate::messaging::commands::messaging_attachment_stage_begin,
         crate::messaging::commands::messaging_attachment_stage_complete,
+        crate::messaging::commands::messaging_attachment_stage_restore,
+        crate::messaging::commands::messaging_attachment_composer_recover,
+        crate::messaging::commands::messaging_attachment_stage_preview_release,
         crate::messaging::commands::messaging_attachment_stage_discard,
         crate::messaging::commands::messaging_attachment_stage_write,
         crate::messaging::commands::messaging_call_signal_open,
@@ -180,6 +183,10 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
         platform_bridge::media_pick,
         platform_bridge::moment_media_upload,
         platform_bridge::moment_media_discard,
+        platform_bridge::profile_image_preview,
+        platform_bridge::profile_image_upload,
+        platform_bridge::profile_image_discard,
+        platform_bridge::profile_image_preview_release,
     ]
 }
 
@@ -208,6 +215,9 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
         crate::messaging::commands::messaging_activate,
         crate::messaging::commands::messaging_attachment_stage_begin,
         crate::messaging::commands::messaging_attachment_stage_complete,
+        crate::messaging::commands::messaging_attachment_stage_restore,
+        crate::messaging::commands::messaging_attachment_composer_recover,
+        crate::messaging::commands::messaging_attachment_stage_preview_release,
         crate::messaging::commands::messaging_attachment_stage_discard,
         crate::messaging::commands::messaging_attachment_stage_write,
         crate::messaging::commands::messaging_call_signal_open,
@@ -363,5 +373,9 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
         platform_bridge::media_pick,
         platform_bridge::moment_media_upload,
         platform_bridge::moment_media_discard,
+        platform_bridge::profile_image_preview,
+        platform_bridge::profile_image_upload,
+        platform_bridge::profile_image_discard,
+        platform_bridge::profile_image_preview_release,
     ]
 }

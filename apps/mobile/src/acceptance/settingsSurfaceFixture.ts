@@ -7,6 +7,7 @@ export const SETTINGS_SURFACE_FIXTURE_IDS = [
   'settings.summary-loading',
   'settings.summary-error',
   'settings.account-info',
+  'settings.credentials',
   'settings.notifications',
   'settings.privacy-security',
   'settings.safety-number',
@@ -54,6 +55,7 @@ const DIRECT_DETAIL_IDS: Partial<
   Record<SettingsSurfaceFixtureId, MobileSettingDetailId>
 > = {
   'settings.account-info': 'account-info',
+  'settings.credentials': 'credentials',
   'settings.notifications': 'notifications',
   'settings.privacy-security': 'privacy-security',
   'settings.safety-number': 'safety-number',

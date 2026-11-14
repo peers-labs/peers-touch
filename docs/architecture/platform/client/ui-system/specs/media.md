@@ -10,6 +10,17 @@
 - [QrCode](#ui.spec.qrcode)
 - [VideoPlayer](#ui.spec.video)
 - [AudioPlayer](#ui.spec.audioplayer)
+- [CallControl](#ui.spec.call-control)
+
+<a id="ui.spec.call-control"></a>
+## CallControl
+
+合同 ID：`ui.spec.call-control`。通话媒体控制复用 IconButton 的执行、禁用原因、
+键盘焦点和 accessible label。共享控件拥有 64px 圆形目标、10px caption gap、
+media-stage 中性/危险/选中外观。Caption 是装饰文本，不产生第二个交互目标。
+selected 只消费已确认媒体状态；permission 和 cleanup pending 由通话 owner 提供。
+业务页面与原型不再为通话按钮重画背景、边框或圆角。
+长中文英文标题需换行；拒绝权限给明确原因；减弱动效不影响控制可发现性。
 
 <a id="ui.spec.carousel"></a>
 ## Carousel
@@ -520,4 +531,3 @@ resourceId/playbackView/durationView/speedOptions/transcriptDestination/mediaPor
 反例至少包括本项所有禁止组合；极端数据使用本项边界，再叠加总入口的主题、文字放大、RTL、输入模式和 reduced-motion 条件。生命周期验证本项资源释放与身份切换，不只验证默认截图。
 
 specimen 当前为 **NOT_BUILT**；规范结构检查不等于视觉、交互、原生或业务 Journey PASS。业务事实与 receiver 侧结果仍需对应业务 Gate。
-

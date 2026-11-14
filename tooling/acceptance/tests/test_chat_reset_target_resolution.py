@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import ExitStack
+import copy
 import json
 import os
 import subprocess
@@ -239,6 +240,133 @@ class ChatResetTargetResolutionTests(unittest.TestCase):
         )):
             reset.acceptance_station_environment(self.profiles["fiveArm"]["stationUrl"])
         self.active.assert_called_once_with()
+
+
+class GroupSfuRestartTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.service = {
+            "kind": "station", "endpoint": "http://192.0.2.50:18132",
+            "deploymentEnvironment": "secondary-station",
+        }
+        self.url = "ws://192.0.2.50:7880"
+        self.environment = {
+            "PT_DEPLOY_HOST": "192.0.2.50", "PT_ACCEPTANCE_COMPOSE_PROJECT": "pt-secondary",
+            "PT_ACCEPTANCE_STATION_CONTAINER": "pt-secondary-station-1",
+            "PT_ACCEPTANCE_ENVIRONMENT": "secondary-station",
+        }
+        self.before = {
+            "container": "/pt-secondary-livekit-1", "imageId": "sha256:" + "a" * 64,
+            "labels": {
+                "com.docker.compose.project": "pt-secondary",
+                "com.docker.compose.service": "livekit",
+                "org.opencontainers.image.source": "https://github.com/livekit/livekit",
+                "org.opencontainers.image.revision": reset.GROUP_SFU_SOURCE_REVISION,
+                "net.peers-touch.group-admission": reset.GROUP_SFU_ADMISSION_CONTRACT,
+            },
+            "state": {"Running": True, "StartedAt": "before", "Health": {"Status": "healthy"}},
+            "ports": {"7880/tcp": [{"HostIp": "0.0.0.0", "HostPort": "7880"}]},
+        }
+        self.after = copy.deepcopy(self.before)
+        self.after["state"]["StartedAt"] = "after"
+        stack = ExitStack()
+        self.addCleanup(stack.close)
+        stack.enter_context(patch.dict(os.environ, {"CHAT_ACCEPTANCE_ALLOW_SFU_RESTART": "1"}))
+        self.target = stack.enter_context(patch.object(
+            reset, "acceptance_station_environment", return_value=self.environment,
+        ))
+        stack.enter_context(patch.object(
+            reset, "verify_disposable_station_runtime", return_value={"composeProject": "pt-secondary"},
+        ))
+        self.remote = stack.enter_context(patch.object(reset, "_remote_command"))
+
+    def responses(self, before: dict | None = None, after: dict | None = None) -> None:
+        self.remote.side_effect = [
+            self.url, json.dumps(before or self.before), "pt-secondary-livekit-1",
+            json.dumps(after or self.after),
+        ]
+
+    def test_restart_preserves_image_and_reads_new_healthy_runtime(self) -> None:
+        self.responses()
+        result = reset.restart_acceptance_group_sfu(self.service, self.url)
+        self.target.assert_called_once_with(self.service["endpoint"], "secondary-station")
+        self.assertEqual(result["before"]["imageId"], result["after"]["imageId"])
+        self.assertNotEqual(result["before"]["startedAt"], result["after"]["startedAt"])
+        self.assertEqual(result["after"]["health"], "healthy")
+        commands = [call.args[1] for call in self.remote.call_args_list]
+        self.assertEqual(commands[2], "docker restart pt-secondary-livekit-1")
+        self.assertNotIn("postgres", "\n".join(commands))
+        self.assertNotIn("LIVEKIT_API_SECRET", json.dumps(result))
+
+    def test_restart_rejects_foreign_targets_before_mutation(self) -> None:
+        for url in (
+            "ws://192.0.2.60:7880", self.url + "/path", self.url + "?token=secret",
+            "ws://user:secret@192.0.2.50:7880", self.url.replace(":7880", ":7882"),
+        ):
+            with self.subTest(url=url):
+                self.responses()
+                # Keep the Station declaration equal to the candidate so the
+                # real host/path/port guard, rather than the URL readback, rejects.
+                self.remote.side_effect = [
+                    url, json.dumps(self.before), "pt-secondary-livekit-1", json.dumps(self.after),
+                ]
+                with self.assertRaises(RuntimeError):
+                    reset.restart_acceptance_group_sfu(self.service, url)
+                self.assertFalse(any("docker restart" in c.args[1] for c in self.remote.call_args_list))
+                self.remote.reset_mock()
+
+    def test_restart_rejects_unapproved_container_source_and_health(self) -> None:
+        variants = []
+        for label, value in (
+            ("com.docker.compose.project", "production"),
+            ("com.docker.compose.service", "station"),
+            ("org.opencontainers.image.revision", "stock"),
+            ("net.peers-touch.group-admission", "unknown"),
+        ):
+            candidate = copy.deepcopy(self.before)
+            candidate["labels"][label] = value
+            variants.append(candidate)
+        unhealthy = copy.deepcopy(self.before)
+        unhealthy["state"]["Health"]["Status"] = "unhealthy"
+        variants.append(unhealthy)
+        for candidate in variants:
+            with self.subTest(candidate=candidate):
+                self.responses(before=candidate)
+                with self.assertRaises(RuntimeError):
+                    reset.restart_acceptance_group_sfu(self.service, self.url)
+                self.assertFalse(any("docker restart" in c.args[1] for c in self.remote.call_args_list))
+                self.remote.reset_mock()
+
+    def test_restart_rejects_image_drift_and_unchanged_process(self) -> None:
+        for field in ("imageId", "startedAt"):
+            candidate = copy.deepcopy(self.after)
+            if field == "imageId":
+                candidate["imageId"] = "sha256:" + "b" * 64
+            else:
+                candidate["state"]["StartedAt"] = "before"
+            with self.subTest(field=field):
+                self.responses(after=candidate)
+                with self.assertRaisesRegex(RuntimeError, "image changed|timestamp did not change"):
+                    reset.restart_acceptance_group_sfu(self.service, self.url)
+
+    def test_restart_requires_authorization_and_declared_station_url(self) -> None:
+        with patch.dict(os.environ, {"CHAT_ACCEPTANCE_ALLOW_SFU_RESTART": "0"}):
+            with self.assertRaisesRegex(RuntimeError, "ALLOW_SFU_RESTART"):
+                reset.restart_acceptance_group_sfu(self.service, self.url)
+        self.remote.assert_not_called()
+        self.remote.return_value = "ws://192.0.2.50:7882"
+        with self.assertRaisesRegex(RuntimeError, "Station declaration"):
+            reset.restart_acceptance_group_sfu(self.service, self.url)
+        self.assertEqual(self.remote.call_count, 1)
+
+    def test_restart_health_deadline_is_bounded(self) -> None:
+        candidate = copy.deepcopy(self.after)
+        candidate["state"]["Health"]["Status"] = "starting"
+        self.responses(after=candidate)
+        with patch.object(reset.time, "monotonic", side_effect=[0, 1, 121]), \
+                patch("threading.Event.wait") as wait:
+            with self.assertRaisesRegex(RuntimeError, "did not become healthy"):
+                reset.restart_acceptance_group_sfu(self.service, self.url)
+        wait.assert_called_once_with(1)
 
 
 if __name__ == "__main__":

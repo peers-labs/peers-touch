@@ -15,6 +15,115 @@ body,
   height: 100%;
 }
 
+/* Primary page composition; controls retain their peers-ui-owned chrome. */
+.mobile-moments-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: var(--pt-space-2, 8px);
+  min-height: var(--pt-m-header-height);
+  padding: 4px 12px;
+  background: var(--pt-canvas);
+}
+.mobile-moments-scopes,
+.mobile-moments-search {
+  flex: 1;
+  min-width: 0;
+}
+.mobile-moments-feed-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 12px;
+}
+.mobile-me-identity {
+  width: 100%;
+}
+.mobile-me-cover {
+  position: relative;
+  height: clamp(144px, 38vw, 210px);
+  overflow: hidden;
+  background: var(--pt-subtle);
+}
+.mobile-me-cover > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.mobile-me-cover-action {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+}
+.mobile-me-identity-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 0 20px 20px;
+}
+.mobile-me-avatar {
+  position: relative;
+  margin-top: -28px;
+  z-index: 1;
+}
+.mobile-me-avatar-action {
+  position: absolute;
+  right: -12px;
+  bottom: -8px;
+}
+.mobile-me-name-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.mobile-me-name {
+  font-size: var(--pt-type-title-size, 24px);
+  overflow-wrap: anywhere;
+}
+.mobile-me-statistics {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.mobile-me-statistics > span {
+  display: inline-flex;
+  gap: 4px;
+}
+.mobile-credential-value {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.mobile-credential-value code {
+  overflow-wrap: anywhere;
+  font: inherit;
+  font-family: var(--pt-font-mono, monospace);
+}
+.mobile-setting-navigation-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+}
+.mobile-setting-navigation-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .pt-ui.m-northstar {
   width: 100%;
   height: 100%;
@@ -30,17 +139,6 @@ body,
   --pt-m-composer-min-height: 56px;
   --pt-m-scroll-bottom-clearance: 12px;
 
-  /* Transitional private-palette aliases. The legacy styles.css still consumes
-     --brand-* while surfaces migrate slice by slice; redirecting them at the
-     provider scope makes --pt-* the single color source immediately, so no
-     second hue set reaches the product tree. These aliases carry no new color
-     and are deleted at Slice 6 once every var(--brand-*) consumer is rewritten
-     to its --pt-* counterpart. See northstar-realignment design.md §2.1. */
-  --brand-primary: var(--pt-accent);
-  --brand-secondary: var(--pt-accent);
-  --brand-surface: var(--pt-surface);
-  --brand-muted: var(--pt-subtle);
-  --brand-border: var(--pt-border);
 }
 
 @media (display-mode: standalone) {

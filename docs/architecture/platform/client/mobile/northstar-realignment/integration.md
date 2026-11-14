@@ -44,9 +44,12 @@ simulator runtime.
 ## 5. Prototype integration (reconciliation, not consumption)
 
 The real app does not import the prototype. Reconciliation keeps the prototype
-a faithful north-star: adopt the real 4-tab shell/nav and Moments route shape,
-drop fake/dead controls, and (where the real product is ahead) re-skin the real
-surface instead of porting the fixture. The framed-composer anatomy is treated
+a faithful north-star: retain the confirmed three bottom destinations and top
+chats/contacts subtabs within messages. Migrate the real four-tab shell to that
+design, preserving real contacts/group behavior and native navigation. For
+other owner-backed surfaces, reconcile real capability and Moments route shape,
+drop fake/dead controls, and re-skin the real surface instead of porting the
+fixture. The framed-composer anatomy is treated
 as a pending-acceptance prototype input, not a frozen target.
 
 ## 6. Acceptance integration

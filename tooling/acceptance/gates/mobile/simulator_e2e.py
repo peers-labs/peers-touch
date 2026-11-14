@@ -354,6 +354,8 @@ class SimulatorAppiumSession:
         callback_scheme: str,
         ports: Mapping[str, int],
         chromedriver_executable: str = "",
+        ios_launch: Callable[[], None] | None = None,
+        capture_native_output: Callable[[], None] | None = None,
     ) -> None:
         expected_automation = EXPECTED_AUTOMATION_NAMES.get(platform)
         if expected_automation is None:
@@ -394,6 +396,8 @@ class SimulatorAppiumSession:
         self.callback_scheme = callback_scheme
         self.ports = dict(ports)
         self.chromedriver_executable = chromedriver_executable
+        self.ios_launch = ios_launch
+        self.capture_native_output = capture_native_output
         self.session_id = ""
         self.current_context = "NATIVE_APP"
 
@@ -422,6 +426,8 @@ class SimulatorAppiumSession:
                     "appium:includeSafariInWebviews": True,
                 }
             )
+            if self.ios_launch is not None:
+                capabilities["appium:autoLaunch"] = False
             wda_bundle_id = os.environ.get(
                 "PT_MOBILE_IOS_WDA_BUNDLE_ID",
                 "",
@@ -476,6 +482,8 @@ class SimulatorAppiumSession:
         self.session_id = session_id
         self.current_context = "NATIVE_APP"
         if self.platform == "ios":
+            if self.ios_launch is not None:
+                self.ios_launch()
             self._request("POST", self._path("/timeouts"), {"script": 45000})
         return self
 
@@ -492,14 +500,17 @@ class SimulatorAppiumSession:
         return self.start()
 
     def stop(self) -> None:
-        if not self.session_id:
-            return
-        session_id = self.session_id
-        self._request(
-            "DELETE",
-            f"/session/{urllib.parse.quote(session_id, safe='')}",
-        )
-        self.session_id = ""
+        try:
+            if self.capture_native_output is not None:
+                self.capture_native_output()
+        finally:
+            if self.session_id:
+                session_id = self.session_id
+                self._request(
+                    "DELETE",
+                    f"/session/{urllib.parse.quote(session_id, safe='')}",
+                )
+                self.session_id = ""
 
     def wait_for_ready(self, timeout: float = 30.0) -> None:
         deadline = time.monotonic() + _positive_timeout(timeout)
@@ -663,11 +674,21 @@ class SimulatorAppiumSession:
         )
 
     def find_element(self, using: str, value: str) -> str:
-        result = self._request(
-            "POST",
-            self._path("/element"),
-            {"using": using, "value": value},
-        )
+        if using == "css selector" and self.current_context != "NATIVE_APP":
+            result = self.execute_script(
+                "return Array.from(document.querySelectorAll(arguments[0]))"
+                ".find(node=>!node.closest('[hidden]')"
+                "&&getComputedStyle(node).display!=='none'"
+                "&&getComputedStyle(node).visibility!=='hidden'"
+                "&&node.getClientRects().length>0)??null;",
+                value,
+            )
+        else:
+            result = self._request(
+                "POST",
+                self._path("/element"),
+                {"using": using, "value": value},
+            )
         if not isinstance(result, dict):
             raise DriverError("Appium element response is invalid")
         element_ref = result.get(W3C_ELEMENT_KEY) or result.get("ELEMENT")

@@ -4,6 +4,7 @@ import {
   Checkbox,
   Icon,
   NumberField,
+  Segmented,
   Select,
   Text,
   TextField,
@@ -240,7 +241,9 @@ export function AccessGateHost({
 
   useEffect(() => {
     setSchemaValues({});
-  }, [currentGate?.gateId, currentGate?.schemaDigest]);
+    setPassword('');
+    setInviteCode('');
+  }, [decision?.attemptId, currentGate?.gateId, currentGate?.schemaDigest]);
 
   useEffect(() => {
     if (showOAuthLogin) void refreshOAuthProviders();
@@ -249,13 +252,11 @@ export function AccessGateHost({
   async function submitLogin() {
     if (!canLogin || loading || recoveryOnly) return;
     await onLogin({ email, password });
-    setPassword('');
   }
 
   async function submitInvite() {
     if (!canSubmitInvite || loading || recoveryOnly) return;
     await onInviteCode(inviteCode.trim());
-    setInviteCode('');
   }
 
   async function submitSchema() {
@@ -420,7 +421,10 @@ export function AccessGateHost({
             </div>
             <div className="auth-fields">
               <TextField
+                density="comfortable"
                 value={inviteCode}
+                aria-label={inviteFieldLabel || t('mobile.auth.inviteCode')}
+                disabled={loading}
                 placeholder={invitePlaceholder || inviteFieldLabel || t('mobile.auth.inviteCode')}
                 autoCapitalize="characters"
                 autoCorrect="off"
@@ -474,7 +478,7 @@ export function AccessGateHost({
                       precision={field.type === 'integer' ? 0 : undefined}
                       placeholder={field.placeholder}
                       onValueChange={(value) => setSchemaValues((current) => ({
-                        ...current,
+                        ...Object.fromEntries(Object.entries(current).filter(([name]) => name !== field.name)),
                         ...(typeof value === 'number' ? { [field.name]: value } : {}),
                       }))}
                     />
@@ -515,16 +519,14 @@ export function AccessGateHost({
           <>
             {showEmailLogin && showOAuthLogin && oauthAvailable ? (
               <div className="auth-tab-row">
-                <button
-                  type="button"
-                  className={`auth-tab ${activeLoginTab === 'quick' ? 'active' : ''}`}
-                  onClick={() => setLoginTab('quick')}
-                >{t('mobile.auth.tabQuickLogin')}</button>
-                <button
-                  type="button"
-                  className={`auth-tab ${activeLoginTab === 'email' ? 'active' : ''}`}
-                  onClick={() => setLoginTab('email')}
-                >{t('mobile.auth.tabEmailLogin')}</button>
+                <Segmented<LoginTab> fullWidth density="comfortable"
+                  label={t('mobile.auth.signInTitle')} value={activeLoginTab}
+                  disabled={loading || oauthBusy}
+                  options={[
+                    { value: 'quick', label: t('mobile.auth.tabQuickLogin') },
+                    { value: 'email', label: t('mobile.auth.tabEmailLogin') },
+                  ]}
+                  onValueChange={(value) => setLoginTab(value)} />
               </div>
             ) : null}
 
@@ -594,32 +596,46 @@ export function AccessGateHost({
                       <Text tone="secondary">{t('mobile.auth.recentAccounts')}</Text>
                       <div className="auth-account-list">
                         {rememberedAccounts.map((account) => (
-                          <button
+                          <Button
                             key={`${account.stationUrl}:${account.email}`}
-                            type="button"
-                            className={`auth-account-chip ${account.email === email ? 'active' : ''}`}
-                            onClick={() => setEmail(account.email)}
+                            actionId="auth.account.select"
+                            className="auth-account-chip"
+                            emphasis={account.email === email ? 'secondary' : 'quiet'}
+                            density="comfortable"
+                            aria-pressed={account.email === email}
+                            availability={loading ? { kind: 'disabled', reason: t('mobile.auth.actionInProgress') } : undefined}
+                            onActivate={() => setEmail(account.email)}
                           >
-                            <span>{account.displayName || account.email}</span>
-                            <small>{account.email}</small>
-                          </button>
+                            <span className="auth-account-copy">
+                              <Text strong>{account.displayName || account.email}</Text>
+                              <Text tone="secondary">{account.email}</Text>
+                            </span>
+                          </Button>
                         ))}
                       </div>
                     </div>
                   ) : null}
                   <TextField
+                    density="comfortable"
                     value={email}
+                    aria-label={t('mobile.auth.emailAddress')}
+                    disabled={loading}
                     placeholder={t('mobile.auth.emailAddress')}
                     leading={<Icon iconId="mail" size={16} className="auth-field-leading" />}
                     inputMode="email"
+                    type="email"
+                    autoComplete="username"
                     autoCapitalize="none"
                     autoCorrect="off"
                     onValueChange={setEmail}
                     onEnter={submitLogin}
                   />
                   <TextField
+                    density="comfortable"
                     type="password"
                     value={password}
+                    aria-label={t('mobile.auth.password')}
+                    disabled={loading}
                     placeholder={t('mobile.auth.password')}
                     leading={<Icon iconId="lock" size={16} className="auth-field-leading" />}
                     autoComplete="current-password"
@@ -668,6 +684,7 @@ export function AccessGateHost({
               <Button
                 actionId="access-gate-change-station"
                 emphasis="secondary"
+                density="comfortable"
                 leading={<Icon iconId="arrow-left" size={16} />}
                 availability={loading
                   ? { kind: 'disabled', reason: t('mobile.auth.actionInProgress') }

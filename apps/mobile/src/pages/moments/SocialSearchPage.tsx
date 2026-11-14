@@ -72,7 +72,7 @@ export function SocialSearchPage({
     ) {
       return selectedFederationId;
     }
-    return federations.length === 1 ? federations[0].federationId : '';
+    return '';
   }, [federations, selectedFederationId]);
 
   const feedback = malformedHandle
@@ -96,7 +96,8 @@ export function SocialSearchPage({
       clearPeopleSearch();
       return;
     }
-    await searchPeople(nextQuery, federationId);
+    await searchPeople(nextQuery, federationId
+      ? { kind: 'federation', federationId } : { kind: 'station' });
   };
 
   const handleQueryChange = (value: string) => {
@@ -130,6 +131,8 @@ export function SocialSearchPage({
         <div className="social-search-bar">
           <span className="social-search-input">
             <TextField
+              appearance="search"
+              density="comfortable"
               value={query}
               data-acceptance-id="social-search-input"
               data-focus-id="social-search-input"
@@ -137,7 +140,6 @@ export function SocialSearchPage({
               clearable
               onClear={() => handleQueryChange('')}
               placeholder={t('mobile.contacts.findPeoplePlaceholder')}
-              disabled={!federationId}
               onEnter={() => void runSearch(query)}
               onValueChange={handleQueryChange}
             />
@@ -146,8 +148,8 @@ export function SocialSearchPage({
             actionId="social-search-run"
             emphasis="primary"
             execution={loading ? 'pending' : 'idle'}
-            availability={!federationId
-              ? { kind: 'disabled', reason: t('mobile.contacts.noFederation') }
+            availability={!query.trim()
+              ? { kind: 'disabled', reason: t('mobile.contacts.findPeoplePlaceholder') }
               : undefined}
             onActivate={() => void runSearch(query)}
           >
@@ -159,20 +161,19 @@ export function SocialSearchPage({
           <MobileNotice tone="error">
             {t('mobile.contacts.federationsFailed')}
           </MobileNotice>
-        ) : federations.length === 0 ? (
-          <MobileNotice>{t('mobile.contacts.noFederation')}</MobileNotice>
         ) : (
           <fieldset>
-            <legend>{t('mobile.contacts.federation')}</legend>
+            <legend>{t('mobile.contacts.searchScope')}</legend>
             <RadioGroup<string>
-              label={t('mobile.contacts.federation')}
+              label={t('mobile.contacts.searchScope')}
               value={federationId}
-              options={federations.map((federation) => ({
+              options={[{ label: t('mobile.contacts.currentStation'), value: '' }, ...federations.map((federation) => ({
                 label: federation.name || federation.federationId,
                 value: federation.federationId,
-              }))}
+              }))]}
               onValueChange={(value) => {
                 setSelectedFederationId(String(value));
+                setSubmittedQuery('');
                 clearPeopleSearch();
               }}
             />
