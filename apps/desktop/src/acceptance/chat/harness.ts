@@ -26,14 +26,16 @@ import { useSessionStore } from '../../store/session';
 import { useSearchStore } from '../../store/search';
 import { socialThreadKey, useSocialChatStore } from '../../store/socialChat';
 import { messageGroupSeq, type SocialMessage } from '../../store/socialProjection';
+import { useNavigationBadgeStore } from '../../store/navigationBadges';
 import { ActorDeviceStatus } from '../../gen/proto/domain/actor/actor_pb';
 import {
   AttachmentAccessState,
   AttachmentFileAction,
   AttachmentFileActionRequestSchema,
 } from '../../gen/proto/domain/chat/attachment_pb';
-import { groupCallManager } from '../../modules/groupCall';
+import { groupCallManager, groupCallAdmissionProbe } from '../../modules/groupCall';
 import { callP2p } from '../../modules/p2p/callP2p';
+import { readCallMediaPresentation } from '@peers-touch/client-chat-core';
 import { newSendIntentId } from '../../utils/messagingSendIntent';
 import { registerAcceptanceHarness } from '../registry';
 import { requireCanonicalAcceptancePtid } from './identity';
@@ -266,6 +268,9 @@ function interactionProjection(
     reactions: state.reactions[messageId] ?? [],
     pinned: Boolean(state.pinnedMessages[messageId]),
     readByPtids: message.readByPtids,
+    mentions: message.mentions ?? [],
+    mentionAll: Boolean(message.mentionAll),
+    mentionedPtids: (message.mentions ?? []).map((mention) => mention.actorPtid),
   };
 }
 
@@ -398,9 +403,14 @@ async function onboardingSnapshot(peerPtid: string) {
 
 export function installAcceptanceHarness(): void {
   (window as any).__PT_ACCEPTANCE_STORE__ = useSocialChatStore;
+  (window as any).__PT_ACCEPTANCE_BADGE_STORE__ = useNavigationBadgeStore;
   registerAcceptanceHarness('chat', {
     logout: (input: { actorPtid: string }) =>
       nativeAcceptanceBridge.logout(input),
+    async sessionLogout() {
+      await identityRuntime.logout();
+      return { loggedOut: true };
+    },
 
     engineInteractionSnapshot: (input: {
       actorPtid: string;
@@ -1073,6 +1083,59 @@ export function installAcceptanceHarness(): void {
       };
     },
 
+    // E2EE @mention send through the real native command with an explicit
+    // in-ciphertext mention set; used by the two-desktop mentions gate.
+    async sendGroupMention({
+      conversationId,
+      content,
+      mentions = [],
+      mentionAll = false,
+    }: {
+      conversationId: string;
+      content: string;
+      mentions?: Array<{
+        actorPtid: string;
+        offset: number;
+        length: number;
+        display: string;
+      }>;
+      mentionAll?: boolean;
+    }) {
+      const outcome = await imServiceV1.messaging.sendMessage(
+        conversationId,
+        'group',
+        content,
+        [],
+        { sendIntentId: newSendIntentId() },
+        { mentions, mentionAll },
+      );
+      await refreshConversation('group', conversationId);
+      return {
+        ...outcome,
+        projection: interactionProjection('group', conversationId, outcome.messageId),
+      };
+    },
+
+    async setConversationMuted({
+      conversationId,
+      muted,
+    }: {
+      conversationId: string;
+      muted: boolean;
+    }) {
+      await useSocialChatStore.getState()
+        .updateConversationLocalState('group', conversationId, { muted });
+      return { conversationId, muted };
+    },
+
+    async mentionFlagState({ conversationId }: { conversationId: string }) {
+      const actorPtid = activeSessionActorPtid() ?? '';
+      return {
+        conversationId,
+        mentioned: useNavigationBadgeStore.getState().hasMention(actorPtid, conversationId),
+      };
+    },
+
     async sendGroupMessages({ groupUlid, prefix, count, startIndex = 1, type = 1 }: SendGroupMessagesInput) {
       if (count < 1) {
         throw new Error('count must be >= 1');
@@ -1479,6 +1542,19 @@ export function installAcceptanceHarness(): void {
       return { actorPtid: myPtid, peerPtid, snapshot };
     },
 
+    async callMediaStats({ peerPtid }: { peerPtid: string }) {
+      const myPtid = activeActorPtid();
+      const snapshot = callP2p.getCall(myPtid, peerPtid);
+      return {
+        ...await callP2p.getCallMediaStats(myPtid, peerPtid),
+        presentation: readCallMediaPresentation(document.querySelector('[data-chat-call-surface]'), {
+          localVideo: '[data-chat-call-local-video]',
+          remoteVideo: '[data-chat-call-remote-video]',
+          remoteAudio: '[data-chat-call-remote-audio]',
+        }, { local: snapshot?.localStream, remote: snapshot?.remoteStream }),
+      };
+    },
+
     async callToggleMic({ peerPtid, muted }: { peerPtid: string; muted: boolean }) {
       const myPtid = activeActorPtid();
       callP2p.toggleMic(myPtid, peerPtid, muted);
@@ -1545,7 +1621,7 @@ export function installAcceptanceHarness(): void {
     },
 
     async groupCallLeave() {
-      groupCallManager.leaveGroupCall();
+      await groupCallManager.leaveGroupCall();
       return {
         actorPtid: activeActorPtid(),
         snapshot: groupCallManager.getSnapshot(),
@@ -1570,9 +1646,32 @@ export function installAcceptanceHarness(): void {
 
     async groupCallSnapshot() {
       return {
-        actorPtid: activeActorPtid(),
+        actorPtid: activeSessionActorPtid(),
         snapshot: groupCallManager.getSnapshot(),
       };
+    },
+    async groupCallMediaStats() {
+      return { actorPtid: activeSessionActorPtid(), media: await groupCallManager.readMediaStats() };
+    },
+    async groupCallProbeArm() {
+      groupCallAdmissionProbe.arm();
+      return { armed: true };
+    },
+    async groupCallProbeStatus() {
+      return groupCallAdmissionProbe.status();
+    },
+    async groupCallSignalReconnect() {
+      return groupCallAdmissionProbe.reconnect();
+    },
+    async groupCallReplayProbe({
+      previousSid, tokenKind = 'initial', consume = true,
+    }: { previousSid: string; tokenKind?: 'initial' | 'refreshed'; consume?: boolean }) {
+      if (tokenKind !== 'initial' && tokenKind !== 'refreshed') throw new Error('call.replayProbeUnavailable');
+      return groupCallAdmissionProbe.replay(previousSid, tokenKind, consume);
+    },
+    async groupCallProbeClear() {
+      groupCallAdmissionProbe.clear();
+      return { cleared: true };
     },
   });
 }

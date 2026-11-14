@@ -821,6 +821,39 @@ class SimulatorSeamContractTests(unittest.TestCase):
 
 
 class SimulatorAppiumCapabilityTests(unittest.TestCase):
+    def test_native_output_is_launched_and_retained_before_teardown(self) -> None:
+        for capture_fails in (False, True):
+            with self.subTest(capture_fails=capture_fails):
+                transport = FakeAppiumTransport("owned-ios")
+                events: list[str] = []
+
+                def capture() -> None:
+                    events.append("capture")
+                    self.assertFalse(any(method == "DELETE" for method, _, _ in transport.requests))
+                    if capture_fails:
+                        raise OSError("evidence storage unavailable")
+
+                session = SimulatorAppiumSession(
+                    transport, client_id="sim-ios", platform="ios", automation_name="XCUITest",
+                    device=SimulatorDeviceTarget("ios", "owned-simulator", "ios-simulator"),
+                    build=SimulatorBuildTarget("ios", Path("/tmp/mobile.app"), "com.peers.touch.mobile"),
+                    callback_scheme="peers-touch", ports={"wda-local": 8101, "mjpeg": 9101},
+                    ios_launch=lambda: events.append("launch"),
+                    capture_native_output=capture,
+                )
+                session.start()
+                capabilities = transport.requests[0][2]["capabilities"]["alwaysMatch"]
+                self.assertIs(capabilities["appium:autoLaunch"], False)
+                self.assertEqual(events, ["launch"])
+                if capture_fails:
+                    with self.assertRaisesRegex(OSError, "evidence storage"):
+                        session.stop()
+                else:
+                    session.stop()
+                self.assertEqual(events, ["launch", "capture"])
+                self.assertEqual(transport.requests[-1][:2], ("DELETE", "/session/owned-ios"))
+                self.assertEqual(session.session_id, "")
+
     def test_webview_switch_retries_a_stale_ios_target(self) -> None:
         class StaleTargetTransport(FakeAppiumTransport):
             def __init__(self) -> None:
@@ -1406,6 +1439,11 @@ class SimulatorJourneyProtocolTests(unittest.TestCase):
         self.assertFalse(result["successfulCallbackInjected"])
         self.assertFalse(result["stationMocksUsed"])
         self.assertEqual(set(result["clients"]), {"sim-ios", "sim-ios-peer"})
+        self.assertTrue(result["assertions"])
+        self.assertTrue(
+            all(item["passed"] for item in result["assertions"]),
+            result["assertions"],
+        )
         self.assertEqual(
             artifacts.json_values[
                 "mobile-simulator/source-identity.json"
@@ -1430,7 +1468,18 @@ class SimulatorJourneyProtocolTests(unittest.TestCase):
         ) -> dict[str, Any]:
             observed.append(spec.client_id)
             barrier.wait(timeout=1)
-            return {"clientId": spec.client_id}
+            return {
+                "platform": "ios",
+                "deviceRole": spec.client_id,
+                "physicalRoleClaimed": False,
+                "stages": [
+                    "initial",
+                    "warm-invalid",
+                    "cold-invalid",
+                    "restart-reconnected",
+                ],
+                "finalPhase": "failed",
+            }
 
         gate = SimulatorCallbackRoutingGate(
             session_factory=(  # type: ignore[arg-type]

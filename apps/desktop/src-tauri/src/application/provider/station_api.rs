@@ -105,27 +105,6 @@ pub fn list_providers(
     )?)
 }
 
-pub fn get_providers(
-    station_client: &StationClient,
-    token: &str,
-    _scope: &str,
-) -> Result<Vec<StationProvider>, StationApiError> {
-    let resp = station_client.request_json_auth(
-        Method::POST,
-        "/sub-agent/agent/provider/list",
-        token,
-        None,
-        Some(&json!({})),
-    )?;
-
-    serde_json::from_value(
-        resp.get("providers")
-            .cloned()
-            .unwrap_or(Value::Array(vec![])),
-    )
-    .map_err(|e| StationApiError::Internal(format!("decode providers: {}", e)))
-}
-
 pub fn get_provider(
     station_client: &StationClient,
     token: &str,
@@ -145,7 +124,7 @@ pub fn get_provider_record(
     token: &str,
     provider_id: &str,
 ) -> Result<StationProvider, StationApiError> {
-    parse_provider_from_response(get_provider(station_client, token, provider_id)?)
+    parse_provider_from_response(get_personal_provider(station_client, token, provider_id)?)
 }
 
 pub fn list_available_models(
@@ -172,6 +151,46 @@ pub fn check_provider(
         token,
         None,
         Some(&json!({"provider_id": provider_id})),
+    )?)
+}
+
+pub fn provider_policy(
+    station_client: &StationClient,
+    token: &str,
+) -> Result<Value, StationApiError> {
+    Ok(station_client.request_json_auth(
+        Method::POST,
+        "/sub-agent/agent/provider/policy",
+        token,
+        None,
+        Some(&json!({})),
+    )?)
+}
+
+pub fn list_personal_providers(
+    station_client: &StationClient,
+    token: &str,
+) -> Result<Value, StationApiError> {
+    Ok(station_client.request_json_auth(
+        Method::POST,
+        "/sub-agent/agent/provider/personal/list",
+        token,
+        None,
+        Some(&json!({})),
+    )?)
+}
+
+pub fn get_personal_provider(
+    station_client: &StationClient,
+    token: &str,
+    provider_id: &str,
+) -> Result<Value, StationApiError> {
+    Ok(station_client.request_json_auth(
+        Method::POST,
+        "/sub-agent/agent/provider/personal/get",
+        token,
+        None,
+        Some(&json!({ "provider_id": provider_id })),
     )?)
 }
 
@@ -346,7 +365,7 @@ pub fn list_models(
 ) -> Result<Vec<StationModel>, StationApiError> {
     let resp = station_client.request_json_auth(
         Method::POST,
-        "/sub-agent/agent/model/list",
+        "/sub-agent/agent/model/personal/list",
         token,
         None,
         Some(&json!({"provider_id": provider_id})),
@@ -458,31 +477,6 @@ pub fn credential_status(
 
     serde_json::from_value(resp.get("status").cloned().unwrap_or_default())
         .map_err(|e| StationApiError::Internal(format!("decode credential status: {}", e)))
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ResolvedCredential {
-    pub provider_id: String,
-    pub api_key: String,
-    pub base_url: String,
-    pub protocol: String,
-}
-
-pub fn resolve_credential(
-    station_client: &StationClient,
-    token: &str,
-    provider_id: &str,
-) -> Result<ResolvedCredential, StationApiError> {
-    let resp = station_client.request_json_auth(
-        Method::POST,
-        "/sub-agent/agent/credential/resolve",
-        token,
-        None,
-        Some(&json!({"provider_id": provider_id})),
-    )?;
-
-    serde_json::from_value(resp.get("credential").cloned().unwrap_or_default())
-        .map_err(|e| StationApiError::Internal(format!("decode resolved credential: {}", e)))
 }
 
 fn parse_provider_from_response(resp: Value) -> Result<StationProvider, StationApiError> {

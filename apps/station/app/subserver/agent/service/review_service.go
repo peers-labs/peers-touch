@@ -140,7 +140,7 @@ func NewReviewService(
 func (s *ReviewService) CheckAndTriggerReview(
 	ctx context.Context,
 	nudgeState *domain.NudgeState,
-	turnID, conversationID, agentID string,
+	turnID, conversationID, agentID, actorPTID string,
 	provider, model string,
 	messages []domain.Message,
 	isDelegationChild bool,
@@ -178,7 +178,7 @@ func (s *ReviewService) CheckAndTriggerReview(
 
 	// Fire background goroutine — completely detached from the caller's ctx.
 	go s.runReview(
-		turnID, conversationID, agentID,
+		turnID, conversationID, agentID, actorPTID,
 		provider, model,
 		reviewType,
 		msgCopy,
@@ -201,7 +201,7 @@ func (s *ReviewService) CheckAndTriggerReview(
 //  6. Persist the ReviewResult record
 //  7. Reset nudge counters
 func (s *ReviewService) runReview(
-	turnID, conversationID, agentID string,
+	turnID, conversationID, agentID, actorPTID string,
 	provider, model string,
 	reviewType domain.ReviewType,
 	messages []domain.Message,
@@ -222,7 +222,7 @@ func (s *ReviewService) runReview(
 	logger.Infof(ctx, "review goroutine started: turn_id=%s type=%s", turnID, reviewType)
 
 	// --- Step 1: Lease credential ----------------------------------------
-	credential, leaseErr := s.credentialPool.Lease(ctx, agentID, provider, domain.RotationRoundRobin)
+	credential, leaseErr := s.credentialPool.Lease(ctx, actorPTID, provider, model, domain.RotationRoundRobin)
 	if leaseErr != nil {
 		errorReason = fmt.Sprintf("credential lease failed: %v", leaseErr)
 		logger.Warnf(ctx, "review aborted (credential): turn_id=%s err=%v", turnID, leaseErr)
@@ -249,7 +249,7 @@ func (s *ReviewService) runReview(
 	})
 
 	// --- Step 3: Provider call with single retry on retryable errors -----
-	assistantResponse, callErr := s.callProvider(ctx, turnID, credential.CredentialID, model, provider, reviewMessages)
+	assistantResponse, callErr := s.callProvider(ctx, actorPTID, turnID, credential.CredentialID, model, provider, reviewMessages)
 	if callErr != nil {
 		classified := s.errorClassifier.Classify(callErr, provider, model, 0, 0)
 
@@ -266,7 +266,7 @@ func (s *ReviewService) runReview(
 					_ = s.credentialPool.MarkError(ctx, credential.CredentialID)
 				}
 
-				retryCred, retryLeaseErr := s.credentialPool.Lease(ctx, agentID, provider, domain.RotationRoundRobin)
+				retryCred, retryLeaseErr := s.credentialPool.Lease(ctx, actorPTID, provider, model, domain.RotationRoundRobin)
 				if retryLeaseErr != nil {
 					errorReason = fmt.Sprintf("retry credential lease failed: %v", retryLeaseErr)
 					logger.Warnf(ctx, "review retry aborted (credential): turn_id=%s err=%v", turnID, retryLeaseErr)
@@ -279,7 +279,7 @@ func (s *ReviewService) runReview(
 			}
 
 			// Retry the LLM call once.
-			assistantResponse, callErr = s.callProvider(ctx, turnID, credential.CredentialID, model, provider, reviewMessages)
+			assistantResponse, callErr = s.callProvider(ctx, actorPTID, turnID, credential.CredentialID, model, provider, reviewMessages)
 		}
 
 		if callErr != nil {
@@ -341,7 +341,7 @@ func (s *ReviewService) runReview(
 		}
 
 		// Re-invoke the provider to let the review agent continue or stop.
-		nextResponse, nextErr := s.callProvider(ctx, turnID, credential.CredentialID, model, provider, reviewMessages)
+		nextResponse, nextErr := s.callProvider(ctx, actorPTID, turnID, credential.CredentialID, model, provider, reviewMessages)
 		if nextErr != nil {
 			logger.Warnf(ctx, "review re-call failed at iteration %d: turn_id=%s err=%v",
 				iteration+1, turnID, nextErr)
@@ -393,7 +393,7 @@ func (s *ReviewService) runReview(
 
 func (s *ReviewService) callProvider(
 	ctx context.Context,
-	turnID, credentialID, model, providerType string,
+	actorPTID, turnID, credentialID, model, providerType string,
 	messages []domain.Message,
 ) (string, error) {
 
@@ -403,6 +403,7 @@ func (s *ReviewService) callProvider(
 		}
 	}
 	resp, err := s.providerService.Call(ctx, &ProviderCallRequest{
+		UserID:       actorPTID,
 		ProviderID:   credentialID,
 		Model:        model,
 		SystemPrompt: reviewIdentity,

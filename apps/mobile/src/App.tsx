@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Modal, Typography } from 'antd';
+import { Suspense, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
+import { Button, Dialog, Text } from '@peers-touch/ui';
+
+import { confirm } from './app/feedback/mobileFeedback';
 
 import { AppProviders } from './app/AppProviders';
 import {
   getMobileLifecycleKernel,
   useLifecycleKernel,
 } from './app/lifecycle';
-import { useMobileI18n } from './app/mobileI18n';
+import { translateMobileError, useMobileI18n } from './app/mobileI18n';
 import { MobileShell } from './components/MobileShell';
 import {
   RecoveryOverlayHost,
@@ -25,10 +27,11 @@ import {
   type RememberedLoginAccount,
   type StationLoginInput,
 } from './features/auth/authSession';
-import { AccessGateHost, authStationLabel } from './features/auth/AccessGateHost';
+import { authStationLabel } from './features/auth/AccessGateHost';
 import { useAuthStore } from './features/auth/authStore';
 import { DeviceLinkScreen } from './features/auth/DeviceLinkScreen';
 import { useDeviceLinkStore } from './features/auth/deviceLinkStore';
+import { EntryScreen, type EntryGateProps } from './features/entry/EntryScreen';
 import { startMobileDeviceLink } from './runtimes/deviceLinkRuntime';
 import {
   setEntrySurfaceFixture,
@@ -46,20 +49,21 @@ import {
   type StationIdentityResult,
 } from './features/station/stationConnection';
 import { EntryProgressScreen } from './features/station/EntryProgressScreen';
-import { StationLaunchScreen } from './features/station/StationLaunchScreen';
 import {
   discoverXConfigSuggestion,
   useXConfigProjection,
 } from './features/station/xConfig';
 import {
+  abandonAccessAttemptBestEffort,
   applyAccessGateRuntimeResult,
-  cancelAccessAttemptForActiveStation,
   refreshAccessDecisionForActiveStation,
   startAccessAttemptForActiveStation,
 } from './runtimes/accessRuntime';
+import { fenceAuthRuntimeProjection } from './runtimes/authRuntime';
 import {
   activateNativeSessionRuntime,
   logoutSessionRuntime,
+  purgeAllNativeSessionState,
 } from './runtimes/sessionRuntime';
 import {
   getRecoveryProjection,
@@ -99,10 +103,10 @@ import {
   openReliabilityAdmission,
   prepareReliabilityScopeExit,
   readReliabilityRuntimeStatus,
+  type ReliabilityRuntimeStatus,
+  type ReliabilityRuntimeStatusProjection,
 } from './runtimes/commandRuntime';
 import type { DraftDisposition } from './app/lifecycle/types';
-
-const { Text, Title } = Typography;
 
 interface PendingScopeExitRequest {
   readonly reason: ScopeExitDecisionReason;
@@ -135,6 +139,25 @@ interface PendingRouteChoice {
  * - Launch state transitions are driven by station and auth outcomes.
  * - The shell only renders when lifecyclePhase is ACTIVE.
  */
+const SCOPE_EXIT_PREPARE_TIMEOUT_MS = 6000;
+
+async function raceScopeExitPreparation(
+  preparation: Promise<ReliabilityRuntimeStatus>,
+  fallback: ReliabilityRuntimeStatusProjection,
+): Promise<ReliabilityRuntimeStatus> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      preparation,
+      new Promise<ReliabilityRuntimeStatus>((resolve) => {
+        timer = setTimeout(() => resolve(fallback), SCOPE_EXIT_PREPARE_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 function MobileAppRoot() {
   const { t } = useMobileI18n();
   const lifecycle = useLifecycleKernel();
@@ -276,13 +299,20 @@ function MobileAppRoot() {
       throw new Error('mobile.reliability.scopeExitAlreadyPending');
     }
     const observed = await readReliabilityRuntimeStatus();
+    // Scope-exit preparation talks to the active reliability runtime. When a
+    // Station is unreachable this must not hang the only escape path
+    // (Switch Station): fall back to the observed projection after a bounded
+    // wait and let the local purge proceed.
     const status = observed.active
       && observed.stationPeerId
       && observed.actorPtid
-      ? await prepareReliabilityScopeExit(
-          observed.stationPeerId,
-          observed.actorPtid,
-          observed.runtimeGeneration,
+      ? await raceScopeExitPreparation(
+          prepareReliabilityScopeExit(
+            observed.stationPeerId,
+            observed.actorPtid,
+            observed.runtimeGeneration,
+          ),
+          observed,
         )
       : observed;
     const execute = async (draftDisposition: DraftDisposition) => {
@@ -532,23 +562,16 @@ function MobileAppRoot() {
     });
   }
 
-  function confirmRouteSwitch(
+  async function confirmRouteSwitch(
     previous: MobileStationRouteCandidate,
     next: MobileStationRouteCandidate,
   ): Promise<boolean> {
-    if (previous.routeType === next.routeType) return Promise.resolve(true);
-    return new Promise((resolve) => {
-      Modal.confirm({
-        title: t('mobile.launch.routeSwitchConfirmTitle'),
-        content: t('mobile.launch.routeSwitchConfirmBody'),
-        okText: t('mobile.launch.switchRoute'),
-        cancelText: t('common.action.cancel'),
-        okButtonProps: {
-          'data-station-route-confirm': 'true',
-        },
-        onOk: () => resolve(true),
-        onCancel: () => resolve(false),
-      });
+    if (previous.routeType === next.routeType) return true;
+    return confirm({
+      title: t('mobile.launch.routeSwitchConfirmTitle'),
+      description: t('mobile.launch.routeSwitchConfirmBody'),
+      confirmLabel: t('mobile.launch.switchRoute'),
+      cancelLabel: t('common.action.cancel'),
     });
   }
 
@@ -602,7 +625,7 @@ function MobileAppRoot() {
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : '';
-      setAuthError(t(msg) !== msg ? t(msg) : (msg || t('mobile.auth.loginFailed')));
+      setAuthError(translateMobileError(t, msg, 'mobile.auth.loginFailed'));
     } finally {
       setAuthLoading(false);
     }
@@ -636,14 +659,26 @@ function MobileAppRoot() {
   }
 
   async function leaveCurrentStationForSelection() {
-    const completed = await runUserScopeTransition(
-      'station-replace',
-      async () => {
-        await logoutSessionRuntime();
-      },
-    );
+    // Switching Station is a local-first escape hatch: never strand the user
+    // on a broken/unreachable Station because a remote revoke is slow or
+    // failing. Best-effort remote revocation runs through the normal scope
+    // transition; if it cannot complete, purge local session state directly
+    // and still return to the Station picker.
+    let completed = false;
+    try {
+      completed = await runUserScopeTransition(
+        'station-replace',
+        async () => {
+          await logoutSessionRuntime();
+        },
+      );
+    } catch {
+      await purgeAllNativeSessionState().catch(() => undefined);
+      completed = true;
+    }
     if (!completed) return;
     setAccessDecision(null);
+    fenceAuthRuntimeProjection();
     showStationSelection();
   }
 
@@ -733,7 +768,7 @@ function MobileAppRoot() {
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : '';
-      setAuthError(t(msg) !== msg ? t(msg) : (msg || t('mobile.auth.inviteCodeRejected')));
+      setAuthError(translateMobileError(t, msg, 'mobile.auth.inviteCodeRejected'));
     } finally {
       setAuthLoading(false);
     }
@@ -767,7 +802,7 @@ function MobileAppRoot() {
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : '';
-      setAuthError(t(msg) !== msg ? t(msg) : (msg || t('mobile.auth.gateUnavailable')));
+      setAuthError(translateMobileError(t, msg, 'mobile.auth.gateUnavailable'));
     } finally {
       setAuthLoading(false);
     }
@@ -783,11 +818,11 @@ function MobileAppRoot() {
   }
 
   async function cancelAccessGateAttemptAndChangeStation() {
-    try {
-      await cancelAccessAttemptForActiveStation();
-    } catch {
-      return;
-    }
+    // Local-first: clear the gate and return to the picker immediately. Remote
+    // attempt/OAuth cancellation is best effort and can never block or strand
+    // the user when the Station is slow or rejects the cancel RPC.
+    await abandonAccessAttemptBestEffort();
+    fenceAuthRuntimeProjection();
     showStationSelection();
   }
 
@@ -819,7 +854,7 @@ function MobileAppRoot() {
           observedStationPeerId,
         );
       }
-      setStationError(t(msg) !== msg ? t(msg) : (msg || t('mobile.launch.stationUnavailable')));
+      setStationError(translateMobileError(t, msg, 'mobile.launch.stationUnavailable'));
       showStationSelection();
     } finally {
       setAuthLoading(false);
@@ -896,49 +931,47 @@ function MobileAppRoot() {
               canCancel
             />
           )}
-        <Modal
+        <Dialog
           open={replacementStation !== null}
-          footer={null}
-          closable={false}
-          onCancel={() => resolveStationIdentityReplacement(false)}
-          destroyOnClose
+          title={t('mobile.launch.stationReplaceConfirmTitle')}
+          closeLabel={t('common.action.cancel')}
+          onDismiss={() => resolveStationIdentityReplacement(false)}
         >
           <section
             className="entry-confirmation entry-trust-confirmation"
             data-product-surface="entry.station-identity-mismatch"
           >
-            <Title level={1}>
-              {t('mobile.launch.stationReplaceConfirmTitle')}
-            </Title>
-            <Text type="secondary">
+            <Text tone="secondary">
               {t('mobile.launch.stationReplaceConfirmBody', {
                 station: replacementStationLabel,
               })}
             </Text>
             <div className="entry-confirmation-actions">
-              <button
-                type="button"
-                className="entry-confirmation-button"
-                onClick={() => resolveStationIdentityReplacement(false)}
+              <Button
+                actionId="entry.station-replace.cancel"
+                density="comfortable"
+                fullWidth
+                onActivate={() => resolveStationIdentityReplacement(false)}
               >
                 {t('common.action.cancel')}
-              </button>
-              <button
-                type="button"
-                className="entry-confirmation-button danger"
-                onClick={() => resolveStationIdentityReplacement(true)}
+              </Button>
+              <Button
+                actionId="entry.station-replace.confirm"
+                tone="danger"
+                density="comfortable"
+                fullWidth
+                onActivate={() => resolveStationIdentityReplacement(true)}
               >
                 {t('mobile.launch.stationReplace')}
-              </button>
+              </Button>
             </div>
           </section>
-        </Modal>
-        <Modal
+        </Dialog>
+        <Dialog
           title={t('mobile.launch.chooseRelayStation')}
           open={pendingRouteChoice !== null}
-          footer={null}
-          onCancel={() => setPendingRouteChoice(null)}
-          destroyOnClose
+          closeLabel={t('common.action.cancel')}
+          onDismiss={() => setPendingRouteChoice(null)}
         >
           <div className="station-route-candidate-list">
             {pendingRouteChoice?.routes.map((route) => (
@@ -961,7 +994,7 @@ function MobileAppRoot() {
               </button>
             ))}
           </div>
-        </Modal>
+        </Dialog>
       </>
     );
   }
@@ -992,16 +1025,6 @@ function MobileAppRoot() {
     );
   }
 
-  if (renderedLaunchState === 'station-handshake') {
-    return renderWithRecovery(
-      <EntryProgressScreen
-        kind="station-handshake"
-        stationLabel={friendlyStationLabel}
-        onBack={showStationSelection}
-      />,
-    );
-  }
-
   if (renderedLaunchState === 'runtime-critical') {
     const runtimeFailed = entryFixture.surfaceId === 'entry.runtime-critical'
       || Array.from(lifecycle.runtimes.values()).some(
@@ -1020,31 +1043,31 @@ function MobileAppRoot() {
     );
   }
 
-  if (renderedLaunchState === 'access-gate-chain') {
-    return renderWithRecovery(
-      <AccessGateHost
-        decision={renderedAccessDecision}
-        stationLabel={activeStation?.label || t('mobile.launch.station')}
-        stationUrl={activeStation?.url || ''}
-        error={renderedAuthError}
-        loading={authLoading}
-        rememberedAccounts={rememberedAccounts}
-        oauthOverride={renderedOAuth ?? undefined}
-        forceSessionExpired={entryFixture.surfaceId === 'entry.session-expired'}
-        onBack={cancelAccessGateAttemptAndChangeStation}
-        onRefresh={refreshAccessGateDecision}
-        onLogin={login}
-        onInviteCode={submitInviteCode}
-        onSchemaSubmit={submitSchemaGate}
-        onScan={() => void scanDesktopLogin()}
-      />,
-    );
-  }
+  const entryGate: EntryGateProps | null = renderedLaunchState === 'access-gate-chain'
+    && renderedAccessDecision
+    ? {
+        decision: renderedAccessDecision,
+        stationLabel: activeStation?.label || t('mobile.launch.station'),
+        stationUrl: activeStation?.url || '',
+        error: renderedAuthError,
+        loading: authLoading,
+        rememberedAccounts,
+        oauthOverride: renderedOAuth ?? undefined,
+        forceSessionExpired: entryFixture.surfaceId === 'entry.session-expired',
+        onBack: cancelAccessGateAttemptAndChangeStation,
+        onRefresh: refreshAccessGateDecision,
+        onLogin: login,
+        onInviteCode: submitInviteCode,
+        onSchemaSubmit: submitSchemaGate,
+      }
+    : null;
 
   return renderWithRecovery(
-    <StationLaunchScreen
-      key={`station-launch-${entryFixture.revision}`}
+    <EntryScreen
+      key={`station-entry-${entryFixture.revision}`}
       registry={renderedStationRegistry}
+      handshake={renderedLaunchState === 'station-handshake'}
+      gate={entryGate}
       onScan={() => void scanDesktopLogin()}
       error={renderedStationError}
       checking={stationChecking}
@@ -1078,7 +1101,7 @@ function MobileAppRoot() {
           return await addDiscoveredRoute(discovery.routes[0]);
         } catch (error) {
           const msg = error instanceof Error ? error.message : '';
-          setStationError(t(msg) !== msg ? t(msg) : (msg || t('mobile.launch.stationUnavailable')));
+          setStationError(translateMobileError(t, msg, 'mobile.launch.stationUnavailable'));
           return false;
         } finally {
           setStationChecking(false);
@@ -1098,7 +1121,7 @@ function MobileAppRoot() {
           return await addDiscoveredRoute(route);
         } catch (error) {
           const msg = error instanceof Error ? error.message : '';
-          setStationError(t(msg) !== msg ? t(msg) : (msg || t('mobile.launch.stationUnavailable')));
+          setStationError(translateMobileError(t, msg, 'mobile.launch.stationUnavailable'));
           return false;
         } finally {
           setStationChecking(false);
@@ -1150,7 +1173,7 @@ function MobileAppRoot() {
             })
           ));
           const msg = error instanceof Error ? error.message : '';
-          setStationError(t(msg) !== msg ? t(msg) : (msg || t('mobile.launch.stationUnavailable')));
+          setStationError(translateMobileError(t, msg, 'mobile.launch.stationUnavailable'));
           return;
         }
 
@@ -1191,7 +1214,7 @@ function MobileAppRoot() {
           await startAccessGateChainFor(nextStation);
         } catch (error) {
           const msg = error instanceof Error ? error.message : '';
-          setStationError(t(msg) !== msg ? t(msg) : (msg || t('mobile.launch.stationUnavailable')));
+          setStationError(translateMobileError(t, msg, 'mobile.launch.stationUnavailable'));
         } finally {
           setStationChecking(false);
         }
@@ -1384,6 +1407,15 @@ function fixtureAccessDecision(
 function fixtureOAuthProjection(
   surfaceId: EntrySurfaceFixtureId | null,
 ): Partial<AuthRuntimeSnapshot> | null {
+  if (surfaceId === 'entry.access-oauth') {
+    // The OAuth Quick tab only renders once the Station provider directory is
+    // loaded with at least one usable provider. A fixture-driven surface must
+    // supply that directory, otherwise the empty simulator directory hides the
+    // very surface the inventory expects to observe.
+    return {
+      availableProviders: ['github', 'google'],
+    };
+  }
   if (surfaceId === 'entry.oauth-progress') {
     return {
       phase: 'awaiting_provider',
@@ -1403,10 +1435,34 @@ function fixtureOAuthProjection(
   return null;
 }
 
+// Acceptance-only runtime diagnostics. The dynamic import lives behind the
+// build flag so production bundles tree-shake both the gate and its chunk.
+function MobileDebugPanelGate() {
+  const [Drawer, setDrawer] = useState<ComponentType | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void import('./acceptance/debug/MobileDebugPanelDrawer').then((module) => {
+      if (!cancelled) setDrawer(() => module.MobileDebugPanelDrawer);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!Drawer) return null;
+  return (
+    <Suspense fallback={null}>
+      <Drawer />
+    </Suspense>
+  );
+}
+
 export function App() {
   return (
     <AppProviders>
       <MobileAppRoot />
+      {import.meta.env.VITE_ACCEPTANCE_HARNESS === '1' && <MobileDebugPanelGate />}
     </AppProviders>
   );
 }

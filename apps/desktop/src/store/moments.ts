@@ -55,6 +55,7 @@ import type {
   PrivateMomentPublishIntent,
 } from '../services/privateMomentsNative';
 import { isReadablePrivateMomentProjection } from '../services/privateMomentsNative';
+import { releasePrivateMediaLocalPreviews } from '../services/privateMediaLocalPreview';
 import { usePrivateMomentsStore } from './privateMoments';
 import { log } from '../utils/logger';
 import { readPublicPollCommands, resetPublicFeed } from '../services/publicFeedNative';
@@ -1126,6 +1127,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
       });
     }
     // Local reference removal is shared with event-driven eviction.
+    releasePrivateMediaLocalPreviews(postId);
     get().evictPost(postId);
   },
 

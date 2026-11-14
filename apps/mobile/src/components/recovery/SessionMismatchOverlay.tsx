@@ -7,6 +7,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { RefreshCw, ShieldAlert } from 'lucide-react';
+import { restoreNavigationFocus } from '@peers-touch/ui';
 
 import type { SessionMismatchState } from '../../runtimes/recoveryProjection';
 
@@ -32,7 +33,7 @@ export function SessionMismatchOverlay({
     primaryActionRef.current?.focus();
     return () => {
       if (previousFocus instanceof HTMLElement && previousFocus.isConnected) {
-        previousFocus.focus();
+        restoreNavigationFocus(previousFocus);
       }
     };
   }, []);

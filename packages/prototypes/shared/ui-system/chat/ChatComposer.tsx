@@ -5,7 +5,7 @@
  * desktop shell captures the screen; the browser shell selects an image
  * file), real MediaRecorder voice notes, and input expand/collapse.
  */
-import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
 import {
   FolderOpen, Maximize2, Mic, Minimize2, Scissors, Smile, Square, Trash2, X,
 } from 'lucide-react';
@@ -14,24 +14,9 @@ import type { MessageAttachment } from './chat-data';
 import { AttachmentDraftStrip, useAttachmentDrafts } from './ComposerAttachments';
 import { formatVoiceDuration, useVoiceRecorder, VoicePlayer, type RecordedVoice } from './VoiceNote';
 import { useT } from '../prefs';
-
-const EMOJI_RECENT_KEY = 'peers-touch:prototype:recent-emojis';
-const EMOJI_GROUPS = [
-  ['😀', '😁', '😂', '🤣', '😊', '😍', '😘', '😎', '😭', '😡'],
-  ['👍', '👎', '👏', '🙏', '💪', '🤝', '👌', '✌️', '🤟', '👋'],
-  ['❤️', '💔', '💕', '💯', '✨', '🔥', '🎉', '🌹', '⭐', '💤'],
-  ['😅', '😇', '🙂', '🙃', '😉', '😌', '😋', '🤔', '🤫', '😴'],
-];
-
-function loadRecentEmojis(): string[] {
-  try {
-    const raw = window.localStorage.getItem(EMOJI_RECENT_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
-  } catch {
-    return [];
-  }
-}
+import {
+  COMPOSER_EMOJIS, loadRecentEmojis, nextRecentEmojis, persistRecentEmojis,
+} from './emoji-palette';
 
 export type ComposerPayload = {
   text: string;
@@ -105,13 +90,9 @@ export function ChatComposer({ groupMembers, replyTarget, editTarget, placeholde
     const start = el?.selectionStart ?? draft.length;
     const end = el?.selectionEnd ?? draft.length;
     setDraft(`${draft.slice(0, start)}${emoji}${draft.slice(end)}`);
-    const nextRecent = [emoji, ...recentEmojis.filter(item => item !== emoji)].slice(0, 24);
+    const nextRecent = nextRecentEmojis(recentEmojis, emoji);
     setRecentEmojis(nextRecent);
-    try {
-      window.localStorage.setItem(EMOJI_RECENT_KEY, JSON.stringify(nextRecent));
-    } catch {
-      // best-effort UI preference
-    }
+    persistRecentEmojis(nextRecent);
     window.requestAnimationFrame(() => {
       el?.focus();
       el?.setSelectionRange(start + emoji.length, start + emoji.length);
@@ -172,26 +153,8 @@ export function ChatComposer({ groupMembers, replyTarget, editTarget, placeholde
     addFiles(Array.from(event.dataTransfer.files ?? []));
   };
 
-  // Auto-grow: the textarea height tracks its content, clamped between a
-  // collapsed single-line floor and the active row cap. Expanding raises BOTH
-  // the floor and the cap, so an empty composer still visibly enlarges
-  // (toggling only the max-height did nothing — the native rows=1 box never
-  // grew with content).
   const minRows = expanded ? 6 : 1;
   const maxRows = expanded ? 12 : 4;
-  useLayoutEffect(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    const cs = getComputedStyle(el);
-    const lineHeight = parseFloat(cs.lineHeight) || 20;
-    const blockPad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
-    const minH = minRows * lineHeight + blockPad;
-    const maxH = maxRows * lineHeight + blockPad;
-    el.style.height = 'auto';
-    const next = Math.min(Math.max(el.scrollHeight, minH), maxH);
-    el.style.height = `${next}px`;
-    el.style.overflowY = el.scrollHeight > maxH + 1 ? 'auto' : 'hidden';
-  }, [draft, expanded, minRows, maxRows]);
 
   const emojiPanel = (
     <div className="sk-emoji-panel" data-emoji-panel>
@@ -209,7 +172,7 @@ export function ChatComposer({ groupMembers, replyTarget, editTarget, placeholde
       <div className="sk-emoji-group">
         <span>{t('composer.emojiAll')}</span>
         <div className="sk-emoji-grid">
-          {EMOJI_GROUPS.flat().map(emoji => (
+          {COMPOSER_EMOJIS.map(emoji => (
             <button key={emoji} type="button" className="sk-emoji-cell"
               aria-label={t('composer.emojiInsert', { emoji })} onClick={() => insertEmoji(emoji)}>{emoji}</button>
           ))}
@@ -327,7 +290,7 @@ export function ChatComposer({ groupMembers, replyTarget, editTarget, placeholde
               ))}
             </div>
           )}
-          <TextArea ref={textareaRef} framing="embedded" rows={1}
+          <TextArea ref={textareaRef} framing="embedded" rows={1} autoGrow minimumRows={minRows} maximumRows={maxRows}
             className="sk-composer-input" value={draft} aria-label={t('composer.inputAria')}
             data-composer-value={draft}
             data-composer-expanded={expanded ? 'true' : 'false'}

@@ -22,7 +22,7 @@
   padding: 0 8px;
   border: 0;
   border-radius: 999px;
-  background: var(--brand-muted);
+  background: var(--pt-subtle);
   font-size: 13px;
   line-height: 1;
 }
@@ -40,10 +40,10 @@
 .mobile-reaction-chip[aria-pressed='true'] .mobile-reaction-visual {
   background: color-mix(
     in srgb,
-    var(--brand-primary) 8%,
-    var(--brand-surface)
+    var(--pt-accent) 8%,
+    var(--pt-surface)
   );
-  color: var(--brand-primary);
+  color: var(--pt-accent);
 }
 
 .mobile-reaction-picker {
@@ -53,9 +53,9 @@
   gap: 2px;
   padding: 4px;
   overflow-x: auto;
-  border: 1px solid var(--brand-border);
+  border: 1px solid var(--pt-border);
   border-radius: 999px;
-  background: var(--brand-surface);
+  background: var(--pt-surface);
 }
 
 .mobile-reaction-picker > button {
@@ -76,8 +76,8 @@
 .mobile-reaction-picker > button[aria-pressed='true'] {
   background: color-mix(
     in srgb,
-    var(--brand-primary) 10%,
-    var(--brand-surface)
+    var(--pt-accent) 10%,
+    var(--pt-surface)
   );
 }
 
@@ -90,6 +90,6 @@
 .mobile-reaction-chip:focus-visible,
 .mobile-reaction-picker > button:focus-visible {
   border-radius: 999px;
-  outline: 2px solid var(--brand-primary);
+  outline: 2px solid var(--pt-focus);
   outline-offset: -2px;
 }

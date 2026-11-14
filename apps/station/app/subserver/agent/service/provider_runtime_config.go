@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
 
@@ -14,8 +13,11 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
+	providercli "github.com/peers-labs/peers-touch/station/app/subserver/agent/service/cli"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/cli/environment"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -23,8 +25,6 @@ const (
 	minCLIProviderTimeoutSeconds     = 10
 	maxCLIProviderTimeoutSeconds     = 3600
 )
-
-var providerEnvironmentKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 func DefaultProviderRuntimeConfig(
 	provider *catalog.CatalogProvider,
@@ -92,6 +92,9 @@ func ValidateProviderRuntimeConfig(
 	if config == nil {
 		return fmt.Errorf("runtime configuration is required")
 	}
+	if len(config.GlobalPrompt) > 32000 || strings.ContainsRune(config.GlobalPrompt, '\x00') {
+		return fmt.Errorf("global prompt exceeds the allowed size or contains a null byte")
+	}
 	if !provider.SupportsConfiguration("default-model") &&
 		strings.TrimSpace(config.DefaultModel) != "" {
 		return fmt.Errorf("default model is not configurable for this provider")
@@ -111,13 +114,8 @@ func ValidateProviderRuntimeConfig(
 	if !provider.SupportsConfiguration("startup-args") && len(config.StartupArgs) > 0 {
 		return fmt.Errorf("startup arguments are not configurable for this provider")
 	}
-	if len(config.StartupArgs) > 64 {
-		return fmt.Errorf("startup arguments exceed the allowed count")
-	}
-	for _, argument := range config.StartupArgs {
-		if len(argument) > 4096 || hasProviderControlCharacter(argument) {
-			return fmt.Errorf("startup arguments are invalid")
-		}
+	if err := providercli.ValidateStartupArgs(config.StartupArgs); err != nil {
+		return err
 	}
 	if !provider.SupportsConfiguration("environment") && len(config.Environment) > 0 {
 		return fmt.Errorf("environment is not configurable for this provider")
@@ -125,25 +123,8 @@ func ValidateProviderRuntimeConfig(
 	if len(config.Environment) > 64 {
 		return fmt.Errorf("environment exceeds the allowed entry count")
 	}
-	for key, value := range config.Environment {
-		upperKey := strings.ToUpper(key)
-		if !providerEnvironmentKeyPattern.MatchString(key) ||
-			len(value) > 8192 ||
-			hasProviderControlCharacter(value) {
-			return fmt.Errorf("environment contains an invalid entry")
-		}
-		if upperKey == "PATH" ||
-			upperKey == "HOME" ||
-			upperKey == "RUST_LOG" ||
-			strings.HasPrefix(upperKey, "PEERS_TOUCH_") {
-			return fmt.Errorf("environment cannot override Station-owned variables")
-		}
-		if strings.Contains(upperKey, "SECRET") ||
-			strings.Contains(upperKey, "TOKEN") ||
-			strings.Contains(upperKey, "PASSWORD") ||
-			strings.HasSuffix(upperKey, "_KEY") {
-			return fmt.Errorf("secret environment belongs in Station credential storage")
-		}
+	if err := environment.ValidateConfiguration(config.Environment); err != nil {
+		return err
 	}
 	if !provider.SupportsConfiguration("timeout") &&
 		config.TimeoutSeconds != 0 {
@@ -160,15 +141,6 @@ func ValidateProviderRuntimeConfig(
 	return nil
 }
 
-func hasProviderControlCharacter(value string) bool {
-	for _, char := range value {
-		if char == '\n' || char == '\r' || char == 0 {
-			return true
-		}
-	}
-	return false
-}
-
 // RuntimeDefaultService owns the actor-scoped explicit default provider/model.
 type RuntimeDefaultService struct{}
 
@@ -182,6 +154,9 @@ func (s *RuntimeDefaultService) GetRuntimeDefault(
 	ctx context.Context,
 	actorPTID string,
 ) (*persistence.AgentRuntimeDefault, bool, error) {
+	if err := ActorProviderOwner(actorPTID).Validate(); err != nil {
+		return nil, false, err
+	}
 	db, err := runtimeDefaultDB(ctx)
 	if err != nil {
 		return nil, false, err
@@ -209,6 +184,9 @@ func (s *RuntimeDefaultService) SetRuntimeDefault(
 	modelID string,
 	expectedRevision int64,
 ) (*persistence.AgentRuntimeDefault, error) {
+	if err := ActorProviderOwner(actorPTID).Validate(); err != nil {
+		return nil, err
+	}
 	db, err := runtimeDefaultDB(ctx)
 	if err != nil {
 		return nil, err
@@ -220,7 +198,7 @@ func (s *RuntimeDefaultService) SetRuntimeDefault(
 		First(&existing).Error
 	switch {
 	case findErr == nil:
-		if expectedRevision != 0 && existing.Revision != expectedRevision {
+		if existing.Revision != expectedRevision {
 			return nil, errcode.New(errcode.AgentVersionConflict, http.StatusConflict,
 				fmt.Sprintf("runtime default revision conflict: current=%d submitted=%d",
 					existing.Revision, expectedRevision), nil)
@@ -231,12 +209,16 @@ func (s *RuntimeDefaultService) SetRuntimeDefault(
 			"revision":            gorm.Expr("revision + 1"),
 			"updated_at":          now,
 		}
-		if err := db.WithContext(ctx).
+		result := db.WithContext(ctx).
 			Model(&persistence.AgentRuntimeDefault{}).
-			Where("id = ?", existing.ID).
-			Updates(updates).Error; err != nil {
+			Where("id = ? AND revision = ?", existing.ID, expectedRevision).
+			Updates(updates)
+		if err := result.Error; err != nil {
 			return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 				"failed to update runtime default", err)
+		}
+		if result.RowsAffected != 1 {
+			return nil, errcode.New(errcode.AgentVersionConflict, http.StatusConflict, "runtime default changed during update", nil)
 		}
 		if err := db.WithContext(ctx).
 			Where("id = ?", existing.ID).
@@ -258,9 +240,13 @@ func (s *RuntimeDefaultService) SetRuntimeDefault(
 			CreatedAt:         now,
 			UpdatedAt:         now,
 		}
-		if err := db.WithContext(ctx).Create(row).Error; err != nil {
+		result := db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(row)
+		if err := result.Error; err != nil {
 			return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 				"failed to persist runtime default", err)
+		}
+		if result.RowsAffected != 1 {
+			return nil, errcode.New(errcode.AgentVersionConflict, http.StatusConflict, "runtime default was created concurrently", nil)
 		}
 		return row, nil
 	default:

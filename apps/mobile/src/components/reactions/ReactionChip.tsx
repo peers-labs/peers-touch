@@ -1,6 +1,5 @@
-import { theme } from 'antd';
-import { SmilePlus } from 'lucide-react';
 import type { ButtonHTMLAttributes } from 'react';
+import { Icon } from '@peers-touch/ui';
 
 import './reactions.css';
 
@@ -19,17 +18,13 @@ export function ReactionChip({
   label,
   className = '',
   onClick,
-  style,
   ...props
 }: ReactionChipProps) {
-  const { token } = theme.useToken();
-
   return (
     <button
       {...props}
       type="button"
       className={`mobile-reaction-chip ${className}`}
-      style={{ color: token.colorText, ...style }}
       data-reaction-chip={emoji ?? 'add'}
       aria-label={label}
       aria-pressed={emoji ? selected : undefined}
@@ -45,7 +40,7 @@ export function ReactionChip({
         {emoji ? (
           <span aria-hidden="true">{emoji}</span>
         ) : (
-          <SmilePlus size={16} aria-hidden="true" />
+          <Icon iconId="smile-plus" size={16} />
         )}
         {count !== undefined ? (
           <span className="mobile-reaction-count">{count}</span>

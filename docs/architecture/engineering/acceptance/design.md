@@ -36,6 +36,9 @@ Development 前置依赖核验当前请求的原 functional manifest、完整 in
 ## 1. 核心原则
 
 1. **Capability first** — 验收对象是产品能力，不是脚本、页面或测试文件。
+   产品能力必须满足 [产品验收准则](product-acceptance-criteria.md)：
+   验证真实使用入口、产出消费方与接收方结果。入口和消费方都没有就是孤岛；
+   任一必需消费环节没有证据都不得声称完成。
 2. **Evidence over confidence** — Agent 的判断必须落到可重复 evidence，不能只给主观信心。
 3. **Stable gates only** — 临时探针可以帮助诊断，但不能成为完成标准，除非沉淀为 stable gate。
 4. **Bounded intelligence** — AI 负责影响分析、解释与风险复盘；流程负责可重复选择、执行和报告。

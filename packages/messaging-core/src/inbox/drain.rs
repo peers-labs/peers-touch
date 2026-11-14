@@ -7,6 +7,134 @@ use std::sync::Arc;
 
 const DEVICE_INBOX_ITEM_NOT_HEAD: &str = "[code=DEVICE_INBOX_ITEM_NOT_HEAD]";
 
+/// Machine-readable prefix a store-layer validation error starts with when
+/// the claimed item is deterministically invalid for this device. The marker
+/// lets repositories reject through their existing `String` error surface
+/// without widening every store method to a typed enum.
+pub const ITEM_REJECTION_MARKER: &str = "[messaging-item-rejected:";
+pub const ITEM_REJECTION_MARKER_END: &str = "]";
+
+/// Why a claimed item is permanently rejected. The vocabulary mirrors the
+/// Station queue reject codes; the client only quarantines locally and acks
+/// today, but the recorded reason stays interchangeable with a future
+/// Station-side reject RPC.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ItemRejectionCode {
+    PayloadInvalid,
+    IntegrityFailed,
+    RecipientMismatch,
+}
+
+impl ItemRejectionCode {
+    pub fn as_wire_name(&self) -> &'static str {
+        match self {
+            ItemRejectionCode::PayloadInvalid => "PAYLOAD_INVALID",
+            ItemRejectionCode::IntegrityFailed => "INTEGRITY_FAILED",
+            ItemRejectionCode::RecipientMismatch => "RECIPIENT_MISMATCH",
+        }
+    }
+
+    fn parse_wire_name(value: &str) -> Option<Self> {
+        match value {
+            "PAYLOAD_INVALID" => Some(ItemRejectionCode::PayloadInvalid),
+            "INTEGRITY_FAILED" => Some(ItemRejectionCode::IntegrityFailed),
+            "RECIPIENT_MISMATCH" => Some(ItemRejectionCode::RecipientMismatch),
+            _ => None,
+        }
+    }
+}
+
+/// Wrap a human-readable validation message with a permanent-rejection
+/// marker. Store layers return this string through their ordinary error
+/// channel; consumers decode it with [`classify_reception_error`].
+pub fn mark_item_rejection(code: ItemRejectionCode, message: impl Into<String>) -> String {
+    format!(
+        "{ITEM_REJECTION_MARKER}{}{ITEM_REJECTION_MARKER_END} {}",
+        code.as_wire_name(),
+        message.into()
+    )
+}
+
+/// Failure raised while consuming a claimed inbox item.
+///
+/// * `rejection = None` — a retryable local/environmental failure (storage
+///   error, missing crypto state, ratchet gap). The drain must stop at this
+///   item and claim it again later; acking past it would lose a deliverable
+///   message.
+/// * `rejection = Some(code)` — a deterministic rejection of the item bytes
+///   themselves. Identical retries can never succeed, and the consumer has
+///   already durably quarantined the raw item. The drain acks the item so a
+///   poison conversation cannot head-of-line-block the device lane.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConsumeError {
+    rejection: Option<ItemRejectionCode>,
+    message: String,
+}
+
+impl ConsumeError {
+    pub fn retry(message: impl Into<String>) -> Self {
+        Self {
+            rejection: None,
+            message: message.into(),
+        }
+    }
+
+    pub fn rejected(code: ItemRejectionCode, message: impl Into<String>) -> Self {
+        Self {
+            rejection: Some(code),
+            message: message.into(),
+        }
+    }
+
+    pub fn is_permanent(&self) -> bool {
+        self.rejection.is_some()
+    }
+
+    pub fn rejection_code(&self) -> Option<ItemRejectionCode> {
+        self.rejection
+    }
+
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+}
+
+impl std::fmt::Display for ConsumeError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+/// Every unclassified failure defaults to retryable. This `From` is the
+/// safety-first boundary: processors only escalate to a permanent rejection
+/// at deterministic validation sites they own.
+impl From<String> for ConsumeError {
+    fn from(message: String) -> Self {
+        match parse_marked_rejection(&message) {
+            Some(code) => ConsumeError::rejected(code, message),
+            None => ConsumeError::retry(message),
+        }
+    }
+}
+
+impl From<&str> for ConsumeError {
+    fn from(message: &str) -> Self {
+        ConsumeError::from(message.to_string())
+    }
+}
+
+fn parse_marked_rejection(message: &str) -> Option<ItemRejectionCode> {
+    let body = message.strip_prefix(ITEM_REJECTION_MARKER)?;
+    let code = body.split(ITEM_REJECTION_MARKER_END).next()?;
+    ItemRejectionCode::parse_wire_name(code)
+}
+
+/// Classify a raw processor/store error string into a typed consumption
+/// failure, honouring the store-layer rejection marker.
+pub fn classify_reception_error(message: impl Into<String>) -> ConsumeError {
+    ConsumeError::from(message.into())
+}
+
 pub type AcknowledgedItemObserver = Arc<dyn Fn(&DurableDeviceInboxItem) + Send + Sync>;
 pub type BeforeConsumeHook =
     Arc<dyn Fn(&DurableDeviceInboxItem) -> Result<(), String> + Send + Sync>;
@@ -18,11 +146,16 @@ pub trait QueueTransport {
 }
 
 pub trait ClaimedItemConsumer {
-    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String>;
+    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64)
+        -> Result<(), ConsumeError>;
 }
 
 impl<C: ClaimedItemConsumer + ?Sized> ClaimedItemConsumer for Arc<C> {
-    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(
+        &self,
+        item: &DurableDeviceInboxItem,
+        consumer_epoch: u64,
+    ) -> Result<(), ConsumeError> {
         self.as_ref().consume(item, consumer_epoch)
     }
 }
@@ -33,6 +166,7 @@ pub struct DrainProgress {
     pub cursor: i64,
     pub lane_head: i64,
     pub processed: usize,
+    pub quarantined: usize,
 }
 
 pub struct QueueDrain<T, C> {
@@ -126,14 +260,25 @@ impl<T: QueueTransport, C: ClaimedItemConsumer> QueueDrain<T, C> {
 
         let mut next_cursor = response_cursor.max(response.acked_through_sequence);
         let mut processed = 0;
+        let mut quarantined = 0;
         for item in &response.items {
             if item.lane_sequence != next_cursor + 1 {
                 return Err("messaging claimed batch is not contiguous".to_string());
             }
             if let Some(hook) = &self.before_consume_hook {
-                hook(item)?;
+                let _ = hook(item)?;
             }
-            self.consumer.consume(item, response.consumer_epoch)?;
+            if let Err(consume_error) = self.consumer.consume(item, response.consumer_epoch) {
+                if !consume_error.is_permanent() {
+                    // Retryable failure: the item is deliverable but local
+                    // state is not ready. Leave it unacked and stop the lane.
+                    return Err(consume_error.message().to_string());
+                }
+                // Permanent rejection: the consumer has already durably
+                // quarantined the raw item. Ack through it so a poison
+                // conversation cannot stall deliveries behind it.
+                quarantined += 1;
+            }
             self.transport
                 .acknowledge(AcknowledgeDeviceInboxItemRequest {
                     device: Some(self.device.clone()),
@@ -154,6 +299,7 @@ impl<T: QueueTransport, C: ClaimedItemConsumer> QueueDrain<T, C> {
             cursor: next_cursor,
             lane_head: response.lane_head_sequence,
             processed,
+            quarantined,
         })
     }
 }
@@ -197,6 +343,7 @@ mod tests {
 
     struct Consumer {
         fail_at: Option<i64>,
+        reject_at: Option<i64>,
         consumed: RefCell<Vec<i64>>,
     }
 
@@ -205,9 +352,17 @@ mod tests {
             &self,
             item: &DurableDeviceInboxItem,
             _consumer_epoch: u64,
-        ) -> Result<(), String> {
+        ) -> Result<(), ConsumeError> {
             if self.fail_at == Some(item.lane_sequence) {
-                return Err("injected local commit failure".to_string());
+                return Err(ConsumeError::retry(
+                    "injected local commit failure".to_string(),
+                ));
+            }
+            if self.reject_at == Some(item.lane_sequence) {
+                return Err(ConsumeError::rejected(
+                    ItemRejectionCode::PayloadInvalid,
+                    "injected deterministic rejection".to_string(),
+                ));
             }
             self.consumed.borrow_mut().push(item.lane_sequence);
             Ok(())
@@ -237,6 +392,7 @@ mod tests {
             },
             Consumer {
                 fail_at: None,
+                reject_at: None,
                 consumed: RefCell::new(Vec::new()),
             },
             actor_device_ref("ptid:alice", "device-1"),
@@ -275,6 +431,7 @@ mod tests {
             },
             Consumer {
                 fail_at: Some(1),
+                reject_at: None,
                 consumed: RefCell::new(Vec::new()),
             },
             actor_device_ref("ptid:alice", "device-1"),
@@ -304,6 +461,7 @@ mod tests {
             },
             Consumer {
                 fail_at: Some(2),
+                reject_at: None,
                 consumed: RefCell::new(Vec::new()),
             },
             actor_device_ref("ptid:alice", "device-1"),
@@ -320,6 +478,60 @@ mod tests {
     }
 
     #[test]
+    fn permanent_rejection_is_acked_and_never_blocks_later_items() {
+        let drain = QueueDrain::new(
+            Transport {
+                items: vec![item(1), item(2), item(3)],
+                claims: RefCell::new(Vec::new()),
+                acknowledgements: RefCell::new(Vec::new()),
+            },
+            Consumer {
+                fail_at: None,
+                reject_at: Some(2),
+                consumed: RefCell::new(Vec::new()),
+            },
+            actor_device_ref("ptid:alice", "device-1"),
+            "consumer-1".to_string(),
+            10,
+        )
+        .unwrap();
+
+        let progress = drain.drain_once(0, 0).unwrap();
+        assert_eq!(*drain.consumer.consumed.borrow(), vec![1, 3]);
+        assert_eq!(progress.cursor, 3);
+        assert_eq!(progress.processed, 3);
+        assert_eq!(progress.quarantined, 1);
+        let acknowledgements = drain.transport.acknowledgements.borrow();
+        assert_eq!(acknowledgements.len(), 3);
+        assert_eq!(
+            acknowledgements.iter().map(|ack| ack.lane_sequence).collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
+    }
+
+    #[test]
+    fn store_rejection_marker_classifies_as_permanent_only_when_well_formed() {
+        assert_eq!(
+            classify_reception_error(mark_item_rejection(
+                ItemRejectionCode::RecipientMismatch,
+                "membership projection is invalid"
+            ))
+            .rejection_code(),
+            Some(ItemRejectionCode::RecipientMismatch)
+        );
+        assert!(classify_reception_error(
+            "messaging Direct decrypt failed: ratchet gap".to_string()
+        )
+        .rejection_code()
+        .is_none());
+        assert!(classify_reception_error(
+            "[messaging-item-rejected:BOGUS] nope".to_string()
+        )
+        .rejection_code()
+        .is_none());
+    }
+
+    #[test]
     fn before_consume_failure_stops_lane_before_commit_and_ack() {
         let inspected = Arc::new(std::sync::Mutex::new(Vec::new()));
         let inspected_state = inspected.clone();
@@ -331,6 +543,7 @@ mod tests {
             },
             Consumer {
                 fail_at: None,
+                reject_at: None,
                 consumed: RefCell::new(Vec::new()),
             },
             actor_device_ref("ptid:alice", "device-1"),
@@ -365,6 +578,7 @@ mod tests {
             },
             Consumer {
                 fail_at: None,
+                reject_at: None,
                 consumed: RefCell::new(Vec::new()),
             },
             actor_device_ref("ptid:alice", "device-1"),
@@ -421,6 +635,7 @@ mod tests {
             },
             Consumer {
                 fail_at: None,
+                reject_at: None,
                 consumed: RefCell::new(Vec::new()),
             },
             actor_device_ref("ptid:alice", "device-1"),
@@ -447,6 +662,7 @@ mod tests {
             },
             Consumer {
                 fail_at: None,
+                reject_at: None,
                 consumed: RefCell::new(Vec::new()),
             },
             actor_device_ref("ptid:alice", "device-1"),

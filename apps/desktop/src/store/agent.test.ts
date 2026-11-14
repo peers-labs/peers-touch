@@ -8,7 +8,6 @@ const api = vi.hoisted(() => ({
   getAgent: vi.fn(),
   getSelectedAgent: vi.fn(),
   listAvailableModels: vi.fn(),
-  listModelConfig: vi.fn(),
   getRuntimeDefault: vi.fn(),
   listAgentsWithMeta: vi.fn(),
   setSelectedAgent: vi.fn(),
@@ -17,6 +16,8 @@ const api = vi.hoisted(() => ({
 const capabilityStore = vi.hoisted(() => ({
   loadAgent: vi.fn(),
 }));
+const identity = vi.hoisted(() => ({ sessionEpoch: 1 }));
+vi.mock('./session', () => ({ useSessionStore: { getState: () => identity } }));
 
 vi.mock('../services/desktop_api', () => ({
   api,
@@ -73,6 +74,7 @@ const agent: Agent = {
 
 describe('Agent profile capability reconciliation', () => {
   beforeEach(() => {
+    identity.sessionEpoch = 1;
     vi.clearAllMocks();
     useAgentStore.setState({
       agents: [agent],
@@ -99,13 +101,29 @@ describe('Agent profile capability reconciliation', () => {
     capabilityStore.loadAgent.mockResolvedValue(undefined);
     api.getSelectedAgent.mockResolvedValue(agent.name);
     api.listAvailableModels.mockResolvedValue({ models: [], default: '' });
-    api.listModelConfig.mockResolvedValue({});
     api.listAgentsWithMeta.mockResolvedValue({
       agents: [agent],
       defaultAgent: agent.name,
       selectedAgent: agent.name,
     });
     api.setSelectedAgent.mockResolvedValue(undefined);
+  });
+
+  it('retains the roster on identical reconciliation and publishes real changes', async () => {
+    await useAgentStore.getState().loadAgents();
+    const accepted = useAgentStore.getState().agents;
+    api.listAgentsWithMeta.mockResolvedValueOnce({
+      agents: structuredClone(accepted), defaultAgent: agent.name, selectedAgent: agent.name,
+    });
+    await useAgentStore.getState().loadAgents();
+    expect(useAgentStore.getState().agents).toBe(accepted);
+    api.listAgentsWithMeta.mockResolvedValueOnce({
+      agents: [{ ...agent, title: 'Changed by Station', version: 8 }],
+      defaultAgent: agent.name, selectedAgent: agent.name,
+    });
+    await useAgentStore.getState().loadAgents();
+    expect(useAgentStore.getState().agents).not.toBe(accepted);
+    expect(useAgentStore.getState().agents[0].title).toBe('Changed by Station');
   });
 
   it('falls back when the selected model is no longer available', () => {
@@ -243,7 +261,22 @@ describe('Agent profile capability reconciliation', () => {
     });
   });
 
-  it('loads the Settings-owned default model when it is available', async () => {
+  it('preserves the accepted model catalog on identical background reads', async () => {
+    const model = {
+      id: 'model-1', display_name: 'Model 1', provider_id: 'provider-1',
+      provider_name: 'Provider 1', type: 'chat', context_window: 128000, enabled: true,
+    };
+    api.listAvailableModels.mockResolvedValue({ models: [model], default: model.id });
+    await useAgentStore.getState().loadModels();
+    const accepted = useAgentStore.getState().availableModels;
+    api.listAvailableModels.mockResolvedValueOnce({
+      models: structuredClone(accepted), default: model.id,
+    });
+    await useAgentStore.getState().loadModels();
+    expect(useAgentStore.getState().availableModels).toBe(accepted);
+  });
+
+  it('loads the account default model owned by Station when it is available', async () => {
     api.listAvailableModels.mockResolvedValueOnce({
       default: 'model-1',
       models: [
@@ -267,8 +300,8 @@ describe('Agent profile capability reconciliation', () => {
         },
       ],
     });
-    api.listModelConfig.mockResolvedValueOnce({
-      default: { provider: 'provider-2', model: 'model-2' },
+    api.getRuntimeDefault.mockResolvedValueOnce({
+      providerId: 'provider-2', modelId: 'model-2', revision: 2,
     });
 
     await useAgentStore.getState().loadModels();
@@ -277,7 +310,7 @@ describe('Agent profile capability reconciliation', () => {
     expect(useAgentStore.getState().defaultProviderId).toBe('provider-2');
   });
 
-  it('prefers the Station runtime default over the local model registry', async () => {
+  it('prefers the Station account default over the catalog fallback', async () => {
     api.listAvailableModels.mockResolvedValueOnce({
       default: 'model-1',
       models: [
@@ -300,9 +333,6 @@ describe('Agent profile capability reconciliation', () => {
           enabled: true,
         },
       ],
-    });
-    api.listModelConfig.mockResolvedValueOnce({
-      default: { provider: 'provider-1', model: 'model-1' },
     });
     api.getRuntimeDefault.mockResolvedValueOnce({
       providerId: 'provider-2',

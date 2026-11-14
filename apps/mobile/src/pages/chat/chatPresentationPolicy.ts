@@ -30,7 +30,7 @@ ResolvedChatComposerCapabilities = {
   emoji: true,
   file: true,
   screenshot: false,
-  voice: false,
+  voice: true,
 };
 
 export const MOBILE_CHAT_COMPOSER_CAPABILITIES_THREAD:

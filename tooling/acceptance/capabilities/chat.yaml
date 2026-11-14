@@ -411,6 +411,15 @@
       ],
       "synthetic_paths": [
         "apps/station/app/subserver/groupcall/**",
+        "apps/station/frame/core/facility/session/media_authorization.go",
+        "apps/station/frame/core/facility/mediaaccess/**",
+        "apps/station/app/subserver/actor_identity/infrastructure/persistence/repository.go",
+        "apps/station/app/subserver/conversation/group_call_capability.go",
+        "packages/client-chat-core/src/group-call/**",
+        "apps/mobile/src/features/call/**",
+        "apps/mobile/src/components/call/MobileGroupCallSurface.tsx",
+        "tooling/docker/livekit*",
+        "tooling/docker/patch-livekit.py",
         "apps/desktop/src/modules/groupCall/**",
         "apps/desktop/src/components/chat/GroupCallSurface.tsx",
         "apps/desktop/src/components/chat/ChatMessageArea.tsx",
@@ -423,25 +432,25 @@
       ],
       "evidence": {
         "truth_sources": [
-          "authenticated Group membership",
-          "deterministic LiveKit room identity",
-          "LiveKit participant and media-track state"
+          "Home Session/device and Conversation authorization fences",
+          "durable endpoint grants and current SFU admission SID",
+          "actual inbound/outbound RTP progress"
         ],
         "surfaces": [
-          "Alice, Bob, and Charlie native group-call surfaces",
+          "Alice and Bob Desktop plus Charlie Mobile native group-call surfaces",
           "remote audio and participant video elements",
           "compact, expanded, and fullscreen call layouts"
         ],
         "proven_by": ["chat-lifecycle-group-live-e2e"],
         "proven_scope": [
-          "Exact-source macOS Native Desktop proves a same-Station three-participant audio and video call",
-          "The journey proves mute, camera toggle, late join, leave, and media release"
+          "Required exact-source mixed Native Journey covers three actors across federated Stations and iOS audio/video RTP",
+          "Required Journey covers native controls, late join, restart, permission withdrawal, consumed-token replay and media release"
         ],
         "unproven_scope": [
-          "Cross-Station webhook fan-out and authority routing",
           "Forced transport reconnect",
-          "membership-removal and device-revocation ejection",
-          "Linux, Windows, and Mobile group-call runtime cells"
+          "SFU/Authority restart and replay of SFU-refreshed JWT",
+          "Linux, Windows, Android and physical-device group-call runtime cells",
+          "Mixed-native required Journey remains unproven until current-source Gate evidence passes"
         ]
       }
     },

@@ -13,8 +13,8 @@ from tooling.acceptance.core import DriverError, REPO_ROOT
 from tooling.acceptance.gates.chat.lifecycle_live_voice import (
     GATE_ID,
     REQUIRED_LIVE_VOICE_ASSERTIONS,
-    _media_harness,
 )
+from tooling.acceptance.gates.chat.native_support import media_harness
 from tooling.acceptance.gates.chat.lifecycle_live_voice_e2e import (
     REQUIRED_LIVE_VOICE_REPORT_ASSERTIONS,
     REQUIRED_LIVE_VOICE_STEPS,
@@ -47,10 +47,10 @@ class LifecycleLiveVoiceContractTest(unittest.TestCase):
         binding = SimpleNamespace(native_adapter=adapter)
 
         with patch(
-            "tooling.acceptance.gates.chat.lifecycle_live_voice.async_harness",
+            "tooling.acceptance.gates.chat.native_support.async_harness",
             side_effect=completed_call,
         ):
-            result = _media_harness(
+            result = media_harness(
                 client,
                 binding,
                 "callStart",
@@ -218,10 +218,12 @@ class LifecycleLiveVoiceContractTest(unittest.TestCase):
         )
         self.assertIn("send_text(alice, text)", gate)
         self.assertIn("_has_live_track", gate)
-        self.assertIn("ThreadPoolExecutor", gate)
+        native_support = self.source("tooling/acceptance/gates/chat/native_support.py")
+        self.assertIn("ThreadPoolExecutor", native_support)
+        self.assertIn("media_harness", gate)
         self.assertIn(
             ".accept_media_capture_permission_to_process(",
-            gate,
+            native_support,
         )
         self.assertNotIn('async_harness(alice, "callStart"', gate)
         self.assertNotIn('async_harness(bob, "callAccept"', gate)

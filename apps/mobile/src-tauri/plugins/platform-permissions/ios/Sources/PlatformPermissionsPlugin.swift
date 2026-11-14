@@ -5,6 +5,7 @@ import Foundation
 import Network
 import ObjectiveC.runtime
 import Photos
+import PhotosUI
 import SwiftRs
 import Tauri
 import UIKit
@@ -223,7 +224,7 @@ private enum NetworkType: String, Encodable {
 
 final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
   UIDocumentPickerDelegate, UIImagePickerControllerDelegate,
-  UINavigationControllerDelegate
+  UINavigationControllerDelegate, PHPickerViewControllerDelegate
 {
   private var lifecycleObservers: [NSObjectProtocol] = []
   private var lifecycleSequence = 0
@@ -372,6 +373,13 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
       let args = try invoke.parseArgs(SystemActionArgs.self)
       DispatchQueue.main.async {
         switch args.kind {
+        case "copy_text":
+          guard let text = args.text, !text.isEmpty, text.utf8.count <= 64 * 1024 else {
+            invoke.resolve(SystemActionResponse(state: .failed, reason: "clipboard_text_invalid"))
+            return
+          }
+          UIPasteboard.general.string = text
+          invoke.resolve(SystemActionResponse(state: .completed, reason: nil))
         case "open_app_settings":
           guard let url = URL(string: UIApplication.openSettingsURLString) else {
             invoke.resolve(
@@ -675,6 +683,19 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
           camera.delegate = self
           camera.mediaTypes = self.cameraMediaTypes(args.acceptedMediaKinds)
           picker = camera
+        } else if args.capability == "photo_library" {
+          var configuration = PHPickerConfiguration()
+          configuration.selectionLimit = args.maxItemCount
+          configuration.preferredAssetRepresentationMode = .compatible
+          let filters: [PHPickerFilter] = args.acceptedMediaKinds.compactMap {
+            if $0 == "image" { return .images }
+            if $0 == "video" { return .videos }
+            return nil
+          }
+          configuration.filter = .any(of: filters)
+          let photos = PHPickerViewController(configuration: configuration)
+          photos.delegate = self
+          picker = photos
         } else {
           let documents = UIDocumentPickerViewController(
             forOpeningContentTypes: self.documentTypes(args.acceptedMediaKinds),
@@ -698,7 +719,6 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
           else {
             return
           }
-          self.activeMediaPickerController?.dismiss(animated: true)
           self.finishMediaPick(
             outcome: "expired",
             items: [],
@@ -708,6 +728,89 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
       }
     } catch {
       invoke.reject("invalid media picker request", code: "PLATFORM_PICKER_INVALID")
+    }
+  }
+
+  public func picker(
+    _ picker: PHPickerViewController,
+    didFinishPicking results: [PHPickerResult]
+  ) {
+    guard let active = activeMediaPick,
+      activeMediaPickerController === picker
+    else {
+      picker.dismiss(animated: true)
+      return
+    }
+    picker.dismiss(animated: true)
+    guard !results.isEmpty else {
+      finishMediaPick(outcome: "cancelled", items: [], errorCode: nil)
+      return
+    }
+    guard results.count <= active.args.maxItemCount else {
+      finishMediaPick(outcome: "failed", items: [], errorCode: "invalid_item_count")
+      return
+    }
+    // Item-provider URLs exist only during their callback. Copy them before
+    // returning, then let the original bounded staging owner validate the set.
+    let imported = FileManager.default.temporaryDirectory
+      .appendingPathComponent("peers-touch-native-picker", isDirectory: true)
+      .appendingPathComponent(active.args.requestId, isDirectory: true)
+      .appendingPathComponent("imports", isDirectory: true)
+    do {
+      try FileManager.default.createDirectory(
+        at: imported, withIntermediateDirectories: true
+      )
+    } catch {
+      finishMediaPick(outcome: "failed", items: [], errorCode: "native_copy_failed")
+      return
+    }
+    let group = DispatchGroup()
+    var urls = [URL?](repeating: nil, count: results.count)
+    var failed = false
+    for (index, result) in results.enumerated() {
+      group.enter()
+      let provider = result.itemProvider
+      let type = provider.registeredTypeIdentifiers.compactMap { UTType($0) }
+        .first {
+          (active.args.acceptedMediaKinds.contains("image") && $0.conforms(to: .image))
+            || (active.args.acceptedMediaKinds.contains("video") && $0.conforms(to: .movie))
+        }
+      guard let type = type else {
+        failed = true
+        group.leave()
+        continue
+      }
+      provider.loadFileRepresentation(forTypeIdentifier: type.identifier) { source, error in
+        var copied: URL?
+        if let source = source, error == nil {
+          let suffix = type.preferredFilenameExtension ?? source.pathExtension
+          let destination = imported.appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension(suffix)
+          do {
+            try FileManager.default.copyItem(at: source, to: destination)
+            copied = destination
+          } catch {}
+        }
+        let selected = copied
+        DispatchQueue.main.async {
+          urls[index] = selected
+          if selected == nil { failed = true }
+          group.leave()
+        }
+      }
+    }
+    group.notify(queue: .main) { [weak self] in
+      defer { try? FileManager.default.removeItem(at: imported) }
+      guard let self = self,
+        self.activeMediaPick?.args.requestId == active.args.requestId
+      else { return }
+      do {
+        guard !failed else { throw NativePickerFailure.invalidSelection }
+        let items = try self.copyPickedURLs(urls.compactMap { $0 }, args: active.args)
+        self.finishMediaPick(outcome: "selected", items: items, errorCode: nil)
+      } catch {
+        self.finishMediaPick(outcome: "failed", items: [], errorCode: "native_copy_failed")
+      }
     }
   }
 
@@ -856,13 +959,9 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
         )
       }
     case "photo-library":
-      checkPermission(.storage) {
-        completion(
-          self.capabilityState($0),
-          "ios.permission.photo-library",
-          self.capabilityDetail($0)
-        )
-      }
+      // PHPicker grants access to the user's selection without broad library
+      // permission; denied PHPhotoLibrary access must not disable this picker.
+      completion(.available, "ios.photo-picker", nil)
     case "document-picker":
       completion(.available, "ios.document-picker", nil)
     case "notifications":
@@ -1241,7 +1340,7 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
   private func validMediaPickArgs(_ args: MediaPickArgs) -> Bool {
     let nowMs = Int(Date().timeIntervalSince1970 * 1_000)
     return !args.requestId.isEmpty
-      && (args.surfaceKind == "chat_attachment" || args.surfaceKind == "moment_media")
+      && (args.surfaceKind == "chat_attachment" || args.surfaceKind == "moment_media" || args.surfaceKind == "profile_image")
       && (
         args.capability == "photo_library"
           || args.capability == "camera"
@@ -1310,9 +1409,8 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
             url.stopAccessingSecurityScopedResource()
           }
         }
-        let destination = root.appendingPathComponent(
-          "\(UUID().uuidString).stage"
-        )
+        let destination = root.appendingPathComponent(UUID().uuidString)
+          .appendingPathExtension(url.pathExtension.isEmpty ? "stage" : url.pathExtension)
         try FileManager.default.copyItem(at: url, to: destination)
         created.append(destination)
         let attributes = try FileManager.default.attributesOfItem(
@@ -1355,6 +1453,7 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
       deleteNativePickerFiles(items.map { URL(fileURLWithPath: $0.localPath) })
       return
     }
+    activeMediaPickerController?.dismiss(animated: true)
     activeMediaPick = nil
     activeMediaPickerController = nil
     resolveMediaPick(

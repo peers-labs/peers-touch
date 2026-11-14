@@ -18,9 +18,9 @@ describe('Mobile scroll owner restoration', () => {
       matches: () => false,
       querySelector: (selector: string) => selector === '.page-container' ? page : null,
     } as unknown as Element;
-    saveScrollPosition('tab:contacts', shell);
+    saveScrollPosition('tab:chat:contacts', shell);
     page.scrollTop = 0;
-    expect(restoreScrollPosition('tab:contacts', shell)).toBe(true);
+    expect(restoreScrollPosition('tab:chat:contacts', shell)).toBe(true);
     expect(page.scrollTop).toBe(720);
   });
 

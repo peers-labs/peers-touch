@@ -1,0 +1,232 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "引导 Meta 分层：哪些烧进包，哪些启动时拉",
+    "subtitle": "寻址类 meta 在打包时烧进二进制；断言材料与实时行为永远在运行时拉取并重新验签。L3/L4 让伙伴设备零配置启动，线上签名目录始终是运行时唯一权威。",
+    "locale": "zh",
+    "output": "bootstrap-meta-layers.zh.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase"
+  },
+  "components": [
+    {
+      "id": "build",
+      "type": "backend",
+      "label": "make package",
+      "sublabel": "打包期烧录",
+      "tag": "build",
+      "pos": [
+        40,
+        330
+      ],
+      "size": [
+        190,
+        84
+      ]
+    },
+    {
+      "id": "l0",
+      "type": "backend",
+      "label": "L0 发布身份",
+      "sublabel": "flavor · channel · commit（D05）",
+      "tag": "baked",
+      "pos": [
+        300,
+        56
+      ],
+      "size": [
+        560,
+        62
+      ]
+    },
+    {
+      "id": "l1",
+      "type": "security",
+      "label": "L1 发布者公钥环",
+      "sublabel": "签名信任根 · 只能随发版轮换",
+      "tag": "baked",
+      "pos": [
+        300,
+        140
+      ],
+      "size": [
+        560,
+        62
+      ]
+    },
+    {
+      "id": "l2",
+      "type": "cloud",
+      "label": "L2 引导源",
+      "sublabel": "x-config base URL，尾锚（D06）",
+      "tag": "baked",
+      "pos": [
+        300,
+        224
+      ],
+      "size": [
+        560,
+        62
+      ]
+    },
+    {
+      "id": "l3",
+      "type": "database",
+      "label": "L3 初始签名快照",
+      "sublabel": "打包时拉取并验签的信封 · 过期转 stale",
+      "tag": "bootstrap",
+      "pos": [
+        300,
+        308
+      ],
+      "size": [
+        560,
+        62
+      ]
+    },
+    {
+      "id": "l4",
+      "type": "external",
+      "label": "L4 Station 引导指针",
+      "sublabel": "只含 origin 与名称 · 信任现场重建",
+      "tag": "bootstrap",
+      "pos": [
+        300,
+        392
+      ],
+      "size": [
+        560,
+        62
+      ]
+    },
+    {
+      "id": "l5",
+      "type": "frontend",
+      "label": "L5 设备运行时状态",
+      "sublabel": "注册表 · 会话 · 快照缓存 · 永不烘焙",
+      "tag": "device",
+      "pos": [
+        300,
+        476
+      ],
+      "size": [
+        560,
+        62
+      ]
+    },
+    {
+      "id": "xcfg",
+      "type": "cloud",
+      "label": "签名 x-config 目录",
+      "sublabel": "operator 发布 · sequence 单调",
+      "tag": "remote",
+      "pos": [
+        930,
+        222
+      ],
+      "size": [
+        210,
+        84
+      ]
+    },
+    {
+      "id": "station",
+      "type": "security",
+      "label": "Home Station",
+      "sublabel": "现场发现 · challenge + 证明",
+      "tag": "remote",
+      "pos": [
+        930,
+        382
+      ],
+      "size": [
+        210,
+        84
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "编译期烧录 —— 同一发布内不可变",
+      "wraps": [
+        "l0",
+        "l1",
+        "l2"
+      ],
+      "pad": 10
+    },
+    {
+      "kind": "region",
+      "label": "出厂引导 —— 首次接受刷新后让位",
+      "wraps": [
+        "l3",
+        "l4"
+      ],
+      "pad": 10
+    },
+    {
+      "kind": "region",
+      "label": "设备本地 —— 永不烘焙，目录刷新永不改写",
+      "wraps": [
+        "l5"
+      ],
+      "pad": 10
+    }
+  ],
+  "connections": [
+    {
+      "from": "build",
+      "to": "l3",
+      "label": "打包时拉取并验签"
+    },
+    {
+      "from": "build",
+      "to": "l4",
+      "label": "派生寻址指针"
+    },
+    {
+      "from": "xcfg",
+      "to": "l3",
+      "label": "运行时刷新：current 取代 embedded",
+      "variant": "dashed"
+    },
+    {
+      "from": "xcfg",
+      "to": "l2",
+      "label": "经 L2 找到 origins",
+      "variant": "dashed"
+    },
+    {
+      "from": "l4",
+      "to": "station",
+      "label": "首跑现场发现"
+    },
+    {
+      "from": "station",
+      "to": "l5",
+      "label": "验证后的路由写入注册表"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "启动期用途（离线引导）",
+      "items": [
+        "L0/L1/L2 编译进包：无网络也具备身份、信任根与目录 origins。",
+        "L3 在任何拉取前以 embedded 新鲜度先可见；一旦存在 current 快照，它不再参与指令求值。",
+        "L4 仅在 Station 注册表为空时触发一次现场发现；Station 信任在现场建立，绝不来自烧录。"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "远程分发用途（运行时权威）",
+      "items": [
+        "后台按 L2 合并源（override、广告源、烘焙尾锚）拉取签名信封。",
+        "接受的 current 快照取代 L3；过期 embedded 变 stale，不再可操作。",
+        "目录刷新永不改写 L5：注册表、会话、当前 Station 与 Actor 作用域归设备所有。"
+      ]
+    }
+  ]
+}

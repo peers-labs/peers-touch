@@ -70,15 +70,72 @@ func (GroupCallAuthorityJoinDecision) EnumDescriptor() ([]byte, []int) {
 	return file_domain_realtime_group_call_proto_rawDescGZIP(), []int{0}
 }
 
+type GroupCallEndpointControlKind int32
+
+const (
+	GroupCallEndpointControlKind_GROUP_CALL_ENDPOINT_CONTROL_KIND_UNSPECIFIED        GroupCallEndpointControlKind = 0
+	GroupCallEndpointControlKind_GROUP_CALL_ENDPOINT_CONTROL_KIND_CHECK_HOME         GroupCallEndpointControlKind = 1
+	GroupCallEndpointControlKind_GROUP_CALL_ENDPOINT_CONTROL_KIND_REVOKE_AUTHORITY   GroupCallEndpointControlKind = 2
+	GroupCallEndpointControlKind_GROUP_CALL_ENDPOINT_CONTROL_KIND_ROOM_STATUS        GroupCallEndpointControlKind = 3
+	GroupCallEndpointControlKind_GROUP_CALL_ENDPOINT_CONTROL_KIND_DECLINE_INVITATION GroupCallEndpointControlKind = 4
+)
+
+// Enum value maps for GroupCallEndpointControlKind.
+var (
+	GroupCallEndpointControlKind_name = map[int32]string{
+		0: "GROUP_CALL_ENDPOINT_CONTROL_KIND_UNSPECIFIED",
+		1: "GROUP_CALL_ENDPOINT_CONTROL_KIND_CHECK_HOME",
+		2: "GROUP_CALL_ENDPOINT_CONTROL_KIND_REVOKE_AUTHORITY",
+		3: "GROUP_CALL_ENDPOINT_CONTROL_KIND_ROOM_STATUS",
+		4: "GROUP_CALL_ENDPOINT_CONTROL_KIND_DECLINE_INVITATION",
+	}
+	GroupCallEndpointControlKind_value = map[string]int32{
+		"GROUP_CALL_ENDPOINT_CONTROL_KIND_UNSPECIFIED":        0,
+		"GROUP_CALL_ENDPOINT_CONTROL_KIND_CHECK_HOME":         1,
+		"GROUP_CALL_ENDPOINT_CONTROL_KIND_REVOKE_AUTHORITY":   2,
+		"GROUP_CALL_ENDPOINT_CONTROL_KIND_ROOM_STATUS":        3,
+		"GROUP_CALL_ENDPOINT_CONTROL_KIND_DECLINE_INVITATION": 4,
+	}
+)
+
+func (x GroupCallEndpointControlKind) Enum() *GroupCallEndpointControlKind {
+	p := new(GroupCallEndpointControlKind)
+	*p = x
+	return p
+}
+
+func (x GroupCallEndpointControlKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (GroupCallEndpointControlKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_realtime_group_call_proto_enumTypes[1].Descriptor()
+}
+
+func (GroupCallEndpointControlKind) Type() protoreflect.EnumType {
+	return &file_domain_realtime_group_call_proto_enumTypes[1]
+}
+
+func (x GroupCallEndpointControlKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use GroupCallEndpointControlKind.Descriptor instead.
+func (GroupCallEndpointControlKind) EnumDescriptor() ([]byte, []int) {
+	return file_domain_realtime_group_call_proto_rawDescGZIP(), []int{1}
+}
+
 // GroupCallAuthorityJoinRequest carries one authenticated Home Station request
 // to the Conversation Authority Station.
 type GroupCallAuthorityJoinRequest struct {
-	state                   protoimpl.MessageState `protogen:"open.v1"`
-	ConversationId          string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
-	ActorPtid               string                 `protobuf:"bytes,2,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
-	SourceHomeStationPeerId string                 `protobuf:"bytes,3,opt,name=source_home_station_peer_id,json=sourceHomeStationPeerId,proto3" json:"source_home_station_peer_id,omitempty"`
-	FederationId            string                 `protobuf:"bytes,4,opt,name=federation_id,json=federationId,proto3" json:"federation_id,omitempty"`
-	AuthorityEpoch          uint64                 `protobuf:"varint,5,opt,name=authority_epoch,json=authorityEpoch,proto3" json:"authority_epoch,omitempty"`
+	state                   protoimpl.MessageState  `protogen:"open.v1"`
+	ConversationId          string                  `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	ActorPtid               string                  `protobuf:"bytes,2,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
+	SourceHomeStationPeerId string                  `protobuf:"bytes,3,opt,name=source_home_station_peer_id,json=sourceHomeStationPeerId,proto3" json:"source_home_station_peer_id,omitempty"`
+	FederationId            string                  `protobuf:"bytes,4,opt,name=federation_id,json=federationId,proto3" json:"federation_id,omitempty"`
+	AuthorityEpoch          uint64                  `protobuf:"varint,5,opt,name=authority_epoch,json=authorityEpoch,proto3" json:"authority_epoch,omitempty"`
+	EndpointGrant           *GroupCallEndpointGrant `protobuf:"bytes,6,opt,name=endpoint_grant,json=endpointGrant,proto3" json:"endpoint_grant,omitempty"`
+	ActorDeviceId           string                  `protobuf:"bytes,7,opt,name=actor_device_id,json=actorDeviceId,proto3" json:"actor_device_id,omitempty"`
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache
 }
@@ -148,14 +205,30 @@ func (x *GroupCallAuthorityJoinRequest) GetAuthorityEpoch() uint64 {
 	return 0
 }
 
+func (x *GroupCallAuthorityJoinRequest) GetEndpointGrant() *GroupCallEndpointGrant {
+	if x != nil {
+		return x.EndpointGrant
+	}
+	return nil
+}
+
+func (x *GroupCallAuthorityJoinRequest) GetActorDeviceId() string {
+	if x != nil {
+		return x.ActorDeviceId
+	}
+	return ""
+}
+
 type GroupCallAuthorityJoinResponse struct {
-	state         protoimpl.MessageState         `protogen:"open.v1"`
-	Decision      GroupCallAuthorityJoinDecision `protobuf:"varint,1,opt,name=decision,proto3,enum=peers_touch.model.realtime.v1.GroupCallAuthorityJoinDecision" json:"decision,omitempty"`
-	Url           string                         `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
-	Token         string                         `protobuf:"bytes,3,opt,name=token,proto3" json:"token,omitempty"`
-	RoomName      string                         `protobuf:"bytes,4,opt,name=room_name,json=roomName,proto3" json:"room_name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state               protoimpl.MessageState         `protogen:"open.v1"`
+	Decision            GroupCallAuthorityJoinDecision `protobuf:"varint,1,opt,name=decision,proto3,enum=peers_touch.model.realtime.v1.GroupCallAuthorityJoinDecision" json:"decision,omitempty"`
+	Url                 string                         `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
+	Token               string                         `protobuf:"bytes,3,opt,name=token,proto3" json:"token,omitempty"`
+	RoomName            string                         `protobuf:"bytes,4,opt,name=room_name,json=roomName,proto3" json:"room_name,omitempty"`
+	GrantId             string                         `protobuf:"bytes,5,opt,name=grant_id,json=grantId,proto3" json:"grant_id,omitempty"`
+	ParticipantIdentity string                         `protobuf:"bytes,6,opt,name=participant_identity,json=participantIdentity,proto3" json:"participant_identity,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *GroupCallAuthorityJoinResponse) Reset() {
@@ -216,27 +289,349 @@ func (x *GroupCallAuthorityJoinResponse) GetRoomName() string {
 	return ""
 }
 
+func (x *GroupCallAuthorityJoinResponse) GetGrantId() string {
+	if x != nil {
+		return x.GrantId
+	}
+	return ""
+}
+
+func (x *GroupCallAuthorityJoinResponse) GetParticipantIdentity() string {
+	if x != nil {
+		return x.ParticipantIdentity
+	}
+	return ""
+}
+
+// The Home resolves the endpoint from Session and commits this authorization
+// while the Session and Actor Device mutation fences remain held.
+type GroupCallEndpointGrant struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	GrantId                string                 `protobuf:"bytes,1,opt,name=grant_id,json=grantId,proto3" json:"grant_id,omitempty"`
+	ConversationId         string                 `protobuf:"bytes,2,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	ActorPtid              string                 `protobuf:"bytes,3,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
+	ActorDeviceId          string                 `protobuf:"bytes,4,opt,name=actor_device_id,json=actorDeviceId,proto3" json:"actor_device_id,omitempty"`
+	SessionId              string                 `protobuf:"bytes,5,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	HomeStationPeerId      string                 `protobuf:"bytes,6,opt,name=home_station_peer_id,json=homeStationPeerId,proto3" json:"home_station_peer_id,omitempty"`
+	AuthorityStationPeerId string                 `protobuf:"bytes,7,opt,name=authority_station_peer_id,json=authorityStationPeerId,proto3" json:"authority_station_peer_id,omitempty"`
+	FederationId           string                 `protobuf:"bytes,8,opt,name=federation_id,json=federationId,proto3" json:"federation_id,omitempty"`
+	AuthorityEpoch         uint64                 `protobuf:"varint,9,opt,name=authority_epoch,json=authorityEpoch,proto3" json:"authority_epoch,omitempty"`
+	ExpiresAtUnixMs        int64                  `protobuf:"varint,10,opt,name=expires_at_unix_ms,json=expiresAtUnixMs,proto3" json:"expires_at_unix_ms,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *GroupCallEndpointGrant) Reset() {
+	*x = GroupCallEndpointGrant{}
+	mi := &file_domain_realtime_group_call_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GroupCallEndpointGrant) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GroupCallEndpointGrant) ProtoMessage() {}
+
+func (x *GroupCallEndpointGrant) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_realtime_group_call_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GroupCallEndpointGrant.ProtoReflect.Descriptor instead.
+func (*GroupCallEndpointGrant) Descriptor() ([]byte, []int) {
+	return file_domain_realtime_group_call_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *GroupCallEndpointGrant) GetGrantId() string {
+	if x != nil {
+		return x.GrantId
+	}
+	return ""
+}
+
+func (x *GroupCallEndpointGrant) GetConversationId() string {
+	if x != nil {
+		return x.ConversationId
+	}
+	return ""
+}
+
+func (x *GroupCallEndpointGrant) GetActorPtid() string {
+	if x != nil {
+		return x.ActorPtid
+	}
+	return ""
+}
+
+func (x *GroupCallEndpointGrant) GetActorDeviceId() string {
+	if x != nil {
+		return x.ActorDeviceId
+	}
+	return ""
+}
+
+func (x *GroupCallEndpointGrant) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *GroupCallEndpointGrant) GetHomeStationPeerId() string {
+	if x != nil {
+		return x.HomeStationPeerId
+	}
+	return ""
+}
+
+func (x *GroupCallEndpointGrant) GetAuthorityStationPeerId() string {
+	if x != nil {
+		return x.AuthorityStationPeerId
+	}
+	return ""
+}
+
+func (x *GroupCallEndpointGrant) GetFederationId() string {
+	if x != nil {
+		return x.FederationId
+	}
+	return ""
+}
+
+func (x *GroupCallEndpointGrant) GetAuthorityEpoch() uint64 {
+	if x != nil {
+		return x.AuthorityEpoch
+	}
+	return 0
+}
+
+func (x *GroupCallEndpointGrant) GetExpiresAtUnixMs() int64 {
+	if x != nil {
+		return x.ExpiresAtUnixMs
+	}
+	return 0
+}
+
+type GroupCallEndpointControlRequest struct {
+	state         protoimpl.MessageState         `protogen:"open.v1"`
+	Kind          GroupCallEndpointControlKind   `protobuf:"varint,1,opt,name=kind,proto3,enum=peers_touch.model.realtime.v1.GroupCallEndpointControlKind" json:"kind,omitempty"`
+	Grant         *GroupCallEndpointGrant        `protobuf:"bytes,2,opt,name=grant,proto3" json:"grant,omitempty"`
+	RoomQuery     *GroupCallAuthorityJoinRequest `protobuf:"bytes,3,opt,name=room_query,json=roomQuery,proto3" json:"room_query,omitempty"`
+	RoomSid       string                         `protobuf:"bytes,4,opt,name=room_sid,json=roomSid,proto3" json:"room_sid,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GroupCallEndpointControlRequest) Reset() {
+	*x = GroupCallEndpointControlRequest{}
+	mi := &file_domain_realtime_group_call_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GroupCallEndpointControlRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GroupCallEndpointControlRequest) ProtoMessage() {}
+
+func (x *GroupCallEndpointControlRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_realtime_group_call_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GroupCallEndpointControlRequest.ProtoReflect.Descriptor instead.
+func (*GroupCallEndpointControlRequest) Descriptor() ([]byte, []int) {
+	return file_domain_realtime_group_call_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *GroupCallEndpointControlRequest) GetKind() GroupCallEndpointControlKind {
+	if x != nil {
+		return x.Kind
+	}
+	return GroupCallEndpointControlKind_GROUP_CALL_ENDPOINT_CONTROL_KIND_UNSPECIFIED
+}
+
+func (x *GroupCallEndpointControlRequest) GetGrant() *GroupCallEndpointGrant {
+	if x != nil {
+		return x.Grant
+	}
+	return nil
+}
+
+func (x *GroupCallEndpointControlRequest) GetRoomQuery() *GroupCallAuthorityJoinRequest {
+	if x != nil {
+		return x.RoomQuery
+	}
+	return nil
+}
+
+func (x *GroupCallEndpointControlRequest) GetRoomSid() string {
+	if x != nil {
+		return x.RoomSid
+	}
+	return ""
+}
+
+type GroupCallEndpointControlResponse struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Allowed            bool                   `protobuf:"varint,1,opt,name=allowed,proto3" json:"allowed,omitempty"`
+	Ejected            bool                   `protobuf:"varint,2,opt,name=ejected,proto3" json:"ejected,omitempty"`
+	RoomActive         bool                   `protobuf:"varint,3,opt,name=room_active,json=roomActive,proto3" json:"room_active,omitempty"`
+	RoomName           string                 `protobuf:"bytes,4,opt,name=room_name,json=roomName,proto3" json:"room_name,omitempty"`
+	RoomSid            string                 `protobuf:"bytes,5,opt,name=room_sid,json=roomSid,proto3" json:"room_sid,omitempty"`
+	DeclinedActorPtids []string               `protobuf:"bytes,6,rep,name=declined_actor_ptids,json=declinedActorPtids,proto3" json:"declined_actor_ptids,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *GroupCallEndpointControlResponse) Reset() {
+	*x = GroupCallEndpointControlResponse{}
+	mi := &file_domain_realtime_group_call_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GroupCallEndpointControlResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GroupCallEndpointControlResponse) ProtoMessage() {}
+
+func (x *GroupCallEndpointControlResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_realtime_group_call_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GroupCallEndpointControlResponse.ProtoReflect.Descriptor instead.
+func (*GroupCallEndpointControlResponse) Descriptor() ([]byte, []int) {
+	return file_domain_realtime_group_call_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *GroupCallEndpointControlResponse) GetAllowed() bool {
+	if x != nil {
+		return x.Allowed
+	}
+	return false
+}
+
+func (x *GroupCallEndpointControlResponse) GetEjected() bool {
+	if x != nil {
+		return x.Ejected
+	}
+	return false
+}
+
+func (x *GroupCallEndpointControlResponse) GetRoomActive() bool {
+	if x != nil {
+		return x.RoomActive
+	}
+	return false
+}
+
+func (x *GroupCallEndpointControlResponse) GetRoomName() string {
+	if x != nil {
+		return x.RoomName
+	}
+	return ""
+}
+
+func (x *GroupCallEndpointControlResponse) GetRoomSid() string {
+	if x != nil {
+		return x.RoomSid
+	}
+	return ""
+}
+
+func (x *GroupCallEndpointControlResponse) GetDeclinedActorPtids() []string {
+	if x != nil {
+		return x.DeclinedActorPtids
+	}
+	return nil
+}
+
 var File_domain_realtime_group_call_proto protoreflect.FileDescriptor
 
 const file_domain_realtime_group_call_proto_rawDesc = "" +
 	"\n" +
-	" domain/realtime/group_call.proto\x12\x1dpeers_touch.model.realtime.v1\"\xf3\x01\n" +
+	" domain/realtime/group_call.proto\x12\x1dpeers_touch.model.realtime.v1\"\xf9\x02\n" +
 	"\x1dGroupCallAuthorityJoinRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x1d\n" +
 	"\n" +
 	"actor_ptid\x18\x02 \x01(\tR\tactorPtid\x12<\n" +
 	"\x1bsource_home_station_peer_id\x18\x03 \x01(\tR\x17sourceHomeStationPeerId\x12#\n" +
 	"\rfederation_id\x18\x04 \x01(\tR\ffederationId\x12'\n" +
-	"\x0fauthority_epoch\x18\x05 \x01(\x04R\x0eauthorityEpoch\"\xc0\x01\n" +
+	"\x0fauthority_epoch\x18\x05 \x01(\x04R\x0eauthorityEpoch\x12\\\n" +
+	"\x0eendpoint_grant\x18\x06 \x01(\v25.peers_touch.model.realtime.v1.GroupCallEndpointGrantR\rendpointGrant\x12&\n" +
+	"\x0factor_device_id\x18\a \x01(\tR\ractorDeviceId\"\x8e\x02\n" +
 	"\x1eGroupCallAuthorityJoinResponse\x12Y\n" +
 	"\bdecision\x18\x01 \x01(\x0e2=.peers_touch.model.realtime.v1.GroupCallAuthorityJoinDecisionR\bdecision\x12\x10\n" +
 	"\x03url\x18\x02 \x01(\tR\x03url\x12\x14\n" +
 	"\x05token\x18\x03 \x01(\tR\x05token\x12\x1b\n" +
-	"\troom_name\x18\x04 \x01(\tR\broomName*\xba\x01\n" +
+	"\troom_name\x18\x04 \x01(\tR\broomName\x12\x19\n" +
+	"\bgrant_id\x18\x05 \x01(\tR\agrantId\x121\n" +
+	"\x14participant_identity\x18\x06 \x01(\tR\x13participantIdentity\"\xa9\x03\n" +
+	"\x16GroupCallEndpointGrant\x12\x19\n" +
+	"\bgrant_id\x18\x01 \x01(\tR\agrantId\x12'\n" +
+	"\x0fconversation_id\x18\x02 \x01(\tR\x0econversationId\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x03 \x01(\tR\tactorPtid\x12&\n" +
+	"\x0factor_device_id\x18\x04 \x01(\tR\ractorDeviceId\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x05 \x01(\tR\tsessionId\x12/\n" +
+	"\x14home_station_peer_id\x18\x06 \x01(\tR\x11homeStationPeerId\x129\n" +
+	"\x19authority_station_peer_id\x18\a \x01(\tR\x16authorityStationPeerId\x12#\n" +
+	"\rfederation_id\x18\b \x01(\tR\ffederationId\x12'\n" +
+	"\x0fauthority_epoch\x18\t \x01(\x04R\x0eauthorityEpoch\x12+\n" +
+	"\x12expires_at_unix_ms\x18\n" +
+	" \x01(\x03R\x0fexpiresAtUnixMs\"\xb7\x02\n" +
+	"\x1fGroupCallEndpointControlRequest\x12O\n" +
+	"\x04kind\x18\x01 \x01(\x0e2;.peers_touch.model.realtime.v1.GroupCallEndpointControlKindR\x04kind\x12K\n" +
+	"\x05grant\x18\x02 \x01(\v25.peers_touch.model.realtime.v1.GroupCallEndpointGrantR\x05grant\x12[\n" +
+	"\n" +
+	"room_query\x18\x03 \x01(\v2<.peers_touch.model.realtime.v1.GroupCallAuthorityJoinRequestR\troomQuery\x12\x19\n" +
+	"\broom_sid\x18\x04 \x01(\tR\aroomSid\"\xe1\x01\n" +
+	" GroupCallEndpointControlResponse\x12\x18\n" +
+	"\aallowed\x18\x01 \x01(\bR\aallowed\x12\x18\n" +
+	"\aejected\x18\x02 \x01(\bR\aejected\x12\x1f\n" +
+	"\vroom_active\x18\x03 \x01(\bR\n" +
+	"roomActive\x12\x1b\n" +
+	"\troom_name\x18\x04 \x01(\tR\broomName\x12\x19\n" +
+	"\broom_sid\x18\x05 \x01(\tR\aroomSid\x120\n" +
+	"\x14declined_actor_ptids\x18\x06 \x03(\tR\x12declinedActorPtids*\xba\x01\n" +
 	"\x1eGroupCallAuthorityJoinDecision\x122\n" +
 	".GROUP_CALL_AUTHORITY_JOIN_DECISION_UNSPECIFIED\x10\x00\x121\n" +
 	"-GROUP_CALL_AUTHORITY_JOIN_DECISION_AUTHORIZED\x10\x01\x121\n" +
-	"-GROUP_CALL_AUTHORITY_JOIN_DECISION_NOT_MEMBER\x10\x02BOZMgithub.com/peers-labs/peers-touch/station/frame/touch/model/realtime;realtimeb\x06proto3"
+	"-GROUP_CALL_AUTHORITY_JOIN_DECISION_NOT_MEMBER\x10\x02*\xa3\x02\n" +
+	"\x1cGroupCallEndpointControlKind\x120\n" +
+	",GROUP_CALL_ENDPOINT_CONTROL_KIND_UNSPECIFIED\x10\x00\x12/\n" +
+	"+GROUP_CALL_ENDPOINT_CONTROL_KIND_CHECK_HOME\x10\x01\x125\n" +
+	"1GROUP_CALL_ENDPOINT_CONTROL_KIND_REVOKE_AUTHORITY\x10\x02\x120\n" +
+	",GROUP_CALL_ENDPOINT_CONTROL_KIND_ROOM_STATUS\x10\x03\x127\n" +
+	"3GROUP_CALL_ENDPOINT_CONTROL_KIND_DECLINE_INVITATION\x10\x04BOZMgithub.com/peers-labs/peers-touch/station/frame/touch/model/realtime;realtimeb\x06proto3"
 
 var (
 	file_domain_realtime_group_call_proto_rawDescOnce sync.Once
@@ -250,20 +645,28 @@ func file_domain_realtime_group_call_proto_rawDescGZIP() []byte {
 	return file_domain_realtime_group_call_proto_rawDescData
 }
 
-var file_domain_realtime_group_call_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_domain_realtime_group_call_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_domain_realtime_group_call_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_domain_realtime_group_call_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_domain_realtime_group_call_proto_goTypes = []any{
-	(GroupCallAuthorityJoinDecision)(0),    // 0: peers_touch.model.realtime.v1.GroupCallAuthorityJoinDecision
-	(*GroupCallAuthorityJoinRequest)(nil),  // 1: peers_touch.model.realtime.v1.GroupCallAuthorityJoinRequest
-	(*GroupCallAuthorityJoinResponse)(nil), // 2: peers_touch.model.realtime.v1.GroupCallAuthorityJoinResponse
+	(GroupCallAuthorityJoinDecision)(0),      // 0: peers_touch.model.realtime.v1.GroupCallAuthorityJoinDecision
+	(GroupCallEndpointControlKind)(0),        // 1: peers_touch.model.realtime.v1.GroupCallEndpointControlKind
+	(*GroupCallAuthorityJoinRequest)(nil),    // 2: peers_touch.model.realtime.v1.GroupCallAuthorityJoinRequest
+	(*GroupCallAuthorityJoinResponse)(nil),   // 3: peers_touch.model.realtime.v1.GroupCallAuthorityJoinResponse
+	(*GroupCallEndpointGrant)(nil),           // 4: peers_touch.model.realtime.v1.GroupCallEndpointGrant
+	(*GroupCallEndpointControlRequest)(nil),  // 5: peers_touch.model.realtime.v1.GroupCallEndpointControlRequest
+	(*GroupCallEndpointControlResponse)(nil), // 6: peers_touch.model.realtime.v1.GroupCallEndpointControlResponse
 }
 var file_domain_realtime_group_call_proto_depIdxs = []int32{
-	0, // 0: peers_touch.model.realtime.v1.GroupCallAuthorityJoinResponse.decision:type_name -> peers_touch.model.realtime.v1.GroupCallAuthorityJoinDecision
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	4, // 0: peers_touch.model.realtime.v1.GroupCallAuthorityJoinRequest.endpoint_grant:type_name -> peers_touch.model.realtime.v1.GroupCallEndpointGrant
+	0, // 1: peers_touch.model.realtime.v1.GroupCallAuthorityJoinResponse.decision:type_name -> peers_touch.model.realtime.v1.GroupCallAuthorityJoinDecision
+	1, // 2: peers_touch.model.realtime.v1.GroupCallEndpointControlRequest.kind:type_name -> peers_touch.model.realtime.v1.GroupCallEndpointControlKind
+	4, // 3: peers_touch.model.realtime.v1.GroupCallEndpointControlRequest.grant:type_name -> peers_touch.model.realtime.v1.GroupCallEndpointGrant
+	2, // 4: peers_touch.model.realtime.v1.GroupCallEndpointControlRequest.room_query:type_name -> peers_touch.model.realtime.v1.GroupCallAuthorityJoinRequest
+	5, // [5:5] is the sub-list for method output_type
+	5, // [5:5] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_domain_realtime_group_call_proto_init() }
@@ -276,8 +679,8 @@ func file_domain_realtime_group_call_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_realtime_group_call_proto_rawDesc), len(file_domain_realtime_group_call_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   2,
+			NumEnums:      2,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

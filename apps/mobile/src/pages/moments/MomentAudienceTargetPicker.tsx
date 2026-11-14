@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
   ChevronRight,
@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
+import { useMobilePageDisposal } from '../../components/mobilePageLifetime';
 import { useSocialCirclesStore } from '../../features/social/socialCircles';
 import { useSocialStore } from '../../features/social/socialStore';
 import { actorDisplayName } from '../../features/social/socialProjection';
@@ -56,6 +57,7 @@ export function MomentAudienceTargetPicker({
   const searchPeople = useSocialStore((state) => state.searchPeople);
   const clearPeopleSearch = useSocialStore((state) => state.clearPeopleSearch);
   const [query, setQuery] = useState('');
+  const issuedSearch = useRef('');
   const [selected, setSelected] = useState(
     () => new Set(selectedActorPtids),
   );
@@ -94,19 +96,25 @@ export function MomentAudienceTargetPicker({
   useEffect(() => {
     if (!customAudience) return undefined;
     void refreshFederations();
-    return clearPeopleSearch;
-  }, [clearPeopleSearch, customAudience, refreshFederations]);
+  }, [customAudience, refreshFederations]);
+  useMobilePageDisposal(() => {
+    if (customAudience) clearPeopleSearch();
+  });
 
   useEffect(() => {
     if (!customAudience) return undefined;
     const trimmed = query.trim();
     if (!trimmed) {
+      issuedSearch.current = '';
       clearPeopleSearch();
       return undefined;
     }
     if (!federationId) return undefined;
+    const searchKey = JSON.stringify([federationId, trimmed]);
+    if (issuedSearch.current === searchKey) return undefined;
     const timer = setTimeout(() => {
-      void searchPeople(trimmed, federationId);
+      issuedSearch.current = searchKey;
+      void searchPeople(trimmed, { kind: 'federation', federationId });
     }, 250);
     return () => clearTimeout(timer);
   }, [

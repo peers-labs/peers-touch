@@ -7,6 +7,7 @@ from typing import Any
 from unittest.mock import patch
 
 from tooling.acceptance.core import ArtifactRef, GateError
+from tooling.acceptance.core.proof import assertions_pass, require_report_proof
 from tooling.acceptance.gates.mobile.simulator_runtime_binding import (
     DEFAULT_GATE_ID as GATE_ID,
     MobileSimulatorBindingActivation,
@@ -59,7 +60,6 @@ class FakeBinding:
         self.calls: list[tuple[str, str, object]] = []
         self.clients: dict[str, dict[str, Any]] = {}
         self.launch_generations: dict[str, int] = {}
-        self.ios_revoked = False
         self.closed = False
 
     def create_bound_session(
@@ -160,8 +160,6 @@ class FakeBinding:
                 else ALICE_PTIDS[PRIMARY_BINDING]
             )
             state["launchState"] = "shell"
-            if client_id == PEER_IOS_CLIENT:
-                self.ios_revoked = True
             return {
                 "decision": {"state": "ACCESS_DECISION_STATE_GRANTED"},
                 "session": {
@@ -175,11 +173,10 @@ class FakeBinding:
         if action == "lifecycle.suspend":
             return {"snapshot": self._scope(client_id)}
         if action == "lifecycle.resume":
+            # SAL-D12: a different installation's login never revokes this
+            # client, so resume keeps the authenticated shell and advances
+            # only the local lifecycle generation.
             state["generation"] += 1
-            if client_id == IOS_CLIENT and self.ios_revoked:
-                state["actor"] = None
-                state["launchState"] = "station-selection"
-                self.ios_revoked = False
             return {"snapshot": self._scope(client_id)}
         if action == "lifecycle.scope.read":
             return self._scope(client_id)
@@ -413,6 +410,40 @@ class SimulatorStationLifecycleGateTests(unittest.TestCase):
             ][-SWITCH_COUNT:],
             ["confirmed"] * SWITCH_COUNT,
         )
+        # SAL-D12: the peer is a distinct installation and must coexist with
+        # the primary session instead of evicting it.
+        coexistence = result["coexistence"]
+        self.assertEqual(coexistence["primaryClientId"], IOS_CLIENT)
+        self.assertEqual(coexistence["peerClientId"], PEER_IOS_CLIENT)
+        self.assertTrue(coexistence["distinctDeviceIds"])
+        self.assertTrue(coexistence["primaryRemainedAuthenticated"])
+        self.assertTrue(coexistence["peerRemainedAuthenticated"])
+        coexistence_events = [
+            event["event"]
+            for event in gate.events
+            if event["event"]
+            in {
+                "same-account-multi-device-coexistence",
+                "same-account-session-preserved-after-resume",
+            }
+        ]
+        self.assertEqual(
+            coexistence_events,
+            [
+                "same-account-multi-device-coexistence",
+                "same-account-session-preserved-after-resume",
+            ],
+        )
+        distinct_event = next(
+            event
+            for event in gate.events
+            if event["event"] == "same-account-multi-device-coexistence"
+        )
+        self.assertNotEqual(
+            distinct_event["primaryDeviceId"],
+            distinct_event["peerDeviceId"],
+        )
+        self.assertNotIn("revocation", result)
         self.assertIn(
             ("lifecycle.restart", IOS_CLIENT, {}),
             binding.calls,
@@ -545,6 +576,10 @@ class SimulatorStationLifecycleGateTests(unittest.TestCase):
         self.assertEqual(result["status"], "PASS")
         self.assertEqual(result["completionStatus"], "DONE")
         self.assertEqual(result["proofStatus"], "PROVEN")
+        # The canonical proof assessor used by acceptance-run must accept the
+        # sealed report; a missing/empty assertions list previously downgraded
+        # an otherwise passing journey to "source report is unproven".
+        require_report_proof(result, GATE_ID)
         self.assertEqual(result["spec"][:2], ["AS-04", "AS-10"])
         self.assertIn(
             "W4 command and draft recovery",
@@ -602,6 +637,86 @@ class SimulatorStationLifecycleGateTests(unittest.TestCase):
 
         self.assertEqual(binding.partial_scope_reads, 1)
         self.assertEqual(len(result["switches"]), SWITCH_COUNT)
+
+    def test_lifecycle_assertions_satisfy_core_proof_contract(self) -> None:
+        binding = FakeBinding()
+        gate = SimulatorStationLifecycleGate(
+            binding_factory=lambda: binding,  # type: ignore[arg-type]
+        )
+        journey = gate._run_journey(binding)  # type: ignore[arg-type]
+
+        assertions = gate._assertions_from_lifecycle_evidence(
+            journey,
+            gate._result_base("PASS"),
+        )
+
+        self.assertTrue(assertions_pass(assertions))
+        self.assertTrue(assertions)
+        self.assertEqual(
+            len(assertions),
+            len({item["name"] for item in assertions}),
+        )
+        names = {item["name"] for item in assertions}
+        self.assertIn(
+            "lifecycle:same-account-multi-device-coexistence-"
+            "distinct-device-ids",
+            names,
+        )
+        self.assertIn(
+            "lifecycle:primary-session-preserved-through-resume-revalidation",
+            names,
+        )
+        self.assertIn(
+            "lifecycle:station-switch-remote-revocation-confirmed",
+            names,
+        )
+
+    def test_lifecycle_assertions_fail_closed_on_missing_observation(self) -> None:
+        binding = FakeBinding()
+        gate = SimulatorStationLifecycleGate(
+            binding_factory=lambda: binding,  # type: ignore[arg-type]
+        )
+        journey = gate._run_journey(binding)  # type: ignore[arg-type]
+        gate.events = [
+            event
+            for event in gate.events
+            if event["event"] != "same-account-multi-device-coexistence"
+        ]
+
+        assertions = gate._assertions_from_lifecycle_evidence(
+            journey,
+            gate._result_base("PASS"),
+        )
+
+        self.assertFalse(assertions_pass(assertions))
+        failed = {item["name"] for item in assertions if not item["passed"]}
+        self.assertIn(
+            "lifecycle:same-account-multi-device-coexistence-"
+            "distinct-device-ids",
+            failed,
+        )
+
+    def test_route_expiry_assertion_only_in_formal_mode(self) -> None:
+        binding = FakeBinding()
+        clock = FakeExpiryClock()
+        gate = SimulatorStationLifecycleGate(
+            binding_factory=lambda: binding,  # type: ignore[arg-type]
+            route_expiry_wait_seconds=MIN_ROUTE_EXPIRY_WAIT_SECONDS,
+            monotonic=clock.monotonic,
+            sleep=clock.sleep,
+        )
+        journey = gate._run_journey(binding)  # type: ignore[arg-type]
+
+        assertions = gate._assertions_from_lifecycle_evidence(
+            journey,
+            gate._result_base("PASS"),
+        )
+
+        self.assertTrue(assertions_pass(assertions))
+        self.assertIn(
+            "lifecycle:expired-route-same-session-resumed",
+            {item["name"] for item in assertions},
+        )
 
     def test_old_scope_presence_fails_closed(self) -> None:
         scope = FakeBinding()

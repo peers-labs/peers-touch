@@ -62,6 +62,8 @@ templates, validators, and intentional fixtures only.
 
 ## Current Documents
 
+- [product-acceptance-criteria.md](product-acceptance-criteria.md): 产品使用入口、
+  产出消费、禁止孤岛功能、管理/消费边界与真实权限闭环的验收准则。
 - [design.md](design.md): layers, contracts, runtime boundaries, and lifecycle.
 - [decisions.md](decisions.md): accepted architecture decisions.
 - [data-model.md](data-model.md): manifests, evidence, artifacts, and states.

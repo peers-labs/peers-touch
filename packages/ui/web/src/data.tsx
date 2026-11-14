@@ -57,15 +57,20 @@ function glyphColorFor(background?: string): string | undefined {
 
 export interface AvatarProps extends HTMLAttributes<HTMLSpanElement> {
   source?: string; name?: string; size?: number; fallback?: ReactNode; background?: string;
+  /** Presence punctuation: a live connection dot (pine, never the success
+      color). Pinned to the lower-right corner with a paper-colored ring. */
+  presence?: boolean;
   onImageFailure?: () => void;
 }
-export function Avatar({ source, name = '', size = 36, fallback, children, background, onImageFailure, style, className = '', ...props }: AvatarProps) {
+export function Avatar({ source, name = '', size = 36, fallback, children, background, presence, onImageFailure, style, className = '', ...props }: AvatarProps) {
   const [failed, setFailed] = useState<string | null>(null);
-  return <span {...props} className={`pt-avatar ${className}`} role={source && failed !== source ? undefined : 'img'}
+  return <span {...props} className={`pt-avatar ${className}`} data-presence={presence ? 'on' : undefined}
+    role={source && failed !== source ? undefined : 'img'}
     aria-label={source && failed !== source ? undefined : name}
     style={{ width: size, height: size, borderRadius: Math.max(8, Math.floor(size * .25)), background, color: glyphColorFor(background), ...style }}>
     {source && failed !== source ? <img src={source} alt={name} onError={() => {setFailed(source);onImageFailure?.();}} />
       : fallback ?? children ?? [...name.trim()][0]?.toLocaleUpperCase() ?? '?'}
+    {presence && <span className="pt-avatar-presence" aria-hidden="true" />}
   </span>;
 }
 export function AvatarGroup({ children, ...props }: HTMLAttributes<HTMLDivElement>) {

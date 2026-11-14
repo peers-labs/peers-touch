@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import closing
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 import hashlib
 import json
 import os
@@ -20,6 +21,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 from tooling.acceptance.core import (
     ArtifactRef,
+    DriverError,
     EvidenceStore,
     GateError,
     ProvisioningError,
@@ -52,6 +54,32 @@ ACCOUNTS = {
 }
 CHAT_FIXTURE_FEDERATION_NAME = "chat-native-acceptance"
 NATIVE_DEV_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def media_harness(
+    client: TauriSession,
+    runtime_binding: NativeDesktopRuntimeBinding,
+    method: str,
+    payload: dict[str, Any],
+    *,
+    timeout: float = 45.0,
+) -> Any:
+    """Run a native media action while its owning process awaits permission."""
+    if client.process_id is None:
+        raise GateError(f"{method} has no owning Native process")
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(async_harness, client, method, payload, timeout)
+        while True:
+            try:
+                return future.result(timeout=0.1)
+            except FutureTimeoutError:
+                try:
+                    runtime_binding.native_adapter.accept_media_capture_permission_to_process(client.process_id)
+                except DriverError as permission_error:
+                    try:
+                        return future.result(timeout=2)
+                    except FutureTimeoutError:
+                        raise permission_error
 
 
 def is_native_tauri_url(value: str) -> bool:

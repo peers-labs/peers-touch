@@ -2,7 +2,6 @@
  * Module registrations.
  * Import this file once (in main.tsx) to trigger all self-registrations.
  */
-import './providers';
 import './model-service';
 import './voice';
 import './account';

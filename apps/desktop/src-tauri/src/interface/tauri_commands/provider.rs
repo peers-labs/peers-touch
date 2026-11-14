@@ -127,6 +127,47 @@ pub fn provider_check(
 }
 
 #[tauri::command]
+pub fn provider_policy(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let (_, token) = match resolve_auth(&state, &window) {
+        Ok(auth) => auth,
+        Err(error) => return error,
+    };
+    application_provider::provider_policy(state.station.client(), &token)
+}
+
+#[tauri::command]
+pub fn provider_personal_list(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let (_, token) = match resolve_auth(&state, &window) {
+        Ok(auth) => auth,
+        Err(error) => return error,
+    };
+    application_provider::provider_personal_list(state.station.client(), &token)
+}
+
+#[tauri::command]
+pub fn provider_personal_get(
+    input: ProviderIdInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let (_, token) = match resolve_auth(&state, &window) {
+        Ok(auth) => auth,
+        Err(error) => return error,
+    };
+    application_provider::provider_personal_get(
+        state.station.client(),
+        &token,
+        input,
+    )
+}
+
+#[tauri::command]
 pub fn provider_create(
     input: ProviderCreateInput,
     state: State<'_, Arc<AppState>>,

@@ -2,14 +2,14 @@ import { startTransition, useCallback, useEffect, useState } from 'react';
 import { onWindowLocationChange } from '../kernel/events';
 import { persistLastActivePage } from './useAppLifecycle';
 import type { HashRouter, Page } from '../types/navigation';
-import { DEFAULT_READY_PAGE, isCorePageOrKnown } from '../types/navigation';
+import { DEFAULT_READY_PAGE, isCorePageOrKnown, resolveAvailablePage } from '../types/navigation';
 
 function parsePageFromHash(): Page {
   const hash = window.location.hash.slice(1) || `/${DEFAULT_READY_PAGE}`;
   const path = hash.startsWith('/') ? hash.slice(1) : hash;
   const segment = path.split('/')[0] || DEFAULT_READY_PAGE;
   if (segment === 'agent-profile') return 'agent-profile';
-  if (isCorePageOrKnown(segment)) return segment;
+  if (isCorePageOrKnown(segment)) return resolveAvailablePage(segment);
   return DEFAULT_READY_PAGE;
 }
 
@@ -24,11 +24,12 @@ export function useHashRouter(): HashRouter {
   const [profileAgentName, setProfileAgentName] = useState(parseAgentNameFromHash);
 
   const setPage = useCallback((p: Page) => {
+    const availablePage = resolveAvailablePage(p);
     startTransition(() => {
-      setPageRaw(p);
+      setPageRaw(availablePage);
     });
-    window.history.pushState(null, '', `#/${p}`);
-    persistLastActivePage(p);
+    window.history.pushState(null, '', `#/${availablePage}`);
+    persistLastActivePage(availablePage);
   }, []);
 
   const setProfilePage = useCallback((agentName: string) => {

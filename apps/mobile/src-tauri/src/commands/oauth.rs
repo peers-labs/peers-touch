@@ -12,8 +12,8 @@ use crate::runtime::oauth::{
 };
 use crate::runtime::oauth::{
     NativeAccessDecisionInput, NativeAccessProjection, NativeAccessStartInput,
-    NativeAccessSubmitInput, NativeSessionProjection, OAuthCoordinator, OAuthPublicProjection,
-    OAuthPurgeProjection, OAuthScopeIntent, OAuthStartIntent,
+    NativeAccessSubmitInput, NativeSessionProjection, OAuthCoordinator, OAuthProviderInfo,
+    OAuthPublicProjection, OAuthPurgeProjection, OAuthScopeIntent, OAuthStartIntent,
 };
 
 #[cfg(feature = "acceptance-harness")]
@@ -71,6 +71,14 @@ pub async fn oauth_start<R: Runtime>(
         browser::open_external(&app, &authorize_url)?;
     }
     Ok(launch.projection)
+}
+
+#[tauri::command]
+pub async fn oauth_providers(
+    coordinator: State<'_, OAuthCoordinator>,
+    input: OAuthScopeIntent,
+) -> MobileResult<Vec<OAuthProviderInfo>> {
+    coordinator.providers(input).await
 }
 
 #[tauri::command]

@@ -11,6 +11,7 @@ pub fn attachment_access_projection(
     metadata: &AttachmentPlaintextMetadata,
     transfer: Option<&AttachmentTransferRecord>,
     verified_cache_ready: bool,
+    transfer_active: bool,
 ) -> AttachmentAccessProjection {
     let object = metadata.object.as_ref();
     let total = object.map_or(metadata.plaintext_size, |object| object.ciphertext_size);
@@ -24,6 +25,11 @@ pub fn attachment_access_projection(
                 | AttachmentTransferState::RetryWait,
             ) => AttachmentAccessState::Downloading,
             Some(AttachmentTransferState::Verifying) => AttachmentAccessState::Verifying,
+            Some(AttachmentTransferState::Complete)
+                if transfer_active && transfer.is_some_and(|transfer| transfer.direction == 2) =>
+            {
+                AttachmentAccessState::Verifying
+            }
             Some(AttachmentTransferState::Cancelled) => AttachmentAccessState::Cancelled,
             Some(AttachmentTransferState::Terminal | AttachmentTransferState::Unspecified) => {
                 AttachmentAccessState::Failed
@@ -84,10 +90,10 @@ mod tests {
             plaintext_size: 20,
             ..Default::default()
         };
-        let unavailable = attachment_access_projection(&metadata, None, false);
+        let unavailable = attachment_access_projection(&metadata, None, false, false);
         assert_eq!(unavailable.state, AttachmentAccessState::Remote as i32);
         assert!(unavailable.access_handle.is_empty());
-        let ready = attachment_access_projection(&metadata, None, true);
+        let ready = attachment_access_projection(&metadata, None, true, false);
         assert_eq!(ready.state, AttachmentAccessState::Ready as i32);
         assert_eq!(ready.transferred_bytes, 20);
     }
@@ -126,14 +132,31 @@ mod tests {
             last_error_code: 0,
             updated_at_unix_ms: 0,
         };
-        let progress = attachment_access_projection(&metadata, Some(&transfer), false);
+        let progress = attachment_access_projection(&metadata, Some(&transfer), false, false);
         assert_eq!(progress.transferred_bytes, 29);
         assert_eq!(progress.state, AttachmentAccessState::Downloading as i32);
         transfer.state = AttachmentTransferState::Cancelled as i32;
-        assert!(attachment_access_projection(&metadata, Some(&transfer), false).retryable);
+        assert!(attachment_access_projection(&metadata, Some(&transfer), false, false).retryable);
         transfer.state = AttachmentTransferState::Terminal as i32;
-        let terminal = attachment_access_projection(&metadata, Some(&transfer), false);
+        let terminal = attachment_access_projection(&metadata, Some(&transfer), false, true);
         assert_eq!(terminal.state, AttachmentAccessState::Failed as i32);
         assert!(!terminal.retryable);
+
+        transfer.state = AttachmentTransferState::Complete as i32;
+        let finalizing = attachment_access_projection(&metadata, Some(&transfer), false, true);
+        assert_eq!(finalizing.state, AttachmentAccessState::Verifying as i32);
+        assert!(finalizing.access_handle.is_empty());
+        assert!(finalizing.asset_url.is_empty());
+        assert!(!finalizing.retryable);
+        let evicted = attachment_access_projection(&metadata, Some(&transfer), false, false);
+        assert_eq!(evicted.state, AttachmentAccessState::Remote as i32);
+        assert!(evicted.retryable);
+        let ready = attachment_access_projection(&metadata, Some(&transfer), true, true);
+        assert_eq!(ready.state, AttachmentAccessState::Ready as i32);
+        transfer.direction = 1;
+        assert_eq!(
+            attachment_access_projection(&metadata, Some(&transfer), false, true).state,
+            AttachmentAccessState::Remote as i32,
+        );
     }
 }

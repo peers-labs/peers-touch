@@ -7,6 +7,7 @@ import { useAgentStore } from './agent';
 import { useAgentCapabilityStore } from './agentCapabilities';
 import { foldToolMessages, liveTurnCorrelation, mergeServerMessages, useChatStore } from './chat';
 import { createOperation } from './streaming/operations';
+import { createAgentDraftKey } from './agentDraft';
 
 const conversationId = 'recovery-conversation';
 const turnId = 'recovery-turn';
@@ -44,6 +45,15 @@ afterEach(() => {
   vi.restoreAllMocks();
   useChatStore.getState().reset();
   useAgentCapabilityStore.getState().reset();
+});
+
+it('preserves local draft projections when history bootstrap is requested', async () => {
+  const messages = [
+    { id: 'draft-local', role: 'user' as const, content: 'local state', timestamp: 1 },
+  ];
+  useChatStore.setState({ currentSessionKey: createAgentDraftKey('agent-1', 'test'), messages });
+  await useChatStore.getState().bootstrapSession();
+  expect(useChatStore.getState().messages).toBe(messages);
 });
 
 it('absorbs the optimistic projection when a folded snapshot precedes admission identity', () => {

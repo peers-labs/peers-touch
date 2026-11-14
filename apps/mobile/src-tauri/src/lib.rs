@@ -38,6 +38,12 @@ pub fn run() {
                 &request,
             )
         })
+        .register_uri_scheme_protocol("profile-image", |context, request| {
+            let app = context.app_handle();
+            let runtime = app.state::<platform::media_picker::ProfileImageRuntime>();
+            let storage = app.state::<platform::secure_storage::SecureStorage>();
+            runtime.asset_response(&storage, context.webview_label(), &request)
+        })
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(log::LevelFilter::Off)
@@ -62,6 +68,7 @@ pub fn run() {
         .manage(runtime::search::MobileSearchState::default())
         .manage(MobileXConfigRuntime::default())
         .manage(StationTransportRuntime::default());
+    let builder = builder.manage(platform::media_picker::ProfileImageRuntime::default());
 
     #[cfg(mobile)]
     let builder = builder.plugin(platform::qr_scanner::init());
@@ -75,13 +82,13 @@ pub fn run() {
 
     builder
         .setup(|app| {
-            runtime::station_route::install_transport_identity(
-                app.state::<platform::secure_storage::SecureStorage>()
-                    .inner()
-                    .clone(),
-            )?;
-            platform::deep_link::install(app)
+            log::error!(target: "station-route", "SETUP CLOSURE ENTERED");
+            let storage = app.state::<platform::secure_storage::SecureStorage>();
+            runtime::station_route::install_transport_identity(storage.inner().clone())?;
+            log::error!(target: "station-route", "setup: transport identity install invoked");
+            Ok(())
         })
+        .setup(platform::deep_link::install)
         .invoke_handler(commands::handlers())
         .build(tauri::generate_context!())
         .expect("failed to build Peers")

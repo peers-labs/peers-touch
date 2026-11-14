@@ -889,11 +889,42 @@ async function runTeardownOperation(
 
 function runtimeDiagnosticError(error: unknown): string {
   const message = readableErrorMessage(error, 'mobile.lifecycle.runtimeFailed');
-  if (!error || typeof error !== 'object' || Array.isArray(error)) return message;
-  const code = (error as Record<string, unknown>).code;
-  return typeof code === 'string' && code && !message.includes(code)
-    ? `${code}: ${message}`
-    : message;
+  let diagnostic = message;
+  if (
+    error
+    && typeof error === 'object'
+    && !Array.isArray(error)
+  ) {
+    const record = error as Record<string, unknown>;
+    const code = record.code;
+    if (
+      typeof code === 'string'
+      && code
+      && !diagnostic.includes(code)
+    ) {
+      diagnostic = `${code}: ${diagnostic}`;
+    }
+  }
+  // Readiness failures wrap the originating (often native) failure as
+  // `cause`. Surface that chain so diagnostics retain the real worker-cycle
+  // reason instead of only the generic runtimeFailed wrapper.
+  const causes: string[] = [];
+  const seen = new Set<string>([diagnostic]);
+  let current: unknown = error;
+  for (let depth = 0; depth < 4; depth += 1) {
+    if (!current || typeof current !== 'object') break;
+    const cause = (current as Record<string, unknown>).cause;
+    if (cause === undefined || cause === null) break;
+    const causeMessage = readableErrorMessage(cause);
+    if (!seen.has(causeMessage)) {
+      seen.add(causeMessage);
+      causes.push(causeMessage);
+    }
+    current = cause;
+  }
+  return causes.length > 0
+    ? `${diagnostic} | caused by: ${causes.join(' | caused by: ')}`
+    : diagnostic;
 }
 
 async function withTimeout<T>(

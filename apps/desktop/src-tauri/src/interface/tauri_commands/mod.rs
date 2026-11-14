@@ -36,7 +36,6 @@ pub mod memory;
 pub mod messaging;
 pub mod messaging_files;
 pub mod messaging_recovery;
-pub mod model_config;
 pub mod x_config;
 
 pub(crate) mod asset_preview;

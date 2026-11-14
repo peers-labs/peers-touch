@@ -158,9 +158,38 @@ impl PlatformKeyProvider {
         if let Some(path) = Self::sandbox_file_store_path(key_ref) {
             return Some(path);
         }
-        Self::canonical_root()
-            .get()
-            .map(|root| root.join("storage-keys").join(Self::key_file_name(key_ref)))
+        if let Some(root) = Self::canonical_root().get() {
+            return Some(root.join("storage-keys").join(Self::key_file_name(key_ref)));
+        }
+        // Test builds must never reach the OS keychain: its ACL binds to the
+        // ad-hoc signed, hash-suffixed `cargo test` binary which changes on
+        // every rebuild, producing a fresh GUI authorization prompt per run.
+        Self::test_fallback_file_store_path(key_ref)
+    }
+
+    #[cfg(not(test))]
+    fn test_fallback_file_store_path(_key_ref: &str) -> Option<PathBuf> {
+        None
+    }
+
+    /// Process-local file root used by `cargo test` when neither a sandbox nor
+    /// a composition root was configured. Per-PID so parallel test processes
+    /// never share state; key refs still get their own 0600 key files.
+    #[cfg(test)]
+    fn test_fallback_file_store_path(key_ref: &str) -> Option<PathBuf> {
+        static TEST_ROOT: OnceLock<PathBuf> = OnceLock::new();
+        let root = TEST_ROOT.get_or_init(|| {
+            let dir = std::env::temp_dir().join(format!(
+                "peers-touch-test-secure-store-{}",
+                std::process::id()
+            ));
+            let _ = fs::create_dir_all(&dir);
+            dir
+        });
+        Some(
+            root.join("storage-keys")
+                .join(Self::key_file_name(key_ref)),
+        )
     }
 
     fn file_path_under_root(root: PathBuf, key_ref: &str) -> PathBuf {
@@ -249,7 +278,9 @@ impl PlatformKeyProvider {
                 }
             }
             // 3. Legacy carrier B: the OS keychain (release builds before the
-            //    file store became canonical). Migrate on first miss.
+            //    file store became canonical). Migrate on first miss. Test
+            //    builds must never trigger the keychain ACL GUI prompt.
+            #[cfg(not(test))]
             if let Some(item) = Self::read_from_keychain(key_ref)? {
                 Self::write_key_file(key_ref, &path, &item)?;
                 return Ok(Some(item));
@@ -257,7 +288,14 @@ impl PlatformKeyProvider {
             return Ok(None);
         }
         // No file root configured (non-composition-root callers): keychain.
-        Self::read_from_keychain(key_ref)
+        #[cfg(not(test))]
+        {
+            Self::read_from_keychain(key_ref)
+        }
+        #[cfg(test)]
+        {
+            Ok(None)
+        }
     }
 
     fn write_to_os_store(key_ref: &str, item: &KeyMaterial) -> Result<(), KeyProviderError> {
@@ -268,27 +306,46 @@ impl PlatformKeyProvider {
     }
 
     fn read_from_keychain(key_ref: &str) -> Result<Option<KeyMaterial>, KeyProviderError> {
-        let entry = Entry::new(
-            Self::service_name(),
-            Self::username_for_ref(key_ref).as_str(),
-        )
-        .map_err(|e| Self::classify_keyring_error(key_ref, &e))?;
-        match entry.get_password() {
-            Ok(payload) => Ok(Self::decode_material(payload.as_str())),
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(e) => Err(Self::classify_keyring_error(key_ref, &e)),
+        // Defense in depth: test binaries are hash-named and ad-hoc signed,
+        // so any keychain call pops a GUI password prompt. Tests must use the
+        // file stores above; reaching here means a test escaped isolation.
+        #[cfg(test)]
+        {
+            let _ = key_ref;
+            panic!("tests must not read from the OS keychain (key_ref={key_ref})");
+        }
+        #[cfg(not(test))]
+        {
+            let entry = Entry::new(
+                Self::service_name(),
+                Self::username_for_ref(key_ref).as_str(),
+            )
+            .map_err(|e| Self::classify_keyring_error(key_ref, &e))?;
+            match entry.get_password() {
+                Ok(payload) => Ok(Self::decode_material(payload.as_str())),
+                Err(keyring::Error::NoEntry) => Ok(None),
+                Err(e) => Err(Self::classify_keyring_error(key_ref, &e)),
+            }
         }
     }
 
     fn write_to_keychain(key_ref: &str, item: &KeyMaterial) -> Result<(), KeyProviderError> {
-        let entry = Entry::new(
-            Self::service_name(),
-            Self::username_for_ref(item.key_id.as_str()).as_str(),
-        )
-        .map_err(|e| Self::classify_keyring_error(key_ref, &e))?;
-        entry
-            .set_password(Self::encode_material(item).as_str())
-            .map_err(|e| Self::classify_keyring_error(key_ref, &e))
+        #[cfg(test)]
+        {
+            let _ = (key_ref, item);
+            panic!("tests must not write to the OS keychain (key_ref={key_ref})");
+        }
+        #[cfg(not(test))]
+        {
+            let entry = Entry::new(
+                Self::service_name(),
+                Self::username_for_ref(item.key_id.as_str()).as_str(),
+            )
+            .map_err(|e| Self::classify_keyring_error(key_ref, &e))?;
+            entry
+                .set_password(Self::encode_material(item).as_str())
+                .map_err(|e| Self::classify_keyring_error(key_ref, &e))
+        }
     }
 
     fn write_key_file(
@@ -505,6 +562,28 @@ mod tests {
             std::env::remove_var("PEERS_STORAGE_ROOT");
         }
         let _ = fs::remove_dir_all(&sandbox);
+    }
+
+    #[test]
+    fn unconfigured_test_build_uses_a_file_store_and_never_the_keychain() {
+        let _env = test_storage_env_lock();
+        // No PEERS_STORAGE_ROOT and no composition root: a misconfigured test
+        // used to fall through to the OS keychain and raise a GUI prompt from
+        // the hash-suffixed cargo-test binary.
+        unsafe {
+            std::env::remove_var("PEERS_STORAGE_ROOT");
+        }
+        let key_ref = "chat/test-no-keychain/main/actor-fallback";
+        let created = PlatformKeyProvider::new()
+            .get_or_create_key(key_ref)
+            .expect("key resolves through the test file fallback");
+        assert_eq!(created.key_bytes.len(), 32);
+
+        // A new provider with an empty cache restores the same key.
+        let restored = PlatformKeyProvider::new()
+            .get_or_create_key(key_ref)
+            .expect("restored from file fallback");
+        assert_eq!(restored.key_bytes, created.key_bytes);
     }
 
     #[test]

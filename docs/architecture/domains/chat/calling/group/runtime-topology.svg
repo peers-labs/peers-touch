@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1120 600" width="1120" height="600"
+  role="img" aria-labelledby="title-chat-group-calling.runtime">
+<style>
+  .canvas { fill: #111418; }
+  .headerRule { stroke: #30363d; stroke-width: 1; }
+  .title { fill: #f4f7fa; font: 600 30px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .viewpoint { fill: #8c98a4; font: 600 13px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .boundary { fill: none; stroke: #69737d; stroke-width: 1.5; stroke-dasharray: 7 6; }
+  .boundaryTitle { fill: #aeb7c0; font: 600 14px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .zone { fill: #171b20; stroke: #343b43; stroke-width: 1.4; }
+  .zone-primary { fill: #152019; stroke: #55d98d; }
+  .zone-secondary { fill: #141d25; stroke: #65b8ff; }
+  .zone-state { fill: #211d14; stroke: #e0b35a; }
+  .zone-external { fill: #191b1e; stroke: #7c8792; stroke-dasharray: 6 5; }
+  .zone-muted { fill: #14171b; stroke: #2c3239; }
+  .zoneTitle { fill: #aeb7c0; font: 600 15px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .node { fill: #1b2026; stroke: #49525c; stroke-width: 1.4; }
+  .node-primary { fill: #17231b; stroke: #55d98d; stroke-width: 1.8; }
+  .node-secondary { fill: #16212b; stroke: #65b8ff; }
+  .node-state { fill: #252116; stroke: #e0b35a; }
+  .node-external { fill: #1a1d21; stroke: #7c8792; }
+  .node-muted { fill: #161a1f; stroke: #343b43; }
+  .nodeTitle { fill: #f0f3f6; font: 600 18px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .nodeCaption { fill: #9da8b3; font: 400 13px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .edge { fill: none; stroke: #55d98d; stroke-width: 2; stroke-linejoin: round; }
+  .edge-secondary { stroke: #65b8ff; }
+  .edge-return { stroke: #a6b0ba; stroke-dasharray: 6 5; }
+  .edge-event { stroke: #e0b35a; stroke-dasharray: 3 4; }
+  .edge-feedback { stroke: #d48787; stroke-dasharray: 7 5; }
+  .edgeLabelBox { fill: #111418; stroke: #30363d; stroke-width: 1; }
+  .edgeLabel { fill: #d7dde3; font: 500 13px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .band { fill: #171b20; }
+  .band-primary { fill: #142019; }
+  .band-secondary { fill: #141d25; }
+  .band-state { fill: #201c14; }
+  .band-muted { fill: #14171b; }
+  .bandRule { stroke: #30363d; stroke-width: 1; }
+  .bandTitle { fill: #8f9aa5; font: 600 14px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .lifeline { stroke: #48515a; stroke-width: 1.3; stroke-dasharray: 5 6; }
+  .fragment { fill: #151a1f; stroke: #3b444d; stroke-width: 1; }
+  .fragment-primary { fill: #142019; stroke: #3d7555; }
+  .fragment-secondary { fill: #141d25; stroke: #416884; }
+  .fragmentLabel { fill: #aeb7c0; font: 600 12px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .matrixHead { fill: #181d22; stroke: #343b43; stroke-width: 1; }
+  .matrixCell { fill: #14181d; stroke: #2d343c; stroke-width: 1; }
+  .matrixOwner { fill: #17301f; stroke: #55d98d; stroke-width: 1.4; }
+  .matrixText { fill: #d8dee4; font: 500 14px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .matrixOwnerText { fill: #7fe7a8; font: 700 13px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .guard { fill: #151a1f; stroke: #59636e; stroke-width: 1; }
+  .guard-primary { stroke: #55d98d; }
+  .guard-secondary { stroke: #65b8ff; }
+  .guard-state { stroke: #e0b35a; }
+  .guardLine { stroke: #59636e; stroke-width: 1; stroke-dasharray: 3 4; }
+  .guardText { fill: #b4bec8; font: 500 13px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+</style>
+<defs>
+  <marker id="arrow-primary" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#55d98d"/>
+  </marker>
+  <marker id="arrow-secondary" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#65b8ff"/>
+  </marker>
+  <marker id="arrow-return" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#a6b0ba"/>
+  </marker>
+  <marker id="arrow-event" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#e0b35a"/>
+  </marker>
+  <marker id="arrow-feedback" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#d48787"/>
+  </marker>
+</defs>
+<title id="title-chat-group-calling.runtime">Group calling · Home authorization and SFU media</title>
+<rect class="canvas" width="1120" height="600"/>
+<text class="title" x="44" y="48">Group calling · Home authorization and SFU media</text>
+<text class="viewpoint" x="1076" y="46" text-anchor="end">RUNTIME-TOPOLOGY</text>
+<line class="headerRule" x1="44" y1="72" x2="1076" y2="72"/>
+<rect class="zone zone-secondary" x="25" y="80" width="300" height="180" rx="7"/>
+<text class="zoneTitle" x="39" y="107">CLIENT INSTALLATION</text>
+<rect class="zone zone-primary" x="400" y="80" width="300" height="180" rx="7"/>
+<text class="zoneTitle" x="414" y="107">HOME STATION</text>
+<rect class="zone zone-primary" x="770" y="80" width="320" height="180" rx="7"/>
+<text class="zoneTitle" x="784" y="107">GROUP AUTHORITY</text>
+<rect class="zone zone-external" x="770" y="290" width="320" height="200" rx="7"/>
+<text class="zoneTitle" x="784" y="317">MEDIA INFRASTRUCTURE</text>
+<path class="edge edge-primary" d="M 310 170 L 420 170" marker-end="url(#arrow-primary)"/>
+<rect class="edgeLabelBox" x="338" y="155" width="54" height="24" rx="4"/>
+<text class="edgeLabel" x="365" y="172" text-anchor="middle">join</text>
+<path class="edge edge-primary" d="M 680 170 L 790 170" marker-end="url(#arrow-primary)"/>
+<rect class="edgeLabelBox" x="689.6" y="155" width="90.80000000000001" height="24" rx="4"/>
+<text class="edgeLabel" x="735" y="172" text-anchor="middle">Federation</text>
+<path class="edge edge-primary" d="M 930 220 L 930 345" marker-end="url(#arrow-primary)"/>
+<rect class="edgeLabelBox" x="873.68" y="267.5" width="112.64000000000001" height="24" rx="4"/>
+<text class="edgeLabel" x="930" y="284.5" text-anchor="middle">grant / eject</text>
+<path class="edge edge-secondary" d="M 175 220 L 175 395 L 790 395" marker-end="url(#arrow-secondary)"/>
+<rect class="edgeLabelBox" x="429.82" y="380" width="105.36000000000001" height="24" rx="4"/>
+<text class="edgeLabel" x="482.5" y="397" text-anchor="middle">WebRTC media</text>
+<rect class="node node-secondary" x="40" y="120" width="270" height="100" rx="6"/>
+<text class="nodeTitle" x="54" y="151">Desktop / Mobile</text>
+<text class="nodeCaption" x="54" y="203">one device media lease</text>
+<rect class="node node-primary" x="420" y="120" width="260" height="100" rx="6"/>
+<text class="nodeTitle" x="434" y="151">Home Station</text>
+<text class="nodeCaption" x="434" y="203">Session + device authorization</text>
+<rect class="node node-primary" x="790" y="120" width="280" height="100" rx="6"/>
+<text class="nodeTitle" x="804" y="151">Authority Station</text>
+<text class="nodeCaption" x="804" y="203">Conversation + endpoint grants</text>
+<rect class="node node-external" x="790" y="345" width="280" height="100" rx="6"/>
+<text class="nodeTitle" x="804" y="376">LiveKit SFU</text>
+<text class="nodeCaption" x="804" y="428">trusted media infrastructure</text>
+</svg>

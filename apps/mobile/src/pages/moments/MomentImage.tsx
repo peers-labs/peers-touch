@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Typography } from 'antd';
-import { ImageOff, LoaderCircle, RotateCcw } from 'lucide-react';
+import { Icon, IconButton, Spin } from '@peers-touch/ui';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import { isAccessGranted } from '../../features/auth/authSession';
@@ -12,7 +11,6 @@ import {
 } from '../../services/gateways/momentMediaGateway';
 import { readableErrorMessage } from '../../utils/errorMessage';
 
-const { Text } = Typography;
 
 type MomentImageState =
   | { readonly status: 'loading'; readonly src: null; readonly error: null }
@@ -153,14 +151,16 @@ export function MomentImage({ attachment, alt }: MomentImageProps) {
         data-moment-image-failure={state.error}
         role="alert"
       >
-        <ImageOff size={22} aria-hidden="true" />
-        <Text type="secondary">{t('mobile.moments.imageFailed')}</Text>
-        <Button
-          type="text"
-          size="small"
-          icon={<RotateCcw size={14} />}
-          onClick={() => setAttempt((current) => current + 1)}
-          aria-label={t('common.action.retry')}
+        <Icon iconId="image-off" size={22} aria-hidden="true" />
+        <span className="moments-image-recovery-label">{t('mobile.moments.imageFailed')}</span>
+        <IconButton
+          actionId="moments.image.retry"
+          iconId="rotate-ccw"
+          iconSize={14}
+          density="compact"
+          emphasis="quiet"
+          onActivate={() => setAttempt((current) => current + 1)}
+          label={t('common.action.retry')}
         />
       </div>
     );
@@ -172,7 +172,7 @@ export function MomentImage({ attachment, alt }: MomentImageProps) {
       role="status"
       aria-label={t('common.state.loading')}
     >
-      <LoaderCircle size={22} aria-hidden="true" />
+      <Spin active size="small" />
     </div>
   );
 }

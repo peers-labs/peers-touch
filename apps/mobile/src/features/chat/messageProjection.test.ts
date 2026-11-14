@@ -94,4 +94,36 @@ describe('canonical message projection', () => {
       messagingState: 'accepted',
     });
   });
+
+  it.each([
+    { durationMs: 2400, codec: 'audio/mp4;codecs=mp4a.40.2', waveform: [8, 15, 8] },
+    undefined,
+  ])('preserves canonical voice metadata without deriving it from content kind', (voiceNote) => {
+    const projected = projectMessagingMessage('conversation-1', {
+      messageId: 'voice-message',
+      senderPtid: 'ptid:alice',
+      senderDeviceId: 'device-a',
+      plaintext: '',
+      attachments: [{
+        attachmentId: 'voice-attachment',
+        filename: 'recording.m4a',
+        mimeType: 'audio/mp4',
+        plaintextSize: 9800,
+        contentKind: voiceNote ? 0 : 2,
+        durationMs: voiceNote ? 0 : 2400,
+        voiceNote,
+      }],
+      state: 'delivered',
+      timestampUnixMs: 1_700_000_000_123,
+      retracted: false,
+      moderated: false,
+      reactions: [],
+      readByPtids: [],
+    });
+    expect(projected.attachments[0].voiceNote).toEqual(voiceNote);
+    if (voiceNote) {
+      projected.attachments[0].voiceNote.waveform.push(99);
+      expect(voiceNote.waveform).toEqual([8, 15, 8]);
+    }
+  });
 });

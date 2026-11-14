@@ -36,6 +36,7 @@ use messaging_core::contracts::{
     PendingMlsTransitionState as CorePendingMlsTransitionState,
     PublicEventReceiveCommit as CorePublicEventReceiveCommit,
     ReceiveCommitResult as CoreReceiveCommitResult,
+    RejectedItemReceiveCommit as CoreRejectedItemReceiveCommit,
     ServicePlaintextReceiveCommit as CoreServicePlaintextReceiveCommit,
     SkippedEndpointReceiveCommit as CoreSkippedEndpointReceiveCommit,
 };
@@ -54,7 +55,7 @@ use messaging_core::identity::{
     DeviceEnrollmentRepository, FreshDeviceEnrollment, FreshDeviceIdentityState,
     MESSAGING_DEVICE_CERTIFICATE_FORMAT_VERSION,
 };
-use messaging_core::inbox::CommandResultRepository;
+use messaging_core::inbox::{mark_item_rejection, CommandResultRepository, ItemRejectionCode};
 use messaging_core::outbox::{
     CommandOutboxEntry, DeliveryReceiptOutboxEntry, DeliveryReceiptRepository,
     MetadataInteractionCommit, MetadataInteractionRepository,
@@ -135,6 +136,9 @@ pub struct MessageProjection {
     pub edited_at_unix_ms: Option<i64>,
     /// Whether the message has been retracted/deleted.
     pub retracted: bool,
+    /// @mention set decoded from the ciphertext envelope on receive and
+    /// persisted into `mentions_json`; empty for ordinary/system messages.
+    pub mentions: super::private_content::MessageMentions,
 }
 
 pub struct PendingSenderProjection<'a> {
@@ -174,6 +178,8 @@ pub struct PendingMessageDraft {
     pub attachments: Vec<AttachmentPlaintextMetadata>,
     pub attempt_count: u32,
     pub created_at_unix_ms: i64,
+    /// @mention set carried inside the ciphertext; empty for ordinary messages.
+    pub mentions: super::private_content::MessageMentions,
 }
 
 /// Existing admission returned for a repeated send intent (MP-D33). The
@@ -269,6 +275,11 @@ pub struct ConversationMessagePage {
 pub enum MessageRetryDisposition {
     ExactCommand { command_id: String },
     DraftReady,
+    /// Command was already accepted by the authority and is still awaiting
+    /// delivery receipts. It must never be re-prepared (that would mint a
+    /// duplicate message); the retry only re-drives reconciliation/dispatch
+    /// on the next worker wake.
+    SubmittedRedrive { command_id: String },
 }
 
 pub struct DirectAuthorityCheckpoint<'a> {
@@ -492,6 +503,23 @@ pub struct SkippedEndpointReceiveCommit<'a> {
     pub receipt_id: &'a str,
     pub receipt_bytes: &'a [u8],
     pub consumed_at_unix_ms: i64,
+}
+
+/// Dead-letter commit for an inbox item that failed deterministic content
+/// validation: rejection record plus lane cursor advance without an
+/// authority-chain advance or a projection.
+pub struct RejectedItemReceiveCommit<'a> {
+    pub item_id: &'a str,
+    pub event_id: &'a str,
+    pub conversation_id: &'a str,
+    pub lane_sequence: i64,
+    pub consumer_epoch: u64,
+    pub payload_sha256: &'a [u8],
+    pub reject_code: &'a str,
+    pub reject_detail: &'a str,
+    pub receipt_id: &'a str,
+    pub receipt_bytes: &'a [u8],
+    pub rejected_at_unix_ms: i64,
 }
 
 pub enum InteractionMutation<'a> {
@@ -782,6 +810,7 @@ fn map_conversation_message_projection(
         last_error_code: row.get::<_, Option<String>>(15)?.filter(|code| !code.is_empty()),
         required_device_count: row.get::<_, Option<i64>>(16)?.unwrap_or(0),
         delivered_device_count: row.get::<_, Option<i64>>(17)?.unwrap_or(0),
+        mentions_json: row.get::<_, String>(18).unwrap_or_default(),
     })
 }
 
@@ -855,6 +884,7 @@ fn conversation_message_projection_from_row(
         last_error_code: None,
         required_device_count: 0,
         delivered_device_count: 0,
+        mentions_json: row.get::<_, String>(16).unwrap_or_default(),
     })
 }
 
@@ -3117,12 +3147,14 @@ impl MessagingStore {
                 "SELECT event_id, event_sequence, sender_ptid, sender_device_id,
                         plaintext, delivery_state, committed_at_unix_ms,
                         reply_to_message_id, thread_root_message_id,
-                        edited_text, edited_at_unix_ms, retracted
+                        edited_text, edited_at_unix_ms, retracted,
+                        COALESCE(mentions_json, '')
                  FROM messaging_message_projections
                  WHERE conversation_id = ?1 AND message_id = ?2",
                 params![conversation_id, message_id],
                 |row| {
                     let delivery_state = row.get::<_, String>(5)?;
+                    let mentions_json: String = row.get::<_, String>(12).unwrap_or_default();
                     Ok((
                         MessageProjection {
                             conversation_id: conversation_id.to_string(),
@@ -3139,6 +3171,7 @@ impl MessagingStore {
                             edited_text: row.get(9)?,
                             edited_at_unix_ms: row.get(10)?,
                             retracted: row.get::<_, i64>(11).unwrap_or(0) != 0,
+                            mentions: super::private_content::decode_mentions_json(&mentions_json),
                         },
                         delivery_state,
                     ))
@@ -3754,6 +3787,7 @@ impl MessagingStore {
                            reply_to_message_id, thread_root_message_id,
                            edited_text, edited_at_unix_ms, retracted,
                            hidden_for_actor, moderated, moderation_reason_code,
+                           COALESCE(mentions_json, '') AS mentions_json,
                            0 AS pending_rank
                     FROM messaging_message_projections
                     WHERE conversation_id = ?1 AND hidden_for_actor = 0
@@ -3764,6 +3798,7 @@ impl MessagingStore {
                            NULLIF(pending.reply_to_message_id, ''),
                            NULLIF(pending.thread_root_message_id, ''),
                            NULL, NULL, 0, 0, 0, NULL,
+                           COALESCE(pending.mentions_json, '') AS mentions_json,
                            1
                     FROM messaging_pending_messages pending
                     WHERE pending.conversation_id = ?1
@@ -3779,6 +3814,7 @@ impl MessagingStore {
                         reply_to_message_id, thread_root_message_id,
                         edited_text, edited_at_unix_ms, retracted,
                         hidden_for_actor, moderated, moderation_reason_code,
+                        mentions_json,
                         pending_rank
                  FROM conversation_messages
                  ORDER BY pending_rank ASC, event_sequence ASC, message_id ASC",
@@ -3788,7 +3824,7 @@ impl MessagingStore {
             .query_map(params![conversation_id], |row| {
                 Ok((
                     conversation_message_projection_from_row(row)?,
-                    row.get::<_, i64>(16)?,
+                    row.get::<_, i64>(17)?,
                 ))
             })
             .map_err(|error| error.to_string())?
@@ -3831,7 +3867,8 @@ impl MessagingStore {
                     message.delivery_state, message.committed_at_unix_ms,
                     message.reply_to_message_id, message.thread_root_message_id,
                     message.edited_text, message.edited_at_unix_ms, message.retracted,
-                    message.hidden_for_actor, message.moderated, message.moderation_reason_code
+                    message.hidden_for_actor, message.moderated, message.moderation_reason_code,
+                    COALESCE(message.mentions_json, '')
              FROM messaging_message_projections message
              JOIN messaging_conversations conversation
                ON conversation.conversation_id = message.conversation_id
@@ -3891,7 +3928,8 @@ impl MessagingStore {
                         delivery_state, committed_at_unix_ms,
                         reply_to_message_id, thread_root_message_id,
                         edited_text, edited_at_unix_ms, retracted,
-                        0, NULL, NULL, 0, 0
+                        0, NULL, NULL, 0, 0,
+                        COALESCE(mentions_json, '')
                  FROM messaging_message_projections
                  WHERE conversation_id = ?1
                    AND event_sequence < ?2
@@ -3965,7 +4003,8 @@ impl MessagingStore {
                                          attempt.command_id DESC
                                 LIMIT 1
                             ), NULLIF(pending.last_error_code, '')),
-                            0, 0
+                            0, 0,
+                            COALESCE(pending.mentions_json, '')
                      FROM messaging_pending_messages pending
                      WHERE pending.conversation_id = ?1
                        AND pending.thread_root_message_id = ''
@@ -4085,6 +4124,7 @@ impl MessagingStore {
                            reply_to_message_id, thread_root_message_id,
                            edited_text, edited_at_unix_ms, retracted,
                            hidden_for_actor, moderated, moderation_reason_code,
+                           COALESCE(mentions_json, '') AS mentions_json,
                            CASE WHEN message_id = ?2 THEN 0 ELSE 1 END AS root_rank,
                            0 AS pending_rank
                     FROM messaging_message_projections
@@ -4098,6 +4138,7 @@ impl MessagingStore {
                            NULLIF(pending.reply_to_message_id, ''),
                            NULLIF(pending.thread_root_message_id, ''),
                            NULL, NULL, 0, 0, 0, NULL,
+                           COALESCE(pending.mentions_json, '') AS mentions_json,
                            CASE WHEN pending.message_id = ?2 THEN 0 ELSE 1 END,
                            1
                     FROM messaging_pending_messages pending
@@ -4118,6 +4159,7 @@ impl MessagingStore {
                         reply_to_message_id, thread_root_message_id,
                         edited_text, edited_at_unix_ms, retracted,
                         hidden_for_actor, moderated, moderation_reason_code,
+                        mentions_json,
                         root_rank, pending_rank
                  FROM thread_messages
                  ORDER BY root_rank ASC,
@@ -4130,8 +4172,8 @@ impl MessagingStore {
             .query_map(params![conversation_id, thread_root_message_id], |row| {
                 Ok((
                     conversation_message_projection_from_row(row)?,
-                    row.get::<_, i64>(16)?,
                     row.get::<_, i64>(17)?,
+                    row.get::<_, i64>(18)?,
                 ))
             })
             .map_err(|error| error.to_string())?
@@ -4324,7 +4366,8 @@ impl MessagingStore {
                         message.reply_to_message_id, message.thread_root_message_id,
                         message.edited_text, message.edited_at_unix_ms, message.retracted,
                         message.hidden_for_actor, message.moderated,
-                        message.moderation_reason_code
+                        message.moderation_reason_code,
+                        COALESCE(message.mentions_json, '')
                  FROM messaging_message_search_fts
                  JOIN messaging_message_projections message
                    ON message.conversation_id = messaging_message_search_fts.conversation_id
@@ -4795,10 +4838,12 @@ impl MessagingStore {
     }
 
     pub fn create_message_draft(&self, draft: &PendingMessageDraft) -> Result<(), String> {
-        let private_content = super::private_content::encode_message_private_content(
-            &draft.plaintext,
-            &draft.attachments,
-        )?;
+        let private_content =
+            super::private_content::encode_message_private_content_with_mentions(
+                &draft.plaintext,
+                &draft.attachments,
+                &draft.mentions,
+            )?;
         if draft.conversation_id.trim().is_empty()
             || draft.conversation_kind <= 0
             || draft.message_id.trim().is_empty()
@@ -4819,8 +4864,8 @@ impl MessagingStore {
                     sender_ptid, sender_device_id, send_intent_id, plaintext,
                     reply_to_message_id, thread_root_message_id, state,
                     attempt_count, next_attempt_at_unix_ms, last_error_code,
-                    created_at_unix_ms
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'draft', 0, ?10, '', ?10)
+                    created_at_unix_ms, mentions_json
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'draft', 0, ?10, '', ?10, ?11)
                  ON CONFLICT(conversation_id, message_id) DO NOTHING",
                 params![
                     draft.conversation_id,
@@ -4832,7 +4877,8 @@ impl MessagingStore {
                     draft.plaintext,
                     draft.reply_to_message_id,
                     draft.thread_root_message_id,
-                    draft.created_at_unix_ms
+                    draft.created_at_unix_ms,
+                    super::private_content::encode_mentions_json(&draft.mentions),
                 ],
             )
             .map_err(|error| error.to_string())?;
@@ -4913,8 +4959,8 @@ impl MessagingStore {
                     sender_ptid, sender_device_id, send_intent_id, plaintext,
                     reply_to_message_id, thread_root_message_id, state,
                     attempt_count, next_attempt_at_unix_ms, last_error_code,
-                    created_at_unix_ms
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'draft', 0, ?10, '', ?10)
+                    created_at_unix_ms, mentions_json
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'draft', 0, ?10, '', ?10, ?11)
                  ON CONFLICT(conversation_id, message_id) DO NOTHING",
                 params![
                     draft.conversation_id,
@@ -4926,7 +4972,8 @@ impl MessagingStore {
                     draft.plaintext,
                     draft.reply_to_message_id,
                     draft.thread_root_message_id,
-                    draft.created_at_unix_ms
+                    draft.created_at_unix_ms,
+                    super::private_content::encode_mentions_json(&draft.mentions),
                 ],
             )
             .map_err(|error| error.to_string())?;
@@ -5947,7 +5994,8 @@ impl MessagingStore {
                 "SELECT conversation_id, conversation_kind, message_id,
                         sender_ptid, sender_device_id, send_intent_id, plaintext,
                         reply_to_message_id, thread_root_message_id,
-                        attempt_count, created_at_unix_ms
+                        attempt_count, created_at_unix_ms,
+                        COALESCE(mentions_json, '') AS mentions_json
                  FROM messaging_pending_messages pending
                  WHERE state = 'draft'
                    AND next_attempt_at_unix_ms <= ?1
@@ -5973,6 +6021,9 @@ impl MessagingStore {
                         attachments: Vec::new(),
                         attempt_count: row.get(9)?,
                         created_at_unix_ms: row.get(10)?,
+                        mentions: super::private_content::decode_mentions_json(
+                            &row.get::<_, String>(11)?,
+                        ),
                     })
                 },
             )
@@ -5982,9 +6033,10 @@ impl MessagingStore {
             return Ok(None);
         };
         draft.attachments = load_pending_message_attachments(&connection, &draft.message_id)?;
-        super::private_content::encode_message_private_content(
+        super::private_content::encode_message_private_content_with_mentions(
             &draft.plaintext,
             &draft.attachments,
+            &draft.mentions,
         )?;
         Ok(Some(draft))
     }
@@ -6109,7 +6161,8 @@ impl MessagingStore {
                 "SELECT conversation_id, conversation_kind, message_id,
                         sender_ptid, sender_device_id, send_intent_id, plaintext,
                         reply_to_message_id, thread_root_message_id,
-                        attempt_count, created_at_unix_ms
+                        attempt_count, created_at_unix_ms,
+                        COALESCE(mentions_json, '') AS mentions_json
                  FROM messaging_pending_messages pending
                  WHERE message_id = ?1
                    AND state = 'draft'
@@ -6133,6 +6186,9 @@ impl MessagingStore {
                         attachments: Vec::new(),
                         attempt_count: row.get(9)?,
                         created_at_unix_ms: row.get(10)?,
+                        mentions: super::private_content::decode_mentions_json(
+                            &row.get::<_, String>(11)?,
+                        ),
                     })
                 },
             )
@@ -6142,9 +6198,10 @@ impl MessagingStore {
             return Ok(None);
         };
         draft.attachments = load_pending_message_attachments(&connection, &draft.message_id)?;
-        super::private_content::encode_message_private_content(
+        super::private_content::encode_message_private_content_with_mentions(
             &draft.plaintext,
             &draft.attachments,
+            &draft.mentions,
         )?;
         Ok(Some(draft))
     }
@@ -6235,7 +6292,10 @@ impl MessagingStore {
                 Ok(MessageRetryDisposition::DraftReady)
             }
             "submitted" => {
-                Err("messaging submitted command is awaiting canonical reconciliation".to_string())
+                transaction.commit().map_err(|error| error.to_string())?;
+                Ok(MessageRetryDisposition::SubmittedRedrive {
+                    command_id: command.0,
+                })
             }
             "committed" => Err("messaging committed message cannot be retried".to_string()),
             state => Err(format!("messaging retry state is unsupported: {state}")),
@@ -7868,7 +7928,8 @@ impl MessagingStore {
             let pending = transaction
                 .query_row(
                     "SELECT p.conversation_id, p.message_id, p.sender_ptid,
-                            p.sender_device_id, p.plaintext
+                            p.sender_device_id, p.plaintext,
+                            COALESCE(p.mentions_json, '')
                      FROM messaging_command_attempts a
                      JOIN messaging_pending_messages p
                        ON p.conversation_id = a.conversation_id
@@ -7882,6 +7943,7 @@ impl MessagingStore {
                             row.get::<_, String>(2)?,
                             row.get::<_, String>(3)?,
                             row.get::<_, String>(4)?,
+                            row.get::<_, String>(5)?,
                         ))
                     },
                 )
@@ -7923,9 +7985,9 @@ impl MessagingStore {
                         sender_ptid, sender_device_id, plaintext,
                         delivery_state, committed_at_unix_ms,
                         reply_to_message_id, thread_root_message_id,
-                        edited_text, edited_at_unix_ms, retracted
+                        edited_text, edited_at_unix_ms, retracted, mentions_json
                      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'accepted', ?8,
-                               ?9, ?10, NULL, NULL, 0)",
+                               ?9, ?10, NULL, NULL, 0, ?11)",
                     params![
                         input.conversation_id,
                         input.event_id,
@@ -7936,7 +7998,8 @@ impl MessagingStore {
                         pending.4,
                         input.committed_at_unix_ms,
                         input.reply_to_message_id,
-                        input.thread_root_message_id
+                        input.thread_root_message_id,
+                        pending.5,
                     ],
                 )
                 .map_err(|error| error.to_string())?;
@@ -8005,6 +8068,7 @@ impl MessagingStore {
             edited_text: None,
             edited_at_unix_ms: None,
             retracted: false,
+            mentions: Default::default(),
         };
         let core = ReceiveCommitCore {
             item_id: input.item_id,
@@ -8115,6 +8179,149 @@ impl MessagingStore {
             consumed_at_unix_ms: input.consumed_at_unix_ms,
         };
         self.commit_receive_core(&core, ReceiveFailPoint::None, |_| Ok(()))
+    }
+
+    /// Dead-letter a claimed inbox item whose content failed deterministic
+    /// validation. Records the rejection, writes the consumption marker and
+    /// advances the lane cursor without touching the authority hash chain or
+    /// creating a projection, so the drain can ack past a poison item.
+    pub fn commit_rejected_endpoint_payload(
+        &self,
+        input: &RejectedItemReceiveCommit<'_>,
+    ) -> Result<ReceiveCommitResult, String> {
+        if input.item_id.trim().is_empty()
+            || input.event_id.trim().is_empty()
+            || input.conversation_id.trim().is_empty()
+            || input.lane_sequence <= 0
+            || input.consumer_epoch == 0
+            || input.payload_sha256.len() != 32
+            || input.reject_code.trim().is_empty()
+            || input.receipt_id.trim().is_empty()
+            || input.receipt_bytes.is_empty()
+            || input.rejected_at_unix_ms <= 0
+        {
+            return Err("messaging rejected-item receive input is incomplete".to_string());
+        }
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+
+        let existing_hash = transaction
+            .query_row(
+                "SELECT payload_sha256 FROM messaging_consumption_markers WHERE item_id = ?1",
+                params![input.item_id],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        if let Some(existing_hash) = existing_hash {
+            if existing_hash == input.payload_sha256 {
+                return Ok(ReceiveCommitResult::AlreadyCommitted);
+            }
+            return Err("messaging consumption marker payload hash mismatch".to_string());
+        }
+
+        let claimed = transaction
+            .query_row(
+                "SELECT event_id, conversation_id, lane_sequence, consumer_epoch, payload_sha256
+                 FROM messaging_inbox_items WHERE item_id = ?1 AND state = 'claimed'",
+                params![input.item_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, Vec<u8>>(4)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "messaging claimed inbox item is unavailable".to_string())?;
+        if claimed.0 != input.event_id
+            || claimed.1 != input.conversation_id
+            || claimed.2 != input.lane_sequence
+            || claimed.3
+                != i64::try_from(input.consumer_epoch)
+                    .map_err(|_| "consumer epoch exceeds i64".to_string())?
+            || claimed.4 != input.payload_sha256
+        {
+            return Err("messaging claimed inbox item binding mismatch".to_string());
+        }
+
+        let cursor = transaction
+            .query_row(
+                "SELECT lane_sequence, consumer_epoch FROM messaging_lane_cursor WHERE id = 1",
+                [],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        let epoch = i64::try_from(input.consumer_epoch)
+            .map_err(|_| "consumer epoch exceeds i64".to_string())?;
+        if input.lane_sequence != cursor.map(|value| value.0 + 1).unwrap_or(1)
+            || cursor.map(|value| epoch < value.1).unwrap_or(false)
+        {
+            return Err("messaging receive is not the next fenced lane item".to_string());
+        }
+
+        transaction
+            .execute(
+                "INSERT INTO messaging_rejected_items(
+                    item_id, event_id, conversation_id, lane_sequence,
+                    consumer_epoch, payload_sha256, reject_code, reject_detail,
+                    receipt_id, receipt_bytes, rejected_at_unix_ms
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                params![
+                    input.item_id,
+                    input.event_id,
+                    input.conversation_id,
+                    input.lane_sequence,
+                    epoch,
+                    input.payload_sha256,
+                    input.reject_code,
+                    input.reject_detail,
+                    input.receipt_id,
+                    input.receipt_bytes,
+                    input.rejected_at_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO messaging_consumption_markers(
+                    item_id, event_id, conversation_id, payload_sha256, consumed_at_unix_ms
+                 ) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    input.item_id,
+                    input.event_id,
+                    input.conversation_id,
+                    input.payload_sha256,
+                    input.rejected_at_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO messaging_lane_cursor(id, lane_sequence, consumer_epoch, updated_at_unix_ms)
+                 VALUES (1, ?1, ?2, ?3)
+                 ON CONFLICT(id) DO UPDATE SET
+                    lane_sequence=excluded.lane_sequence,
+                    consumer_epoch=excluded.consumer_epoch,
+                    updated_at_unix_ms=excluded.updated_at_unix_ms",
+                params![input.lane_sequence, epoch, input.rejected_at_unix_ms],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "UPDATE messaging_inbox_items SET state = 'rejected' WHERE item_id = ?1",
+                params![input.item_id],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(ReceiveCommitResult::Committed)
     }
 
     pub fn commit_interaction_event(
@@ -10027,9 +10234,9 @@ impl MessagingStore {
                         sender_ptid, sender_device_id, plaintext,
                         delivery_state, committed_at_unix_ms,
                         reply_to_message_id, thread_root_message_id,
-                        edited_text, edited_at_unix_ms, retracted
+                        edited_text, edited_at_unix_ms, retracted, mentions_json
                      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'consumed', ?8,
-                               ?9, ?10, NULL, NULL, 0)
+                               ?9, ?10, NULL, NULL, 0, ?11)
                      ON CONFLICT(conversation_id, event_id) DO NOTHING",
                     params![
                         projection.conversation_id,
@@ -10041,7 +10248,8 @@ impl MessagingStore {
                         projection.plaintext,
                         projection.committed_at_unix_ms,
                         projection.reply_to_message_id,
-                        projection.thread_root_message_id
+                        projection.thread_root_message_id,
+                        super::private_content::encode_mentions_json(&projection.mentions),
                     ],
                 )
                 .map_err(|error| error.to_string())?;
@@ -11428,6 +11636,7 @@ impl MessagingRepository for MessagingStore {
             edited_text: None,
             edited_at_unix_ms: None,
             retracted: false,
+            mentions: commit.projection.mentions.clone(),
         };
         map_receive_result(MessagingStore::commit_direct_receive(
             self,
@@ -11543,6 +11752,28 @@ impl MessagingRepository for MessagingStore {
                 receipt_id: commit.receipt_id,
                 receipt_bytes: commit.receipt_bytes,
                 consumed_at_unix_ms: commit.consumed_at_unix_ms,
+            },
+        )?)
+    }
+
+    fn commit_rejected_endpoint_payload(
+        &self,
+        commit: &CoreRejectedItemReceiveCommit<'_>,
+    ) -> Result<CoreReceiveCommitResult, String> {
+        map_receive_result(MessagingStore::commit_rejected_endpoint_payload(
+            self,
+            &RejectedItemReceiveCommit {
+                item_id: commit.item_id,
+                event_id: commit.event_id,
+                conversation_id: commit.conversation_id,
+                lane_sequence: commit.lane_sequence,
+                consumer_epoch: commit.consumer_epoch,
+                payload_sha256: commit.payload_sha256,
+                reject_code: commit.reject_code,
+                reject_detail: commit.reject_detail,
+                receipt_id: commit.receipt_id,
+                receipt_bytes: commit.receipt_bytes,
+                rejected_at_unix_ms: commit.rejected_at_unix_ms,
             },
         )?)
     }
@@ -12192,6 +12423,7 @@ impl MlsInboundRepository for MessagingStore {
             edited_text: None,
             edited_at_unix_ms: None,
             retracted: false,
+            mentions: commit.projection.mentions.clone(),
         };
         map_receive_result(MessagingStore::commit_mls_receive(
             self,
@@ -12785,6 +13017,7 @@ fn validate_service_plaintext_receive(
         edited_text: None,
         edited_at_unix_ms: None,
         retracted: false,
+        mentions: Default::default(),
     };
     validate_receive_core(&ReceiveCommitCore {
         item_id: input.item_id,
@@ -12829,8 +13062,15 @@ fn validate_conversation_projection(
     projection: &ConversationProjection,
     conversation_id: &str,
 ) -> Result<(), String> {
+    // Projection invariants are deterministic on the claimed bytes: a
+    // violation can never be repaired by a retry, so failures carry the
+    // permanent-rejection marker. The inbox consumer quarantines and acks
+    // such items instead of blocking the whole device lane on them.
+    let reject = |message: &'static str| {
+        mark_item_rejection(ItemRejectionCode::PayloadInvalid, message)
+    };
     let kind = ConversationKind::try_from(projection.kind)
-        .map_err(|_| "messaging conversation-state kind is invalid".to_string())?;
+        .map_err(|_| reject("messaging conversation-state kind is invalid"))?;
     if projection.conversation_id != conversation_id
         || projection.authority_station_id.trim().is_empty()
         || (kind == ConversationKind::Group
@@ -12843,7 +13083,9 @@ fn validate_conversation_projection(
         || projection.updated_at_unix_ms <= 0
         || !projection.active
     {
-        return Err("messaging conversation-state receive input is incomplete".to_string());
+        return Err(reject(
+            "messaging conversation-state receive input is incomplete",
+        ));
     }
     let mut previous = None;
     for member in &projection.members {
@@ -12856,7 +13098,7 @@ fn validate_conversation_projection(
                 .as_ref()
                 .is_some_and(|value: &&String| value.as_str() >= member.ptid.as_str())
         {
-            return Err("messaging conversation members are not strictly sorted".to_string());
+            return Err(reject("messaging conversation members are not strictly sorted"));
         }
         previous = Some(&member.ptid);
     }
@@ -12876,9 +13118,9 @@ fn validate_conversation_projection(
                     .iter()
                     .any(|member| member.role != MemberRole::Member as i32)
             {
-                return Err(
-                    "messaging Direct conversation membership projection is invalid".to_string(),
-                );
+                return Err(reject(
+                    "messaging Direct conversation membership projection is invalid",
+                ));
             }
         }
         ConversationKind::Group => {
@@ -12892,7 +13134,7 @@ fn validate_conversation_projection(
                     member.ptid == projection.owner_ptid && member.role == MemberRole::Owner as i32
                 })
             {
-                return Err("messaging Group owner role is not projected".to_string());
+                return Err(reject("messaging Group owner role is not projected"));
             }
         }
         ConversationKind::Unspecified => unreachable!(),
@@ -17261,6 +17503,163 @@ mod tests {
     }
 
     #[test]
+    fn self_direct_conversation_projection_accepts_singleton_owner_member() {
+        let store = MessagingStore::in_memory().unwrap();
+        let projection = ConversationProjection {
+            conversation_id: "direct-self-1".to_string(),
+            authority_station_id: "station-local".to_string(),
+            federation_id: String::new(),
+            kind: ConversationKind::Direct as i32,
+            name: String::new(),
+            description: String::new(),
+            avatar_object_id: String::new(),
+            owner_ptid: "ptid:alice".to_string(),
+            members: vec![ConversationMemberProjection {
+                ptid: "ptid:alice".to_string(),
+                role: MemberRole::Member as i32,
+                ..Default::default()
+            }],
+            membership_epoch: 1,
+            mls_epoch: 0,
+            active: true,
+            updated_at_unix_ms: 100,
+        };
+
+        assert!(store
+            .bootstrap_conversation_projection(&projection)
+            .unwrap());
+        let persisted = &store.conversation_projections().unwrap()[0];
+        assert_eq!(persisted.members.len(), 1);
+        assert_eq!(persisted.members[0].ptid, "ptid:alice");
+
+        // A singleton member that is not the owner must still fail closed.
+        let invalid = ConversationProjection {
+            conversation_id: "direct-self-bad".to_string(),
+            owner_ptid: "ptid:alice".to_string(),
+            members: vec![ConversationMemberProjection {
+                ptid: "ptid:bob".to_string(),
+                role: MemberRole::Member as i32,
+                ..Default::default()
+            }],
+            ..projection.clone()
+        };
+        assert_eq!(
+            store
+                .bootstrap_conversation_projection(&invalid)
+                .unwrap_err(),
+            mark_item_rejection(
+                ItemRejectionCode::PayloadInvalid,
+                "messaging Direct conversation membership projection is invalid",
+            )
+        );
+    }
+
+    #[test]
+    fn rejected_endpoint_payload_advances_lane_without_authority_chain_or_projection() {
+        let store = MessagingStore::in_memory().unwrap();
+        store
+            .persist_claimed_item(
+                "poison-item",
+                "poison-event",
+                "direct-self-poison",
+                1,
+                7,
+                &[11; 32],
+                b"poison-delivery",
+                201,
+            )
+            .unwrap();
+        store
+            .persist_claimed_item(
+                "healthy-item",
+                "healthy-event",
+                "direct-other",
+                2,
+                7,
+                &[12; 32],
+                b"healthy-delivery",
+                202,
+            )
+            .unwrap();
+
+        let first = RejectedItemReceiveCommit {
+            item_id: "poison-item",
+            event_id: "poison-event",
+            conversation_id: "direct-self-poison",
+            lane_sequence: 1,
+            consumer_epoch: 7,
+            payload_sha256: &[11; 32],
+            reject_code: "PAYLOAD_INVALID",
+            reject_detail: "messaging Direct conversation membership projection is invalid",
+            receipt_id: "device-rejected:poison-item",
+            receipt_bytes: b"poison-receipt",
+            rejected_at_unix_ms: 201,
+        };
+        assert_eq!(
+            store.commit_rejected_endpoint_payload(&first).unwrap(),
+            ReceiveCommitResult::Committed
+        );
+        // Idempotent replay (crash before Station ack) short-circuits.
+        assert_eq!(
+            store.commit_rejected_endpoint_payload(&first).unwrap(),
+            ReceiveCommitResult::AlreadyCommitted
+        );
+
+        assert_eq!(store.lane_checkpoint().unwrap(), (1, 7));
+        assert!(store
+            .consumption_marker_matches("poison-item", &[11; 32])
+            .unwrap());
+        let (code, detail, state): (String, String, String) = store
+            .connection()
+            .unwrap()
+            .query_row(
+                "SELECT reject_code, reject_detail, state
+                 FROM messaging_rejected_items
+                 JOIN messaging_inbox_items USING(item_id)
+                 WHERE item_id = 'poison-item'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(code, "PAYLOAD_INVALID");
+        assert_eq!(
+            detail,
+            "messaging Direct conversation membership projection is invalid"
+        );
+        assert_eq!(state, "rejected");
+        let authority_rows: i64 = store
+            .connection()
+            .unwrap()
+            .query_row(
+                "SELECT COUNT(*) FROM messaging_authority_events WHERE conversation_id = 'direct-self-poison'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(authority_rows, 0, "rejected items never advance the authority chain");
+
+        // The next lane item from a different conversation commits normally.
+        let second = RejectedItemReceiveCommit {
+            item_id: "healthy-item",
+            event_id: "healthy-event",
+            conversation_id: "direct-other",
+            lane_sequence: 2,
+            consumer_epoch: 7,
+            payload_sha256: &[12; 32],
+            reject_code: "INTEGRITY_FAILED",
+            reject_detail: "messaging Direct ciphertext hash mismatch",
+            receipt_id: "device-rejected:healthy-item",
+            receipt_bytes: b"healthy-receipt",
+            rejected_at_unix_ms: 202,
+        };
+        assert_eq!(
+            store.commit_rejected_endpoint_payload(&second).unwrap(),
+            ReceiveCommitResult::Committed
+        );
+        assert_eq!(store.lane_checkpoint().unwrap(), (2, 7));
+    }
+
+    #[test]
     fn conversation_projection_bootstrap_backfills_missing_federation_identity() {
         let store = MessagingStore::in_memory().unwrap();
         let projection = ConversationProjection {
@@ -18093,6 +18492,7 @@ mod tests {
             edited_text: None,
             edited_at_unix_ms: None,
             retracted: false,
+            mentions: Default::default(),
         }
     }
 
@@ -18592,6 +18992,36 @@ mod tests {
                 .unwrap()
                 .state,
             "failed"
+        );
+
+        // An authority-accepted command is never re-prepared (that would
+        // duplicate the message): manual retry only re-drives its delivery
+        // reconciliation and keeps the exact outbox state/bytes.
+        let submitted_store = MessagingStore::in_memory().unwrap();
+        persist_direct_command(&submitted_store, "message-3", b"submitted bytes", 10).unwrap();
+        submitted_store
+            .mark_command_submitted("message-3", b"submitted bytes", 0)
+            .unwrap();
+        assert_eq!(
+            submitted_store
+                .prepare_message_retry("conversation-1", "message-3", 20)
+                .unwrap(),
+            MessageRetryDisposition::SubmittedRedrive {
+                command_id: "message-3".to_string(),
+            }
+        );
+        assert_eq!(
+            submitted_store.command_status("message-3").unwrap().unwrap().state,
+            "submitted"
+        );
+        assert_eq!(
+            submitted_store
+                .submitted_commands()
+                .unwrap()
+                .iter()
+                .filter(|command| command.command_id == "message-3")
+                .count(),
+            1
         );
     }
 
@@ -20169,6 +20599,7 @@ mod tests {
             attachments: Vec::new(),
             attempt_count: 0,
             created_at_unix_ms: 10,
+            mentions: Default::default(),
         };
         store
             .create_message_draft_with_uploads(
@@ -20584,6 +21015,7 @@ mod tests {
             attachments: Vec::new(),
             attempt_count: 0,
             created_at_unix_ms: 100,
+            mentions: Default::default(),
         };
         store.create_message_draft(&draft).unwrap();
         assert_eq!(
@@ -20606,6 +21038,50 @@ mod tests {
     }
 
     #[test]
+    fn draft_mentions_round_trip_through_pending_row_and_union_projection() {
+        use crate::messaging::private_content::MessageMentions;
+        use crate::model::chat::MessageMention;
+
+        let store = MessagingStore::in_memory().unwrap();
+        let mentions = MessageMentions {
+            mentions: vec![MessageMention {
+                actor_ptid: "ptid:bob".to_string(),
+                offset: 0,
+                length: 4,
+                display: "bob".to_string(),
+            }],
+            mention_all: true,
+        };
+        let draft = PendingMessageDraft {
+            conversation_id: "group-1".to_string(),
+            conversation_kind: ConversationKind::Group as i32,
+            message_id: "message-mentions".to_string(),
+            sender_ptid: "ptid:alice".to_string(),
+            sender_device_id: "alice-device".to_string(),
+            send_intent_id: String::new(),
+            plaintext: "@bob hi".to_string(),
+            reply_to_message_id: String::new(),
+            thread_root_message_id: String::new(),
+            attachments: Vec::new(),
+            attempt_count: 0,
+            created_at_unix_ms: 100,
+            mentions: mentions.clone(),
+        };
+        store.create_message_draft(&draft).unwrap();
+
+        assert_eq!(
+            store.next_due_message_draft(100).unwrap().unwrap().mentions,
+            mentions
+        );
+        let projection = store.conversation_message_projections("group-1").unwrap();
+        assert_eq!(projection.len(), 1);
+        assert_eq!(
+            crate::messaging::private_content::decode_mentions_json(&projection[0].mentions_json),
+            mentions
+        );
+    }
+
+    #[test]
     fn send_intent_admission_is_idempotent_per_device() {
         let store = MessagingStore::in_memory().unwrap();
         let draft = PendingMessageDraft {
@@ -20621,6 +21097,7 @@ mod tests {
             attachments: Vec::new(),
             attempt_count: 0,
             created_at_unix_ms: 100,
+            mentions: Default::default(),
         };
         store.create_message_draft(&draft).unwrap();
 
@@ -20977,6 +21454,95 @@ mod tests {
             )
             .unwrap();
         assert_eq!(state, "consumed");
+    }
+
+    #[test]
+    fn received_mentions_persist_and_surface_on_every_projection_read() {
+        use crate::messaging::private_content::{
+            decode_mentions_json, encode_mentions_json, MessageMentions,
+        };
+        use crate::model::chat::MessageMention;
+
+        let store = MessagingStore::in_memory().unwrap();
+        let payload_hash = [12_u8; 32];
+        store
+            .persist_claimed_item(
+                "item-mentions",
+                "event-1",
+                "conversation-1",
+                1,
+                2,
+                &payload_hash,
+                b"delivery",
+                90,
+            )
+            .unwrap();
+        let session = direct_session(2);
+        let mentions = MessageMentions {
+            mentions: vec![MessageMention {
+                actor_ptid: "ptid:bob".to_string(),
+                offset: 6,
+                length: 4,
+                display: "bob".to_string(),
+            }],
+            mention_all: false,
+        };
+        let mut projection = projection();
+        projection.mentions = mentions.clone();
+        let input = DirectReceiveCommit {
+            item_id: "item-mentions",
+            event_id: "event-1",
+            conversation_id: "conversation-1",
+            lane_sequence: 1,
+            consumer_epoch: 2,
+            payload_sha256: &payload_hash,
+            event_hash: &[13; 32],
+            previous_event_hash: &[],
+            session: &session,
+            new_skipped: &[],
+            consumed_skipped: None,
+            consumed_one_time_prekey_id: None,
+            projection: &projection,
+            reply_to_message_id: None,
+            thread_root_message_id: None,
+            receipt_id: "receipt-mentions",
+            receipt_bytes: b"receipt",
+            consumed_at_unix_ms: 100,
+        };
+        store.commit_direct_receive(&input).unwrap();
+
+        let expected_json = encode_mentions_json(&mentions);
+        // Scope the raw connection guard: the public projection methods
+        // lock the same connection mutex and must not be called while the
+        // guard is still held (std::sync::Mutex is not re-entrant).
+        let stored_json: String = {
+            let connection = store.connection().unwrap();
+            connection
+                .query_row(
+                    "SELECT mentions_json FROM messaging_message_projections
+                     WHERE message_id = 'message-1'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap()
+        };
+        assert_eq!(stored_json, expected_json);
+
+        let full = store
+            .conversation_message_projections("conversation-1")
+            .unwrap();
+        assert_eq!(full.len(), 1);
+        assert_eq!(full[0].mentions_json, expected_json);
+        assert_eq!(
+            decode_mentions_json(&full[0].mentions_json).mentions,
+            mentions.mentions
+        );
+
+        let page = store
+            .conversation_message_page("conversation-1", None, 20)
+            .unwrap();
+        assert_eq!(page.messages.len(), 1);
+        assert_eq!(page.messages[0].mentions_json, expected_json);
     }
 
     #[test]

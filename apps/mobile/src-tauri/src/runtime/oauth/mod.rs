@@ -52,6 +52,16 @@ const DEVICE_ID_KEY: &str = "oauth.device.id";
 const AUTH_GENERATION_KEY: &str = "oauth.auth.generation";
 const CURRENT_SESSION_INDEX_KEY: &str = "oauth.session.current";
 const LAST_PROJECTION_KEY: &str = "oauth.projection.last";
+/// Public OAuth provider directory entry reported by the Station.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OAuthProviderInfo {
+    pub id: String,
+    pub enabled: bool,
+    pub status: String,
+    pub has_credentials: bool,
+}
+
 const ATTEMPT_KEY_PREFIX: &str = "oauth.attempt.";
 const SESSION_KEY_PREFIX: &str = "oauth.session.";
 const CALLBACK_SCHEME: &str = "peers-touch";
@@ -268,6 +278,16 @@ impl OAuthCoordinator {
     ) -> MobileResult<OAuthLaunch> {
         let _operation = self.begin_operation()?;
         self.start_inner(storage, input).await
+    }
+
+    /// Fetch the Station OAuth provider directory for the given scope.
+    pub async fn providers(&self, scope: OAuthScopeIntent) -> MobileResult<Vec<OAuthProviderInfo>> {
+        let scope = ValidatedScope::new(scope)?;
+        let transport_origin = crate::runtime::station_route::active_transport_origin(
+            &scope.station_peer_id,
+            &scope.station_origin,
+        )?;
+        self.transport.providers(&transport_origin).await
     }
 
     pub async fn status(
@@ -501,7 +521,19 @@ impl OAuthCoordinator {
                 {
                     return Err(oauth_error("oauthGenerationMismatch"));
                 }
-                ensure_start_binding(&active, &input)?;
+                // A fresh access decision carries a new attempt/gate id, so a
+                // restarted login naturally mismatches the stale attempt.
+                // Supersede it instead of hard-failing: cancel the old attempt
+                // on the same Station/identity, then fall through to start new.
+                if let Err(binding_error) = ensure_start_binding(&active, &input) {
+                    if binding_error.message == "mobile.auth.oauthActiveAttemptBindingMismatch" {
+                        self.cancel_attempt(storage, &mut active).await?;
+                        let mut attempt = PersistedOAuthAttempt::new(input, identity);
+                        write_attempt_and_index(storage, &attempt)?;
+                        return self.start_station_attempt(storage, &mut attempt).await;
+                    }
+                    return Err(binding_error);
+                }
                 if active.station_origin != input.station_origin() {
                     active.station_origin = input.station_origin().to_string();
                     write_attempt(storage, &active)?;

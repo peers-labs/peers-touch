@@ -46,6 +46,33 @@ Inside `desktop-web`, long-lived runtimes own projection freshness:
 | `navigationBadges` | Cross-surface unread and badge projection |
 | Page components | Rendering, selection, local interaction state only |
 
+Capability-session warmup refreshes the lease and affected capability
+projections only. It must not reload Provider, model, Agent or applet catalogs
+each second. Model Settings uses the account default's own loading lifecycle;
+unrelated Agent loading cannot replace an established empty model view.
+
+Steady reconciliation preserves accepted UI projections, including empty
+ones. Identical Agent, model, Topic and message reads retain their array/row
+identity through TanStack Query's structural sharing. A selected Agent is
+identified by canonical ID, not by the roster array's allocation. Background
+Topic loading keeps its action strip mounted; only first loading without an
+accepted Topic projection may show preparation feedback. Topic reconciliation
+is single-flight per Agent and performs one authoritative message refresh;
+cache bootstrap belongs to cold entry. Draft reconciliation never clears local
+rejection or composer state. Selection changes refresh affected capability
+authority without reloading global directories. Periodic and event recovery
+remain active and must publish actual changes.
+
+Composer readiness feedback follows its admission projection. An Agent with
+no enabled capability bindings remains ready during capability-session warmup;
+an unrelated background request cannot replace that state with checking.
+Saving and unresolved required capabilities retain their checking feedback.
+
+Atelier is temporarily withheld pending product design. Shell navigation and
+both applet launcher sections omit it; restored/direct Atelier or orchestration
+routes return to Agent Chat. Its package, installation and user data remain
+owned by the applet runtime.
+
 Pages may trigger a first-screen fallback load, but they must not be the primary mechanism that keeps business projections fresh.
 
 ## 3. Projection Rules

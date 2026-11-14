@@ -13,6 +13,8 @@ import {
 import { extractUrls, LinkPreviewCard } from './LinkPreviewCard';
 import { ServiceMessageCard } from './ServiceMessageCard';
 import type { ServiceEventAggregation } from './serviceEventAggregation';
+import { ChatMentionText } from './ChatMentionText';
+import { useSocialChatStore } from '../../../store/socialChat';
 
 interface ChatMessageContentProps {
   message: ChatMessage;
@@ -33,6 +35,7 @@ export function ChatMessageContent({
   onToggleServiceAggregation,
 }: ChatMessageContentProps) {
   const { t } = useTranslation('chat');
+  const currentUserPtid = useSocialChatStore((state) => state.currentUserPtid);
   const isRecalled = isRecalledMessage(message);
   const encryptedPlaceholder = isEncryptedPlaceholder(message);
   const serviceMessage = message.serviceMessage;
@@ -70,7 +73,14 @@ export function ChatMessageContent({
           className={isBareEmojiOnlyMessage(message) ? 'sc-emoji-only-bubble' : undefined}
           data-emoji-only={isBareEmojiOnlyMessage(message) || undefined}
         >
-          {message.content}
+          <ChatMentionText
+            text={message.content}
+            mentions={message.mentions}
+            mentionAll={message.mentionAll}
+            // Only incoming mail can target the reader; own @all is a sent chip, not @me.
+            highlightAll={!isOwn}
+            currentUserPtid={currentUserPtid}
+          />
         </span>
       )}
       {urls.length > 0 && (

@@ -116,8 +116,10 @@ func (p *ProviderMemoryEmbeddingProvider) Embed(ctx context.Context, text string
 		return nil, err
 	}
 
-	providerHelper := NewProviderService(nil)
-	baseURL, apiKey := providerHelper.extractConfig(provider.Config, provider.KeyVaults)
+	baseURL, apiKey, err := extractProviderConfig(provider)
+	if err != nil {
+		return nil, err
+	}
 	providerType, err := explicitProviderType(provider.Protocol)
 	if err != nil {
 		return nil, err
@@ -149,7 +151,10 @@ func (p *ProviderMemoryEmbeddingProvider) loadProvider(ctx context.Context) (*pe
 		return nil, err
 	}
 	var provider persistence.AgentProvider
-	if err := db.WithContext(ctx).Where("id = ? AND enabled = ?", p.providerID, true).First(&provider).Error; err != nil {
+	// This infrastructure provider is Station-configured. Personal credentials
+	// can never be selected by a process-wide embedding configuration.
+	if err := StationProviderOwner().Query(db.WithContext(ctx)).
+		Where("id = ? AND enabled = ?", p.providerID, true).First(&provider).Error; err != nil {
 		return nil, err
 	}
 	return &provider, nil

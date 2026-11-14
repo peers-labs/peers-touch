@@ -158,6 +158,7 @@ Pick one based on intent:
 
 ### Invariants (active)
 
+- [`invariants/provider-execution-owner-boundary.md`](invariants/provider-execution-owner-boundary.md) — Provider resources, grants, credentials and shared binaries preserve the requesting actor's execution boundary.
 - [`invariants/relay-readloop-discipline.md`](invariants/relay-readloop-discipline.md) — readLoop goroutines must dispatch blocking work asynchronously.
 - [`invariants/locator-publisher-symmetry.md`](invariants/locator-publisher-symmetry.md) — `PublishVisibility` callers split into "user-driven" (broadcast) and "maintenance" (no broadcast); no third category.
 - [`invariants/relay-runtime-role-is-minimal.md`](invariants/relay-runtime-role-is-minimal.md) — Relay composition is deny-by-default and fails closed on missing transport/operator security.
@@ -202,10 +203,15 @@ Pick one based on intent:
 - [`pitfalls/mobile-chat-conversation-actions-right-drawer.md`](pitfalls/mobile-chat-conversation-actions-right-drawer.md) — Mobile Chat conversation actions must use bottom sheets or settings pages, not phone-width right drawers.
 - [`pitfalls/mobile-private-runtime-policy-readiness-divergence.md`](pitfalls/mobile-private-runtime-policy-readiness-divergence.md) — Private Mobile runtimes must reuse shared Station-origin policy and publish asynchronous activation failures through lifecycle readiness.
 - [`pitfalls/mobile-messaging-failure-periodic-repair.md`](pitfalls/mobile-messaging-failure-periodic-repair.md) — Existing Social periodic repair recovers failed Messaging through its original readiness owner before repairing dependents.
+- [`pitfalls/mobile-parity-design-system-selector-drift.md`](pitfalls/mobile-parity-design-system-selector-drift.md) — Mobile parity selectors must follow design-system DOM and aria-disabled semantics, not removed Ant classes or native disabled clicks; RadioGroup inputs must also bind each option value instead of collapsing to the browser default "on".
+- [`pitfalls/mobile-whole-product-surface-audit-layers.md`](pitfalls/mobile-whole-product-surface-audit-layers.md) — The whole-product Gate surfaces unlabeled/undersized controls, empty interaction artifacts, harness-overlay occlusion, landscape clipping and missing proof assertions one fail-fast layer at a time; touch geometry belongs in the design system and PASS reports need named assertions.
+- [`pitfalls/mobile-actor-display-name-ptid-fallback.md`](pitfalls/mobile-actor-display-name-ptid-fallback.md) — actorDisplayName derives a readable handle only when the caller supplies a PTID context; comment identities with no PTID wait for the canonical profile, blocked users keep the raw PTID, and client-only external stores need a null server snapshot.
+- [`pitfalls/mobile-resume-session-revocation-local-only.md`](pitfalls/mobile-resume-session-revocation-local-only.md) — resume revalidation detects a real same-device `kicked` session; the AS-04 Gate was realigned to SAL-D12 (per-device slots, multi-device coexistence, distinct device ids) and now seals PROVEN with evidence-derived assertions, after fixing a latent missing-assertions gap that the runner rejects as "source report is unproven".
 - [`pitfalls/mobile-route-preexpiry-renewal-single-owner.md`](pitfalls/mobile-route-preexpiry-renewal-single-owner.md) — Native renewal uses the Web preexpiry window, coalesces matching callers and preserves selection/removal fences.
 - [`pitfalls/acceptance-core-transport-import-cycle.md`](pitfalls/acceptance-core-transport-import-cycle.md) — Core attestation must receive remote source identity from a Provisioner adapter instead of importing concrete SSH transport.
 - [`pitfalls/acceptance-mutable-artifact-rewrite.md`](pitfalls/acceptance-mutable-artifact-rewrite.md) — mutable runtime logs must be written once, after the producing client stops, when the Evidence Store path is immutable.
 - [`pitfalls/acceptance-shared-validator-variant-assumptions.md`](pitfalls/acceptance-shared-validator-variant-assumptions.md) — shared Gate validators must derive journey and topology semantics from the active Gate variant.
+- [`pitfalls/ephemeral-gate-cleanup-reset-lease-projection.md`](pitfalls/ephemeral-gate-cleanup-reset-lease-projection.md) — ephemeral Gate child env strips reset lease descriptors; the parent must re-project its own live lease for provisioner cleanup.
 - [`pitfalls/acceptance-active-docs-must-not-promote-drafts.md`](pitfalls/acceptance-active-docs-must-not-promote-drafts.md) — active Acceptance docs must keep draft proposals non-normative, inventory implemented paths only, and treat Plans as optional.
 - [`pitfalls/native-chat-gates-require-federation-context.md`](pitfalls/native-chat-gates-require-federation-context.md) — Native Direct and Group creation must pass a Federation shared by every participating client.
 - [`pitfalls/native-semantic-startup-with-object-identity.md`](pitfalls/native-semantic-startup-with-object-identity.md) — startup and chooser proof keep one scoped AX object baseline, strict deadlines, original selector and complete cleanup.
@@ -213,8 +219,10 @@ Pick one based on intent:
 - [`pitfalls/public-api-owner-must-follow-resource-domain.md`](pitfalls/public-api-owner-must-follow-resource-domain.md) — public capabilities must be registered by their resource owner, never by an internal implementation namespace.
 - [`pitfalls/conversation-production-schema-migration-single-source.md`](pitfalls/conversation-production-schema-migration-single-source.md) — Conversation production migration must delegate to the persistence-owned canonical schema instead of copying its model list.
 - [`pitfalls/ios-simulator-uninstall-retains-keychain.md`](pitfalls/ios-simulator-uninstall-retains-keychain.md) — independent Mobile Acceptance runs must use fresh Simulators because application uninstall preserves Keychain state.
+- [`pitfalls/ios-acceptance-embedded-web-assets-split-brain.md`](pitfalls/ios-acceptance-embedded-web-assets-split-brain.md) — iOS acceptance builds must bind Cargo asset embedding and the bundle resource copy to one immutable harness dist snapshot.
 - [`pitfalls/mobile-enrollment-must-use-profile-revision.md`](pitfalls/mobile-enrollment-must-use-profile-revision.md) — Mobile device certificates must bind the authenticated Actor's current canonical profile revision.
 - [`pitfalls/call-id-must-use-canonical-ulid.md`](pitfalls/call-id-must-use-canonical-ulid.md) — Desktop and Mobile call arbitration must use one canonical shared ULID generator.
+- [`pitfalls/call-media-elements-must-rebind-after-mount.md`](pitfalls/call-media-elements-must-rebind-after-mount.md) — Single-call video remounts must retain real playback with one remote audio outlet.
 - [`pitfalls/runtime-owner-optional-workflow-state.md`](pitfalls/runtime-owner-optional-workflow-state.md) — runtime owners derive source-bound contract metadata without requiring optional task or declaration state.
 - [`pitfalls/fresh-recovery-cannot-require-active-engine.md`](pitfalls/fresh-recovery-cannot-require-active-engine.md) — fresh Actor recovery must establish the Messaging Engine instead of requiring one before archive restore.
 - [`pitfalls/json-fallback-decode-state.md`](pitfalls/json-fallback-decode-state.md) — fallback JSON parsers isolate destinations because failed decodes may leave partial state.
@@ -223,6 +231,7 @@ Pick one based on intent:
 - [`pitfalls/mobile-proto-regen-import-closure.md`](pitfalls/mobile-proto-regen-import-closure.md) — shipping one regenerated mobile proto file without its import closure breaks tsc; regen to a staging dir and sync the closure, not a single file.
 - [`pitfalls/global-personalization-leaks-across-actors.md`](pitfalls/global-personalization-leaks-across-actors.md) — app-global/OS-user settings stores survived logout and rendered actor A's language/theme/personalization to actor B on the same device.
 - [`pitfalls/peer-avatar-ephemeral-projection-flicker.md`](pitfalls/peer-avatar-ephemeral-projection-flicker.md) — the rotating station-resource projection token must never become the renderer avatar cache identity; the peer profile edge exposes canonical `avatar_identity` alongside the projected render URL.
+- [`pitfalls/device-inbox-poison-item-head-of-line-blocking.md`](pitfalls/device-inbox-poison-item-head-of-line-blocking.md) — a deterministically invalid inbox item (and an over-strict receiver invariant) must be quarantined and acked, never retried forever; submit must not inline the inbound drain.
 
 ### Playbooks
 

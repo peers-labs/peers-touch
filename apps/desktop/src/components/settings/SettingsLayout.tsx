@@ -110,6 +110,24 @@ export function SettingsSection({
   );
 }
 
+interface SettingsItemCardProps {
+  children: ReactNode;
+  style?: CSSProperties;
+}
+
+/**
+ * Inset card used inside a section when one block needs its own raised
+ * surface (e.g. the security PIN panel). Token-only, peers-ui grammar; it
+ * must not reintroduce antd/lobehub chrome into the settings skeleton.
+ */
+export function SettingsItemCard({ children, style }: SettingsItemCardProps) {
+  return (
+    <div className="sc-settings-item-card" style={style}>
+      {children}
+    </div>
+  );
+}
+
 interface SettingsRowProps {
   label: ReactNode;
   description?: ReactNode;

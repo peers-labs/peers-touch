@@ -12,6 +12,7 @@ export const CONTACTS_SURFACE_FIXTURE_IDS = [
   'contacts.request-unknown',
   'contacts.request-failed',
   'contacts.profile',
+  'contacts.remark',
   'contacts.profile-unavailable',
   'contacts.block-confirm',
   'contacts.add-friend',
@@ -76,6 +77,7 @@ export function contactsSurfaceFixtureRouteKind(
     return 'list';
   }
   if (surfaceId === 'contacts.profile'
+    || surfaceId === 'contacts.remark'
     || surfaceId === 'contacts.profile-unavailable'
     || surfaceId === 'contacts.block-confirm') {
     return 'profile';

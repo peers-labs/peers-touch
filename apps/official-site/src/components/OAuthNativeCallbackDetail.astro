@@ -1,0 +1,325 @@
+---
+interface Props {
+  locale: 'en' | 'zh';
+}
+
+const { locale } = Astro.props;
+const zh = locale === 'zh';
+
+const copy = zh
+  ? {
+      eyebrow: '技术细节 · RFC 8252 Native App OAuth 2.0',
+      title: '为什么 Desktop 走 Loopback，Mobile 走 Deep Link',
+      lead: '即使 Desktop 和 Mobile 处于同一个网络，浏览器回跳路径也不同。差异来自操作系统对“哪个应用有权接管回调”的绑定能力；Station 始终是会话权威，但不是 Provider 云端重定向的接收端。',
+      whyLabel: '为什么这样设计：',
+      sharedTitle: '两种平台共享同一条安全边界',
+      matrixTitle: '差异不是网络，而是操作系统回调契约',
+      matrixHeaders: ['对比维度', 'Desktop', 'Mobile'],
+      matrix: [
+        ['接收端声明', '临时 127.0.0.1 端口 + 固定 /callback 路径', '系统注册的私有 Scheme；长期可升级为 Claimed HTTPS App Link'],
+        ['网络前提', '设备能出站访问 Provider/Broker；Station 可在私网', '同样只要求设备能出站；手机和 Station 是否同网段无关'],
+        ['Provider 密钥', '公网 Broker 完成授权码交换', 'Station 完成授权码交换；客户端都不持有 Provider Secret'],
+        ['业界依据', 'RFC 8252 推荐可监听本机端口的原生应用使用 Loopback', 'RFC 8252 允许私有 Scheme，但要求 PKCE；App Link/Universal Link 是更强的移动端方向'],
+      ],
+      clients: [
+        {
+          platform: 'Desktop · 本机 Loopback',
+          answer: '系统浏览器回到运行在同一台机器上的临时监听端：http://127.0.0.1:<随机端口>/callback。',
+          steps: [
+            ['1', 'Desktop 生成 PKCE verifier、state 与 receiver challenge，启动一次性本地监听端。'],
+            ['2', '系统浏览器访问 GitHub/Google；自托管 Station 场景由公网 OAuth Broker 持有 Provider App 密钥并完成 code 交换。'],
+            ['3', 'Broker 只把一次性、带签名和用途绑定的 assertion 重定向回 Loopback，不回传 access/refresh token。'],
+            ['4', 'Desktop 将 assertion 交给 Station 验证；凭据通过设备公钥加密信封投递，本地持久化成功后再 ack 激活会话。'],
+          ],
+          why: '桌面系统里任何已安装程序都可能注册同名自定义协议，Scheme 不能强证明“回给了发起登录的那个应用”。随机本地端口、PKCE、state/receiver challenge 和一次性 assertion 把回调收窄到本次登录；恶意进程最多制造失败，拿不到凭据。',
+        },
+        {
+          platform: 'Mobile · 系统 Deep Link',
+          answer: '系统浏览器通过 peers-touch://oauth/callback 唤醒发起登录的 App，再由 App 回到 Station。',
+          steps: [
+            ['1', 'App 通过 Station 创建 OAuth attempt，并生成 PKCE verifier/challenge、nonce 与设备绑定。'],
+            ['2', '外部系统浏览器打开 Provider 授权页，redirect URI 是操作系统可分发的 Deep Link。'],
+            ['3', '系统把一次性 code/state 交回 App；App 校验 state 后，把 code 与 PKCE verifier 提交给 Station。'],
+            ['4', 'Station 向 Provider 完成交换，再通过同一 attempt 状态机、加密凭据信封与 ack 激活会话。'],
+          ],
+          why: 'iOS/Android 的应用生命周期不适合依赖常驻本地 HTTP 端口，而系统提供了应用链接分发。RFC 8252 允许私有 URI Scheme，但要求必须配合 PKCE；更强的长期形态是 Android App Links / iOS Universal Links 这类 Claimed HTTPS，把域名所有权和 App 绑定起来。',
+        },
+      ],
+      invariants: [
+        '使用外部系统浏览器，而不是可被 App 完全控制的内嵌 WebView。',
+        '每次授权都有 PKCE S256、state/nonce、attempt 与用途绑定；回调材料一次性有效。',
+        '浏览器回跳里没有 access/refresh token；Provider Secret 只存在 Broker 或 Station。',
+        'Station 是唯一会话权威，设备拿到的是用本次 attempt 公钥加密的凭据信封，ack 后会话才激活。',
+      ],
+    }
+  : {
+      eyebrow: 'Technical detail · RFC 8252 OAuth 2.0 for Native Apps',
+      title: 'Why Desktop uses loopback while Mobile uses a deep link',
+      lead: 'Desktop and Mobile do not share one callback path even when they are on the same network. The difference is the operating system contract for claiming the browser redirect; Station remains the session authority but is not the provider cloud redirect target.',
+      whyLabel: 'Why this shape: ',
+      sharedTitle: 'One security boundary across both platforms',
+      matrixTitle: 'The split is the OS callback contract, not the network',
+      matrixHeaders: ['Dimension', 'Desktop', 'Mobile'],
+      matrix: [
+        ['Receiver claim', 'Ephemeral 127.0.0.1 port with a fixed /callback path', 'OS-registered private scheme; Claimed HTTPS App Links are the long-term upgrade'],
+        ['Network requirement', 'Device needs outbound access to the provider/broker; Station can be private', 'Also only device outbound access; phone-Station subnet placement is irrelevant'],
+        ['Provider secret', 'The public OAuth Broker exchanges the authorization code', 'Station exchanges the authorization code; neither client holds the provider secret'],
+        ['Industry basis', 'RFC 8252 recommends loopback for native apps that can listen on the device', 'RFC 8252 permits private schemes with PKCE; App Links/Universal Links are the stronger mobile direction'],
+      ],
+      clients: [
+        {
+          platform: 'Desktop · Local loopback',
+          answer: 'The system browser returns to a one-shot listener on the same machine: http://127.0.0.1:<ephemeral-port>/callback.',
+          steps: [
+            ['1', 'Desktop creates a PKCE verifier, state and receiver challenge, then starts a one-shot local listener.'],
+            ['2', 'The system browser reaches GitHub/Google. For self-hosted Stations, the public OAuth Broker owns the provider app secret and completes the code exchange.'],
+            ['3', 'The Broker redirects only a one-time, signed, purpose-bound assertion to loopback—never access/refresh tokens.'],
+            ['4', 'Desktop submits that assertion to Station for verification. The credential arrives in a device-key encrypted envelope and the session activates only after local persistence and ack.'],
+          ],
+          why: 'On desktop operating systems, any installed app can register the same custom protocol, so a scheme cannot strongly prove that the initiating app received the redirect. A random local port, PKCE, state/receiver challenge and one-time assertion scope the redirect to this login attempt; another local process can cause failure, but cannot obtain credentials.',
+        },
+        {
+          platform: 'Mobile · System deep link',
+          answer: 'The system browser wakes the initiating app through peers-touch://oauth/callback, and the app then returns to Station.',
+          steps: [
+            ['1', 'The app creates an OAuth attempt through Station, with a PKCE verifier/challenge, nonce and device binding.'],
+            ['2', 'An external system browser opens the provider consent page with an OS-deliverable deep link as redirect URI.'],
+            ['3', 'The OS hands the one-time code/state to the app; after state validation, the app sends the code and PKCE verifier to Station.'],
+            ['4', 'Station performs the provider exchange, then activates the session through the same attempt state machine, encrypted credential envelope and ack.'],
+          ],
+          why: 'iOS/Android app lifecycles are not built around a persistent local HTTP listener, while the OS provides app-link dispatch. RFC 8252 permits private-use URI schemes when PKCE is mandatory; the stronger long-term form is Claimed HTTPS via Android App Links or iOS Universal Links, which binds domain ownership to the app.',
+        },
+      ],
+      invariants: [
+        'An external system browser is used instead of an embedded WebView controlled by the app.',
+        'Every authorization uses PKCE S256, state/nonce, an attempt and a purpose binding; callback material is one-time.',
+        'The browser redirect contains no access/refresh token; the provider secret lives only in the Broker or Station.',
+        'Station is the sole session authority. The device receives a credential envelope encrypted to this attempt key and activates only after ack.',
+      ],
+    };
+---
+
+<section class="oauth-detail" aria-labelledby="oauth-callback-title">
+  <p class="oauth-detail__eyebrow">{copy.eyebrow}</p>
+  <h3 class="oauth-detail__title" id="oauth-callback-title">{copy.title}</h3>
+  <p class="oauth-detail__lead">{copy.lead}</p>
+
+  <div class="oauth-detail__grid">
+    {
+      copy.clients.map((client) => (
+        <article class="oauth-card">
+          <h4 class="oauth-card__title">{client.platform}</h4>
+          <p class="oauth-card__answer">{client.answer}</p>
+          <ol class="oauth-card__steps">
+            {client.steps.map(([marker, text]) => (
+              <li>
+                <span class="oauth-card__marker">{marker}</span>
+                <span>{text}</span>
+              </li>
+            ))}
+          </ol>
+          <p class="oauth-card__why"><strong>{copy.whyLabel}</strong>{client.why}</p>
+        </article>
+      ))
+    }
+  </div>
+
+  <article class="oauth-shared">
+    <h4>{copy.sharedTitle}</h4>
+    <ul>
+      {copy.invariants.map((item) => <li>{item}</li>)}
+    </ul>
+  </article>
+
+  <article class="oauth-matrix">
+    <h4>{copy.matrixTitle}</h4>
+    <div class="oauth-matrix__scroll">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">{copy.matrixHeaders[0]}</th>
+            <th scope="col">{copy.matrixHeaders[1]}</th>
+            <th scope="col">{copy.matrixHeaders[2]}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {copy.matrix.map(([label, desktop, mobile]) => (
+            <tr>
+              <th scope="row">{label}</th>
+              <td>{desktop}</td>
+              <td>{mobile}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </article>
+</section>
+
+<style>
+  .oauth-detail {
+    margin-top: var(--pt-space-lg);
+    color: var(--pt-text-primary);
+  }
+
+  .oauth-detail__eyebrow {
+    margin: 0;
+    color: var(--pt-accent);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .oauth-detail__title {
+    margin: var(--pt-space-2xs) 0 0;
+    font-size: clamp(1.25rem, 2vw, 1.55rem);
+    line-height: 1.35;
+  }
+
+  .oauth-detail__lead {
+    max-width: 820px;
+    margin: var(--pt-space-sm) 0 0;
+    color: var(--pt-text-secondary);
+    font-size: 0.96rem;
+    line-height: 1.75;
+  }
+
+  .oauth-detail__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--pt-space-md);
+    margin-top: var(--pt-space-lg);
+  }
+
+  .oauth-card,
+  .oauth-shared,
+  .oauth-matrix {
+    border: 1px solid var(--pt-border-hairline);
+    border-radius: var(--pt-radius-md);
+    background: var(--pt-surface-subtle);
+  }
+
+  .oauth-card {
+    display: flex;
+    flex-direction: column;
+    padding: var(--pt-space-lg);
+  }
+
+  .oauth-card__title {
+    margin: 0;
+    font-size: 1.08rem;
+    line-height: 1.4;
+  }
+
+  .oauth-card__answer {
+    margin: var(--pt-space-sm) 0 0;
+    color: var(--pt-text-secondary);
+    font-size: 0.92rem;
+    line-height: 1.65;
+  }
+
+  .oauth-card__steps {
+    display: grid;
+    gap: var(--pt-sm);
+    margin: var(--pt-space-md) 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .oauth-card__steps li {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr);
+    gap: var(--pt-sm);
+    align-items: start;
+    color: var(--pt-text-secondary);
+    font-size: 0.9rem;
+    line-height: 1.65;
+  }
+
+  .oauth-card__marker {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 999px;
+    background: var(--pt-surface-base);
+    border: 1px solid var(--pt-border-hairline);
+    color: var(--pt-accent);
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+
+  .oauth-card__why {
+    margin: var(--pt-space-md) 0 0;
+    padding-top: var(--pt-space-md);
+    border-top: 1px solid var(--pt-border-hairline);
+    color: var(--pt-text-secondary);
+    font-size: 0.9rem;
+    line-height: 1.7;
+  }
+
+  .oauth-shared,
+  .oauth-matrix {
+    margin-top: var(--pt-space-md);
+    padding: var(--pt-space-lg);
+  }
+
+  .oauth-shared h4,
+  .oauth-matrix h4 {
+    margin: 0 0 var(--pt-space-sm);
+    font-size: 1rem;
+  }
+
+  .oauth-shared ul {
+    display: grid;
+    gap: var(--pt-space-2xs);
+    margin: 0;
+    padding-left: 1.1rem;
+    color: var(--pt-text-secondary);
+    font-size: 0.92rem;
+    line-height: 1.65;
+  }
+
+  .oauth-matrix__scroll {
+    overflow-x: auto;
+  }
+
+  .oauth-matrix table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+
+  .oauth-matrix th,
+  .oauth-matrix td {
+    padding: var(--pt-space-sm);
+    border-top: 1px solid var(--pt-border-hairline);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .oauth-matrix thead th {
+    border-top: 0;
+    color: var(--pt-text-primary);
+    font-size: 0.88rem;
+  }
+
+  .oauth-matrix tbody th {
+    width: 18%;
+    font-size: 0.88rem;
+  }
+
+  .oauth-matrix td {
+    width: 41%;
+    color: var(--pt-text-secondary);
+    font-size: 0.88rem;
+    line-height: 1.6;
+  }
+
+  @media (max-width: 860px) {
+    .oauth-detail__grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

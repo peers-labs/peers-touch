@@ -19,8 +19,9 @@ func toHandlerError(err error) error {
 		return nil
 	}
 	var biz *errcode.BizError
+	var handlerErr *server.HandlerError
 	if errors.As(err, &biz) {
-		handlerErr := server.NewHandlerErrorWithCause(
+		handlerErr = server.NewHandlerErrorWithCause(
 			biz.HTTPStatus,
 			fmt.Sprintf("[%s] %s", biz.Code, biz.Message),
 			err,
@@ -37,9 +38,17 @@ func toHandlerError(err error) error {
 				handlerErr.Headers[errorDetailsHeader] = details
 			}
 		}
-		return handlerErr
+	} else {
+		handlerErr = server.InternalErrorWithCause(fmt.Sprintf("[%s] internal error", errcode.AgentInternal), err)
 	}
-	return server.InternalErrorWithCause(fmt.Sprintf("[%s] internal error", errcode.AgentInternal), err)
+	// Error envelopes are JSON even when the successful response is protobuf.
+	// A protobuf serializer cannot marshal an untyped map.
+	handlerErr.ContentType = "application/json"
+	handlerErr.Body, _ = json.Marshal(map[string]any{
+		"error": handlerErr.Message,
+		"code":  handlerErr.Code,
+	})
+	return handlerErr
 }
 
 func boundedErrorDetailsHeader(details map[string]string) string {

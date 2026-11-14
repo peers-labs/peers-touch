@@ -54,6 +54,23 @@ pub struct MessagingSendMessageInput {
     /// mint a fresh ULID.
     #[serde(default)]
     pub send_intent_id: String,
+    /// @-mention targets carried inside the ciphertext. Renderer-computed
+    /// UTF-16 offsets into `plaintext`; validated again by the shared codec.
+    #[serde(default)]
+    pub mentions: Vec<MessagingMentionInput>,
+    /// @ everyone (sender authority is re-checked by recipients against the
+    /// local group member snapshot).
+    #[serde(default)]
+    pub mention_all: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct MessagingMentionInput {
+    pub actor_ptid: String,
+    pub offset: u32,
+    pub length: u32,
+    #[serde(default)]
+    pub display: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -411,6 +428,7 @@ fn message_projection_json(message: &crate::messaging::ConversationMessageProjec
         "last_error_code": message.last_error_code,
         "required_device_count": message.required_device_count,
         "delivered_device_count": message.delivered_device_count,
+        "mentions_json": message.mentions_json,
     })
 }
 
@@ -1457,6 +1475,8 @@ pub async fn messaging_acceptance_create_restorable_command(
             // Internal diagnostic send: each invocation is one independent
             // admission, so mint the device-local send intent here.
             &Ulid::new().to_string(),
+            // Direct diagnostic fixture never carries group @mentions.
+            &crate::messaging::private_content::MessageMentions::empty(),
         )
     })
     .await
@@ -2234,6 +2254,19 @@ pub async fn messaging_send_message(
             duration_ms: attachment.duration_ms,
         })
         .collect::<Vec<_>>();
+    let mentions = crate::messaging::private_content::MessageMentions {
+        mention_all: input.mention_all,
+        mentions: input
+            .mentions
+            .into_iter()
+            .map(|m| crate::messaging::private_content::MessageMention {
+                actor_ptid: m.actor_ptid,
+                offset: m.offset,
+                length: m.length,
+                display: m.display,
+            })
+            .collect(),
+    };
     let outcome = match tauri::async_runtime::spawn_blocking(move || {
         engine.submit_message(
             &token,
@@ -2244,6 +2277,7 @@ pub async fn messaging_send_message(
             &thread_root_message_id,
             &attachment_intents,
             &send_intent_id,
+            &mentions,
         )
     })
     .await

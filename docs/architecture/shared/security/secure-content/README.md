@@ -2,9 +2,19 @@
 
 > **Status**: active
 > **Version**: v1.7
-> **Created**: 2026-09-13 | **Updated**: 2026-10-17
+> **Created**: 2026-09-13 | **Updated**: 2026-11-05
 > **Owner**: Architecture Team
 > **Module**: `model/domain/secure_content/`, `packages/secure-content-core/`, `apps/station/app/internal/securecontent/`
+
+> **Accepted amendment (2026-11-05, v2.1)**:
+> [Recovery Identity Resilience (SC-D31/SC-D32/SC-D33)](./recovery-identity-resilience-amendment.md)
+> passed independent architecture review (`DESIGN_REVIEW_PASS`) and was
+> accepted by the Owner. It makes the recovery phrase the root of BOTH Actor
+> Identity (Station-hosted client-sealed recovery vault) and content
+> recovery, adds cross-device delivery management with
+> enumerability-scoped typed blocking, and production-delegating recovery
+> evidence Gates. Execution planning owns sequencing; content merges into the
+> canonical docs at plan completion.
 
 ---
 
@@ -89,6 +99,8 @@ wire, storage, and recovery behavior.
 | [execution-plans/20260925-dashboard-peer-trust-route-amendment-review-prompt.md](./execution-plans/20260925-dashboard-peer-trust-route-amendment-review-prompt.md) | Review contract for the W12A Dashboard federation peer route scope correction |
 | [execution-plans/20260925-mobile-runtime-source-plan-amendment-review-prompt.md](./execution-plans/20260925-mobile-runtime-source-plan-amendment-review-prompt.md) | Review contract for splitting Mobile product source, platform runtime ownership, and schema activation into bounded Tasks |
 | [execution-plans/20261001-desktop-social-usability-amendment-review-prompt.md](./execution-plans/20261001-desktop-social-usability-amendment-review-prompt.md) | Review contract for narrowing the active milestone to Desktop Native Social development usability |
+| [recovery-identity-resilience-amendment.md](./recovery-identity-resilience-amendment.md) | **Proposed** SC-D31/SC-D32/SC-D33: independent Recovery Identity lifecycle, authoritative device delivery management, typed prepare blocking, and production-delegating recovery evidence Gates |
+| [execution-plans/20261105-recovery-identity-resilience-amendment-review-prompt.md](./execution-plans/20261105-recovery-identity-resilience-amendment-review-prompt.md) | Independent review contract for the proposed SC-D31/SC-D32/SC-D33 amendment |
 | [execution-plans/20260913-secure-content-work-items.yaml](./execution-plans/20260913-secure-content-work-items.yaml) | Machine-shaped DevelopmentWorkItem contracts |
 | [execution-plans/20260913-secure-content-journeys.yaml](./execution-plans/20260913-secure-content-journeys.yaml) | Machine-shaped DevelopmentJourney contracts and budgets |
 

@@ -12,7 +12,7 @@ use messaging_core::contracts::{ConversationProjection, CryptoEndpoint};
 use messaging_core::crypto::prekeys::{PendingPreKeyBundle, PreKeyBundleBackup};
 use messaging_core::engine::{
     activate_engine, advance_engine_consumer_epoch, begin_engine_stop, complete_engine_start,
-    complete_engine_stop, recover_interrupted_engine, resume_engine, suspend_engine,
+    complete_engine_stop, fail_engine, recover_interrupted_engine, resume_engine, suspend_engine,
     validate_active_engine, validate_engine_fence, CommandReconciliationProgress, EngineFence,
     EngineLifecycleRecord, EnginePhase,
 };
@@ -38,6 +38,7 @@ use super::engine::{
     validate_account_scope, DeviceSigningSeedBackup, MessageDraftResumeProgress,
     MobileMessagingEngine, SecureContentRuntimeIdentity,
 };
+use super::transport::MOBILE_MESSAGING_IDENTITY_RECOVERY_REQUIRED;
 
 const DATABASE_KEY_PREFIX: &str = "messaging.v1.sqlcipher";
 const MAX_CONTINUATION_CYCLES: usize = 8;
@@ -920,6 +921,16 @@ impl MobileMessagingWorker {
         let mut state = state
             .lock()
             .map_err(|_| "mobile messaging worker state lock poisoned".to_string())?;
+        // A parked engine hands the terminal error (identity recovery) to
+        // callers instead of a generic lifecycle-transition failure.
+        if state.lifecycle.phase == EnginePhase::Failed {
+            return Err(state
+                .last_result
+                .as_ref()
+                .and_then(|result| result.as_ref().err())
+                .cloned()
+                .unwrap_or_else(|| "mobile messaging engine failed".to_string()));
+        }
         validate_active_engine(&state.lifecycle, self.fence, self.cancellation.as_ref())
             .map_err(|error| error.to_string())?;
         let target_cycle = if state.cycle_running {
@@ -1135,37 +1146,82 @@ fn worker_loop(
             Ok(true) => {}
             Err(error) => log::warn!("mobile messaging index repair remains pending: {error}"),
         }
-        let (mut result, backlog, retry_deadline) = run_worker_batch(
+        match run_worker_batch(
             &state,
             engine.as_ref(),
             fence,
             cancellation.as_ref(),
             cycle_id,
             &event_sink,
-        );
-        if let Err(error) = &result {
-            log::warn!("mobile messaging worker cycle failed: {error}");
-        }
-        let mut guard = match state.0.lock() {
-            Ok(guard) => guard,
-            Err(_) => return,
-        };
-        if let Ok(cycle) = &result {
-            match advance_engine_consumer_epoch(&guard.lifecycle, fence, cycle.drain.consumer_epoch)
-            {
-                Ok(lifecycle) => guard.lifecycle = lifecycle,
-                Err(error) => result = Err(error.to_string()),
+        ) {
+            WorkerBatchOutcome::TerminalFailure(error) => {
+                log::warn!(
+                    "mobile messaging worker cycle failed terminally; parking the engine: {error}"
+                );
+                let Ok(mut guard) = state.0.lock() else {
+                    return;
+                };
+                // Park the engine in Failed. Retrying enrollment can never
+                // succeed until the actor identity is recovered, and the
+                // Failed phase makes the worker loop exit immediately.
+                if validate_active_engine(&guard.lifecycle, fence, cancellation.as_ref()).is_ok()
+                {
+                    guard.lifecycle = fail_engine(&guard.lifecycle, fence, now_unix_ms())
+                        .unwrap_or_else(|_| guard.lifecycle.clone());
+                }
+                guard.cycle_running = false;
+                guard.completed_cycle_id = cycle_id;
+                guard.last_result = Some(Err(error));
+                guard.wake_pending = false;
+                guard.retry_deadline = None;
+                state.1.notify_all();
+                return;
+            }
+            WorkerBatchOutcome::Completed {
+                mut result,
+                has_backlog,
+                retry_deadline,
+            } => {
+                if let Err(error) = &result {
+                    log::warn!("mobile messaging worker cycle failed: {error}");
+                }
+                let mut guard = match state.0.lock() {
+                    Ok(guard) => guard,
+                    Err(_) => return,
+                };
+                if let Ok(cycle) = &result {
+                    match advance_engine_consumer_epoch(
+                        &guard.lifecycle,
+                        fence,
+                        cycle.drain.consumer_epoch,
+                    ) {
+                        Ok(lifecycle) => guard.lifecycle = lifecycle,
+                        Err(error) => result = Err(error.to_string()),
+                    }
+                }
+                guard.cycle_running = false;
+                guard.completed_cycle_id = cycle_id;
+                guard.last_result = Some(result);
+                if validate_active_engine(&guard.lifecycle, fence, cancellation.as_ref()).is_ok()
+                {
+                    guard.wake_pending |= has_backlog;
+                    guard.retry_deadline = retry_deadline;
+                }
+                state.1.notify_all();
             }
         }
-        guard.cycle_running = false;
-        guard.completed_cycle_id = cycle_id;
-        guard.last_result = Some(result);
-        if validate_active_engine(&guard.lifecycle, fence, cancellation.as_ref()).is_ok() {
-            guard.wake_pending |= backlog;
-            guard.retry_deadline = retry_deadline;
-        }
-        state.1.notify_all();
     }
+}
+
+/// Result of one worker batch: either a normal cycle (retryable failures keep
+/// the worker alive) or a terminal failure that parks the engine.
+enum WorkerBatchOutcome {
+    Completed {
+        result: Result<MessagingWorkerCycleResult, String>,
+        has_backlog: bool,
+        retry_deadline: Option<Instant>,
+    },
+    TerminalFailure(String),
 }
 
 fn run_worker_batch(
@@ -1175,11 +1231,7 @@ fn run_worker_batch(
     cancellation: &dyn LifecycleCancellation,
     cycle_id: u64,
     event_sink: &ProjectionEventSink,
-) -> (
-    Result<MessagingWorkerCycleResult, String>,
-    bool,
-    Option<Instant>,
-) {
+) -> WorkerBatchOutcome {
     let mut last_result = None;
     let mut retry_deadline = None;
     for _ in 0..MAX_CONTINUATION_CYCLES {
@@ -1191,30 +1243,37 @@ fn run_worker_batch(
                 retry_deadline = earlier_deadline(retry_deadline, next_retry);
                 last_result = Some(Ok(result));
                 if !has_backlog {
-                    return (
-                        last_result.expect("worker cycle result exists"),
-                        false,
+                    return WorkerBatchOutcome::Completed {
+                        result: last_result.expect("worker cycle result exists"),
+                        has_backlog: false,
                         retry_deadline,
-                    );
+                    };
                 }
             }
             Ok(None) => break,
             Err(error) => {
                 let _ = engine.recover_stale_enrollment(&error);
-                return (
-                    Err(error),
-                    false,
-                    Some(Instant::now() + FAILURE_RETRY_DELAY),
-                );
+                // The Station rejected enrollment because the actor identity
+                // is protected and this device is not enrolled. No retry can
+                // succeed until the user completes identity recovery.
+                if error.contains(MOBILE_MESSAGING_IDENTITY_RECOVERY_REQUIRED) {
+                    return WorkerBatchOutcome::TerminalFailure(error);
+                }
+                return WorkerBatchOutcome::Completed {
+                    result: Err(error),
+                    has_backlog: false,
+                    retry_deadline: Some(Instant::now() + FAILURE_RETRY_DELAY),
+                };
             }
         }
     }
     let has_backlog = last_result.is_some();
-    (
-        last_result.unwrap_or_else(|| Err("mobile messaging worker suspended".to_string())),
+    WorkerBatchOutcome::Completed {
+        result: last_result
+            .unwrap_or_else(|| Err("mobile messaging worker suspended".to_string())),
         has_backlog,
         retry_deadline,
-    )
+    }
 }
 
 fn run_engine_cycle(

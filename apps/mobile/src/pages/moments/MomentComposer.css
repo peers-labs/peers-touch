@@ -161,6 +161,11 @@
   font-size: 11px;
 }
 
+.moment-composer-draft-failure-detail {
+  flex: 1 1 auto;
+  color: var(--pt-secondary);
+}
+
 .moment-composer-media {
   display: flex;
   flex: 0 0 auto;

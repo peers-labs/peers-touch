@@ -5,6 +5,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/conversationview"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/aggregate"
@@ -35,52 +36,72 @@ func (s *Service) UpdateMemberSettings(
 	patch MemberSettingsPatch,
 ) (repository.MemberSettings, error) {
 	var updated repository.MemberSettings
-	err := s.unitOfWork.Execute(ctx, func(transaction ports.Transaction) error {
-		snapshot, err := transaction.Repositories.Authority.LoadForUpdate(ctx, conversationID)
-		if err != nil {
-			return err
-		}
-		if !activeMember(snapshot, actor) {
-			return unauthorized("application.update_member_settings", "actor is not an active member")
-		}
-		current, err := transaction.Repositories.MemberSettings.Get(ctx, conversationID, actor)
-		if err != nil && !conversationdomain.IsCode(err, conversationdomain.ErrorCodeNotFound) {
-			return err
-		}
-		if conversationdomain.IsCode(err, conversationdomain.ErrorCodeNotFound) {
-			current = repository.MemberSettings{
-				ConversationID: conversationID,
-				Actor:          actor,
-				AlertEnabled:   true,
-				Background:     "default",
+	// Settings are persisted with a full-row upsert after a read-modify-write,
+	// so per-conversation serialization is required even though the preference
+	// is actor-local. A dedicated advisory lock replaces the authority row
+	// lock the command historically borrowed, keeping the same guarantee on a
+	// follower Station that has no writable authority aggregate.
+	err := s.unitOfWork.ExecuteSerialized(
+		ctx,
+		memberSettingsLockKey(conversationID),
+		func(transaction ports.Transaction) error {
+			// Member settings (mute/pin/nickname/background) are actor-local
+			// preferences persisted on the actor's Home Station; they never
+			// enter the conversation authority event stream. Membership is
+			// authorized against the authority aggregate on the authority
+			// Station, or the follower read projection on a non-authority
+			// (cross-Station) Home Station; the follower projection carries
+			// the same active member set.
+			view, err := conversationview.Load(ctx, transaction.Repositories, conversationID)
+			if err != nil {
+				return err
 			}
-		}
-		if patch.Nickname != nil {
-			current.Nickname = *patch.Nickname
-		}
-		if patch.Muted != nil {
-			current.Muted = *patch.Muted
-		}
-		if patch.Pinned != nil {
-			current.Pinned = *patch.Pinned
-		}
-		if patch.AlertEnabled != nil {
-			current.AlertEnabled = *patch.AlertEnabled
-		}
-		if patch.Background != nil {
-			current.Background = *patch.Background
-		}
-		if patch.BackgroundImage != nil {
-			current.BackgroundImage = *patch.BackgroundImage
-		}
-		current.UpdatedAt = s.clock.Now()
-		if err := transaction.Repositories.MemberSettings.Save(ctx, current); err != nil {
-			return err
-		}
-		updated = current
-		return nil
-	})
+			if !conversationview.HasActiveMember(view.Conversation, actor) {
+				return unauthorized("application.update_member_settings", "actor is not an active member")
+			}
+			current, err := transaction.Repositories.MemberSettings.Get(ctx, conversationID, actor)
+			if err != nil && !conversationdomain.IsCode(err, conversationdomain.ErrorCodeNotFound) {
+				return err
+			}
+			if conversationdomain.IsCode(err, conversationdomain.ErrorCodeNotFound) {
+				current = repository.MemberSettings{
+					ConversationID: conversationID,
+					Actor:          actor,
+					AlertEnabled:   true,
+					Background:     "default",
+				}
+			}
+			if patch.Nickname != nil {
+				current.Nickname = *patch.Nickname
+			}
+			if patch.Muted != nil {
+				current.Muted = *patch.Muted
+			}
+			if patch.Pinned != nil {
+				current.Pinned = *patch.Pinned
+			}
+			if patch.AlertEnabled != nil {
+				current.AlertEnabled = *patch.AlertEnabled
+			}
+			if patch.Background != nil {
+				current.Background = *patch.Background
+			}
+			if patch.BackgroundImage != nil {
+				current.BackgroundImage = *patch.BackgroundImage
+			}
+			current.UpdatedAt = s.clock.Now()
+			if err := transaction.Repositories.MemberSettings.Save(ctx, current); err != nil {
+				return err
+			}
+			updated = current
+			return nil
+		},
+	)
 	return updated, err
+}
+
+func memberSettingsLockKey(conversationID valueobject.ConversationID) string {
+	return "conversation-member-settings:" + string(conversationID)
 }
 
 func (s *Service) AdvanceReadCursor(
@@ -1142,13 +1163,4 @@ func conversationMemberRoutes(conversation *aggregate.Conversation) []ports.Endp
 		})
 	}
 	return routes
-}
-
-func activeMember(snapshot aggregate.Snapshot, actor valueobject.PTID) bool {
-	for _, member := range snapshot.Members {
-		if member.Actor == actor && member.Active() {
-			return true
-		}
-	}
-	return false
 }

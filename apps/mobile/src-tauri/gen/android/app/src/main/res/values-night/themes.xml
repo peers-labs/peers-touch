@@ -1,6 +1,12 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
+    <!-- The mobile product ships light-only (MobileNorthStarProvider
+         theme="light"; mobile dark contract unfinished by product decision).
+         Mirror the neutral light chrome here so a system dark-mode switch does
+         not fall back to the stock Material template colors. -->
     <style name="Theme.peers_touch_mobile" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <!-- Customize your theme here. -->
+        <item name="android:statusBarColor">@color/northstar_canvas</item>
+        <item name="android:navigationBarColor">@color/northstar_canvas</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowBackground">@color/northstar_canvas</item>
     </style>
 </resources>

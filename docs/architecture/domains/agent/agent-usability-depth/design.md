@@ -468,7 +468,8 @@ canonicalize 沙箱）。产物、脚本、素材都在该根内闭环；出根�
   runtime config（`provider_runtime_config` 已有 default_model 字段，
   核对 default provider 语义缺口）；②模型状态灯由真实 check/discover
   结果驱动（原型的恒 Unverified 在真实端变成真实状态 + 未检查态）；
-  ③清理 CliProviderDetail 中任何不产生落库效果的字段。
+  ③配置在 Dashboard 的统一 Provider DM/CLI 编辑器内完成；普通 Desktop
+  仅消费授权模型和账号默认值，具体合同见 `provider-control-plane.md`。
 - **边界**：PRV-B03（Global Prompt/全局 Args/Env）reject 维持——
   系统提示词在 Agent Profile；CLI profile 的 args/env 是该运行时的
   真实配置（真实端保留，与原型 reject 不矛盾：不同层）。

@@ -15,11 +15,20 @@ import {
 } from '../gen/proto/domain/chat/event_pb';
 import { useNavigationBadgeStore } from '../store/navigationBadges';
 import { useSocialChatStore } from '../store/socialChat';
+import {
+  actorDisplayName,
+  resolveActorIdentity,
+} from '../store/socialProfileProjection';
+import type { SocialMessage } from '../store/socialProjection';
 import { log } from '../utils/logger';
 import { messagingAttachmentAccess } from '../messaging/attachmentAccess';
+import { globalContext } from '../kernel/global-context';
+import i18n from '../i18n';
 
 const MESSAGING_PROJECTION_CHANGED_EVENT = 'messaging:projection-changed';
 const MAX_SEEN_INVALIDATIONS = 500;
+/** Admin/owner role floor (MemberRole: MEMBER=1, ADMIN=2, OWNER=3). */
+const MENTION_ALL_MIN_ROLE = 2;
 
 let unlisten: UnlistenFn | null = null;
 let installPromise: Promise<void> | null = null;
@@ -102,6 +111,37 @@ function enqueueFullReconcile(
     });
 }
 
+/**
+ * Post-decryption local @me test. Explicit ptid mentions always match; an
+ * @all token only matches when the sender holds admin/owner authority, so a
+ * forged `mentionAll` flag from a regular member cannot page the group.
+ */
+export function messageMentionsSelf(
+  message: Pick<SocialMessage, 'mentions' | 'mentionAll'>,
+  selfPtid: string,
+  senderRole: number | undefined,
+): boolean {
+  const self = selfPtid.trim();
+  if (!self) return false;
+  if (message.mentions?.some((mention) => mention.actorPtid === self)) return true;
+  return Boolean(message.mentionAll) && (senderRole ?? 0) >= MENTION_ALL_MIN_ROLE;
+}
+
+/** Resolve the human-readable sender name for an @mention notification. */
+export function mentionSenderDisplayName(
+  state: ReturnType<typeof useSocialChatStore.getState>,
+  senderPtid: string,
+): string {
+  const identity = resolveActorIdentity({
+    ptid: senderPtid,
+    currentUserPtid: state.currentUserPtid ?? '',
+    currentUserProfile: state.currentUserProfile,
+    peerProfiles: state.peerProfiles,
+    sessions: state.sessions,
+  });
+  return actorDisplayName(identity.displayName, senderPtid);
+}
+
 async function refreshProjection(
   payload: MessagingProjectionInvalidation,
   scope: MessagingRuntimeScope,
@@ -153,6 +193,9 @@ async function refreshProjection(
   if (isActiveConversation) {
     if (conversation.kind === 1) {
       await useSocialChatStore.getState().markFriendRead(conversationId);
+    } else {
+      // Viewing the group consumes the @mention flag immediately.
+      badgeState.clearMention(store.currentUserPtid ?? '', conversationId);
     }
     badgeState.clearChatUnread(conversationId);
     return;
@@ -165,8 +208,26 @@ async function refreshProjection(
       && message.senderPtid !== refreshed.currentUserPtid
     ),
   );
-  for (const _message of newIncomingMessages) {
+  for (const message of newIncomingMessages) {
     badgeState.bumpChatUnread(conversationId);
+    // @mention handling is post-decryption local logic: explicit @me and a
+    // role-gated @all raise the yellow flag plus a notification even when
+    // the group is muted; plain unread stays suppressed by mute.
+    if (conversation.kind !== 2) continue;
+    const selfPtid = refreshed.currentUserPtid ?? '';
+    if (!selfPtid) continue;
+    const senderRole = refreshed.groupMembers[conversationId]
+      ?.find((member) => member.ptid === message.senderPtid)?.role;
+    if (!messageMentionsSelf(message, selfPtid, senderRole)) continue;
+    badgeState.markMention(selfPtid, conversationId);
+    globalContext.pushNotification({
+      id: `chat.mention.${conversationId}.${message.ulid}`,
+      level: 'info',
+      title: i18n.t('chat.social.mentions.notificationTitle', {
+        ns: 'chat',
+        name: mentionSenderDisplayName(refreshed, message.senderPtid),
+      }),
+    });
   }
 }
 

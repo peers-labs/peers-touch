@@ -42,6 +42,8 @@ SAFE_ACTOR_ROLE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 APPROVED_DISPOSABLE_STATION_PORT = 18132
 PROTECTED_CLEANUP_PORTS = frozenset({4445, 18080})
 LOCAL_SOURCE_RUNTIME = "local-source"
+GROUP_SFU_SOURCE_REVISION = "b93c1e160770d93179dc5b1c9027567befec5e62"
+GROUP_SFU_ADMISSION_CONTRACT = "sid-fence-replay-deny-v1"
 RESET_PROFILE_AUTHORIZATION_ENV = "CHAT_ACCEPTANCE_RESET_PROFILE"
 RESET_ENVIRONMENTS_AUTHORIZATION_ENV = (
     "CHAT_ACCEPTANCE_RESET_ENVIRONMENTS"
@@ -2452,6 +2454,118 @@ WHERE request_id = ?
         except BaseException:
             connection.rollback()
             raise
+
+
+def _inspect_acceptance_group_sfu(
+    environment: dict[str, str],
+    sfu_url: str,
+) -> dict[str, object]:
+    parsed = urllib.parse.urlparse(sfu_url)
+    if (
+        parsed.scheme not in {"ws", "wss"}
+        or parsed.hostname != environment.get("PT_DEPLOY_HOST")
+        or parsed.username or parsed.password
+        or parsed.path not in {"", "/"}
+        or parsed.params or parsed.query or parsed.fragment
+    ):
+        raise RuntimeError("Disposable group SFU URL does not match its reviewed host")
+    port = parsed.port or (443 if parsed.scheme == "wss" else 80)
+    project = environment["PT_ACCEPTANCE_COMPOSE_PROJECT"]
+    container = f"{project}-livekit-1"
+    template = (
+        '{"container":{{json .Name}},"imageId":{{json .Image}},'
+        '"labels":{{json .Config.Labels}},"state":{{json .State}},'
+        '"ports":{{json .NetworkSettings.Ports}}}'
+    )
+    raw = _remote_command(
+        environment,
+        "docker inspect --format " + shlex.quote(template) + " " + shlex.quote(container),
+    )
+    try:
+        inspection = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise RuntimeError("Disposable group SFU inspection is invalid") from error
+    labels = inspection.get("labels") or {}
+    state = inspection.get("state") or {}
+    ports = (inspection.get("ports") or {}).get("7880/tcp") or []
+    if (
+        inspection.get("container") != f"/{container}"
+        or labels.get("com.docker.compose.project") != project
+        or labels.get("com.docker.compose.service") != "livekit"
+        or labels.get("org.opencontainers.image.source") != "https://github.com/livekit/livekit"
+        or labels.get("org.opencontainers.image.revision") != GROUP_SFU_SOURCE_REVISION
+        or labels.get("net.peers-touch.group-admission") != GROUP_SFU_ADMISSION_CONTRACT
+        or state.get("Running") is not True
+        or not state.get("StartedAt")
+        or not re.fullmatch(r"sha256:[0-9a-f]{64}", str(inspection.get("imageId") or ""))
+        or not any(
+            binding.get("HostPort") == str(port)
+            and binding.get("HostIp") in {"0.0.0.0", "::", parsed.hostname}
+            for binding in ports if isinstance(binding, dict)
+        )
+    ):
+        raise RuntimeError("Disposable group SFU container/source/port identity mismatch")
+    return {
+        "host": parsed.hostname, "url": sfu_url, "container": container,
+        "composeProject": project, "service": "livekit",
+        "imageId": inspection["imageId"], "sourceRevision": GROUP_SFU_SOURCE_REVISION,
+        "admissionContract": GROUP_SFU_ADMISSION_CONTRACT,
+        "startedAt": state["StartedAt"],
+        "health": (state.get("Health") or {}).get("Status"),
+    }
+
+
+def restart_acceptance_group_sfu(
+    station_service: Mapping[str, object],
+    sfu_url: str,
+) -> dict[str, object]:
+    """Restart only the shared SFU belonging to a leased disposable Station."""
+    if os.environ.get("CHAT_ACCEPTANCE_ALLOW_SFU_RESTART") != "1":
+        raise RuntimeError("CHAT_ACCEPTANCE_ALLOW_SFU_RESTART=1 is required")
+    if station_service.get("kind") != "station":
+        raise RuntimeError("Group SFU restart requires an original Station service")
+    station_url = str(station_service.get("endpoint") or "")
+    deployment = str(station_service.get("deploymentEnvironment") or "")
+    if not station_url or not deployment:
+        raise RuntimeError("Group SFU restart Station binding is incomplete")
+    environment = acceptance_station_environment(station_url, deployment)
+    runtime_identity = verify_disposable_station_runtime(environment)
+    # Read only the declared public URL; API keys/secrets never leave this process.
+    projection = (
+        "import json,sys; values=json.load(sys.stdin); "
+        "print(next((v.split('=',1)[1] for v in values "
+        "if v.startswith('LIVEKIT_PUBLIC_URL=')), ''))"
+    )
+    declared_url = _remote_command(
+        environment,
+        "docker inspect --format '{{json .Config.Env}}' "
+        + shlex.quote(environment["PT_ACCEPTANCE_STATION_CONTAINER"])
+        + " | python3 -c " + shlex.quote(projection),
+    )
+    if declared_url.rstrip("/") != sfu_url.rstrip("/"):
+        raise RuntimeError("Group SFU grant URL differs from the bound Station declaration")
+    before = _inspect_acceptance_group_sfu(environment, sfu_url)
+    if before["health"] != "healthy":
+        raise RuntimeError("Disposable group SFU is not healthy before restart")
+    container = str(before["container"])
+    restarted = _remote_command(environment, "docker restart " + shlex.quote(container))
+    if restarted != container:
+        raise RuntimeError("Group SFU restart returned an unexpected container")
+    deadline = time.monotonic() + 120
+    while time.monotonic() < deadline:
+        after = _inspect_acceptance_group_sfu(environment, sfu_url)
+        if after["imageId"] != before["imageId"]:
+            raise RuntimeError("Group SFU image changed during restart")
+        if after["startedAt"] == before["startedAt"]:
+            raise RuntimeError("Group SFU container start timestamp did not change")
+        if after["health"] == "healthy":
+            return {
+                "environment": environment["PT_ACCEPTANCE_ENVIRONMENT"],
+                "stationRuntimeIdentity": runtime_identity,
+                "before": before, "after": after,
+            }
+        threading.Event().wait(1)
+    raise RuntimeError("Disposable group SFU did not become healthy after restart")
 
 
 def restart_acceptance_station(

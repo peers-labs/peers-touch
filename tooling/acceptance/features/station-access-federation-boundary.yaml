@@ -8,7 +8,6 @@
     "model/domain/federation/**",
     "apps/station/frame/touch/actor/**",
     "apps/station/app/subserver/federation/handler.go",
-    "apps/desktop/src/components/settings/FederationTab.tsx",
     "apps/desktop/src/components/chat/FindPeopleModal.tsx",
     "apps/desktop/src/store/federation.ts",
     "apps/desktop/src/runtimes/federationRuntime.ts",

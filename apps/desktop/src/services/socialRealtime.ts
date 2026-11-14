@@ -339,6 +339,11 @@ function reconcileAuthenticatedRuntime(): void {
   bootstrappedActorPtid = actorPtid;
   bootstrappedSessionKey = sessionKey;
   const sequence = ++bootstrapSequence;
+  // Synchronous first-frame seed: peer names and avatar identities come from
+  // the actor's persistent last-good before any authenticated frame paints,
+  // so conversation rows never show neutral placeholders on cold start. The
+  // async bootstrap reconciles every seeded entry over the network.
+  useSocialChatStore.getState().seedPresentationLastGood(actorPtid);
   runDetached('social projection bootstrap', () => bootstrapSocialProjection(actorPtid, sequence));
 }
 

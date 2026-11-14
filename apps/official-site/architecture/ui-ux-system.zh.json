@@ -1,0 +1,131 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "UI/UX 元素与组件验收流水线",
+    "subtitle": "判断逻辑分四层：物理、角色、运行可由机器确定；工艺与签名必须独立人工裁决。任一层失败回到对应产出层，不靠改门禁或自评分绕过。",
+    "output": "ui-ux-system.zh.html",
+    "locale": "zh-CN",
+    "visual_preset": "editorial",
+    "quality_profile": "showcase",
+    "animation": "none"
+  },
+  "lanes": [
+    { "id": "northstar", "label": "设计哲学真源（不可变）" },
+    { "id": "author", "label": "作者 / Agent 产出" },
+    { "id": "machine", "label": "确定性门禁（机器）" },
+    { "id": "reviewer", "label": "独立工艺裁决（人工）" },
+    { "id": "evidence", "label": "证据与确认状态" },
+    { "id": "rework", "label": "驳回回退（在哪层失败回哪层）", "variant": "exception" }
+  ],
+  "phases": [
+    { "id": "p_src", "label": "哲学真源", "fromCol": 0, "toCol": 0, "variant": "emphasis" },
+    { "id": "p_build", "label": "作者产出", "fromCol": 1, "toCol": 1 },
+    { "id": "p_gate", "label": "判断门：①②③ 机器 → ④ 人工", "fromCol": 2, "toCol": 4, "variant": "emphasis" },
+    { "id": "p_state", "label": "证据 / 确认", "fromCol": 5, "toCol": 5 }
+  ],
+  "groups": [
+    { "id": "g_build", "label": "令牌 → 组件 → 标本", "lane": "author", "fromCol": 1, "toCol": 1 },
+    { "id": "g_auto", "label": "确定性门禁：可计算、可复跑、绑摘要", "lane": "machine", "fromCol": 2, "toCol": 4, "variant": "emphasis" },
+    { "id": "g_human", "label": "工艺裁决：脚本永不替审美打 passed", "lane": "reviewer", "fromCol": 4, "toCol": 4 },
+    { "id": "g_state", "label": "结论与证据边界", "lane": "evidence", "fromCol": 5, "toCol": 5 }
+  ],
+  "nodes": [
+    { "id": "n_phil", "lane": "northstar", "col": 0, "type": "security", "label": "设计哲学真源", "sublabel": "结构化表达极简 · 四层模型" },
+
+    { "id": "a_sem", "lane": "author", "col": 1, "type": "frontend", "yOffset": -96, "label": "语义令牌 + 能力合同", "sublabel": "角色 · 状态 · 非法组合" },
+    { "id": "a_comp", "lane": "author", "col": 1, "type": "frontend", "yOffset": 0, "label": "公共组件", "sublabel": "token 角色驱动" },
+    { "id": "a_spec", "lane": "author", "col": 1, "type": "frontend", "yOffset": 96, "label": "可运行合同标本", "sublabel": "全状态 × 窄宽/暗色" },
+
+    { "id": "m_phys", "lane": "machine", "col": 2, "type": "backend", "label": "门① 物理（自动）", "tag": "确定性", "sublabel": "WCAG 对比 · 强调色纪律" },
+    { "id": "m_role", "lane": "machine", "col": 3, "type": "backend", "label": "门② 角色适配（自动）", "tag": "确定性", "sublabel": "值配不配角色 · 覆盖" },
+    { "id": "m_run", "lane": "machine", "col": 4, "type": "backend", "label": "门③ 运行探针（自动）", "tag": "确定性", "sublabel": "几何/焦点/真操作/恢复" },
+
+    { "id": "r_gate", "lane": "reviewer", "col": 4, "type": "external", "label": "门④ 工艺 + 签名（人工）", "tag": "不可自动", "sublabel": "craft 十维 · 去 logo · 独立评审" },
+
+    { "id": "e_pending", "lane": "evidence", "col": 5, "type": "database", "yOffset": -96, "label": "pending-review", "sublabel": "L1 + L2 + L3 齐备" },
+    { "id": "e_confirmed", "lane": "evidence", "col": 5, "type": "database", "yOffset": 0, "label": "confirmed", "sublabel": "owner 确认，无阻断缺陷" },
+    { "id": "e_unproven", "lane": "evidence", "col": 5, "type": "database", "yOffset": 96, "label": "产品 Journey：UNPROVEN", "sublabel": "本地 mock，不证明生产" },
+
+    { "id": "w_rework", "lane": "rework", "col": 3, "type": "frontend", "label": "按失败层级回退重做", "sublabel": "回对应产出层重做" }
+  ],
+  "edges": [
+    { "from": "n_phil", "to": "a_sem", "label": "约束，不可被组件反推", "role": "main" },
+    { "from": "a_sem", "to": "a_comp", "fromSide": "bottom", "toSide": "top", "role": "main" },
+    { "from": "a_comp", "to": "a_spec", "fromSide": "bottom", "toSide": "top", "role": "main" },
+    { "from": "a_spec", "to": "m_phys", "label": "送验", "role": "main" },
+    { "from": "m_phys", "to": "m_role", "label": "达标", "role": "main" },
+    { "from": "m_role", "to": "m_run", "label": "达标", "role": "main" },
+    { "from": "m_run", "to": "r_gate", "label": "机器门全绿", "role": "main" },
+    { "from": "r_gate", "to": "e_pending", "label": "裁决通过", "role": "main" },
+    { "from": "e_pending", "to": "e_confirmed", "fromSide": "bottom", "toSide": "top", "label": "owner 确认", "role": "main" },
+    { "from": "e_confirmed", "to": "e_unproven", "fromSide": "bottom", "toSide": "top", "label": "并行声明，不自动升级", "role": "branch", "variant": "dashed" },
+
+    { "from": "m_phys", "to": "w_rework", "label": "对比/色相", "role": "error" },
+    { "from": "m_role", "to": "w_rework", "label": "角色/语义", "role": "error" },
+    { "from": "m_run", "to": "w_rework", "label": "几何/恢复", "role": "error" },
+    { "from": "r_gate", "to": "w_rework", "label": "工艺/签名", "role": "error" },
+
+    { "from": "w_rework", "to": "a_sem", "label": "重做并重跑全部门禁", "role": "return" }
+  ],
+  "semanticChecks": {
+    "allowedRoots": ["n_phil"],
+    "allowedTerminals": ["e_unproven"],
+    "requiredEdges": [
+      { "from": "m_phys", "to": "m_role" },
+      { "from": "m_role", "to": "m_run" },
+      { "from": "m_run", "to": "r_gate" },
+      { "from": "r_gate", "to": "e_pending" },
+      { "from": "e_confirmed", "to": "e_unproven" }
+    ],
+    "requiredPaths": [
+      { "from": "n_phil", "to": "e_confirmed" },
+      { "from": "n_phil", "to": "e_unproven" }
+    ]
+  },
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "门① 物理 · 自动",
+      "items": [
+        "WCAG 2.2 AA：正文 4.5、大字与边界 3.0；onPrimary-on-fill 与焦点环对比",
+        "单一强调色纪律：一页一个 action.primary，状态色不得与其争抢",
+        "判据可计算，绑令牌源摘要，失败即红"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "门②③ 角色与运行 · 自动",
+      "items": [
+        "门② 判“值配不配它声称的角色”：generic SaaS 紫、不可读琥珀、trust.*/type.* 缺失都会被拦",
+        "门③ 真实操作 + 几何/焦点/恢复；“绘制值 == 令牌值”只证明自洽，不证明胜任",
+        "每场景独立页面，finalizer 必跑，证据绑 commit 与输入摘要，门禁接非零退出码"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "门④ 工艺与签名 · 人工，不可自动",
+      "items": [
+        "按 craft-quality 十维 + 正/负校准逐项裁决，产出 verdict：passed / changes-required / unproven",
+        "去 logo 测试：拿掉标识仍认出是 Peers，且不是 admin dashboard 或参考稿仿形",
+        "必须由与作者不同的独立 reviewer 裁决；脚本可强制它存在，但永不替它打 passed"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "驳回回退",
+      "items": [
+        "在物理/角色/运行/工艺哪一层失败，就回退到语义、组件或设计对应层",
+        "禁止靠放宽门禁、自评分、套用外部参考稿来让结果变绿"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "证据边界",
+      "items": [
+        "confirmed 只针对当前来源的设计与标本；产品 Journey 终态始终并列标注 UNPROVEN",
+        "本地 owner mock 只投影状态，不证明真实发送、授权、删除或接收端可见"
+      ]
+    }
+  ]
+}

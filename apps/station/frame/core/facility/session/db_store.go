@@ -340,7 +340,13 @@ func (s *DBStore) Delete(ctx context.Context, sessionID string) error {
 		return err
 	}
 
-	return db.Where("session_id = ?", sessionID).Delete(&SessionRecord{}).Error
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		query := tx.Model(&SessionRecord{}).Where("session_id = ?", sessionID)
+		if err := revokeMediaForSessions(query); err != nil {
+			return err
+		}
+		return query.Delete(&SessionRecord{}).Error
+	})
 }
 
 // Cleanup removes expired sessions
@@ -350,7 +356,13 @@ func (s *DBStore) Cleanup(ctx context.Context) error {
 		return err
 	}
 
-	return db.Where("expires_at < ?", time.Now()).Delete(&SessionRecord{}).Error
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		query := tx.Model(&SessionRecord{}).Where("expires_at < ?", time.Now())
+		if err := revokeMediaForSessions(query); err != nil {
+			return err
+		}
+		return query.Delete(&SessionRecord{}).Error
+	})
 }
 
 // RevokeByUserAndDevice revokes only the named installation's sessions.
@@ -368,6 +380,11 @@ func (s *DBStore) RevokeByUserAndDevice(ctx context.Context, userID uint64, bind
 	var revoked int64
 	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockActorForSessionActivation(tx, userID); err != nil {
+			return err
+		}
+		if err := revokeMediaForSessions(tx.Model(&SessionRecord{}).
+			Where("user_id = ? AND station_peer_id = ? AND device_id = ? AND revoked = ?",
+				userID, binding.StationPeerID, binding.DeviceID, false)); err != nil {
 			return err
 		}
 		result := tx.Model(&SessionRecord{}).
@@ -394,6 +411,10 @@ func (s *DBStore) RevokeByUser(ctx context.Context, userID uint64, reason string
 	var revoked int64
 	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockActorForSessionActivation(tx, userID); err != nil {
+			return err
+		}
+		if err := revokeMediaForSessions(tx.Model(&SessionRecord{}).
+			Where("user_id = ? AND revoked = ?", userID, false)); err != nil {
 			return err
 		}
 		result := tx.Model(&SessionRecord{}).
@@ -645,6 +666,12 @@ func revokeReplacedDeviceSessionsLocked(
 	currentSessionID string,
 	now time.Time,
 ) (int64, error) {
+	if err := revokeMediaForSessions(tx.Model(&SessionRecord{}).Where(
+		"user_id = ? AND station_peer_id = ? AND device_id = ? AND session_id <> ? AND revoked = ?",
+		userID, binding.StationPeerID, binding.DeviceID, currentSessionID, false,
+	)); err != nil {
+		return 0, err
+	}
 	result := tx.Model(&SessionRecord{}).
 		Where(
 			"user_id = ? AND station_peer_id = ? AND device_id = ? AND session_id <> ? AND revoked = ?",

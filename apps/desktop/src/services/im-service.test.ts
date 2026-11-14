@@ -448,6 +448,8 @@ describe('Messaging message projection', () => {
         lastErrorCode: undefined,
         requiredDeviceCount: 0,
         deliveredDeviceCount: 0,
+        mentions: [],
+        mentionAll: false,
       }],
       hasMore: true,
       nextBeforeSequence: 7,
@@ -633,8 +635,111 @@ describe('Messaging send outcome', () => {
             duration_ms: 0,
           },
         ],
+        mentions: [],
+        mention_all: false,
       },
     })
+  })
+})
+
+describe('Messaging @mention envelope', () => {
+  it('threads the mention set into the native send payload', async () => {
+    invokeMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        command_id: 'command-1',
+        message_id: 'message-1',
+        attachment_ids: [],
+        state: 'pending',
+      },
+    })
+
+    await imServiceV1.messaging.sendMessage(
+      'group-1',
+      'group',
+      '@Bob hi',
+      [],
+      { sendIntentId: '01JTESTSENDINTENT0000000002' },
+      {
+        mentionAll: false,
+        mentions: [{ actorPtid: 'ptid:test:bob', offset: 0, length: 4, display: 'Bob' }],
+      },
+    )
+
+    expect(invokeMock).toHaveBeenCalledWith('messaging_send_message', {
+      input: expect.objectContaining({
+        conversation_id: 'group-1',
+        conversation_kind: 'group',
+        plaintext: '@Bob hi',
+        reply_to_message_id: '',
+        thread_root_message_id: '',
+        send_intent_id: '01JTESTSENDINTENT0000000002',
+        mentions: [{
+          actor_ptid: 'ptid:test:bob',
+          offset: 0,
+          length: 4,
+          display: 'Bob',
+        }],
+        mention_all: false,
+      }),
+    })
+  })
+
+  it('parses mentions_json on read and degrades malformed envelopes to empty', async () => {
+    invokeMock
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          messages: [{
+            event_id: 'event-1',
+            event_sequence: 1,
+            message_id: 'message-1',
+            sender_ptid: 'ptid:test:alice',
+            sender_device_id: 'alice-device',
+            plaintext: '@Bob @all hi',
+            attachments: [],
+            state: 'committed',
+            timestamp_unix_ms: 1_800_000_000_000,
+            retracted: false,
+            reactions: [],
+            read_by_ptids: [],
+            mentions_json: '{"all":true,"m":[["ptid:test:bob",0,4,"Bob"]]}',
+          }],
+          has_more: false,
+          next_before_sequence: null,
+        },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          messages: [{
+            event_id: 'event-2',
+            event_sequence: 2,
+            message_id: 'message-2',
+            sender_ptid: 'ptid:test:alice',
+            sender_device_id: 'alice-device',
+            plaintext: 'broken',
+            attachments: [],
+            state: 'committed',
+            timestamp_unix_ms: 1_800_000_000_001,
+            retracted: false,
+            reactions: [],
+            read_by_ptids: [],
+            mentions_json: '{not-json',
+          }],
+          has_more: false,
+          next_before_sequence: null,
+        },
+      })
+
+    const first = await imServiceV1.messaging.listMessages('group-1')
+    expect(first.messages[0]).toMatchObject({
+      mentions: [{ actorPtid: 'ptid:test:bob', offset: 0, length: 4, display: 'Bob' }],
+      mentionAll: true,
+    })
+
+    const second = await imServiceV1.messaging.listMessages('group-1')
+    expect(second.messages[0]).toMatchObject({ mentions: [], mentionAll: false })
   })
 })
 

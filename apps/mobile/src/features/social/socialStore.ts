@@ -5,6 +5,7 @@ import type { MobileAuthSession } from '../auth/authSession';
 import type { FederationContext } from '../../gen/proto/domain/federation/federation_projection_service_pb';
 import type { Post } from '../../gen/proto/domain/social/post_pb';
 import { mobileAuthScope, mobileAuthScopeKey } from '../auth/mobileAuthIdentity';
+import { requireMobileMutationAdmission } from '../../runtimes/mutationAdmission';
 import {
   createMobileClientStorageRuntime,
   type MobileClientStorageRuntime,
@@ -110,6 +111,7 @@ import {
   type TypingEntry,
   type UnreadCounts,
   type ActorSearchResult,
+  type PeopleSearchScope,
 } from './socialTypes';
 
 const FEDERATED_HANDLE_RE = /^@?([a-zA-Z0-9._-]+)(?:@([a-zA-Z0-9.-]+(?::\d+)?))?$/;
@@ -186,6 +188,8 @@ export interface SocialState {
   loadConversationSettings: (sessionUlid: string) => Promise<void>;
   updateConversationSettings: (sessionUlid: string, input: UpdateFriendConversationSettingsInput) => Promise<void>;
   refreshNotifications: () => Promise<void>;
+  notificationLoading: boolean;
+  notificationError: SocialApiError | null;
   markActiveSessionRead: (sessionUlid: string, upToUlid?: string) => Promise<void>;
   loadMoreNotifications: () => Promise<void>;
   markNotificationRead: (notificationId: string) => Promise<void>;
@@ -246,7 +250,7 @@ export interface SocialState {
   ) => void;
   drainProfileCacheWrites: () => Promise<void>;
   loadCurrentUserProfile: (force?: boolean) => Promise<void>;
-  updateCurrentUserProfile: (input: EditableProfileInput) => Promise<ProfileUpdateResult>;
+  updateCurrentUserProfile: (input: EditableProfileInput, observedRevision?: bigint) => Promise<ProfileUpdateResult>;
   loadPeerProfile: (peerPtid: string, force?: boolean) => Promise<void>;
   loadAuthoredPosts: (actorPtid: string, cursor?: string) => Promise<void>;
   sendMessage: (
@@ -294,7 +298,7 @@ export interface SocialState {
   sweepTypingPeers: (staleBefore: number) => void;
   sendTypingState: (sessionUlid: string, typing: boolean) => Promise<void>;
   refreshFederationContexts: () => Promise<void>;
-  searchPeople: (query: string, federationId: string) => Promise<void>;
+  searchPeople: (query: string, scope: PeopleSearchScope) => Promise<void>;
   clearPeopleSearch: () => void;
   clearError: () => void;
 }
@@ -304,6 +308,7 @@ let peopleSearchRequest: object | null = null;
 let friendRequestRefresh: object | null = null;
 let sessionRefresh: object | null = null;
 let socialReconcile: object | null = null;
+let notificationRead: object | null = null;
 let messagingScope = {};
 const messageLoads = new Map<string, object>();
 const summaryReads = new Map<string, object>();
@@ -317,6 +322,8 @@ const profileCacheWriteTails = new WeakMap<
 >();
 
 export const useSocialStore = create<SocialState>((set, get) => ({
+  notificationLoading: false,
+  notificationError: null,
   sessionKey: null,
   authSession: null,
   currentUserPtid: null,
@@ -358,6 +365,8 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   lastReconcileAt: null,
 
   bindSession: (session) => {
+    notificationRead = null;
+    set({ notificationLoading: false, notificationError: null });
     if (session && get().sessionKey === mobileAuthScopeKey(session)) return;
     messagingScope = {};
     sessionRefresh = null;
@@ -806,33 +815,61 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   },
 
   loadConversationSettings: async (sessionUlid) => {
+    const scope = get().authSession;
     const gw = requireSocialGateway(get());
     const settings = unwrapOutcome(await gw.getConversationSettings(sessionUlid));
+    if (get().authSession !== scope || get().socialGateway !== gw) return;
     set((state) => ({ conversationSettings: { ...state.conversationSettings, [sessionUlid]: settings } }));
   },
 
   updateConversationSettings: async (sessionUlid, input) => {
+    const scope = get().authSession;
     const gw = requireSocialGateway(get());
     const settings = unwrapOutcome(await gw.updateConversationSettings(sessionUlid, input));
+    if (get().authSession !== scope || get().socialGateway !== gw) return;
     set((state) => ({ conversationSettings: { ...state.conversationSettings, [sessionUlid]: settings } }));
   },
 
   refreshNotifications: async () => {
     const scope = get().authSession;
     const notifGw = requireNotificationGateway(get());
-    const [notificationResult, unreadResult] = await Promise.all([
-      notifGw.listNotifications(),
-      notifGw.getUnreadCounts(),
-    ]);
-    const notificationData = unwrapOutcome(notificationResult);
-    const unreadCounts = unwrapOutcome(unreadResult);
-    if (get().authSession !== scope) return;
-    set({
-      notifications: notificationData.notifications.map(normalizeNotification),
-      notificationNextCursor: notificationData.nextCursor,
-      notificationHasMore: Boolean(notificationData.nextCursor),
-      unreadCounts: normalizeUnreadCounts(unreadCounts),
-    });
+    const read = {};
+    notificationRead = read;
+    const current = () => notificationRead === read && get().authSession === scope
+      && get().notificationGateway === notifGw;
+    const retainedCount = Math.max(30, get().notifications.length);
+    set({ notificationLoading: true, notificationError: null });
+    try {
+      const notifications = new Map<string, SocialNotification>();
+      const cursors = new Set<string>();
+      let cursor = '';
+      do {
+        const previousCount = notifications.size;
+        const page = unwrapOutcome(await notifGw.listNotifications(30, cursor || undefined));
+        if (!current()) return;
+        page.notifications.forEach(raw => {
+          const notification = normalizeNotification(raw);
+          notifications.set(notification.id, notification);
+        });
+        cursor = page.nextCursor;
+        if (cursor && notifications.size === previousCount) throw new Error('mobile.notifications.readbackFailed');
+        if (cursor && cursors.has(cursor)) throw new Error('mobile.notifications.readbackFailed');
+        if (cursor) cursors.add(cursor);
+      } while (current() && cursor && notifications.size < retainedCount);
+      const unreadCounts = unwrapOutcome(await notifGw.getUnreadCounts());
+      if (!current()) return;
+      set({
+        notifications: [...notifications.values()],
+        notificationNextCursor: cursor,
+        notificationHasMore: Boolean(cursor),
+        unreadCounts: normalizeUnreadCounts(unreadCounts),
+        notificationLoading: false,
+      });
+    } catch (error) {
+      if (!current()) return;
+      set({ notificationLoading: false, notificationError: normalizeError(error) });
+      throw error;
+    }
   },
 
   markActiveSessionRead: async (sessionUlid, upToUlid) => {
@@ -860,41 +897,80 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   },
 
   loadMoreNotifications: async () => {
+    const scope = get().authSession;
     const notifGw = requireNotificationGateway(get());
-    const { notificationHasMore, notificationNextCursor } = get();
-    if (!notificationHasMore || !notificationNextCursor) return;
-
-    set({ loading: true, error: null });
+    const { notificationHasMore, notificationNextCursor, notificationLoading } = get();
+    if (notificationLoading || !notificationHasMore || !notificationNextCursor) return;
+    const read = {};
+    notificationRead = read;
+    const current = () => notificationRead === read && get().authSession === scope
+      && get().notificationGateway === notifGw;
+    set({ notificationLoading: true, notificationError: null });
     try {
       const data = unwrapOutcome(await notifGw.listNotifications(30, notificationNextCursor));
+      if (!current()) return;
+      if (data.nextCursor === notificationNextCursor) throw new Error('mobile.notifications.readbackFailed');
       const incoming = data.notifications.map(normalizeNotification);
       set((state) => ({
         notifications: mergeNotifications(state.notifications, incoming),
         notificationNextCursor: data.nextCursor,
         notificationHasMore: Boolean(data.nextCursor),
-        loading: false,
+        notificationLoading: false,
       }));
     } catch (error) {
-      set({ error: normalizeError(error), loading: false });
+      if (!current()) return;
+      set({ notificationError: normalizeError(error), notificationLoading: false });
+      throw error;
     }
   },
 
   markNotificationRead: async (notificationId) => {
+    const scope = get().authSession;
     const notifGw = requireNotificationGateway(get());
+    if (!scope) throw new Error('mobile.social.notAuthenticated');
+    requireMobileMutationAdmission(mobileAuthScopeKey(scope), 'notification');
+    notificationRead = null;
     unwrapOutcome(await notifGw.markNotificationsRead([notificationId]));
+    if (get().authSession !== scope || get().notificationGateway !== notifGw) {
+      throw new Error('mobile.social.notAuthenticated');
+    }
     await get().refreshNotifications();
+    if (get().authSession !== scope
+      || get().notifications.find(item => item.id === notificationId)?.status !== 2) {
+      throw new Error('mobile.notifications.readbackFailed');
+    }
   },
 
   markAllNotificationsRead: async () => {
+    const scope = get().authSession;
     const notifGw = requireNotificationGateway(get());
+    if (!scope) throw new Error('mobile.social.notAuthenticated');
+    requireMobileMutationAdmission(mobileAuthScopeKey(scope), 'notification');
+    notificationRead = null;
     unwrapOutcome(await notifGw.markAllNotificationsRead());
+    if (get().authSession !== scope || get().notificationGateway !== notifGw) {
+      throw new Error('mobile.social.notAuthenticated');
+    }
     await get().refreshNotifications();
+    if (get().authSession !== scope || get().unreadCounts.total !== 0) {
+      throw new Error('mobile.notifications.readbackFailed');
+    }
   },
 
   deleteNotification: async (notificationId) => {
+    const scope = get().authSession;
     const notifGw = requireNotificationGateway(get());
+    if (!scope) throw new Error('mobile.social.notAuthenticated');
+    requireMobileMutationAdmission(mobileAuthScopeKey(scope), 'notification');
+    notificationRead = null;
     unwrapOutcome(await notifGw.deleteNotifications([notificationId]));
+    if (get().authSession !== scope || get().notificationGateway !== notifGw) {
+      throw new Error('mobile.social.notAuthenticated');
+    }
     await get().refreshNotifications();
+    if (get().authSession !== scope || get().notifications.some(item => item.id === notificationId)) {
+      throw new Error('mobile.notifications.readbackFailed');
+    }
   },
 
   acceptFriendRequest: async (requestId) => {
@@ -1528,7 +1604,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     }
   },
 
-  updateCurrentUserProfile: async (input) => {
+  updateCurrentUserProfile: async (input, inputRevision) => {
     const state = get();
     const ptid = state.currentUserPtid?.trim() ?? '';
     if (!ptid) {
@@ -1538,7 +1614,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
         message: 'mobile.auth.missingIdentityScope',
       });
     }
-    const observedRevision = state.currentUserProfile?.profileRevision ?? 0n;
+    const observedRevision = inputRevision ?? state.currentUserProfile?.profileRevision ?? 0n;
     if (observedRevision === 0n) {
       throw new SocialApiError({
         method: 'POST',
@@ -1976,14 +2052,15 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     });
   },
 
-  searchPeople: async (query, federationId) => {
+  searchPeople: async (query, scope) => {
     const trimmed = query.trim();
-    const contextId = federationId.trim();
+    const contextId = scope.kind === 'federation' ? scope.federationId.trim() : '';
     if (!trimmed) {
       get().clearPeopleSearch();
       return;
     }
-    if (!contextId) {
+    if (scope.kind === 'federation' && !contextId) {
+      peopleSearchRequest = null;
       set({
         peopleSearchResults: [],
         peopleSearchLoading: false,
@@ -2000,12 +2077,24 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     const request = {};
     peopleSearchRequest = request;
     const isCurrent = () => peopleSearchRequest === request && get().profileGateway === profileGw;
-    set({ peopleSearchLoading: true, peopleSearchError: null });
+    set({ peopleSearchResults: [], peopleSearchLoading: true, peopleSearchError: null });
     try {
       if (!profileGw) throw new Error('mobile.social.runtimeUnavailable');
       const parsed = parseHandleInput(trimmed);
       let items: ActorSearchResult[];
-      if (parsed.isFederated && parsed.hasHost) {
+      if (scope.kind === 'station') {
+        if (parsed.hasHost) {
+          throw new SocialApiError({
+            method: 'GET',
+            path: '/api/v1/social/users/search',
+            code: 'FEDERATION_CONTEXT_REQUIRED',
+            message: 'mobile.contacts.federationRequired',
+          });
+        }
+        items = unwrapOutcome(await profileGw.searchActors(
+          trimmed.replace(/^@/, ''),
+        )).items;
+      } else if (parsed.isFederated && parsed.hasHost) {
         const result = unwrapOutcome(
           await profileGw.resolveFederationHandle(contextId, parsed.canonical),
         );

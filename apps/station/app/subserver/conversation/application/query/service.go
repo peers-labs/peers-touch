@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/conversationview"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/aggregate"
@@ -13,18 +14,17 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 )
 
-type Source string
+// The local conversation representation is owned by the shared
+// conversationview package. The aliases preserve this package's established
+// query API for production and interaction consumers.
+type Source = conversationview.Source
 
 const (
-	SourceAuthority Source = "authority"
-	SourceFollower  Source = "follower"
+	SourceAuthority = conversationview.SourceAuthority
+	SourceFollower  = conversationview.SourceFollower
 )
 
-type ConversationView struct {
-	Conversation   aggregate.Snapshot
-	Source         Source
-	FollowerStatus repository.FollowerStatus
-}
+type ConversationView = conversationview.View
 
 type MessagePage struct {
 	Events  []domainevent.Record
@@ -314,13 +314,20 @@ func (s *Service) MemberSettings(
 ) (repository.MemberSettings, error) {
 	var settings repository.MemberSettings
 	err := s.unitOfWork.Execute(ctx, func(transaction ports.Transaction) error {
-		snapshot, err := transaction.Repositories.Authority.Get(ctx, conversationID)
-		if err != nil {
+		// Actor-local preferences are served by the actor's Home Station.
+		// Membership is authorized against the authority aggregate when this
+		// is the authority Station, otherwise the follower read projection
+		// for a cross-Station group.
+		if err := authorizeConversationRead(
+			ctx,
+			transaction.Repositories,
+			conversationID,
+			actor,
+			"application.query_member_settings",
+		); err != nil {
 			return err
 		}
-		if !snapshotHasActiveMember(snapshot, actor) {
-			return unauthorized("application.query_member_settings")
-		}
+		var err error
 		settings, err = transaction.Repositories.MemberSettings.Get(ctx, conversationID, actor)
 		return err
 	})
@@ -390,44 +397,11 @@ func loadConversationView(
 	repositories repository.Repositories,
 	conversationID valueobject.ConversationID,
 ) (ConversationView, error) {
-	authority, authorityErr := repositories.Authority.Get(ctx, conversationID)
-	follower, followerErr := repositories.Followers.Get(ctx, conversationID)
-	if authorityErr == nil && followerErr == nil {
-		return ConversationView{}, conversationdomain.NewError(
-			conversationdomain.ErrorCodeCommandConflict,
-			"application.query_conversation",
-			"conversation_id",
-			"appears as both authority and follower projection",
-		)
-	}
-	if authorityErr != nil &&
-		!conversationdomain.IsCode(authorityErr, conversationdomain.ErrorCodeNotFound) {
-		return ConversationView{}, authorityErr
-	}
-	if followerErr != nil &&
-		!conversationdomain.IsCode(followerErr, conversationdomain.ErrorCodeNotFound) {
-		return ConversationView{}, followerErr
-	}
-	if authorityErr == nil {
-		return ConversationView{Conversation: authority, Source: SourceAuthority}, nil
-	}
-	if followerErr != nil {
-		return ConversationView{}, followerErr
-	}
-	return ConversationView{
-		Conversation:   follower.Conversation,
-		Source:         SourceFollower,
-		FollowerStatus: follower.Status,
-	}, nil
+	return conversationview.Load(ctx, repositories, conversationID)
 }
 
 func snapshotHasActiveMember(snapshot aggregate.Snapshot, actor valueobject.PTID) bool {
-	for _, member := range snapshot.Members {
-		if member.Actor == actor && member.Active() {
-			return true
-		}
-	}
-	return false
+	return conversationview.HasActiveMember(snapshot, actor)
 }
 
 func newMessagePage(events []domainevent.Record, limit int) MessagePage {

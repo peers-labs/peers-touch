@@ -1,4 +1,3 @@
-use crate::application::provider::{remote as provider_remote, station_api as provider_cache};
 use crate::application::station_runtime::client::{
     self as station_client, ReplayPolicy, StationClient,
 };
@@ -4755,18 +4754,6 @@ fn invoke_ai_chat(
         .trim()
         .to_string();
 
-    let provider_id = if requested_provider.is_empty() {
-        provider_cache::get_providers(station_client, token, "")
-            .ok()
-            .and_then(|providers| providers.iter().find(|p| p.enabled).map(|p| p.name.clone()))
-            .ok_or_else(|| "AI provider not found: no enabled provider is configured".to_string())?
-    } else {
-        requested_provider
-    };
-
-    let resolved = provider_cache::resolve_credential(station_client, token, &provider_id)
-        .map_err(|_| format!("AI provider not found or no credential: {}", provider_id))?;
-
     let model_id = params
         .get("metadata")
         .and_then(|m| m.get("model"))
@@ -4775,24 +4762,24 @@ fn invoke_ai_chat(
         .unwrap_or("")
         .trim()
         .to_string();
-    if model_id.is_empty() {
-        return Err("ai.chat requires a model".to_string());
-    }
-
-    let effective_protocol =
-        provider_remote::resolve_model_protocol(None, Some(&resolved.protocol));
-
-    let result = provider_remote::chat_completion(
-        &resolved.base_url,
-        &resolved.api_key,
-        &model_id,
-        Some(effective_protocol),
-        content,
-    )
-    .map_err(|error| format!("ai.chat provider request failed: {}", error))?;
+    let result = station_client.request_proto::<
+        crate::model::agent::QuickCompletionRequest,
+        crate::model::agent::QuickCompletionResponse,
+    >(
+        Method::POST,
+        "/sub-agent/agent/quick-completion",
+        token,
+        None,
+        Some(&crate::model::agent::QuickCompletionRequest {
+            prompt: content.to_string(),
+            provider: requested_provider,
+            model: model_id,
+            ..Default::default()
+        }),
+    ).map_err(|error| format!("ai.chat Station request failed: {}", error.message))?;
 
     Ok(
-        json!({ "requestId": request_id, "message": { "role": "assistant", "content": result.text }, "model": result.model }),
+        json!({ "requestId": request_id, "message": { "role": "assistant", "content": result.content }, "model": result.model }),
     )
 }
 

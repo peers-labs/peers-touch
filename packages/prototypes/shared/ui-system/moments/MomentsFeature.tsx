@@ -151,15 +151,19 @@ function ComposeDialog({ open, circles, people, groups, onDismiss, onPublish }: 
         editor={<TextArea framing="embedded" minimumRows={4} maximumRows={8}
           className="sk-compose-input" value={text} aria-label="动态内容"
           data-compose-value={text} placeholder="分享你身边正在发生的连接……"
-          onValueChange={setText} onEnter={event => event.preventDefault()} />}
+          onValueChange={setText} onEnter={event => event.preventDefault()}
+          characterCount maxLength={280}
+          leadingAccessory={<>
+            <FilePicker iconOnly iconId="image-plus"
+              label={images.length > 0 ? `图片 ${images.length}/${MAX_IMAGES}` : '添加图片'}
+              accept="image/*" multiple disabled={images.length >= MAX_IMAGES}
+              onFiles={pickFilesFileList} />
+            {images.length > 0 && <span className="pt-textarea-accessory-count">{images.length}/{MAX_IMAGES}</span>}
+          </>} />}
         images={images.map((src, index) => ({ id: String(index), src, alt: `待发布图片 ${index + 1}` }))}
         onRemoveImage={id => setImages(list => list.filter((_, index) => index !== Number(id)))}
         copy={{ removeImage: '移除图片', retryImage: '重试图片' }}
-        toolbar={<FilePicker
-            iconId="image-plus"
-            label={images.length > 0 ? `图片 ${images.length}/${MAX_IMAGES}` : '添加图片'}
-            accept="image/*" multiple disabled={images.length >= MAX_IMAGES}
-            onFiles={pickFilesFileList} />}
+        toolbar={null}
         audience={<MomentAudiencePicker value={audience} options={AUDIENCE_OPTIONS}
           onChange={value => setAudience(value as AudienceKind)}
           target={audience === 'circle' ? {

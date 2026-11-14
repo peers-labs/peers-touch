@@ -1,13 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import {
-  Camera,
-  CameraOff,
-  Mic,
-  MicOff,
-  Phone,
-  PhoneOff,
-  X,
-} from 'lucide-react';
+import { CallControl } from '@peers-touch/ui';
+import './mobileCall.css';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import { MobileAvatar } from '../MobileAvatar';
@@ -36,7 +29,7 @@ export function MobileCallSurface() {
     if (localVideo.current) localVideo.current.srcObject = snapshot.localStream ?? null;
     if (remoteVideo.current) remoteVideo.current.srcObject = snapshot.remoteStream ?? null;
     if (remoteAudio.current) remoteAudio.current.srcObject = snapshot.remoteStream ?? null;
-  }, [snapshot?.localStream, snapshot?.remoteStream]);
+  }, [snapshot?.localStream, snapshot?.remoteStream, snapshot?.state, snapshot?.mediaKind]);
 
   if (!snapshot) return null;
   const incoming = snapshot.state === 'incoming'
@@ -63,7 +56,7 @@ export function MobileCallSurface() {
     >
       {snapshot.mediaKind === 'video' && active ? (
         <div className="mobile-call-video-stage">
-          <video ref={remoteVideo} className="mobile-call-remote-video" autoPlay playsInline />
+          <video ref={remoteVideo} className="mobile-call-remote-video" autoPlay muted playsInline />
           <video ref={localVideo} className="mobile-call-local-video" autoPlay muted playsInline />
         </div>
       ) : (
@@ -95,76 +88,36 @@ export function MobileCallSurface() {
       <div className="mobile-call-actions">
         {incoming ? (
           <>
-            <button
-              type="button"
-              className="mobile-call-control danger"
-              aria-label={t('mobile.call.decline')}
-              onClick={() => { void run(() => mobileCallManager.rejectCall()); }}
-            >
-              <PhoneOff size={22} />
-            </button>
-            <button
-              type="button"
-              className="mobile-call-control accept"
-              aria-label={t('mobile.call.accept')}
-              onClick={() => { void run(() => mobileCallManager.acceptCall()); }}
-            >
-              <Phone size={22} />
-            </button>
+            <CallControl actionId="direct-call.decline" label={t('mobile.call.decline')} iconId="phone-off"
+              tone="danger" onActivate={() => { void run(() => mobileCallManager.rejectCall()); }} />
+            <CallControl actionId="direct-call.accept" label={t('mobile.call.accept')} iconId="phone"
+              onActivate={() => { void run(() => mobileCallManager.acceptCall()); }} />
           </>
         ) : null}
 
         {active ? (
           <>
-            <button
-              type="button"
-              className={`mobile-call-control ${snapshot.micMuted ? 'selected' : ''}`}
-              aria-label={t(snapshot.micMuted ? 'mobile.call.unmute' : 'mobile.call.mute')}
-              onClick={() => mobileCallManager.toggleMicrophone()}
-            >
-              {snapshot.micMuted ? <MicOff size={22} /> : <Mic size={22} />}
-            </button>
+            <CallControl actionId="direct-call.microphone" iconId={snapshot.micMuted ? 'mic-off' : 'mic'}
+              label={t(snapshot.micMuted ? 'mobile.groupCall.unmute' : 'mobile.groupCall.mute')}
+              selected={snapshot.micMuted} onActivate={() => mobileCallManager.toggleMicrophone()} />
             {snapshot.mediaKind === 'video' ? (
-              <button
-                type="button"
-                className={`mobile-call-control ${snapshot.cameraOff ? 'selected' : ''}`}
-                aria-label={t(snapshot.cameraOff ? 'mobile.call.cameraOn' : 'mobile.call.cameraOff')}
-                onClick={() => mobileCallManager.toggleCamera()}
-              >
-                {snapshot.cameraOff ? <CameraOff size={22} /> : <Camera size={22} />}
-              </button>
+              <CallControl actionId="direct-call.camera" iconId={snapshot.cameraOff ? 'camera-off' : 'camera'}
+                label={t(snapshot.cameraOff ? 'mobile.groupCall.cameraOn' : 'mobile.groupCall.cameraOff')}
+                selected={snapshot.cameraOff} onActivate={() => mobileCallManager.toggleCamera()} />
             ) : null}
-            <button
-              type="button"
-              className="mobile-call-control danger"
-              aria-label={t('mobile.call.end')}
-              onClick={() => { void run(() => mobileCallManager.endCall()); }}
-            >
-              <PhoneOff size={22} />
-            </button>
+            <CallControl actionId="direct-call.end" label={t('mobile.call.end')} iconId="phone-off"
+              tone="danger" onActivate={() => { void run(() => mobileCallManager.endCall()); }} />
           </>
         ) : null}
 
         {snapshot.state === 'outgoing' ? (
-          <button
-            type="button"
-            className="mobile-call-control danger"
-            aria-label={t('mobile.call.cancel')}
-            onClick={() => { void run(() => mobileCallManager.endCall()); }}
-          >
-            <PhoneOff size={22} />
-          </button>
+          <CallControl actionId="direct-call.cancel" label={t('mobile.call.cancel')} iconId="phone-off"
+            tone="danger" onActivate={() => { void run(() => mobileCallManager.endCall()); }} />
         ) : null}
 
         {terminal ? (
-          <button
-            type="button"
-            className="mobile-call-control"
-            aria-label={t('common.action.close')}
-            onClick={() => mobileCallManager.dismiss()}
-          >
-            <X size={22} />
-          </button>
+          <CallControl actionId="direct-call.close" label={t('common.action.close')} iconId="close"
+            onActivate={() => mobileCallManager.dismiss()} />
         ) : null}
       </div>
     </div>

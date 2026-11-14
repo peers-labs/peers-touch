@@ -4,6 +4,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { normalizeMessage, normalizeSession } from '../features/social/socialNormalizers';
 import { useSocialStore } from '../features/social/socialStore';
 import { ChatPage } from './ChatPage';
+import { UIProvider } from '@peers-touch/ui';
+import { PlatformContext } from '../services/platform/PlatformContext';
+import { createTauriMobilePlatform } from '../services/platform/mobilePlatform';
 
 vi.mock('../app/mobileI18n', () => ({
   useMobileI18n: () => ({ t: (key: string) => key }),
@@ -42,12 +45,12 @@ describe('Chat logical history and rendering', () => {
   });
 
   it('keeps a reachable earlier-history control while bounding mounted messages', () => {
-    const html = renderToStaticMarkup(<ChatPage
+    const html = renderToStaticMarkup(<PlatformContext.Provider value={createTauriMobilePlatform()}><UIProvider><ChatPage
       activeDetail={{ routeId: 'detail:chat-conversation', sessionUlid: 'conversation' }}
       onBack={() => undefined}
       onStartConversation={() => undefined}
       onOpenConversation={() => undefined}
-    />);
+    /></UIProvider></PlatformContext.Provider>);
     expect(html.match(/data-message-ulid=/g)).toHaveLength(200);
     expect(html).toContain('mobile.list.previous');
     expect(html).toContain('data-window-total="240"');

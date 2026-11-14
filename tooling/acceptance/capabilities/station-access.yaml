@@ -158,7 +158,7 @@
         "apps/station/frame/touch/actor/profile.go",
         "apps/station/app/subserver/federation/handler.go",
         "apps/desktop/src/components/chat/FindPeopleModal.tsx",
-        "apps/desktop/src/components/settings/FederationTab.tsx",
+        "apps/desktop/src/runtimes/federationRuntime.ts",
         "apps/mobile/src/pages/ContactsPage.tsx",
         "apps/mobile/src/pages/settings/SettingsSections.tsx"
       ],

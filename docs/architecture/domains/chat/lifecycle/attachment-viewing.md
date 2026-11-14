@@ -30,6 +30,12 @@ actions. Executable content is never launched automatically. Unsupported or
 unavailable preview remains a usable detail surface with its filename and
 actions.
 
+Recorded voice notes preserve `AttachmentPlaintextMetadata.voice_note` through
+the native and presentation projections, including duration, codec and waveform.
+Content kind, MIME and generic media duration cannot manufacture voice-note
+metadata. Mobile's public Acceptance projection preserves those same visible
+fields while excluding storage references, object keys and native paths.
+
 Both clients use the same selected-resource preview lifecycle. File byte length
 does not decide whether PDF, text or image preview is available. PDF.js consumes
 authenticated Range reads, disables automatic full-file fetching and renders
@@ -188,6 +194,12 @@ Native verification runs outside the grant registry lock and checks a captured
 revocation epoch between bounded reads. Suspension disables new grants; resume
 keeps the old epoch invalid. IPC checks the captured Engine, owner and epoch
 again before returning and releases a rejected late grant directly.
+Mobile composer source previews use this same native grant scope. Restore and
+release derive the owner from the calling WebView and current Messaging lifecycle
+generation; presentation supplies only the stage identity or opaque handle.
+Asset reads authorize either a completed persistent composer source or an
+attachment projection in the current Engine. Discarded sources cannot authorize
+reads, and composer grants do not authorize delivered-file system actions.
 Mobile native adapters retain bounded cancellation identities so a cancellation
 that arrives before OS dispatch still fences the late action. Capacity compacts
 older identities behind the fixed issuance watermark and admits newly issued
@@ -196,6 +208,12 @@ including teardown failures and engines retained by in-flight operations.
 After cache eviction, an explicit open first finalizes descriptor-bound verified
 plaintext staging under the transfer permit. Only absence of completed local
 artifacts queues restoration of the same download identity.
+Durable completion can precede verified-cache promotion. Concurrent restoration
+defers under the existing transfer permit without changing checkpoints or
+staging bytes. While that download still owns its permit, native access reads,
+including reconciliation without a new open intent, project `Verifying`.
+Only a verified cache grants `Ready`; an inactive completed download without
+local artifacts remains `Remote` until explicit restoration.
 A failed cache commitment stays unavailable until explicit retry
 removes the corrupt cache and restores verified bytes.
 

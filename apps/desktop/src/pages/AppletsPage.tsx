@@ -18,6 +18,7 @@ import type { RuntimeAppletInfo } from '../store/applets';
 import { useActiveAppletsSlice } from './useActiveAppletsStore';
 import { PageColumn } from '../layout/PageColumn';
 import type { Page } from '../types/navigation';
+import { isDesktopAppletAvailable } from '../types/navigation';
 
 const { Text } = Typography;
 
@@ -112,12 +113,14 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: Page) => void 
   const visibleApplets = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return applets
+      .filter((info) => isDesktopAppletAvailable(info.manifest.id))
       .filter((info) => (normalized ? info.manifest.name.toLowerCase().includes(normalized) : true))
       .sort((left, right) => (right.lastOpenedAt ?? -1) - (left.lastOpenedAt ?? -1));
   }, [applets, query]);
 
   const runningApplets = useMemo(
     () => applets
+      .filter((info) => isDesktopAppletAvailable(info.manifest.id))
       .filter((info) => info.status === 'active')
       .sort((left, right) => (right.lastOpenedAt ?? -1) - (left.lastOpenedAt ?? -1)),
     [applets],

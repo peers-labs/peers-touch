@@ -404,6 +404,29 @@ remain client-platform-neutral:
 
 No Desktop-only signal kind should be introduced.
 
+The original mixed `chat-lifecycle-call-resolution-e2e` runtime also owns
+Mobile incoming and outgoing audio/video journeys. Preserve its rejection and
+multi-device arbitration scenarios, then reuse those same authenticated clients
+for real capture, bidirectional RTP byte/packet progress, video encode/decode
+progress, Mobile UI microphone/camera and hangup controls, sealed ICE restart,
+chat receiver readback during the call, and final track release. Shared
+`readCallMediaStats` emits aggregate counters only; a ringing or active-state
+projection alone does not prove media. Android remains unproven until its native
+cell executes.
+
+Call surfaces bind streams after element mount transitions as well as stream
+identity changes. A dedicated remote audio element owns audible playback;
+local and remote video elements stay muted. Camera reactivation, incoming-to-active
+transitions and Desktop display-mode changes must bind newly mounted elements.
+Shared `readCallMediaPresentation` reads exact stream binding, playback time and
+decoded dimensions without media content or device identities. The original
+mixed Gate requires one progressing remote audio outlet and visible, progressing
+local/remote video on both clients, including Desktop camera off/on remount.
+
+Native media permission handling is shared at `chat/native_support.media_harness`;
+the Desktop live-voice and mixed-call Gates call that same utility. Gates do not
+import another Gate's implementation to reuse a permission loop.
+
 ## 10. UI / UX Contract
 
 The Desktop product contract is detailed in:

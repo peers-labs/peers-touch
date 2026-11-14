@@ -44,8 +44,13 @@ func (s *CredentialPoolService) Lease(
 	ctx context.Context,
 	actorPTID string,
 	provider string,
+	modelID string,
 	strategy domain.RotationStrategy,
 ) (*domain.CredentialEntry, error) {
+	effective, err := NewProviderConfigService().ResolveForActor(ctx, actorPTID, provider, modelID)
+	if err != nil {
+		return nil, err
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -56,8 +61,8 @@ func (s *CredentialPoolService) Lease(
 	}
 
 	var rows []persistence.Credential
-	if err := db.WithContext(ctx).
-		Where("actor_ptid = ? AND provider = ?", actorPTID, provider).
+	if err := providerOwner(effective).Query(db.WithContext(ctx)).
+		Where("provider = ?", provider).
 		Find(&rows).Error; err != nil {
 		logger.Errorf(ctx, "credential pool query failed: actor_ptid=%s, provider=%s, err=%v", actorPTID, provider, err)
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
@@ -229,6 +234,10 @@ func (s *CredentialPoolService) ListByProvider(
 	actorPTID string,
 	provider string,
 ) ([]domain.CredentialEntry, error) {
+	effective, err := NewProviderConfigService().ResolveForActor(ctx, actorPTID, provider, "")
+	if err != nil {
+		return nil, err
+	}
 
 	db, err := s.getDB(ctx)
 	if err != nil {
@@ -236,8 +245,8 @@ func (s *CredentialPoolService) ListByProvider(
 	}
 
 	var rows []persistence.Credential
-	if err := db.WithContext(ctx).
-		Where("actor_ptid = ? AND provider = ?", actorPTID, provider).
+	if err := providerOwner(effective).Query(db.WithContext(ctx)).
+		Where("provider = ?", provider).
 		Order("priority ASC, created_at ASC").
 		Find(&rows).Error; err != nil {
 		logger.Errorf(ctx, "credential list query failed: actor_ptid=%s, provider=%s, err=%v", actorPTID, provider, err)

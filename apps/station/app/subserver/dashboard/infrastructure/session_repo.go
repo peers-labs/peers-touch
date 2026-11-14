@@ -21,6 +21,14 @@ type SessionRepository interface {
 	RevokeBySessionID(ctx context.Context, sessionID string, adminID uint64) error
 	RevokeBySessionIDOnly(ctx context.Context, sessionID string) error
 	ListActive(ctx context.Context) ([]domain.DashboardSession, error)
+	FindActiveBySession(ctx context.Context, sessionID string, adminID uint64) (*domain.DashboardSession, error)
+}
+
+func (r *sessionRepository) FindActiveBySession(ctx context.Context, sessionID string, adminID uint64) (*domain.DashboardSession, error) {
+	var session domain.DashboardSession
+	err := r.db.WithContext(ctx).Where("session_id = ? AND admin_id = ? AND revoked = ? AND expires_at > ?",
+		sessionID, adminID, false, time.Now()).First(&session).Error
+	return &session, err
 }
 
 // sessionRepository is the GORM-backed implementation of SessionRepository.

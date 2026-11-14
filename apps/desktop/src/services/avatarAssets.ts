@@ -14,6 +14,7 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
 
 import { log } from '../utils/logger';
+import { persistAvatarLastGood } from './avatarLastGoodPersistence';
 import { api, type NativeAvatarState } from './desktop_api';
 
 /** Retired demo image generator prefix. Such identities must never resolve. */
@@ -88,6 +89,23 @@ export interface AvatarResolveDependencies {
   imageFactory: () => HTMLImageElement;
 }
 
+/**
+ * Sink for cross-process last-good persistence. `ownerActorPtid` is the
+ * locally authenticated actor (storage scope); `entry` describes the avatar
+ * owner. Default production wiring writes the actor-scoped `asset.avatar`
+ * cache; test stores inject a no-op.
+ */
+export type AvatarLastGoodPersistSink = (
+  ownerActorPtid: string,
+  entry: {
+    actorPtid: string;
+    identity: string;
+    src: string;
+    localPath: string | null;
+    revision: number | string | null;
+  },
+) => void;
+
 interface LastGood {
   identity: string;
   src: string;
@@ -160,6 +178,15 @@ export function avatarAssetKey(query: AvatarAssetQuery): string {
   return `${actorKeyFor(query)}|${query.profileRevision ?? 0}|${identity}`;
 }
 
+/**
+ * Flight dedupe bucket. Native materialization is keyed by the canonical
+ * identity (the same bytes return for every revision), so a single live
+ * flight serves every entry-key variant for the same actor+identity+scope.
+ */
+function flightIdentityKeyFor(query: AvatarAssetQuery): string {
+  return `${query.epoch ?? 0}|${query.actorPtid ?? ''}|${query.stationScope ?? ''}|${(query.identity ?? '').trim()}`;
+}
+
 interface DecodeController {
   settled: boolean;
   timer: ReturnType<typeof setTimeout> | undefined;
@@ -214,12 +241,30 @@ const defaultDependencies: AvatarResolveDependencies = {
 export class AvatarAssetsStore {
   private readonly entries = new Map<string, AvatarEntry>();
   private readonly lastGoodByActor = new Map<string, LastGood>();
+  /**
+   * Cross-process last-good, keyed by avatar OWNER ptid (epoch-independent).
+   * Primed from persistent storage during session restore/social hydrate so
+   * first-frame paints survive restarts even before any flight starts.
+   */
+  private readonly persistentLastGood = new Map<string, LastGood>();
   private readonly flights = new Map<string, Promise<AvatarEntry>>();
+  /**
+   * Entry key owning the live flight for one identity bucket. The native
+   * avatar cache is identity-keyed, so concurrent requests whose key differs
+   * only by profile revision (row snapshot vs. authoritative profile) must
+   * chain onto the single flight instead of issuing duplicate resolves.
+   */
+  private readonly flightOwners = new Map<string, string>();
+  /** Cached owner last-good snapshots; invalidated when the owner updates. */
+  private readonly ownerLastGoodSnapshots = new Map<string, AvatarAssetSnapshot>();
   private readonly listeners = new Set<() => void>();
   private session: AvatarSessionBinding | null = null;
   private revisionCounter = 0;
 
-  constructor(private readonly deps: AvatarResolveDependencies = defaultDependencies) {}
+  constructor(
+    private readonly deps: AvatarResolveDependencies = defaultDependencies,
+    private readonly persistLastGood: AvatarLastGoodPersistSink | null = null,
+  ) {}
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -231,6 +276,30 @@ export class AvatarAssetsStore {
   /** Stable snapshot for useSyncExternalStore selectors. */
   getSnapshot(key: string): AvatarAssetSnapshot | null {
     return this.entries.get(key)?.snapshot ?? null;
+  }
+
+  /**
+   * Paint-ready last-good for a stable non-session owner (group conversation),
+   * or null. Lets a surface keep its local image while the canonical identity
+   * is momentarily unknown (a reconcile transiently drops the field) instead
+   * of swapping to a generated fallback. Never starts a resolution.
+   */
+  getOwnerLastGood(ownerKey: string): AvatarAssetSnapshot | null {
+    const owner = ownerKey.trim();
+    if (!owner) return null;
+    const cached = this.ownerLastGoodSnapshots.get(owner);
+    if (cached) return cached;
+    const good = this.lastGoodByActor.get(actorKeyFor({ actorPtid: owner }))
+      ?? this.persistentLastGood.get(owner);
+    if (!good?.src) return null;
+    const snapshot: AvatarAssetSnapshot = {
+      phase: 'ready',
+      src: good.src,
+      degraded: true,
+      identity: good.identity,
+    };
+    this.ownerLastGoodSnapshots.set(owner, snapshot);
+    return snapshot;
   }
 
   /**
@@ -265,6 +334,78 @@ export class AvatarAssetsStore {
     if (!identity) return;
     // Explicit session binding always bypasses failure backoff.
     this.request(query, { force: true });
+    // Entries can reach `ready` before the authenticated session is bound
+    // (initial conversation/profile hydrate races session restore). The
+    // ready short-circuit in `request` never re-enters `recordReady`, so the
+    // one-shot persist there would be skipped for the whole process and every
+    // relaunch would paint placeholders until live resolution lands again.
+    // Backfill cross-process last-good for any already-ready attributed peer
+    // avatars now that the owner session is known.
+    this.persistReadyEntriesForSession(binding.actorPtid);
+  }
+
+  /**
+   * Re-run cross-process persistence for every `ready` entry attributed to an
+   * actor (self or peer) under the newly bound session owner. Idempotent:
+   * entries without an owner PTID or without a paint-ready src are skipped,
+   * and the persistent map write happens at most once per actor per owner.
+   */
+  private persistReadyEntriesForSession(ownerPtid: string): void {
+    const owner = ownerPtid.trim();
+    if (!owner || !this.persistLastGood) return;
+    for (const entry of this.entries.values()) {
+      if (entry.phase !== 'ready' || !entry.src) continue;
+      const actorPtid = entry.actorKey.split('|')[1]?.trim();
+      // Entries without an owner PTID and the authenticated session must
+      // never share a last-good bucket.
+      if (!actorPtid) continue;
+      this.rememberLastGood(entry.actorKey, actorPtid, {
+        identity: entry.identity,
+        src: entry.src,
+        localPath: entry.localPath,
+        revision: entry.revision,
+      });
+    }
+  }
+
+  /**
+   * Prime cross-process last-good entries from persistent storage. Called once
+   * at session restore (self) and social runtime hydrate (known peers) so
+   * the first frame after a restart paints the previous image as degraded
+   * while the new identity resolves. Existing in-memory last-good wins.
+   */
+  primePersistentLastGood(entries: Array<{
+    actorPtid: string;
+    identity: string;
+    src: string;
+    localPath?: string | null;
+    revision?: number | string | null;
+  }>): void {
+    for (const entry of entries) {
+      const actorPtid = entry.actorPtid?.trim();
+      const src = entry.src?.trim();
+      if (!actorPtid || !src) continue;
+      if (this.persistentLastGood.has(actorPtid)) continue;
+      this.ownerLastGoodSnapshots.delete(actorPtid);
+      this.persistentLastGood.set(actorPtid, {
+        identity: entry.identity ?? '',
+        src,
+        localPath: entry.localPath?.trim() ?? null,
+        revision: entry.revision ?? null,
+      });
+    }
+  }
+
+  /** Forget primed last-good for one actor (logout/identity removal tests). */
+  clearPersistentLastGood(actorPtid?: string): void {
+    if (actorPtid) {
+      const owner = actorPtid.trim();
+      this.persistentLastGood.delete(owner);
+      this.ownerLastGoodSnapshots.delete(owner);
+    } else {
+      this.persistentLastGood.clear();
+      this.ownerLastGoodSnapshots.clear();
+    }
   }
 
   /** Drop the authenticated projection (logout). Persistent entries remain. */
@@ -300,6 +441,13 @@ export class AvatarAssetsStore {
     if (classifyAvatarSource(query.identity) === 'retired') {
       return this.recordTerminal(query, 'absent').snapshot;
     }
+    // Sequential key churn (attribution arriving after the image is ready,
+    // or a later re-render under another revision): adopt the ready pixels
+    // outright with no second flight.
+    if (!existing) {
+      const adopted = this.adoptReadyIdentity(key, query);
+      if (adopted) return adopted;
+    }
     if (!this.flights.has(key)) {
       // Seed the new entry with the same-actor last-good image before the
       // flight starts. Avatar identities can rotate (ephemeral
@@ -309,6 +457,10 @@ export class AvatarAssetsStore {
       // The previous image stays painted (degraded) until the new one is
       // ready and replaces it atomically.
       const seeded = this.seedLastGood(key, query);
+      // Concurrent key churn (row snapshot vs. authoritative profile revision
+      // dispatch within the same window): chain onto the one live flight for
+      // this identity instead of issuing a duplicate native resolve.
+      if (this.chainIdenticalFlight(key, query)) return seeded ?? this.entries.get(key)?.snapshot ?? null;
       this.startFlight(key, query);
       if (seeded) return seeded;
     }
@@ -342,6 +494,67 @@ export class AvatarAssetsStore {
     });
     this.enforceEntryBound();
     return fallback;
+  }
+
+  /**
+   * Reuse an already-ready entry whose canonical identity matches a request
+   * that arrives under a new key (attribution or profile-revision churn).
+   *
+   * Safety contract: identity strings must match exactly, and an attributed
+   * source image is never moved onto a *different* attributed owner. Two
+   * actors declaring the same public URL resolve identically, but a peer's
+   * attributed image still never crosses an owner boundary.
+   *
+   * Revision is intentionally not part of the match: the native materializer
+   * keys bytes by canonical identity, so a revision bump without an identity
+   * change can never yield different pixels. Explicit refresh (self bind /
+   * force) still bypasses this path.
+   */
+  private adoptReadyIdentity(key: string, query: AvatarAssetQuery): AvatarAssetSnapshot | null {
+    if (this.entries.has(key)) return null;
+    const identity = query.identity.trim();
+    if (!identity) return null;
+    const targetActor = query.actorPtid?.trim() ?? '';
+
+    let source: AvatarEntry | null = null;
+    for (const entry of this.entries.values()) {
+      if (entry.phase !== 'ready' || !entry.src || entry.identity !== identity) continue;
+      const sourceActor = entry.actorKey.split('|')[1]?.trim() ?? '';
+      if (targetActor && sourceActor && sourceActor !== targetActor) continue;
+      source = entry;
+      break;
+    }
+    if (!source || !source.src) return null;
+    // The decoded buffer may already have been released by the LRU; the
+    // paint-ready src survives and a future <img> re-decodes from cache.
+    return this.recordReady(query, source.src, source.localPath, source.image).snapshot;
+  }
+
+  /**
+   * Chain a request onto the live flight of another entry-key variant for the
+   * same identity (concurrent revision churn). When the owning flight lands,
+   * the ready pixels are adopted under this key with no duplicate native
+   * resolve. Returns false when no compatible flight exists.
+   */
+  private chainIdenticalFlight(key: string, query: AvatarAssetQuery): boolean {
+    const bucket = flightIdentityKeyFor(query);
+    const ownerKey = this.flightOwners.get(bucket);
+    if (!ownerKey || ownerKey === key) return false;
+    const flight = this.flights.get(ownerKey);
+    if (!flight) return false;
+
+    if (!this.entries.has(key)) this.markPhase(key, query, 'resolving');
+    void flight.then((source) => {
+      if (this.isFenced(query)) return;
+      if (source.phase !== 'ready' || !source.src || source.identity !== query.identity.trim()) return;
+      // A newer dispatch may already have resolved or adopted this key.
+      if (this.entries.get(key)?.phase === 'ready') return;
+      this.recordReady(query, source.src, source.localPath, source.image);
+    }).catch(() => {
+      // The owning flight records its own terminal state; chained keys simply
+      // wait for their next explicit request and bounded retry.
+    });
+    return true;
   }
 
   /**
@@ -397,13 +610,42 @@ export class AvatarAssetsStore {
     return outcome;
   }
 
-  /** Forget a broken src after an <img> error so the next mount can retry. */
+  /**
+   * Forget a broken src after an <img> error so the next mount can retry.
+   * For an attributed owner (actor or group conversation) the same-owner
+   * last-good stays painted as degraded rather than blanking to a
+   * placeholder: a transient image error must never flicker the tile.
+   */
   invalidateSrc(src: string): void {
     for (const entry of this.entries.values()) {
-      if (entry.src === src) {
+      if (entry.src !== src) continue;
+      entry.image = null;
+      if (!entry.identity) {
         entry.src = null;
-        entry.image = null;
-        entry.phase = entry.identity ? 'failed' : 'absent';
+        entry.degraded = false;
+        entry.phase = 'absent';
+        this.publish(entry);
+        continue;
+      }
+      const fallback = entry.actorKey ? this.lastGoodByActor.get(entry.actorKey) : null;
+      entry.failureCount += 1;
+      entry.notBefore = Date.now() + failureBackoffMs(entry.failureCount);
+      if (fallback?.src && fallback.src !== src) {
+        entry.src = fallback.src;
+        entry.localPath = fallback.localPath;
+        entry.degraded = true;
+        entry.phase = 'failed';
+        entry.snapshot = {
+          phase: 'failed',
+          src: fallback.src,
+          degraded: true,
+          identity: entry.identity,
+        };
+        this.emit();
+      } else {
+        entry.src = null;
+        entry.degraded = false;
+        entry.phase = 'failed';
         this.publish(entry);
       }
     }
@@ -417,6 +659,13 @@ export class AvatarAssetsStore {
     for (const [key] of this.flights) {
       const epoch = Number(key.slice(0, key.indexOf('|')));
       if (Number.isFinite(epoch) && epoch > 0 && epoch !== keepEpoch) this.flights.delete(key);
+    }
+    for (const [bucket, ownerKey] of this.flightOwners) {
+      const epoch = Number(bucket.slice(0, bucket.indexOf('|')));
+      if (Number.isFinite(epoch) && epoch > 0 && epoch !== keepEpoch) {
+        this.flightOwners.delete(bucket);
+        this.flights.delete(ownerKey);
+      }
     }
     for (const actorKey of this.lastGoodByActor.keys()) {
       const epoch = Number(actorKey.slice(0, actorKey.indexOf('|')));
@@ -433,6 +682,8 @@ export class AvatarAssetsStore {
     this.entries.clear();
     this.lastGoodByActor.clear();
     this.flights.clear();
+    this.flightOwners.clear();
+    this.ownerLastGoodSnapshots.clear();
     this.session = null;
     this.revisionCounter = 0;
   }
@@ -440,10 +691,14 @@ export class AvatarAssetsStore {
   // ── internals ──
 
   private startFlight(key: string, query: AvatarAssetQuery): Promise<AvatarEntry> {
+    const bucket = flightIdentityKeyFor(query);
     const flight = this.runFlight(key, query).finally(() => {
       this.flights.delete(key);
+      if (this.flightOwners.get(bucket) === key) this.flightOwners.delete(bucket);
     });
     this.flights.set(key, flight);
+    // First live flight owns the identity bucket; later key variants chain.
+    if (!this.flightOwners.has(bucket)) this.flightOwners.set(bucket, key);
     return flight;
   }
 
@@ -591,7 +846,7 @@ export class AvatarAssetsStore {
     query: AvatarAssetQuery,
     src: string,
     localPath: string | null,
-    image: HTMLImageElement,
+    image: HTMLImageElement | null,
   ): AvatarEntry {
     const key = avatarAssetKey(query);
     const entry: AvatarEntry = {
@@ -614,7 +869,7 @@ export class AvatarAssetsStore {
     // Last-good is only usable when the owner is known. Peer avatars without
     // an actor PTID and the authenticated session must never share a bucket.
     if (query.actorPtid) {
-      this.lastGoodByActor.set(entry.actorKey, {
+      this.rememberLastGood(entry.actorKey, query.actorPtid, {
         identity: entry.identity,
         src,
         localPath,
@@ -625,6 +880,27 @@ export class AvatarAssetsStore {
     this.enforceImageBound();
     this.emit();
     return entry;
+  }
+
+  /**
+   * Record an image as the in-process and cross-process last-good for one
+   * attributed actor. The cross-process sink only fires once the owner
+   * session is bound; `persistReadyEntriesForSession` backfills entries that
+   * went ready before the bind landed.
+   */
+  private rememberLastGood(
+    actorKey: string,
+    actorPtid: string,
+    good: LastGood,
+  ): void {
+    this.lastGoodByActor.set(actorKey, good);
+    // Cross-process last-good for first-frame paint after restart.
+    this.persistentLastGood.set(actorPtid, good);
+    this.ownerLastGoodSnapshots.delete(actorPtid);
+    const ownerPtid = this.session?.actorPtid;
+    if (this.persistLastGood && ownerPtid) {
+      this.persistLastGood(ownerPtid, { actorPtid, ...good });
+    }
   }
 
   private recordTerminal(query: AvatarAssetQuery, phase: 'absent' | 'failed'): AvatarEntry {
@@ -712,7 +988,10 @@ export class AvatarAssetsStore {
     // Only attributed owners (session actor or explicit peer PTID) may show
     // last-good. An unattributed identity must not inherit another actor.
     if (!query.actorPtid) return null;
-    const good = this.lastGoodByActor.get(actorKeyFor(query));
+    const actorPtid = query.actorPtid;
+    // In-process last-good (epoch-scoped key) wins over the primed cache.
+    const good = this.lastGoodByActor.get(actorKeyFor(query))
+      ?? this.persistentLastGood.get(actorPtid);
     if (!good?.src) return null;
     return { phase: 'ready', src: good.src, degraded: true, identity: good.identity };
   }
@@ -784,5 +1063,10 @@ export class AvatarAssetsStore {
 /**
  * Process-wide AvatarAssets owner. The identity runtime and the React avatar
  * components share this single instance; there is no per-component cache.
+ *
+ * The persistence sink is no-op when localStorage is unavailable (SSR/test
+ * shells); the storage module guards that itself.
  */
-export const avatarAssets = new AvatarAssetsStore();
+export const avatarAssets = new AvatarAssetsStore(defaultDependencies, (owner, entry) => {
+  persistAvatarLastGood(owner, entry);
+});

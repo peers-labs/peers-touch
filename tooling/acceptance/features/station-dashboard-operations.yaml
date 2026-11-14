@@ -15,17 +15,21 @@
     {"type": "dashboard", "route": "/dashboard/#/system"},
     {"type": "dashboard", "route": "/dashboard/#/nodes"},
     {"type": "dashboard", "route": "/dashboard/#/storage"},
-    {"type": "dashboard", "route": "/dashboard/#/security"}
+    {"type": "dashboard", "route": "/dashboard/#/security"},
+    {"type": "dashboard", "route": "/dashboard/#/ai"},
+    {"type": "dashboard", "route": "/dashboard/#/federation"}
   ],
   "required_gates": ["station-dashboard-unit", "station-dashboard-web-check"],
   "acceptance": {
     "service": [
-      "Dashboard handlers expose read-only management-plane projections",
-      "Dashboard application services derive management state from Station repositories"
+      "Dashboard handlers expose management-plane projections",
+      "Dashboard application services derive management state from Station repositories",
+      "AI and Federation management require independent live administrator sessions",
+      "shared management delegates to Agent and Federation business ports"
     ],
     "visible": [
       "Dashboard layout and core pages are included in the typed web bundle",
-      "Overview System Nodes Storage and Security entries remain route-addressable"
+      "Overview System Nodes Storage Security AI and Federation entries remain route-addressable"
     ]
   },
   "negative": [

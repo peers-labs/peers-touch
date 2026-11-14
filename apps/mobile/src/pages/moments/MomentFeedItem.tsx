@@ -1,5 +1,4 @@
 import { useState, type ReactNode } from 'react';
-import { Typography } from 'antd';
 import {
   Globe2,
   MessageCircle,
@@ -29,7 +28,6 @@ import {
 import { MomentActionsSheet } from './MomentActionsSheet';
 import { MomentContent, type OpenMomentMedia } from './MomentContent';
 
-const { Text } = Typography;
 
 function formatRelativeTime(
   timestampMs: number,
@@ -202,20 +200,20 @@ export function MomentFeedItem({
       >
         <div className="moments-policy-inline" role="alert">
           <ShieldAlert size={24} strokeWidth={1.5} />
-          <Text strong>
+          <strong className="moments-policy-inline__title">
             {t(
               blocked
                 ? 'mobile.moments.policy.blocked'
                 : 'mobile.moments.policy.violation',
             )}
-          </Text>
-          <Text type="secondary">
+          </strong>
+          <span className="moments-policy-inline__hint">
             {t(
               blocked
                 ? 'mobile.moments.policy.blockedHint'
                 : 'mobile.moments.policy.violationHint',
             )}
-          </Text>
+          </span>
         </div>
       </article>
     );
@@ -224,7 +222,7 @@ export function MomentFeedItem({
   if (post.isDeleted) {
     return (
       <article className="moments-article">
-        <Text type="secondary">{t('mobile.moments.detail.deleted')}</Text>
+        <span className="moments-article__deleted">{t('mobile.moments.detail.deleted')}</span>
       </article>
     );
   }
@@ -357,7 +355,7 @@ export function MomentFeedItem({
       ) : null}
 
       {reactionMutation ? (
-        <Text
+        <span
           className={`moments-reaction-status moments-reaction-status--${
             reactionMutation.status
           }`}
@@ -366,17 +364,11 @@ export function MomentFeedItem({
               ? 'moments.reaction-pending'
               : 'moments.reaction-rollback'
           }
-          type={
-            reactionMutation.status === 'rolled-back' ||
-            reactionMutation.status === 'rejected'
-              ? 'danger'
-              : 'secondary'
-          }
           role="status"
           aria-live="polite"
         >
           {t(reactionStatusKey(reactionMutation.status))}
-        </Text>
+        </span>
       ) : null}
 
       {children}

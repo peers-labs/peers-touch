@@ -34,7 +34,7 @@ func (s *TurnService) generateFollowUpSuggestions(
 			return nil
 		}
 		credential, err := s.credentialPool.Lease(
-			ctx, config.ActorID, config.Provider, domain.RotationRoundRobin,
+			ctx, config.ActorID, config.Provider, config.Model, domain.RotationRoundRobin,
 		)
 		if err != nil {
 			return nil

@@ -2,15 +2,15 @@ import type { PrototypeManifest } from '../../portal/src/registry/types';
 
 const manifest = {
   id: 'mobile-chat',
-  title: 'Mobile Shell',
+  title: 'Mobile Product',
   site: 'mobile',
   host: 'mobile',
   kind: 'shell',
   status: 'pending-review',
-  module: 'mobile-shell',
+  module: 'mobile-product',
   path: 'packages/prototypes/mobile/chat/',
   docs: 'docs/architecture/platform/client/mobile/prototype/README.md',
-  description: 'Mobile Shell with unified device Search, original message/thread return, Station trust, Chat identity and recovery, Social parity, Calls, Contacts and Settings.',
+  description: 'Single mobile product surface (messages / moments / me) sharing the desktop north-star interaction grammar and data; the evidence host injects scenario state into the same MobileApp, there is no second skin.',
   order: 10,
   previewExport: 'MobilePrototype',
   entry: () => import('./src/MobilePrototype'),

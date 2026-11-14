@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -81,8 +82,30 @@ func openAdmissionTestDB(t *testing.T, name string) *gorm.DB {
 	); err != nil {
 		t.Fatalf("migrate admission test database: %v", err)
 	}
+	ensureProviderAuthorityTestSchema(t, db)
 	injectOrchestrationServiceTestStore(t, db)
 	return db
+}
+
+// ensureProviderAuthorityTestSchema brings an older fixture database up to
+// the schema the Station-centralized provider control plane requires: KEK
+// environment for credential sealing, the policy/grant/profile tables, and
+// the permissive personal-provider policy row. Fixtures predating the
+// control-plane migration call this instead of duplicating the setup.
+func ensureProviderAuthorityTestSchema(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	t.Setenv("PT_SECRET_KEK", "provider-focused-test-key-material")
+	t.Setenv("PT_SECRET_KEK_FILE", "")
+	if err := db.AutoMigrate(
+		&persistence.CLIProfileDefault{},
+		&persistence.ProviderPolicy{},
+		&persistence.ProviderAccessGrant{},
+	); err != nil {
+		t.Fatalf("migrate provider authority test schema: %v", err)
+	}
+	if err := db.Create(&persistence.ProviderPolicy{ID: "station", PersonalProvidersEnabled: true}).Error; err != nil {
+		t.Fatal(err)
+	}
 }
 
 func setupTestCatalog() func() {
@@ -121,7 +144,18 @@ func seedTestProvider(t *testing.T, db *gorm.DB, actorID, name string, enabled b
 		Enabled:     true,
 		Protocol:    "openai-compatible",
 		RuntimeKind: "http",
-		KeyVaults:   keyVaults,
+		Scope:       ProviderScopeActor,
+	}
+	if keyVaults != "" {
+		var key map[string]string
+		if err := json.Unmarshal([]byte(keyVaults), &key); err != nil {
+			t.Fatal(err)
+		}
+		sealed, err := sealProviderCredential(&provider, key["api_key"])
+		if err != nil {
+			t.Fatal(err)
+		}
+		provider.KeyVaults = sealed
 	}
 	if err := db.Create(&provider).Error; err != nil {
 		t.Fatalf("seed provider: %v", err)
@@ -200,14 +234,8 @@ func TestRuntimeAdmissionResolveRejectsDisabledProvider(t *testing.T) {
 	}
 	var bizErr *errcode.BizError
 	if !errors.As(err, &bizErr) ||
-		bizErr.Code != errcode.AgentRuntimeUnavailable ||
-		bizErr.HTTPStatus != 503 ||
-		bizErr.Payload.GetErrorType() != string(errcode.AgentRuntimeUnavailable) ||
-		bizErr.Payload.GetLocaleKey() != errcode.AgentRuntimeUnavailableLocaleKey ||
-		!bizErr.Payload.GetRetryable() ||
-		!bizErr.Payload.GetTerminal() ||
-		bizErr.Payload.GetDetails()["runtime_kind"] != "direct_model" ||
-		bizErr.Payload.GetDetails()["reason_code"] != "provider_disabled" {
+		bizErr.Code != errcode.AgentProviderDisabled ||
+		bizErr.HTTPStatus != 403 {
 		t.Fatalf("disabled provider payload = %+v", bizErr)
 	}
 }
@@ -241,13 +269,15 @@ func TestRuntimeAdmissionResolveRejectsMissingCredential(t *testing.T) {
 }
 
 func TestCredentialPoolLeaseRejectsMissingCredentialWithTypedPayload(t *testing.T) {
-	openAdmissionTestDB(t, "credential_pool_missing")
+	defer setupTestCatalog()()
+	db := openAdmissionTestDB(t, "credential_pool_missing")
+	seedTestProvider(t, db, "actor-1", "test-provider", true, "")
 
 	_, err := NewCredentialPoolService().Lease(
 		context.Background(),
 		"actor-1",
 		"test-provider",
-		domain.RotationRoundRobin,
+		"test-model", domain.RotationRoundRobin,
 	)
 	if err == nil {
 		t.Fatal("expected error for missing credential, got nil")
@@ -736,7 +766,12 @@ func TestRuntimeAdmissionConditionallyAdvertisesExternalAgent(t *testing.T) {
 		}},
 	}})
 	defer catalog.RestoreForTesting()
-	openAdmissionTestDB(t, "admission_external_runtime")
+	db := openAdmissionTestDB(t, "admission_external_runtime")
+	if err := db.Create(&persistence.AgentProvider{ID: generateID("prov"), Scope: ProviderScopeActor,
+		ActorPTID: "actor-1", Name: "external-agent", Enabled: true,
+		RuntimeKind: "external-agent", Protocol: "session-cli-v1"}).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	resolver := NewRuntimeAdmissionResolver(
 		NewProviderConfigService(),
@@ -815,12 +850,15 @@ func TestRuntimeAdmissionConsumesActorScopedDiscoveredCatalog(t *testing.T) {
 		CLIArgv:     []string{os.Args[0]},
 	}})
 	defer catalog.RestoreForTesting()
-	openAdmissionTestDB(t, "admission_discovered_cli_catalog")
+	db := openAdmissionTestDB(t, "admission_discovered_cli_catalog")
+	record := newProviderRecord(ProviderCreateRequest{ActorPTID: "actor-a", ProviderID: "test-cli"})
+	if err := db.Create(record).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	runtimeCatalog := NewRuntimeModelCatalog()
 	runtimeCatalog.Replace(
-		"actor-a",
-		"test-cli",
+		record,
 		[]catalog.CatalogModel{{
 			ID:            "discovered-model",
 			DisplayName:   "Discovered Model",
@@ -867,6 +905,61 @@ func TestRuntimeAdmissionConsumesActorScopedDiscoveredCatalog(t *testing.T) {
 		admission.ModelID != "discovered-model" ||
 		admission.Capabilities.GetLimits().GetContextTokens() != 200000 {
 		t.Fatalf("discovered model admission = %+v", admission)
+	}
+}
+
+func TestRuntimeAdmissionUsesManagedCLIWithoutSystemPATH(t *testing.T) {
+	showAPIKey := true
+	catalog.SetForTesting([]catalog.CatalogProvider{{
+		ID: "managed-cli", Name: "Managed CLI", Enabled: true, ShowAPIKey: &showAPIKey,
+		RuntimeKind: "cli", Protocol: "cli", CLIArgv: []string{"managed-agent", "exec", "-"},
+		Models: []catalog.CatalogModel{{ID: "default", Type: "chat", Enabled: true, ContextWindow: 200000}},
+	}})
+	defer catalog.RestoreForTesting()
+	openAdmissionTestDB(t, "managed_cli_admission")
+	t.Setenv("PATH", "")
+	providers := NewProviderConfigService()
+	ctx := context.Background()
+	if _, err := providers.Create(ctx, ProviderCreateRequest{
+		Scope: ProviderScopeStation, ProviderID: "managed-cli",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := providers.SetAccess(ctx, "managed-cli", 0,
+		[]persistence.ProviderAccessGrant{{ActorPTID: "actor-a", ModelID: "default"}}); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	executable := filepath.Join(bin, "managed-agent")
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	resolver := NewRuntimeAdmissionResolver(providers, NewModelConfigService())
+	resolver.SetManagedBin(func() string { return bin })
+	assertCount := func(actor string, expected int) {
+		t.Helper()
+		models, err := resolver.ListAvailableModels(ctx, actor)
+		if err != nil || len(models) != expected {
+			t.Fatalf("available models for %s = %+v, %v", actor, models, err)
+		}
+	}
+	assertCount("actor-a", 0)
+	if _, err := NewCredentialConfigService().Set(ctx, CredentialSetRequest{
+		Scope: ProviderScopeStation, ProviderID: "managed-cli", APIKey: "managed-test-key",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertCount("actor-a", 1)
+	assertCount("actor-b", 0)
+	if _, err := resolver.Resolve(ctx, "actor-a", "managed-cli", "default"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(executable); err != nil {
+		t.Fatal(err)
+	}
+	assertCount("actor-a", 0)
+	if _, err := resolver.Resolve(ctx, "actor-a", "managed-cli", "default"); err == nil {
+		t.Fatal("missing managed binary was admitted")
 	}
 }
 

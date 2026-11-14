@@ -434,9 +434,13 @@ Desktop and Mobile share the same alive/lifetime contract (§5), but they realiz
 ```text
 MobileShell (NavigationShell)
   MobileNavigationStore (descriptor-backed primary route + detail stack)
-  mobile-content (active tab only)
-    ChatPage | MomentsPage | ContactsPage | SettingsPage | selected SearchPage
-      OverlayHost (action sheet, modals)
+  mobile-content
+    MobileNavigationHost (visited primary frames + bounded detail return stack)
+      MobilePageActivity (hidden Effects suspended, presentation assets retained)
+        PageBoundary / PageContent
+          MessagesPage (stable header + visited Chats/Contacts frames)
+          MomentsPage | SettingsPage | selected detail
+            OverlayHost (selected action sheet, modal, composer)
   mobile-tabbar (NavigationShell)
   RuntimeProjection: Mobile runtime registry + Messaging/Social projections
 ```
@@ -445,43 +449,73 @@ Layer mapping:
 
 - `MobileShell` plays the `NavigationShell` role and renders the active
   descriptor from `MobileNavigationStore`.
-- There is **no `PageHost` keep-alive layer**. `renderPage` returns only the active tab; inactive tabs are unmounted.
+- `MobileNavigationHost` owns visited view lifetime. At most three primary
+  frames and the last four current-stack details are retained; Messages
+  retains its two visited panes inside one stable header. No unvisited page
+  is pre-mounted. A popped detail is removed rather than cached as history.
 - Conversation, Contact, Group, Moment, and selected Settings details are
   descriptor-owned routes. Messaging/Social/Settings selections may guide
   projection readback, but they do not decide whether a detail tree is visible.
 - `RuntimeProjection` is owned by the Mobile runtime registry and feature
-  stores, so projection truth stays fresh even while a tab tree is unmounted.
+  stores, so projection truth stays fresh while a view's Effects are suspended.
 - Search is a selected-only detail, lazy-loaded by Shell. Its runtime owns
   scope revalidation and one bounded presentation page; native Search owns
   retrieval and caching. Message/thread and Settings results push original
-  owner routes; returning restores presentation only after revalidation.
+  owner routes. A retained view resumes from its current projection without
+  clearing its previous presentation or repeating an initial-load screen.
 
 ### 14.2 Mobile Alive Rules
 
-- A Mobile primary tab is `on-visit + none` by default: only the active tab tree is mounted; switching tabs unmounts the previous tree. This is the accepted current standard, not a defect — but it carries a re-mount audit obligation (see §14.4).
-- Mobile must keep **data freshness in feature runtimes/stores**, never in tab mount effects. A tab re-mount must re-project from already-fresh store state, not re-fetch from the network as the source of truth.
+- Mobile primary views are `on-visit + lru`, bounded by the three primary
+  destinations and two Messages panes. Navigation must preserve their DOM,
+  scroll, query, selection, and visible header. The previous active-only
+  teardown policy is retired following the 2026-11-14 native-app experience
+  correction; resetting a view on each visit creates visible refresh/jump.
+- Mobile must keep **data freshness in feature runtimes/stores**, never in
+  tab mount effects. React Activity suspends hidden Effects and store
+  subscriptions; reveal reattaches them without resetting already initialized
+  controller state. Settings readback is section-local, never a whole-page
+  loading replacement.
 - The tabbar is alive while in tab mode and is hidden only when an immersive surface needs full height (e.g. an open chat thread). Hiding the tabbar must not unmount runtime projections.
-- Mobile must not copy the Desktop `display:none` hidden-keep-alive trick to fake alive tabs. If a Mobile tab needs to survive switches (e.g. expensive list scroll position), promote it explicitly to `on-visit + lru` with a bounded cache and record it in the registry — do not keep all tabs mounted.
+- Hidden DOM alone is insufficient: hidden views must also suspend listeners,
+  polling, observers, typing and recording. DOM audio/video is explicitly
+  paused by the frame. Presentation URLs/grants survive suspension through
+  `MobilePageActivity` and `useMobilePageDisposal`; actual child removal or
+  frame eviction releases them. Nested visibility inherits its parent.
+- The frame cache is scoped to Station + actor + device + generation +
+  session identity. Replacement clears every retained tree and restoration
+  entry; background/resume of the same identity preserves the views.
+- Leaf frames alone save/restore scroll and focus in layout effects before
+  paint. Compound frames delegate to the nested host; a parent pane-key change
+  must not overwrite another pane's position. Navigation must not schedule a
+  post-paint scroll reset with `requestAnimationFrame`.
 
 ### 14.3 Mobile Overlay And Navigation Rules
 
 - Conversation and contextual actions must use a bottom action sheet or a dedicated page, never a desktop-style right drawer (`ChatActionSheet` returns `null` when closed).
 - Modal/sheet surfaces are `on-visit + none`; they must not retain heavy hidden trees after close.
-- Find People and Create Group use one selected-only descriptor-owned overlay
-  route; closing, replacing the primary route, or entering a detail route
-  unmounts the overlay tree.
-- Any future Mobile route stack (planned `session` runtime) must still declare each stacked page's alive category and cache bound in the registry.
+- Find People is a pushed detail with top search controls and an independent
+  results scroller; Create Group is one selected-only overlay.
+- Details retain only the last four entries of the actual return stack.
+  Older stack entries keep navigation identity and externally stored
+  draft/scroll recovery, but release their view/resources. Pop, primary
+  replacement, logout and identity replacement remove abandoned details.
 
 ### 14.4 Mobile Acceptance
 
 - Switching tabs changes the visible surface on the same interaction frame; any heavy re-projection is deferred or selector-backed.
-- Returning to a tab restores from fresh store/runtime state without a blocking network round-trip.
+- Returning to a tab preserves the same DOM and scroll offset on the first
+  painted frame, without a loading replacement or blocking network round-trip.
 - Opening/closing a conversation does not leak mounted threads or runtime subscriptions.
-- The Mobile chat tab re-mount cost is sampled (or recorded as known debt with an owner) in `frontend-component-tree-registry.md §12`.
+- Native evidence must assert DOM identity and header continuity across
+  primary and Messages-pane switches, bounded frame count, hidden-work
+  suspension, recording/media stop, and scope-fenced teardown.
 
 ### 14.5 Mobile Registry
 
-Mobile surfaces are registered in `frontend-component-tree-registry.md §8` with the same field model as Desktop. The Mobile rows must state the real lifetime (currently `not alive` per-tab) and name the feature runtime that owns freshness — not a `Platform-defined` placeholder.
+Mobile surfaces are registered in `frontend-component-tree-registry.md §9`
+with the same field model as Desktop. Rows state the real bounded lifetime,
+the runtime owning freshness, and current-source evidence status.
 
 ## 15. Related Documents
 

@@ -38,32 +38,38 @@ type loginGatekeeper struct{}
 func (loginGatekeeper) Type() pb.AccessGateType { return pb.AccessGateType_ACCESS_GATE_TYPE_AUTH_LOGIN }
 func (loginGatekeeper) GateID() string          { return gateIDLogin }
 
-func (loginGatekeeper) Evaluate(_ context.Context, ec *gatekeeper.EvalContext) *pb.AccessGate {
+func (loginGatekeeper) Evaluate(ctx context.Context, ec *gatekeeper.EvalContext) *pb.AccessGate {
 	state := pb.AccessGateState_ACCESS_GATE_STATE_PASSED
 	if ec.Actor == nil {
 		state = pb.AccessGateState_ACCESS_GATE_STATE_ACTION_REQUIRED
 	}
+	alternativeActions := []*pb.AccessGateAction{
+		accessGateAction(
+			"auth.password",
+			pb.AccessGateType_ACCESS_GATE_TYPE_AUTH_LOGIN,
+			"submit_login",
+			"",
+		),
+	}
+	// OAuth is advertised only when the Station has at least one enabled
+	// provider with credentials configured. Otherwise the client renders a
+	// sign-in button the Station is guaranteed to reject.
+	if oauthAvailable(ctx) {
+		alternativeActions = append(alternativeActions, accessGateAction(
+			"auth.oauth",
+			pb.AccessGateType_ACCESS_GATE_TYPE_AUTH_OAUTH,
+			"start_oauth",
+			"",
+		))
+	}
 	gate := &pb.AccessGate{
-		GateId:       gateIDLogin,
-		Type:         pb.AccessGateType_ACCESS_GATE_TYPE_AUTH_LOGIN,
-		State:        state,
-		Title:        "Log in",
-		Description:  "Log in before entering this Station.",
-		SubmitAction: "submit_login",
-		AlternativeActions: []*pb.AccessGateAction{
-			accessGateAction(
-				"auth.password",
-				pb.AccessGateType_ACCESS_GATE_TYPE_AUTH_LOGIN,
-				"submit_login",
-				"",
-			),
-			accessGateAction(
-				"auth.oauth",
-				pb.AccessGateType_ACCESS_GATE_TYPE_AUTH_OAUTH,
-				"start_oauth",
-				"",
-			),
-		},
+		GateId:             gateIDLogin,
+		Type:               pb.AccessGateType_ACCESS_GATE_TYPE_AUTH_LOGIN,
+		State:              state,
+		Title:              "Log in",
+		Description:        "Log in before entering this Station.",
+		SubmitAction:       "submit_login",
+		AlternativeActions: alternativeActions,
 	}
 	return bindPrimaryAction(gate, "auth.password")
 }

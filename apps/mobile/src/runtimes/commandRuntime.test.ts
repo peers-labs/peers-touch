@@ -73,13 +73,21 @@ describe('commandRuntime draft recovery', () => {
 
   it('delivers a restored draft when its non-alive composer mounts later', async () => {
     const draft = momentDraft('deferred-consumer');
+    const candidate = projection(draft);
     const consumer = vi.fn();
     invokeMock.mockResolvedValue(
       Array.from(toBinary(MobileDraftEnvelopeV2Schema, draft)),
     );
 
-    await restoreReliabilityDrafts([projection(draft)]);
+    expect(draftsRequiringRestoreDecision([candidate])).toEqual([candidate]);
+    await restoreReliabilityDrafts([candidate]);
     expect(consumer).not.toHaveBeenCalled();
+    const otherActor = projection({ ...draft, actorPtid: 'ptid:bob' });
+    const otherStation = projection({ ...draft, stationPeerId: 'station-b' });
+    expect(draftsRequiringRestoreDecision([candidate, otherActor, otherStation]))
+      .toEqual([otherActor, otherStation]);
+    expect(draftsRequiringRestoreDecision([candidate])).toEqual([]);
+    expect(invokeMock.mock.calls.map(([command]) => command)).toEqual(['draft_load']);
 
     const unregister = registerDraftRestorationConsumer(
       draft.stationPeerId,
@@ -94,6 +102,45 @@ describe('commandRuntime draft recovery', () => {
     } finally {
       unregister();
     }
+    expect(draftsRequiringRestoreDecision([candidate])).toEqual([]);
+  });
+
+  it('returns a deferred draft to recovery when its later consumer rejects it', async () => {
+    const draft = momentDraft('deferred-delivery-failure');
+    const candidate = projection(draft);
+    invokeMock.mockResolvedValue(
+      Array.from(toBinary(MobileDraftEnvelopeV2Schema, draft)),
+    );
+    await restoreReliabilityDrafts([candidate]);
+
+    expect(draftsRequiringRestoreDecision([candidate])).toEqual([]);
+    expect(() => registerDraftRestorationConsumer(
+      draft.stationPeerId,
+      draft.actorPtid,
+      draft.surfaceKind,
+      draft.targetId,
+      () => { throw new Error('consumer rejected draft'); },
+    )).toThrow('consumer rejected draft');
+    expect(draftsRequiringRestoreDecision([candidate])).toEqual([candidate]);
+    expect(invokeMock.mock.calls.map(([command]) => command)).toEqual(['draft_load']);
+  });
+
+  it('returns a deferred draft to recovery if its durable source disappears before delivery', async () => {
+    const draft = momentDraft('deferred-source-missing');
+    const candidate = projection(draft);
+    invokeMock.mockResolvedValueOnce(
+      Array.from(toBinary(MobileDraftEnvelopeV2Schema, draft)),
+    ).mockResolvedValueOnce(null);
+    await restoreReliabilityDrafts([candidate]);
+
+    expect(draftsRequiringRestoreDecision([candidate])).toEqual([]);
+    await expect(getDraftRestorationPort().load(
+      draft.stationPeerId,
+      draft.actorPtid,
+      draft.surfaceKind,
+      draft.targetId,
+    )).rejects.toThrow('mobile.reliability.draftMissing');
+    expect(draftsRequiringRestoreDecision([candidate])).toEqual([candidate]);
   });
 
   it('lets an existing direct port consumer claim a deferred typed draft', async () => {
@@ -214,6 +261,8 @@ describe('commandRuntime draft recovery', () => {
     } finally {
       unregister();
     }
+    expect(draftsRequiringRestoreDecision([projection(draft)]))
+      .toEqual([projection(draft)]);
   });
 
   it('keeps recovery visible when a projected draft is no longer readable', async () => {

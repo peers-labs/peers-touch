@@ -15,6 +15,7 @@ import {
   type ChatThreadCount,
 } from '../services/desktop_api';
 import { avatarAssets } from '../services/avatarAssets';
+import { cachePeerProfileLastGood, readCachedPeerProfiles } from '../services/peerProfileCache';
 import { MessageStatus } from '../gen/proto/domain/chat/chat_pb';
 import type {
   Conversation,
@@ -29,6 +30,7 @@ import { imServiceV1 } from '../services/im-service';
 import { messagingDomainRuntime } from '../messaging/runtime';
 import { shouldApplyPresenceRevision } from '../services/chatPresence';
 import type {
+  MessageMentionSet,
   MessagingLocalAttachmentIntent,
   MessagingProjection,
   MessagingSendOutcome,
@@ -257,6 +259,8 @@ function projectMessagingProjection(
     lastErrorCode: projection.lastErrorCode,
     requiredDeviceCount: projection.requiredDeviceCount,
     deliveredDeviceCount: projection.deliveredDeviceCount,
+    mentions: projection.mentions,
+    mentionAll: projection.mentionAll,
   };
   if (kind === 'friend') {
     const status = projection.state === 'failed'
@@ -282,8 +286,8 @@ function projectMessagingProjection(
     ...common,
     $typeName: 'peers_touch.model.chat.v1.ChatMessage',
     groupUlid: conversationId,
-    mentionedPtids: [],
-    mentionAll: false,
+    mentionedPtids: projection.mentions.map(mention => mention.actorPtid),
+    mentionAll: projection.mentionAll,
   };
 }
 
@@ -536,7 +540,7 @@ interface SocialChatState {
     ulid: string,
     messageUlid: string,
     kind?: 'friend' | 'group',
-  ) => Promise<void>;
+  ) => Promise<{ commandId?: string; messageId: string; state: string } | undefined>;
   loadThreadMessages: (
     ulid: string,
     rootUlid: string,
@@ -571,6 +575,7 @@ interface SocialChatState {
     attachments?: MessagingLocalAttachmentIntent[],
     threadRootUlid?: string,
     sendIntentId?: string,
+    mentionSet?: MessageMentionSet,
   ) => Promise<MessagingSendOutcome>;
   /** Append one admission outcome to the per-conversation revision record. */
   recordSendOutcome: (conversationUlid: string, outcome: MessagingSendOutcome) => void;
@@ -725,6 +730,13 @@ interface SocialChatState {
   reset: () => void;
   /** Clear only the Messaging-owned projection before a scope handoff. */
   resetMessagingProjection: () => void;
+  /**
+   * Synchronously seed peer identities (display name + avatar identity) from
+   * the actor-scoped persistent last-good so the first authenticated frame
+   * paints conversation rows without a profile round-trip. The first member
+   * sweep reconciles every seeded entry over the network.
+   */
+  seedPresentationLastGood: (actorPtid: string) => void;
   hydrate: (actorPtid: string) => Promise<void>;
 }
 
@@ -1025,6 +1037,13 @@ const initialSocialState: Pick<
 };
 
 let loadSessionsGeneration = 0;
+/**
+ * PTIDs whose peer profiles were seeded from the persistent last-good cache
+ * during the current actor's hydrate. The first member-profile sweep must
+ * still reconcile them over the network; each entry is consumed once by
+ * loadPeerProfile so cached identities never suppress a live refresh.
+ */
+let cachedProfileHydration: { actorPtid: string; ptids: Set<string> } | null = null;
 let messagingProjectionGeneration = 0;
 let socialProfileGeneration = 0;
 
@@ -1073,6 +1092,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   reset: () => {
     messagingProjectionGeneration += 1;
     socialProfileGeneration += 1;
+    cachedProfileHydration = null;
     clearMessageProjectionCache();
     set({ ...initialSocialState });
   },
@@ -1166,11 +1186,29 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       openThreadRootUlid: null,
     })),
 
+  seedPresentationLastGood: (actorPtid) => {
+    const did = actorPtid.trim();
+    if (!did || currentAuthenticatedActorPtid() !== did) return;
+    // One seed per authenticated actor; the member sweep consumes the
+    // reconciliation marker. A newer actor's reset() clears the prior one.
+    if (cachedProfileHydration?.actorPtid === did) return;
+    // Presentation last-good only: live reconciliation in the first
+    // loadSessions sweep overwrites every seeded entry.
+    const cachedProfiles = readCachedPeerProfiles(did);
+    const cachedPtids = Object.keys(cachedProfiles);
+    if (cachedPtids.length === 0) return;
+    cachedProfileHydration = { actorPtid: did, ptids: new Set(cachedPtids) };
+    set((prev) => ({ peerProfiles: { ...cachedProfiles, ...prev.peerProfiles } }));
+  },
+
   hydrate: async (actorPtid: string) => {
     const did = actorPtid.trim();
     if (!did) return;
     if (currentAuthenticatedActorPtid() !== did) return;
     set({ currentUserPtid: did });
+    // Seed first-frame identities so conversation rows, group avatar tiles
+    // and profile cards paint real avatars before per-member network reads.
+    get().seedPresentationLastGood(did);
     const { loadCurrentUserProfile, loadSessions, loadGroups } = get();
     await loadCurrentUserProfile();
     await Promise.all([loadSessions(), loadGroups()]);
@@ -1413,7 +1451,13 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         ...Object.values(groupMembersUpdate),
       ]) {
         for (const m of members) {
-          if (m.ptid && !isSelfMember(m) && !get().peerProfiles[m.ptid]) {
+          if (!m.ptid || isSelfMember(m)) continue;
+          // Reconcile both unknown members and hydrate-seeded last-good
+          // profiles (the first sweep after a cold start refreshes the
+          // cache entries from Station).
+          const seeded = cachedProfileHydration?.actorPtid === actorPtid
+            && cachedProfileHydration.ptids.has(m.ptid);
+          if (!get().peerProfiles[m.ptid] || seeded) {
             get().loadPeerProfile(m.ptid).catch((error) => {
               log.warn('socialChat', 'load conversation member profile failed', {
                 peerPtid: m.ptid,
@@ -1477,6 +1521,9 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         openThreadRootUlid: null,
         groupUnreadCounts: { ...prev.groupUnreadCounts, [ulid]: 0 },
       }));
+      // The @me marker is cleared by the navigation badge projection, which
+      // subscribes to activeGroupUlid. Keep the social store free of an import
+      // edge back to badge state (that would be a module import cycle).
       get().markGroupRead(ulid).catch(() => {});
     },
 
@@ -1745,8 +1792,9 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
 
   retryMessage: async (ulid, messageUlid, kind) => {
     const activeKind = kind ?? get().activeTab;
-    await imServiceV1.messaging.retryMessage(ulid, messageUlid);
+    const outcome = await imServiceV1.messaging.retryMessage(ulid, messageUlid);
     await get().loadMessages(ulid, activeKind);
+    return outcome;
   },
 
   loadThreadMessages: async (ulid, rootUlid, kind, options) => {
@@ -1944,7 +1992,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     }
   },
 
-  sendGroupMessage: async (groupUlid, content, type, _replyToUlid, attachments, explicitThreadRootUlid, sendIntentId) => {
+  sendGroupMessage: async (groupUlid, content, type, _replyToUlid, attachments, explicitThreadRootUlid, sendIntentId, mentionSet) => {
     try {
       if ((type ?? 1) !== 1 && !attachments?.length) {
         throw new Error('This message type has not been migrated to the Messaging Engine');
@@ -1961,7 +2009,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           replyToMessageId: _replyToUlid,
           threadRootMessageId: threadRootUlid,
           sendIntentId: intentId,
-        }),
+        }, mentionSet),
         (error) => {
           const currentSecurityState = get().groupSecurityState[groupUlid];
           if (currentSecurityState !== 'establishing' && currentSecurityState !== 'crypto-desynced') {
@@ -2196,7 +2244,11 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     // two different runtime channels.
     if (state.currentUserPtid && state.currentUserPtid === did) return;
     if (state.peerProfileLoading[did]) return;
-    if (!force && did in state.peerProfiles) return;
+    // A hydrate-seeded last-good profile is reconciled once over the network;
+    // consume the marker so subsequent presence short-circuits normally.
+    const seededHydration = cachedProfileHydration?.actorPtid === state.currentUserPtid
+      && cachedProfileHydration.ptids.delete(did);
+    if (!force && did in state.peerProfiles && !seededHydration) return;
 
     set((prev) => ({
       peerProfileLoading: { ...prev.peerProfileLoading, [did]: true },
@@ -2235,6 +2287,13 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         peerProfiles: { ...prev.peerProfiles, [did]: profile ?? null },
         peerProfileLoading: { ...prev.peerProfileLoading, [did]: false },
       }));
+      // Persist the authoritative profile as cold-start presentation
+      // last-good (identity truth stays with Station; the first hydrate
+      // sweep reconciles every cached entry).
+      const ownerPtid = currentAuthenticatedActorPtid();
+      if (ownerPtid && profile) {
+        cachePeerProfileLastGood(ownerPtid, did, profile);
+      }
       // Warm the shared avatar owner the moment the profile lands, before
       // any avatar component mounts. Key on the transport-independent
       // canonical identity so per-process projection-token rotation never
@@ -2275,10 +2334,19 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
 
   loadFriendRequests: async (status, limit, offset) => {
     if (!hasAuthenticatedActor()) return;
-    set({
-      friendRequestsLoading: true,
-      friendRequestsError: null,
-    });
+    // The periodic realtime reconcile (and mutation-triggered refreshes) call
+    // this action continuously. Only the actor's first load drives the
+    // loading surface: flipping it on every background sweep replaced the
+    // whole contacts section with a spinner each cycle (visible periodic
+    // "refresh"). Later swaps land in place, and a background failure keeps
+    // the previous projection instead of an error panel.
+    const initialLoad = !get().friendRequestsLoadedAt;
+    if (initialLoad) {
+      set({
+        friendRequestsLoading: true,
+        friendRequestsError: null,
+      });
+    }
     try {
       const data = await api.socialFriendRequestList(status, limit, offset);
       const requests = normalizeFriendRequests(
@@ -2295,11 +2363,15 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           .map((did) => get().loadPeerProfile(did)),
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      set({
-        friendRequestsLoading: false,
-        friendRequestsError: message,
-      });
+      if (initialLoad) {
+        const message = error instanceof Error ? error.message : String(error);
+        set({
+          friendRequestsLoading: false,
+          friendRequestsError: message,
+        });
+      } else {
+        log.warn('socialChat', 'background friend requests refresh failed', { error });
+      }
       throw error;
     }
   },

@@ -1,0 +1,98 @@
+.mobile-debug-toggle {
+  position: fixed;
+  right: 12px;
+  bottom: calc(12px + var(--safe-area-bottom, 0px) + var(--tabbar-height, 56px));
+  z-index: 900;
+}
+
+.mobile-debug-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.mobile-debug-footer {
+  padding-bottom: var(--safe-area-bottom, 0px);
+}
+
+.mobile-debug-notice,
+.mobile-debug-timestamp,
+.mobile-debug-error,
+.mobile-debug-empty {
+  margin: 0;
+  padding-block: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.mobile-debug-notice.error,
+.mobile-debug-error {
+  color: var(--pt-danger);
+}
+
+.mobile-debug-timestamp {
+  color: var(--pt-secondary);
+}
+
+.mobile-debug-sections {
+  user-select: text;
+}
+
+.mobile-debug-section {
+  padding-block: 12px;
+}
+
+.mobile-debug-section h5 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pt-secondary);
+}
+
+.mobile-debug-badge {
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
+.mobile-debug-badge.ok {
+  color: var(--pt-secondary);
+}
+
+.mobile-debug-badge.empty {
+  color: var(--pt-secondary);
+}
+
+.mobile-debug-badge.error {
+  color: var(--pt-danger);
+}
+
+.mobile-debug-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 4px;
+}
+
+.mobile-debug-row dt {
+  flex: 0 0 42%;
+  color: var(--pt-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.mobile-debug-row dd {
+  flex: 1;
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  text-align: right;
+  word-break: break-all;
+}

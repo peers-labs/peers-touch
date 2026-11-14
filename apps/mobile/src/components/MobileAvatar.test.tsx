@@ -7,11 +7,7 @@ vi.mock('../runtimes/avatarAssetRuntime', () => ({
   useAvatarAsset: () => ({ source: '', src: '' }),
 }));
 
-import {
-  MobileAvatar,
-  mobileUserAvatarFallbackColor,
-  mobileUserAvatarRadius,
-} from './MobileAvatar';
+import { MobileAvatar, mobileUserAvatarFallbackColor } from './MobileAvatar';
 
 describe('MobileAvatar', () => {
   it('is the shared rounded-square user identity primitive', () => {
@@ -19,13 +15,12 @@ describe('MobileAvatar', () => {
       <MobileAvatar identityKey="ptid:bob" name="Bob" size={28} />,
     );
 
-    expect(markup).toContain('ant-avatar-square');
+    expect(markup).toContain('pt-avatar');
     expect(markup).toContain('mobile-user-avatar');
-    expect(markup).toContain('--mobile-user-avatar-radius:8px');
-    expect(markup).not.toContain('ant-avatar-circle');
-    expect(mobileUserAvatarRadius(28)).toBe(8);
-    expect(mobileUserAvatarRadius(42)).toBe(10);
-    expect(mobileUserAvatarRadius(72)).toBe(18);
+    expect(markup).toContain('width:28px');
+    expect(markup).toContain('height:28px');
+    expect(markup).toContain('border-radius:8px');
+    expect(markup).toContain('aria-label="Bob"');
   });
 
   it('keeps fallback color stable for the same canonical identity', () => {

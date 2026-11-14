@@ -2,6 +2,13 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 import { MessageActionSheet } from './ChatOverlayHost';
+import type { ReactNode } from 'react';
+
+// This unit exercises action permissions; the shared overlay host is verified by UI/native journeys.
+vi.mock('@peers-touch/ui', async (original) => ({
+  ...await original<typeof import('@peers-touch/ui')>(),
+  BottomSheet: ({ children }: { children: ReactNode }) => children,
+}));
 
 vi.mock('../../app/mobileI18n', () => ({
   useMobileI18n: () => ({ t: (key: string) => key }),

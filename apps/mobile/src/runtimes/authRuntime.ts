@@ -4,16 +4,19 @@ import type {
   MobileRuntimeDescriptor,
   RuntimeOperationResult,
 } from '../app/lifecycle/types';
+import { mobileErrorKey } from '../app/mobileError';
 import { registerOAuthAccessGrantFinalizer } from '../features/auth/authSession';
 import { activeStationEntry } from '../features/station/stationRegistry';
 import {
   oauthCancel,
   oauthProjection,
+  oauthProviders,
   oauthRestore,
   oauthRetryBrowser,
   oauthStart,
   oauthStatus,
   type MobileOAuthProvider,
+  type OAuthProviderInfo,
   type OAuthPublicPhase,
   type OAuthPublicProjection,
   type OAuthScopeInput,
@@ -34,6 +37,10 @@ export interface AuthRuntimeSnapshot extends OAuthPublicProjection {
   candidatePtid: string | null;
   errorKey: string | null;
   recovery: AuthRuntimeRecovery;
+  // Station-reported usable provider directory. `null` means the directory
+  // has not loaded for the active Station yet; login UI fails open until it
+  // does, and filters to exactly this list afterwards.
+  availableProviders: MobileOAuthProvider[] | null;
 }
 
 interface StartOAuthInput {
@@ -57,6 +64,11 @@ const PUBLIC_PHASES: readonly OAuthPublicPhase[] = [
   'failed',
 ];
 
+const KNOWN_OAUTH_PROVIDERS: readonly MobileOAuthProvider[] = ['github', 'google'];
+
+let providerDirectoryPeerId = '';
+let providerDirectory: MobileOAuthProvider[] | null = null;
+
 const listeners = new Set<() => void>();
 let snapshot: AuthRuntimeSnapshot = snapshotFromProjection(emptyProjection());
 
@@ -73,7 +85,46 @@ export function readAuthRuntimeSnapshot(): AuthRuntimeSnapshot {
 }
 
 export function fenceAuthRuntimeProjection(): void {
+  providerDirectoryPeerId = '';
+  providerDirectory = null;
   setSnapshot(snapshotFromProjection(emptyProjection()));
+}
+
+export async function refreshOAuthProviders(): Promise<void> {
+  let scope: OAuthScopeInput;
+  try {
+    scope = await activeOAuthScope();
+  } catch {
+    return;
+  }
+  if (providerDirectoryPeerId !== scope.stationPeerId) {
+    providerDirectory = null;
+    setSnapshot({ ...snapshot, availableProviders: null });
+  }
+  try {
+    const providers = await oauthProviders(scope);
+    providerDirectoryPeerId = scope.stationPeerId;
+    providerDirectory = normalizeOAuthProviders(providers);
+    setSnapshot({ ...snapshot, availableProviders: providerDirectory });
+  } catch {
+    // Stay fail-open in the unknown state; a failed directory fetch must not
+    // hide sign-in when the Station is simply slow to answer the listing.
+    providerDirectoryPeerId = '';
+    providerDirectory = null;
+    setSnapshot({ ...snapshot, availableProviders: null });
+  }
+}
+
+function normalizeOAuthProviders(
+  providers: OAuthProviderInfo[],
+): MobileOAuthProvider[] {
+  const usable = providers
+    .filter((entry) => entry.enabled && entry.hasCredentials)
+    .map((entry) => entry.id)
+    .filter((id): id is MobileOAuthProvider => (
+      KNOWN_OAUTH_PROVIDERS.includes(id as MobileOAuthProvider)
+    ));
+  return [...new Set(usable)];
 }
 
 export async function startOAuth(input: StartOAuthInput): Promise<void> {
@@ -206,6 +257,7 @@ function snapshotFromProjection(projection: OAuthPublicProjection): AuthRuntimeS
     candidatePtid: projection.candidate?.actorPtid ?? null,
     errorKey,
     recovery: projectionRecovery(projection, errorKey),
+    availableProviders: providerDirectory,
   };
 }
 
@@ -272,8 +324,7 @@ function applyIntentFailure(
   fallbackRecovery: AuthRuntimeRecovery = 'restart',
 ): void {
   const message = readableErrorMessage(error);
-  const marker = message.match(/mobile\.auth\.[A-Za-z0-9]+/)?.[0];
-  const errorKey = marker ?? 'mobile.auth.oauthFailed';
+  const errorKey = mobileErrorKey(message) ?? 'mobile.auth.oauthFailed';
   const recovery = errorKey === 'mobile.auth.oauthBrowserUnavailable'
     ? 'retry-provider'
     : errorKey === 'mobile.auth.oauthStationMismatch'
@@ -310,6 +361,7 @@ export function createAuthRuntimeDescriptor(): MobileRuntimeDescriptor {
 
     async bootstrap(): Promise<void> {
       await restoreAuthRuntimeProjection();
+      await refreshOAuthProviders();
     },
 
     async suspend(): Promise<void> {

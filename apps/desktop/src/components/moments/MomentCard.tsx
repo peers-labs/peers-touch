@@ -161,7 +161,7 @@ export const MomentCard = memo(function MomentCard({ post, reactions, explanatio
       {!isPrivate && content.case === 'videoPost' && content.value.video && <MomentVideoAttachment
         id={content.value.video.url || content.value.video.id} poster={content.value.video.thumbnailUrl} />}
       {privateContent && (privateContent.kind === 'IMAGE' || privateContent.kind === 'VIDEO') &&
-        <PrivateMediaGrid media={privateContent.media} onOpen={id => void openMedia(post.id, id)} />}
+        <PrivateMediaGrid media={privateContent.media} postId={post.id} onOpen={id => void openMedia(post.id, id)} />}
     </>}
     content={<>
       {!isPrivate && content.case === 'linkPost' && content.value.link && <p><ExternalLink size={15} />

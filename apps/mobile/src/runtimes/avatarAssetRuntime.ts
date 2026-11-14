@@ -80,10 +80,17 @@ export function useAvatarAsset(source: string | null | undefined): AvatarAssetVi
   return snapshot;
 }
 
+/** Keep an optimistic native preview until the committed station asset is ready. */
+export async function prepareAvatarAsset(source: string, session: MobileAuthSession): Promise<void> {
+  const displayUrl = avatarDisplayUrl(source, session.stationUrl);
+  await ensureAvatarAsset({ displayUrl, session });
+  if (!selectAvatarProjection(displayUrl).src) throw new Error('mobile.settings.profile.imageDisplayFailed');
+}
 export function avatarDisplayUrl(value: string | null | undefined, stationUrl: string | undefined): string {
   const raw = value?.trim() ?? '';
   if (!raw) return '';
-  if (raw.startsWith('data:') || raw.startsWith('blob:') || raw.startsWith('http://') || raw.startsWith('https://')) {
+  if (raw.startsWith('data:') || raw.startsWith('blob:') || raw.startsWith('http://') || raw.startsWith('https://')
+    || raw.startsWith('profile-image://localhost/')) {
     return raw;
   }
   if (raw.startsWith('/')) {

@@ -41,7 +41,7 @@ function Token({ name, token }: { name: string; token: string }) {
       <span ref={ref} className="nb-token-chip" style={{ background: `var(${token})` }} />
       <span className="nb-token-meta">
         <span className="nb-token-name">{name}</span>
-        <code className="nb-token-code">{value || token}</code>
+        <code className="nb-token-code" title={value || token}>{value || token}</code>
       </span>
     </div>
   );

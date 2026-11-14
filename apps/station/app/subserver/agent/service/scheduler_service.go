@@ -349,7 +349,7 @@ func (s *SchedulerService) executeSilentReview(ctx context.Context, agentID stri
 
 	s.reviewService.CheckAndTriggerReview(
 		ctx, nudge,
-		lastTurnID, conv.ID, agentID,
+		lastTurnID, conv.ID, agentID, conv.ActorPTID,
 		provider, model,
 		domainMsgs,
 		false,

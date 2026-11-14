@@ -1,13 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Empty, Spin, Tag, Typography } from 'antd';
-import {
-  ArrowLeft,
-  Ban,
-  MessageCircle,
-  MoreHorizontal,
-  UserMinus,
-  UserPlus,
-} from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Button, Empty, Icon, Spin, Tag, Text } from '@peers-touch/ui';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import type { MobileChatDetailRoute } from '../../app/navigation';
@@ -33,8 +25,6 @@ import {
 } from '../../features/social/socialRuntime';
 import { useSocialExperience } from '../../features/social/useSocialExperience';
 import { MomentFeedItem } from './MomentFeedItem';
-
-const { Text } = Typography;
 
 interface SocialProfilePageProps {
   readonly actorPtid: string;
@@ -70,6 +60,7 @@ export function SocialProfilePage({
     (state) => state.authoredFeeds[actorPtid],
   );
   const loadAuthoredPosts = useSocialStore((state) => state.loadAuthoredPosts);
+  const requestedProfile = useRef('');
 
   const [action, setAction] = useState('');
   const [actionError, setActionError] = useState('');
@@ -101,6 +92,8 @@ export function SocialProfilePage({
       : '';
 
   useEffect(() => {
+    if (requestedProfile.current === actorPtid) return;
+    requestedProfile.current = actorPtid;
     setReactionPickerPostId(null);
     void requestSocialPeerProfile(actorPtid);
     if (!isSelf) {
@@ -182,7 +175,7 @@ export function SocialProfilePage({
           aria-label={t('common.action.back')}
           onClick={onBack}
         >
-          <ArrowLeft size={20} />
+          <Icon iconId="arrow-left" size={20} />
         </button>
         <h1 className="header-title compact">
           {t('mobile.social.profile.title')}
@@ -194,14 +187,14 @@ export function SocialProfilePage({
             aria-label={t('mobile.social.profile.actions')}
             onClick={() => setActionSheetOpen(true)}
           >
-            <MoreHorizontal size={20} />
+            <Icon iconId="more-horizontal" size={20} />
           </button>
         ) : null}
       </header>
 
       <div className="mobile-detail-body">
         <div className="contact-profile-card">
-          <Spin spinning={profileLoading}>
+          <Spin active={profileLoading}>
             <SocialActorAvatar
               actorPtid={actorPtid}
               avatar={profile?.avatar}
@@ -216,11 +209,11 @@ export function SocialProfilePage({
                 || t('mobile.contacts.unknownUser')}
             </Text>
             {profile?.federatedHandle || profile?.acct ? (
-              <Text type="secondary">
+              <Text tone="secondary">
                 {profile.federatedHandle || profile.acct}
               </Text>
             ) : null}
-            <Text type="secondary" copyable>
+            <Text tone="secondary" copyValue={actorPtid}>
               {actorPtid}
             </Text>
             {profile?.note ? (
@@ -251,7 +244,7 @@ export function SocialProfilePage({
             </MobileNotice>
           ) : null}
           {relationship?.blocked ? (
-            <Tag color="error">{t('mobile.contacts.blocked')}</Tag>
+            <Tag tone="danger">{t('mobile.contacts.blocked')}</Tag>
           ) : null}
           {actionError ? (
             <MobileNotice tone="error">
@@ -266,18 +259,20 @@ export function SocialProfilePage({
           {!isSelf ? (
             <>
               <Button
-                block
-                type={relationship?.following ? 'default' : 'primary'}
-                icon={
-                  relationship?.following ? (
-                    <UserMinus size={15} />
-                  ) : (
-                    <UserPlus size={15} />
-                  )
+                actionId="social-profile-follow"
+                fullWidth
+                emphasis={relationship?.following ? 'secondary' : 'primary'}
+                leading={
+                  <Icon
+                    iconId={relationship?.following ? 'user-minus' : 'user-plus'}
+                    size={15}
+                  />
                 }
-                loading={action === 'follow'}
-                disabled={Boolean(action) || relationship?.blocked}
-                onClick={() =>
+                execution={action === 'follow' ? 'pending' : 'idle'}
+                availability={Boolean(action) || relationship?.blocked
+                  ? { kind: 'disabled', reason: t('mobile.social.profile.actions') }
+                  : undefined}
+                onActivate={() =>
                   void runRelationshipAction(
                     'follow',
                     relationship?.following
@@ -294,11 +289,15 @@ export function SocialProfilePage({
               </Button>
               {directFederationId ? (
                 <Button
-                  block
-                  icon={<MessageCircle size={15} />}
-                  loading={action === 'message'}
-                  disabled={Boolean(action) || relationship?.blocked}
-                  onClick={() => void openDirect()}
+                  actionId="social-profile-message"
+                  fullWidth
+                  emphasis="secondary"
+                  leading={<Icon iconId="message-circle" size={15} />}
+                  execution={action === 'message' ? 'pending' : 'idle'}
+                  availability={Boolean(action) || relationship?.blocked
+                    ? { kind: 'disabled', reason: t('mobile.contacts.openChat') }
+                    : undefined}
+                  onActivate={() => void openDirect()}
                 >
                   {t('mobile.contacts.openChat')}
                 </Button>
@@ -339,16 +338,14 @@ export function SocialProfilePage({
             </MobileNotice>
           ) : null}
           {!authoredFeed?.loading && (authoredFeed?.posts.length ?? 0) === 0 ? (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={t('mobile.social.profile.noPosts')}
-            />
+            <Empty description={t('mobile.social.profile.noPosts')} />
           ) : null}
           {authoredFeed?.hasMore && !authoredFeed.loading ? (
             <Button
-              type="text"
-              block
-              onClick={() =>
+              actionId="social-profile-load-more"
+              fullWidth
+              emphasis="quiet"
+              onActivate={() =>
                 void loadAuthoredPosts(actorPtid, authoredFeed.nextCursor)
               }
             >
@@ -399,7 +396,7 @@ export function SocialProfilePage({
                   )}
                 </strong>
               </span>
-              <Ban size={18} />
+              <Icon iconId="ban" size={18} />
             </button>
           </section>
         </div>
@@ -420,21 +417,26 @@ export function SocialProfilePage({
           >
             <div className="moments-sheet-handle" />
             <div className="social-profile-confirm-copy">
-              <Ban size={22} />
+              <Icon iconId="ban" size={22} />
               <div>
                 <strong>{t('mobile.contacts.blockConfirmTitle')}</strong>
                 <p>{t('mobile.contacts.blockConfirmBody')}</p>
               </div>
             </div>
             <div className="social-profile-confirm-actions">
-              <Button onClick={() => setConfirmBlockOpen(false)}>
+              <Button
+                actionId="social-profile-block-cancel"
+                emphasis="secondary"
+                onActivate={() => setConfirmBlockOpen(false)}
+              >
                 {t('common.action.cancel')}
               </Button>
               <Button
-                danger
-                type="primary"
-                loading={action === 'block'}
-                onClick={() =>
+                actionId="social-profile-block-confirm"
+                emphasis="primary"
+                tone="danger"
+                execution={action === 'block' ? 'pending' : 'idle'}
+                onActivate={() =>
                   void runRelationshipAction('block', async () => {
                     await dispatchBlockUser(actorPtid);
                     setConfirmBlockOpen(false);
@@ -455,7 +457,7 @@ function ProfileStat({ label, value }: { label: string; value: number }) {
   return (
     <div className="contact-profile-stat">
       <Text strong>{value}</Text>
-      <Text type="secondary">{label}</Text>
+      <Text tone="secondary">{label}</Text>
     </div>
   );
 }

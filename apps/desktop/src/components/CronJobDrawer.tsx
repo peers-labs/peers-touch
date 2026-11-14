@@ -294,8 +294,8 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
     if (open) {
       api.listAgents().then(setAgents).catch(() => {});
       api.listAvailableModels().then((r) => setAvailableModels(r.models || [])).catch(() => {});
-      api.getModelConfig('cronDefault').then((r) => {
-        setCronDefaultRef(r.ref || r.resolved || null);
+      api.getRuntimeDefault().then((r) => {
+        setCronDefaultRef(r?.providerId && r.modelId ? { provider: r.providerId, model: r.modelId } : null);
       }).catch(() => {});
 
       if (editingJob) {

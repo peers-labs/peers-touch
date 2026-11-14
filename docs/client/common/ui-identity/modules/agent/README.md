@@ -1,9 +1,9 @@
 ---
 status: active
 owner: Client Platform Team
-updated: 2026-10-27
+updated: 2026-11-01
 review-cadence: semiannual
-next-review: 2027-04-27
+next-review: 2027-05-01
 ---
 
 # Agent UI Identity
@@ -16,6 +16,12 @@ Agent is one Desktop product module with two sibling task surfaces:
 - **Atelier**: operate goals and tasks, compose multiple Agents, and inspect execution progress.
 
 These surfaces share identity, navigation, panel behavior, density, and interaction primitives. A child surface must not introduce another global navigation system.
+
+Atelier is currently withheld pending product design. The shipping Shell and
+Shell prototype expose Chat only, omit Atelier/Orchestrator launch actions,
+and return old Atelier/orchestration routes to Chat. Existing applet data and
+implementation are retained. Atelier-specific contracts below describe the
+withheld surface, not a currently available user Journey.
 
 ## Shell Contract
 
@@ -102,6 +108,10 @@ Canonical widths:
 
 ## Surface Lifetime Contract
 
+- Background reconciliation does not replay page entry or replace established
+  content/actions with loading feedback. Identical projections retain row
+  identity; real changes update only their affected projections. Topic actions,
+  reading position, focused composer and draft survive periodic reconciliation.
 - `Chat` and `Atelier` mount on first visit and remain mounted while the Desktop Shell is alive.
 - Module-tab switching changes frame visibility; it must not conditionally replace the active surface tree.
 - Local drafts, selected inner tabs, panel state, scroll position, and canvas state survive sibling surface switches.

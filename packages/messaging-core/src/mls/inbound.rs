@@ -1,5 +1,5 @@
 use super::group::{MlsGroupManager, MlsPreparedReceive};
-use crate::codec::private_content::decode_message_private_content;
+use crate::codec::private_content::{decode_message_private_content, MessageMentions};
 use crate::codec::verification::verify_device_event_delivery;
 use crate::contracts::{
     ConversationAuthorityMemberProjection, CryptoEndpoint, InteractionMutation,
@@ -7,7 +7,7 @@ use crate::contracts::{
     MlsMessageProjection, MlsRetirementReceiveCommit, MlsSenderTransitionReceiveCommit,
     MlsTransitionReceiveCommit, ReceiveCommitResult,
 };
-use crate::inbox::{ClaimedItemConsumer, CommandResultLifecycle, MlsItemConsumer};
+use crate::inbox::{ClaimedItemConsumer, CommandResultLifecycle, ConsumeError, MlsItemConsumer};
 use crate::proto::chat::{
     conversation_event, ConversationAuthoritySnapshot, ConversationCreatedFact, ConversationEvent,
     CryptoEndpoint as ProtoCryptoEndpoint, DeviceConsumptionReceipt, DurableDeviceInboxItem,
@@ -68,7 +68,9 @@ impl<R: MlsInboundRepository> MlsItemConsumer for MlsItemProcessor<R> {
         item: &DurableDeviceInboxItem,
         consumer_epoch: u64,
     ) -> Result<(), String> {
-        self.application.consume(item, consumer_epoch)
+        self.application
+            .consume(item, consumer_epoch)
+            .map_err(|error| error.to_string())
     }
 
     fn consume_transition(
@@ -76,7 +78,9 @@ impl<R: MlsInboundRepository> MlsItemConsumer for MlsItemProcessor<R> {
         item: &DurableDeviceInboxItem,
         consumer_epoch: u64,
     ) -> Result<(), String> {
-        self.transition.consume(item, consumer_epoch)
+        self.transition
+            .consume(item, consumer_epoch)
+            .map_err(|error| error.to_string())
     }
 
     fn consume_retirement(
@@ -84,7 +88,9 @@ impl<R: MlsInboundRepository> MlsItemConsumer for MlsItemProcessor<R> {
         item: &DurableDeviceInboxItem,
         consumer_epoch: u64,
     ) -> Result<(), String> {
-        self.retirement.consume(item, consumer_epoch)
+        self.retirement
+            .consume(item, consumer_epoch)
+            .map_err(|error| error.to_string())
     }
 
     fn consume_sender_transition(
@@ -92,7 +98,9 @@ impl<R: MlsInboundRepository> MlsItemConsumer for MlsItemProcessor<R> {
         item: &DurableDeviceInboxItem,
         consumer_epoch: u64,
     ) -> Result<(), String> {
-        self.sender_transition.consume(item, consumer_epoch)
+        self.sender_transition
+            .consume(item, consumer_epoch)
+            .map_err(|error| error.to_string())
     }
 }
 
@@ -259,6 +267,7 @@ impl<R: MlsInboundRepository> MlsApplicationProcessor<R> {
 
         let message_sender = message_sender
             .ok_or_else(|| "messaging MLS application has no message sender".to_string())?;
+        let mentions = MessageMentions::from_private_content(&private_content);
         let projection = MlsMessageProjection {
             conversation_id: event.conversation_id.clone(),
             event_id: event.event_id.clone(),
@@ -271,6 +280,7 @@ impl<R: MlsInboundRepository> MlsApplicationProcessor<R> {
             committed_at_unix_ms,
             reply_to_message_id: reply_to_message_id.map(str::to_string),
             thread_root_message_id: thread_root_message_id.map(str::to_string),
+            mentions,
         };
         let result = self
             .store
@@ -300,8 +310,15 @@ impl<R: MlsInboundRepository> MlsApplicationProcessor<R> {
 }
 
 impl<R: MlsInboundRepository> ClaimedItemConsumer for MlsApplicationProcessor<R> {
-    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(
+        &self,
+        item: &DurableDeviceInboxItem,
+        consumer_epoch: u64,
+    ) -> Result<(), ConsumeError> {
+        // MLS failures depend on installed group state and commit ordering,
+        // so they stay retryable: a later commit may unlock the item.
         self.process(item, consumer_epoch)
+            .map_err(ConsumeError::from)
     }
 }
 
@@ -547,8 +564,13 @@ impl<R: MlsInboundRepository> MlsTransitionProcessor<R> {
 }
 
 impl<R: MlsInboundRepository> ClaimedItemConsumer for MlsTransitionProcessor<R> {
-    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(
+        &self,
+        item: &DurableDeviceInboxItem,
+        consumer_epoch: u64,
+    ) -> Result<(), ConsumeError> {
         self.process(item, consumer_epoch)
+            .map_err(ConsumeError::from)
     }
 }
 
@@ -687,8 +709,13 @@ impl<R: MlsInboundRepository> MlsSenderTransitionProcessor<R> {
 }
 
 impl<R: MlsInboundRepository> ClaimedItemConsumer for MlsSenderTransitionProcessor<R> {
-    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(
+        &self,
+        item: &DurableDeviceInboxItem,
+        consumer_epoch: u64,
+    ) -> Result<(), ConsumeError> {
         self.process(item, consumer_epoch)
+            .map_err(ConsumeError::from)
     }
 }
 
@@ -820,8 +847,13 @@ impl<R: MlsInboundRepository> MlsRetirementProcessor<R> {
 }
 
 impl<R: MlsInboundRepository> ClaimedItemConsumer for MlsRetirementProcessor<R> {
-    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(
+        &self,
+        item: &DurableDeviceInboxItem,
+        consumer_epoch: u64,
+    ) -> Result<(), ConsumeError> {
         self.process(item, consumer_epoch)
+            .map_err(ConsumeError::from)
     }
 }
 
@@ -1693,7 +1725,10 @@ mod tests {
         mismatched_item.opaque_payload = mismatched_delivery.encode_to_vec();
         mismatched_item.payload_sha256 = Sha256::digest(&mismatched_item.opaque_payload).to_vec();
         assert_eq!(
-            processor.consume(&mismatched_item, 1).unwrap_err(),
+            processor
+                .consume(&mismatched_item, 1)
+                .unwrap_err()
+                .message(),
             "messaging MLS transition binding mismatch"
         );
         assert!(!bob.has_session("group-welcome"));
@@ -1740,7 +1775,8 @@ mod tests {
         assert_eq!(
             restarted_processor
                 .consume(&conflicting_replay, 3)
-                .unwrap_err(),
+                .unwrap_err()
+                .message(),
             "test claimed item payload hash mismatch"
         );
 

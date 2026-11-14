@@ -29,6 +29,7 @@ vi.mock('../features/social/socialRuntime', () => ({
   acceptSocialFriendRequest: vi.fn(),
   applySocialFriendRequestProjectionCheckpoints: vi.fn(),
   readSocialRuntimeProjection: vi.fn(),
+  readSocialNotificationProjection: vi.fn(() => []),
   readCurrentSocialProfile: socialMocks.readCurrentSocialProfile,
   readFederationContexts: socialMocks.readFederationContexts,
   reconcileSocialRuntime: vi.fn(),

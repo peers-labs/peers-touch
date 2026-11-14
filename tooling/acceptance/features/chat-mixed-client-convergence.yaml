@@ -26,6 +26,7 @@
       "Desktop and Mobile exchange canonical Direct and Group messages on the same Station",
       "Desktop and Mobile preserve message identity, receipts, interactions, attachments, offline delivery, and restart readback across Stations",
       "one actor's Desktop and Mobile devices converge sender companion messages, read cursors, revocation, and call resolution",
+      "Mobile incoming and outgoing Direct audio/video calls carry bidirectional RTP, real microphone/camera controls, ICE restart, receiver chat and media release on the original mixed call-resolution runtime",
       "a mixed three-actor Group converges membership and MLS epochs across Desktop and Mobile"
     ],
     "surfaces": [

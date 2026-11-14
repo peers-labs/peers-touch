@@ -70,10 +70,3 @@ pub mod interface {
     #[path = "contracts/mod.rs"]
     pub mod contracts;
 }
-
-pub mod application {
-    pub mod provider {
-        #[path = "remote.rs"]
-        pub mod remote;
-    }
-}

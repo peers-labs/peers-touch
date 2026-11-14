@@ -2135,6 +2135,7 @@ func (s *TurnService) finishTurnExecution(
 			turnID,
 			config.ConversationID,
 			config.AgentID,
+			config.ActorID,
 			config.Provider,
 			config.Model,
 			messages,
@@ -2733,6 +2734,7 @@ func (s *TurnService) executeSummaryLLM(
 			ctx,
 			config.ActorID,
 			config.Provider,
+			config.Model,
 			domain.RotationRoundRobin,
 		)
 		if err != nil {
@@ -3156,6 +3158,7 @@ func (s *TurnService) providerCallWithRetry(
 				ctx,
 				config.ActorID,
 				providerID,
+				config.Model,
 				strategy,
 			)
 			if leaseErr != nil {
@@ -8421,8 +8424,20 @@ func sha256Short(data string) string {
 // QuickCompletion performs a one-shot LLM call without conversation context.
 // Used for lightweight tasks like translation.
 func (s *TurnService) QuickCompletion(ctx context.Context, config *TurnConfig, prompt string) (string, error) {
+	if config == nil || strings.TrimSpace(config.ActorID) == "" {
+		return "", errcode.New(errcode.AgentSecurityViolation, http.StatusForbidden, "authenticated actor is required", nil)
+	}
+	if config.Provider == "" && config.Model == "" {
+		selection, found, err := NewRuntimeDefaultService().GetRuntimeDefault(ctx, config.ActorID)
+		if err != nil {
+			return "", err
+		}
+		if found {
+			config.Provider, config.Model = selection.DefaultProviderID, selection.DefaultModelID
+		}
+	}
 	if config.Provider == "" || config.Model == "" {
-		return "", fmt.Errorf("provider and model are required for quick completion")
+		return "", errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "select an authorized default or provide both provider and model", nil)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)

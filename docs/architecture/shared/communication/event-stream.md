@@ -703,7 +703,7 @@ document for the realtime contract:
   (`docs/architecture/domains/federation/...`, future).
 - Voice/video protocol on top of `CallSignal`
   ([voice/video calls](../../domains/chat/calling/voice-video.md) and
-  [group calls](../../domains/chat/calling/group-calls.md)).
+  [group calls](../../domains/chat/calling/group/README.md)).
 - Sealed-sender encryption design and key management
   (`docs/architecture/domains/chat/encryption/...`, partial).
 - Read-receipt UX semantics across multi-device

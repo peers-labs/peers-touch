@@ -19,6 +19,7 @@ import {
   type ProjectionDomain,
   type SocialProjectionRuntimeController,
 } from '../../runtimes/socialProjectionRuntime';
+import { useSocialCirclesStore } from './socialCircles';
 import type { SocialState } from './socialStore';
 import { useSocialStore } from './socialStore';
 import { startRealtimeStream } from './socialRealtime';
@@ -29,6 +30,11 @@ import {
   type PeerProfile,
 } from './socialTypes';
 import { mobileCallManager } from '../call/callState';
+import {
+  activateMobileGroupCalls, ingestMobileGroupRoomEvent, resetMobileGroupCalls,
+  suspendMobileGroupRoomProjection,
+  reconcileMobileGroupRooms,
+} from '../call/groupCallRuntime';
 import type {
   FriendRequestMutationResult,
 } from '../../services/gateways/socialGateway';
@@ -153,6 +159,13 @@ export function readSocialRuntimeProjection(): SocialRuntimePublicProjection {
   };
 }
 
+/** Retained notification owner facts, without message or profile content. */
+export function readSocialNotificationProjection() {
+  return useSocialStore.getState().notifications.map(({ id, status, targetType, targetId }) => ({
+    id, status, targetType, targetId,
+  }));
+}
+
 export async function sendSocialFriendRequest(
   receiverPtid: string,
   receiverHomeStationPeerId: string,
@@ -217,7 +230,9 @@ export async function readFederationContexts() {
 
 export async function searchSocialPeople(query: string, federationId: string): Promise<ActorSearchResult[]> {
   requireActiveSocialRuntime();
-  await useSocialStore.getState().searchPeople(query, federationId);
+  await useSocialStore.getState().searchPeople(query, {
+    kind: 'federation', federationId,
+  });
   const state = useSocialStore.getState();
   if (state.peopleSearchError) throw state.peopleSearchError;
   return [...state.peopleSearchResults];
@@ -255,10 +270,11 @@ export async function readCurrentSocialProfile(
 
 export async function updateCurrentSocialProfile(
   input: EditableProfileInput,
+  observedRevision?: bigint,
 ): Promise<{ actorPtid: string; result: ProfileUpdateResult }> {
   requireActiveSocialRuntime();
   const state = useSocialStore.getState();
-  const result = await state.updateCurrentUserProfile(input);
+  const result = await state.updateCurrentUserProfile(input, observedRevision);
   const actorPtid = useSocialStore.getState().currentUserPtid;
   if (!actorPtid) throw new Error('mobile.social.currentProfileUnavailable');
   return { actorPtid, result };
@@ -362,10 +378,19 @@ export async function startSocialRuntime(
           .ingestRealtimeSignal(event)
           .catch((error) => reportSocialRuntimeError('call-signal', error));
       },
+      ingestGroupCallRoom: ingestMobileGroupRoomEvent,
       reportError: reportSocialRuntimeError,
+      reconcileCircles: async () => {
+        try {
+          await useSocialCirclesStore.getState().refreshCircles();
+        } catch (error) {
+          reportSocialRuntimeError('circles-reconcile', error);
+        }
+      },
     },
   );
   await mobileCallManager.activate(session);
+  await activateMobileGroupCalls(session);
   await projectionRuntime.bootstrap();
   await wakeMessaging();
 
@@ -426,6 +451,7 @@ export async function startSocialRuntime(
       suspended = true;
       await projectionRuntime.suspend();
       mobileCallManager.suspend();
+      suspendMobileGroupRoomProjection();
       await stopForeground('runtime_suspend');
     },
     resume: async () => {
@@ -439,6 +465,7 @@ export async function startSocialRuntime(
       ) return;
       await projectionRuntime.resume();
       await mobileCallManager.resume();
+      await activateMobileGroupCalls(session);
       suspended = false;
       startForeground();
     },
@@ -452,6 +479,7 @@ export async function startSocialRuntime(
       await stopForeground('runtime_teardown');
       await projectionRuntime.teardown();
       mobileCallManager.reset();
+      await resetMobileGroupCalls();
       if (activeRuntime === runtimeRef) activeRuntime = null;
     },
     drain: async () => {
@@ -466,6 +494,7 @@ export async function startSocialRuntime(
     const reconcileTimer = window.setInterval(() => {
       if (!torn && !suspended) {
         void track(() => projectionRuntime.reconcile('periodic'));
+        reconcileMobileGroupRooms();
       }
     }, RECONCILE_INTERVAL_MS);
     const typingSweepTimer = window.setInterval(() => {

@@ -45,6 +45,7 @@ function GroupCallButton({
       aria-label={label}
       title={label}
       data-group-call-display-mode-target={extra?.['data-group-call-display-mode-target']}
+      data-group-call-control={extra?.['data-group-call-control']}
       onClick={onClick}
     >
       {children}
@@ -65,9 +66,11 @@ function ParticipantBadge({ actorPtid }: { actorPtid: string }) {
 function ParticipantTile({
   participant,
   isLocal,
+  mediaRevision,
 }: {
   participant: Participant;
   isLocal: boolean;
+  mediaRevision: number;
 }) {
   const { t } = useTranslation('chat');
   const identity = useChatActorIdentity(participant.actorPtid);
@@ -80,11 +83,12 @@ function ParticipantTile({
         : 'bad';
 
   useEffect(() => groupCallManager.attachParticipantMedia(
-    participant.actorPtid,
+    participant.participantId,
     videoRef.current,
     null,
   ), [
-    participant.actorPtid,
+    participant.participantId,
+    mediaRevision,
     participant.isCameraEnabled,
     participant.isMicEnabled,
   ]);
@@ -122,15 +126,15 @@ function ParticipantTile({
   );
 }
 
-function ParticipantAudio({ participant }: { participant: Participant }) {
+function ParticipantAudio({ participant, mediaRevision }: { participant: Participant; mediaRevision: number }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const identity = useChatActorIdentity(participant.actorPtid);
 
   useEffect(() => groupCallManager.attachParticipantMedia(
-    participant.actorPtid,
+    participant.participantId,
     null,
     audioRef.current,
-  ), [participant.actorPtid, participant.isMicEnabled]);
+  ), [participant.participantId, participant.isMicEnabled, mediaRevision]);
 
   return (
     <audio
@@ -182,8 +186,8 @@ export function GroupCallSurface() {
   }, [snapshot.state]);
 
   const handleLeave = useCallback(() => {
-    groupCallManager.leaveGroupCall();
-  }, []);
+    void groupCallManager.leaveGroupCall().catch(() => notifyError(t('chat.groupCall.failed')));
+  }, [t]);
 
   const handleToggleMic = useCallback(async () => {
     try {
@@ -295,19 +299,20 @@ export function GroupCallSurface() {
       ) : null}
 
       <div aria-hidden="true" style={{ display: 'none' }}>
-        {snapshot.participants.slice(1).map((participant) => (
-          <ParticipantAudio key={participant.actorPtid} participant={participant} />
+        {snapshot.participants.filter((participant) => !participant.isLocal).map((participant) => (
+          <ParticipantAudio key={participant.participantId} participant={participant} mediaRevision={snapshot.mediaRevision} />
         ))}
       </div>
 
       {/* Participant grid (expanded modes only) */}
       {displayMode !== 'compact' && (
         <div className="sc-gcall__grid">
-          {snapshot.participants.map((p, i) => (
+          {snapshot.participants.map((p) => (
             <ParticipantTile
-              key={p.actorPtid}
+              key={p.participantId}
               participant={p}
-              isLocal={i === 0}
+              isLocal={p.isLocal}
+              mediaRevision={snapshot.mediaRevision}
             />
           ))}
         </div>
@@ -321,6 +326,7 @@ export function GroupCallSurface() {
             : t('chat.groupCall.mic.off')}
           tone={snapshot.localMicEnabled ? undefined : 'muted'}
           onClick={handleToggleMic}
+          extra={{ 'data-group-call-control': 'microphone' }}
         >
           {snapshot.localMicEnabled ? <Mic size={15} /> : <MicOff size={15} />}
         </GroupCallButton>
@@ -330,6 +336,7 @@ export function GroupCallSurface() {
             : t('chat.groupCall.camera.off')}
           tone={snapshot.localCameraEnabled ? undefined : 'muted'}
           onClick={handleToggleCamera}
+          extra={{ 'data-group-call-control': 'camera' }}
         >
           {snapshot.localCameraEnabled ? <Camera size={15} /> : <CameraOff size={15} />}
         </GroupCallButton>
@@ -337,6 +344,7 @@ export function GroupCallSurface() {
           label={t('chat.groupCall.leave')}
           tone="danger"
           onClick={handleLeave}
+          extra={{ 'data-group-call-control': 'leave' }}
         >
           <PhoneOff size={15} />
         </GroupCallButton>

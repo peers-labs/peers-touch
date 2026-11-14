@@ -22,6 +22,8 @@ function message(messageId: string, threadRootMessageId?: string): MessagingProj
     attemptCount: 0,
     requiredDeviceCount: 0,
     deliveredDeviceCount: 0,
+    mentions: [],
+    mentionAll: false,
     threadRootMessageId,
   };
 }

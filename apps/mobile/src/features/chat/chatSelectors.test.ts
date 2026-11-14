@@ -37,7 +37,7 @@ describe('Chat typing snapshots', () => {
     expect(boundary).toContain('this.props.fallback(this.retry)');
     expect(boundary).toContain("console.error('[mobile-chat] render failed'");
     expect(source).toContain('data-testid="chat-render-error" role="alert"');
-    expect(source).toContain('onClick={retry}');
+    expect(source).toContain('onActivate={retry}');
   });
 
   it('projects Group list metadata from the canonical Messaging conversation', () => {

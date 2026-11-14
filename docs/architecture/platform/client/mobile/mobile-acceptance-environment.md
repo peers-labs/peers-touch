@@ -230,3 +230,28 @@ A capability is `PROVEN` only when:
 6. cleanup returns owned resources to baseline.
 
 Otherwise the capability remains `UNPROVEN` or `FAILED`.
+
+## 2026-11-09 — interactive Appium/WDA session attach (headless automation)
+
+Observed on workspace `pr170-combined` (Xcode 27.1, Appium 2.19.0, xcuitest
+9.10.5, iOS 26.5 simulator):
+
+- `mobile-native-build` is **PROVEN** on a clean tree (source-bound `Peers.app`
+  built, installed, both ephemeral iPhone 17 simulators provisioned). The web
+  build, harness injection, and WebView harness action surface all work
+  (preflight PASS on both clients).
+- The Appium-**native** session gates (`mobile-simulator-access-e2e` observed)
+  fail to establish the xcuitest session in a headless run: driver
+  `POST /session` times out (~165–180 s) and the gate report records
+  `successfulCallbackInjected: false`, i.e. the native W2 OAuth callback is not
+  injected even though the in-WebView harness is reachable. Foregrounding
+  Simulator.app and retrying three times did not change the result.
+
+This is an environment/WDA first-launch-trust condition, not a product
+regression: the same machine's interactive whole-product runs were historically
+flaky for the same class of reason. Running the Appium-native gates (access /
+runtime-lifecycle / platform / layout-a11y and the Station-backed product /
+whole-product gates) requires an interactive session where WebDriverAgent is
+launched/trusted with the Simulator frontmost. Until that is available, the
+current-source proof is limited to `mobile-native-build` plus source/structural
+checks; native-session and product gates stay `UNPROVEN`.

@@ -111,17 +111,17 @@ describe('Moment feed item', () => {
       /\.moments-comments-section--inline[\s\S]*?margin-top:\s*8px;[\s\S]*?padding:\s*6px 0 0;/,
     );
     expect(styles).toMatch(
-      /\.moments-comments-section--inline \.moments-comment-input-field > input[\s\S]*?height:\s*38px;[\s\S]*?font-size:\s*13px !important;/,
+      /\.moments-comments-section \.moments-comment-input-field > input[\s\S]*?height:\s*38px;[\s\S]*?font-size:\s*13px;/,
     );
     expect(styles).toMatch(
-      /\.moments-comments-section--inline \.moments-comment-input-field > input[\s\S]*?border-radius:\s*10px;/,
+      /\.moments-comments-section \.moments-comment-input-field > input[\s\S]*?border-radius:\s*10px;/,
     );
     expect(styles).toMatch(
       /\.moments-comments-section--inline \.moments-comments-input > button[\s\S]*?border-radius:\s*10px;/,
     );
     const inputBlock =
       styles.match(
-        /\.moments-comments-section--inline \.moments-comment-input-field > input\s*\{([\s\S]*?)\n\}/,
+        /\.moments-comments-section \.moments-comment-input-field > input\s*\{([\s\S]*?)\n\}/,
       )?.[1] ?? '';
     const sendBlock =
       styles.match(

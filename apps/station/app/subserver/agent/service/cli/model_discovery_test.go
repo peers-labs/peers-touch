@@ -1,6 +1,39 @@
 package cli
 
-import "testing"
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestDiscoveryRunsWithPrivateStateAndRejectsEnvironmentOverrides(t *testing.T) {
+	root := t.TempDir()
+	output := filepath.Join(root, "state.txt")
+	command := writeExecutable(t, root, "discover", `#!/bin/sh
+printf '%s\n' "$HOME" "$CODEX_HOME" "$XDG_CACHE_HOME" "$TMPDIR" "${CURSOR_API_KEY:-}" > "$1"
+printf '%s' '{"models":["private-model"]}'
+`)
+	t.Setenv("HOME", root)
+	t.Setenv("CURSOR_API_KEY", "station-secret")
+	request := ModelDiscoveryRequest{Command: []string{command, output}, StateRoot: filepath.Join(root, "discovery")}
+	models, err := DiscoverModels(context.Background(), request)
+	if err != nil || len(models) != 1 {
+		t.Fatalf("private discovery = %+v %v", models, err)
+	}
+	raw, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(raw), request.StateRoot+"/home\n") || strings.Contains(string(raw), "station-secret") {
+		t.Fatal("discovery inherited Station state")
+	}
+	request.Environment = map[string]string{"HOME": root}
+	if _, err := DiscoverModels(context.Background(), request); err == nil {
+		t.Fatal("discovery accepted a HOME override")
+	}
+}
 
 func TestParseDiscoveredModelsPreservesTraeMetadata(t *testing.T) {
 	models, err := ParseDiscoveredModels(`{

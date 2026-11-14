@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -25,12 +24,14 @@ func NewCredentialConfigService() *CredentialConfigService {
 }
 
 type CredentialSetRequest struct {
+	Scope      string
 	ActorPTID  string
 	ProviderID string
 	APIKey     string
 }
 
 type CredentialDeleteRequest struct {
+	Scope      string
 	ActorPTID  string
 	ProviderID string
 	Version    int64
@@ -45,17 +46,20 @@ type CredentialStatusResponse struct {
 
 // Set implements full-replacement upsert semantics for credentials.
 // No version required on set (per architecture: user re-enters full key each time).
-// Stores the key in agent_providers.key_vaults (used by provider_service for LLM calls)
-// and creates/updates metadata in agent_credential_pool.
+// Seals the key in agent_providers.key_vaults and updates pool metadata and the
+// Provider revision in the same transaction.
 func (s *CredentialConfigService) Set(ctx context.Context, req CredentialSetRequest) (*CredentialStatusResponse, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	if strings.TrimSpace(req.ActorPTID) == "" || strings.TrimSpace(req.ProviderID) == "" {
+	if err := NewProviderConfigService().validateManagementOwner(ctx, requestProviderOwner(req.Scope, req.ActorPTID)); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(req.ProviderID) == "" {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
-			"actor_ptid and provider_id are required", nil)
+			"provider_id is required", nil)
 	}
 	if strings.TrimSpace(req.APIKey) == "" {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
@@ -75,13 +79,17 @@ func (s *CredentialConfigService) setWithDB(
 	db *gorm.DB,
 	req CredentialSetRequest,
 ) (*CredentialStatusResponse, error) {
+	owner := requestProviderOwner(req.Scope, req.ActorPTID)
+	if err := owner.Validate(); err != nil {
+		return nil, err
+	}
 	var result *CredentialStatusResponse
 
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		now := time.Now()
 
 		var providerRecord persistence.AgentProvider
-		query := tx.Where("actor_ptid = ? AND name = ?", req.ActorPTID, req.ProviderID).
+		query := owner.Query(tx).Clauses(clause.Locking{Strength: "UPDATE"}).Where("name = ?", req.ProviderID).
 			First(&providerRecord)
 		if query.Error != nil {
 			if query.Error != gorm.ErrRecordNotFound {
@@ -90,6 +98,7 @@ func (s *CredentialConfigService) setWithDB(
 			}
 
 			providerRecord = *newProviderRecord(ProviderCreateRequest{
+				Scope:      owner.Scope,
 				ActorPTID:  req.ActorPTID,
 				ProviderID: req.ProviderID,
 			})
@@ -103,13 +112,17 @@ func (s *CredentialConfigService) setWithDB(
 			}
 		}
 
-		keyVaultsJSON, err := json.Marshal(map[string]string{"api_key": req.APIKey})
+		if providerRecord.BackendProviderID != "" {
+			return invalidCLIProfile("credentials are managed by the referenced model connection")
+		}
+		keyVaultsJSON, err := sealProviderCredential(&providerRecord, req.APIKey)
 		if err != nil {
 			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 				"failed to encode provider credential", err)
 		}
 		if err := tx.Model(&providerRecord).Updates(map[string]interface{}{
-			"key_vaults": string(keyVaultsJSON),
+			"key_vaults": keyVaultsJSON,
+			"version":    gorm.Expr("version + 1"),
 			"updated_at": now,
 		}).Error; err != nil {
 			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
@@ -122,6 +135,7 @@ func (s *CredentialConfigService) setWithDB(
 		}
 		cred := persistence.Credential{
 			ID:        poolID,
+			Scope:     owner.Scope,
 			ActorPTID: req.ActorPTID,
 			Provider:  req.ProviderID,
 			AuthType:  "api_key",
@@ -130,12 +144,15 @@ func (s *CredentialConfigService) setWithDB(
 			Version:   1,
 		}
 		if err := tx.Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "actor_ptid"}, {Name: "provider"}},
+			Columns: []clause.Column{{Name: "scope"}, {Name: "actor_ptid"}, {Name: "provider"}},
 			DoUpdates: clause.Assignments(map[string]interface{}{
-				"id":         poolID,
-				"status":     "active",
-				"version":    gorm.Expr("agent_credential_pool.version + 1"),
-				"updated_at": now,
+				"id":             poolID,
+				"scope":          owner.Scope,
+				"status":         "active",
+				"exhausted_at":   nil,
+				"cooldown_until": nil,
+				"version":        gorm.Expr("agent_credential_pool.version + 1"),
+				"updated_at":     now,
 			}),
 		}).Create(&cred).Error; err != nil {
 			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
@@ -143,7 +160,7 @@ func (s *CredentialConfigService) setWithDB(
 		}
 
 		var current persistence.Credential
-		if err := tx.Where("actor_ptid = ? AND provider = ?", req.ActorPTID, req.ProviderID).
+		if err := owner.Query(tx).Where("provider = ?", req.ProviderID).
 			First(&current).Error; err != nil {
 			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 				"failed to read credential after set", err)
@@ -165,47 +182,70 @@ func (s *CredentialConfigService) setWithDB(
 
 // Delete removes a credential with version check.
 func (s *CredentialConfigService) Delete(ctx context.Context, req CredentialDeleteRequest) error {
+	owner := requestProviderOwner(req.Scope, req.ActorPTID)
+	if err := NewProviderConfigService().validateManagementOwner(ctx, owner); err != nil {
+		return err
+	}
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return err
 	}
 
-	var cred persistence.Credential
-	if err := db.WithContext(ctx).
-		Where("actor_ptid = ? AND provider = ?", req.ActorPTID, req.ProviderID).
-		First(&cred).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return errcode.New(errcode.AgentNotFound, http.StatusNotFound,
-				fmt.Sprintf("no credential for provider %q", req.ProviderID), nil)
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var provider persistence.AgentProvider
+		if err := owner.Query(tx).Clauses(clause.Locking{Strength: "UPDATE"}).
+			First(&provider, "name = ?", req.ProviderID).Error; err != nil {
+			return err
 		}
-		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
-			"failed to query credential", err)
-	}
+		var cred persistence.Credential
+		if err := owner.Query(tx).
+			Where("provider = ?", req.ProviderID).
+			First(&cred).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return errcode.New(errcode.AgentNotFound, http.StatusNotFound,
+					fmt.Sprintf("no credential for provider %q", req.ProviderID), nil)
+			}
+			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+				"failed to query credential", err)
+		}
 
-	if cred.Version != req.Version {
-		return errcode.New(errcode.AgentVersionConflict, http.StatusConflict,
-			fmt.Sprintf("version conflict: current=%d, submitted=%d", cred.Version, req.Version), nil)
-	}
+		if cred.Version != req.Version {
+			return errcode.New(errcode.AgentVersionConflict, http.StatusConflict,
+				fmt.Sprintf("version conflict: current=%d, submitted=%d", cred.Version, req.Version), nil)
+		}
 
-	if err := db.WithContext(ctx).Delete(&cred).Error; err != nil {
-		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
-			"failed to delete credential", err)
-	}
+		if err := tx.Delete(&cred).Error; err != nil {
+			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+				"failed to delete credential", err)
+		}
 
-	logger.Infof(ctx, "credential deleted: actor_ptid=%s, provider=%s", req.ActorPTID, req.ProviderID)
-	return nil
+		return tx.Model(&provider).Updates(map[string]any{
+			"key_vaults": "",
+			"version":    gorm.Expr("version + 1"),
+		}).Error
+	})
 }
 
 // Status returns credential status without exposing the actual key value.
 func (s *CredentialConfigService) Status(ctx context.Context, actorPTID, providerID string) (*CredentialStatusResponse, error) {
+	if err := NewProviderConfigService().RequirePersonal(ctx, actorPTID); err != nil {
+		return nil, err
+	}
+	return s.StatusOwned(ctx, ActorProviderOwner(actorPTID), providerID)
+}
+
+func (s *CredentialConfigService) StatusOwned(ctx context.Context, owner ProviderOwner, providerID string) (*CredentialStatusResponse, error) {
+	if err := owner.Validate(); err != nil {
+		return nil, err
+	}
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	var cred persistence.Credential
-	if err := db.WithContext(ctx).
-		Where("actor_ptid = ? AND provider = ?", actorPTID, providerID).
+	if err := owner.Query(db.WithContext(ctx)).
+		Where("provider = ?", providerID).
 		First(&cred).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return &CredentialStatusResponse{
@@ -237,14 +277,17 @@ type CredentialResolveResponse struct {
 // Resolve returns the actual credentials for an authenticated actor's provider.
 // Only the owning actor can resolve their own credentials.
 func (s *CredentialConfigService) Resolve(ctx context.Context, actorPTID, providerID string) (*CredentialResolveResponse, error) {
+	if err := NewProviderConfigService().RequirePersonal(ctx, actorPTID); err != nil {
+		return nil, err
+	}
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	var provider persistence.AgentProvider
-	if err := db.WithContext(ctx).
-		Where("actor_ptid = ? AND name = ?", actorPTID, providerID).
+	if err := ActorProviderOwner(actorPTID).Query(db.WithContext(ctx)).
+		Where("name = ?", providerID).
 		First(&provider).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound,
@@ -254,13 +297,9 @@ func (s *CredentialConfigService) Resolve(ctx context.Context, actorPTID, provid
 			"failed to query provider", err)
 	}
 
-	var kv map[string]interface{}
-	_ = json.Unmarshal([]byte(provider.KeyVaults), &kv)
-	apiKey := ""
-	if v, ok := kv["api_key"]; ok {
-		if s, ok := v.(string); ok {
-			apiKey = s
-		}
+	apiKey, err := providerCredentialAPIKey(&provider)
+	if err != nil {
+		return nil, err
 	}
 
 	return &CredentialResolveResponse{
@@ -269,6 +308,40 @@ func (s *CredentialConfigService) Resolve(ctx context.Context, actorPTID, provid
 		BaseURL:    provider.BaseURL,
 		Protocol:   provider.Protocol,
 	}, nil
+}
+
+// MigrateSecrets replaces legacy plaintext in place before the Agent accepts
+// work. A missing KEK fails closed, and no plaintext is logged or projected.
+func (s *CredentialConfigService) MigrateSecrets(ctx context.Context) error {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	var providers []persistence.AgentProvider
+	if err := db.WithContext(ctx).Where("key_vaults <> ''").Find(&providers).Error; err != nil {
+		return err
+	}
+	for i := range providers {
+		provider := &providers[i]
+		if ProviderCredentialConfigured(provider) {
+			continue
+		}
+		key := legacyProviderAPIKey(provider.KeyVaults)
+		if key == "" {
+			continue
+		}
+		sealed, err := sealProviderCredential(provider, key)
+		if err != nil {
+			return err
+		}
+		if err := db.WithContext(ctx).Model(provider).
+			Where("key_vaults = ?", provider.KeyVaults).Updates(map[string]any{
+			"key_vaults": sealed, "version": gorm.Expr("version + 1"),
+		}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *CredentialConfigService) getDB(ctx context.Context) (*gorm.DB, error) {

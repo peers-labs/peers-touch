@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import dataclasses
 import hashlib
 import json
@@ -57,7 +58,11 @@ from tooling.acceptance.provisioners.mobile_simulator import (
     DIRECT_SIMULATOR_ENVIRONMENT_ID,
     EXPECTED_CLIENTS,
     EXPECTED_DRIVERS,
+    IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
+    IOS_TAURI_FRONTEND_CONFIG_ENV,
+    IOS_TAURI_FRONTEND_CONFIG_FILENAME,
     IOS_WEB_ASSETS_RELATIVE_PATH,
+    IOS_WEB_DIST_SNAPSHOT_DIRNAME,
     IOS_DEVICE_NAME,
     IOS_PEER_DEVICE_NAME,
     IOS_LAYOUT_CLIENTS,
@@ -89,6 +94,12 @@ from tooling.acceptance.provisioners.mobile_service_bindings import (
     MobileServiceBinding,
     resolve_mobile_service_bindings,
 )
+
+
+FIXTURE_WEB_INDEX_HTML = (
+    '<!doctype html><script src="/assets/main.js"></script>\n'
+)
+FIXTURE_REGISTRY_CHUNK = "registry-stub.js"
 
 
 def _write_valid_ndk(path: Path) -> Path:
@@ -130,11 +141,12 @@ class FakeProcess:
 
 
 class FakeCommandExecutor:
-    def __init__(self, repo_root: Path) -> None:
+    def __init__(self, repo_root: Path, *, embed_staged_assets: bool = True) -> None:
         self.repo_root = repo_root
         self.events: list[str] = []
         self.commands: list[tuple[str, ...]] = []
         self.environments: list[dict[str, str]] = []
+        self.embed_staged_assets = embed_staged_assets
         self.browser_versions = {
             "com.android.chrome": "124.0.6367.82",
             "com.google.android.webview": "124.0.6367.82",
@@ -231,20 +243,26 @@ class FakeCommandExecutor:
             dist = self.repo_root / MOBILE_WEB_DIST_RELATIVE_PATH
             (dist / "assets").mkdir(parents=True, exist_ok=True)
             (dist / "index.html").write_text(
-                "fresh-mobile-web-bundle\n",
+                FIXTURE_WEB_INDEX_HTML,
                 encoding="utf-8",
             )
             (dist / "assets" / "main.js").write_text(
                 "mobile\n",
                 encoding="utf-8",
             )
+            if env.get("VITE_ACCEPTANCE_HARNESS") == "1":
+                (dist / "assets" / FIXTURE_REGISTRY_CHUNK).write_text(
+                    "acceptance\n",
+                    encoding="utf-8",
+                )
             return CommandResult(0)
         if command and command[0] == "xcodebuild":
             assets = self.repo_root / IOS_WEB_ASSETS_RELATIVE_PATH
             try:
-                self.ios_asset_payloads.append(
-                    (assets / "index.html").read_text(encoding="utf-8")
-                )
+                staged_index = (
+                    assets / "index.html"
+                ).read_text(encoding="utf-8")
+                self.ios_asset_payloads.append(staged_index)
             except OSError as error:
                 return CommandResult(
                     1,
@@ -259,7 +277,16 @@ class FakeCommandExecutor:
                 / "peers-touch-mobile_iOS.app"
             )
             app.mkdir(parents=True, exist_ok=True)
-            (app / "Peers").write_text("ios-app\n", encoding="utf-8")
+            stub = "ios-app\n"
+            if self.embed_staged_assets:
+                staged_assets = assets / "assets"
+                if staged_assets.is_dir():
+                    stub += "".join(
+                        f"/assets/{path.name}\n"
+                        for path in sorted(staged_assets.iterdir())
+                        if path.is_file()
+                    )
+            (app / "Peers").write_text(stub, encoding="utf-8")
             return CommandResult(0)
         if (
             command[:4] == ("pnpm", "--dir", "apps/mobile", "exec")
@@ -623,6 +650,15 @@ class MobileSimulatorContractTests(unittest.TestCase):
         )
         self.station_equipment = equipment.start()
         self.addCleanup(equipment.stop)
+        # Unit tests never hold a live station.reset lease; the per-Station
+        # reset binding is asserted separately in a dedicated regression test.
+        bound = patch(
+            "tooling.acceptance.provisioners.mobile_simulator."
+            "bound_reset_profiles",
+            side_effect=lambda _profiles: contextlib.nullcontext(),
+        )
+        self.bound_reset_profiles = bound.start()
+        self.addCleanup(bound.stop)
 
     def _station_access_fixture(
         self,
@@ -2034,6 +2070,10 @@ class MobileSimulatorContractTests(unittest.TestCase):
         provisioner = MobileSocialSimulatorProvisioner(
             contract,
             overlay_path=path,
+            station_profiles={
+                "station-primary": "profile-primary",
+                "station-secondary": "profile-secondary",
+            },
         )
         evidence = FakeEvidenceRun()
         provisioner.bind_evidence_run(evidence)  # type: ignore[arg-type]
@@ -2154,6 +2194,102 @@ class MobileSimulatorContractTests(unittest.TestCase):
         self.assertTrue(actors[0]["federationId"])
         prepare_federation.assert_called_once()
 
+    def test_two_actor_fixture_reset_binds_every_station_profile(
+        self,
+    ) -> None:
+        # Regression: a two-Station provisioner must publish one reviewed
+        # Profile binding per Station before any fixture reset, otherwise the
+        # secondary Station reset falls back to the single active Profile and
+        # the fail-closed target guard rejects it.
+        path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
+        contract = EnvironmentContract.from_yaml(path)
+        provisioner = MobileSocialSimulatorProvisioner(
+            contract,
+            overlay_path=path,
+            station_profiles={
+                "station-primary": "profile-primary",
+                "station-secondary": "profile-secondary",
+            },
+        )
+        evidence = FakeEvidenceRun()
+        provisioner.bind_evidence_run(evidence)  # type: ignore[arg-type]
+        bindings = resolve_mobile_service_bindings(
+            contract,
+            path,
+            environment={
+                "PT_MOBILE_STATION_PRIMARY_URL": (
+                    "https://station-primary.example"
+                ),
+                "PT_MOBILE_STATION_PRIMARY_DEPLOY_ENV": "deploy-primary",
+                "PT_MOBILE_STATION_SECONDARY_URL": (
+                    "https://station-secondary.example"
+                ),
+                "PT_MOBILE_STATION_SECONDARY_DEPLOY_ENV": "deploy-secondary",
+                "PT_RELAY_URL": "https://relay.example",
+                "PT_RELAY_DEPLOY_ENV": "deploy-relay",
+                "PT_RELAY_HEALTH_URL": (
+                    "https://relay.example/sub-oss/healthz"
+                ),
+            },
+        )
+        with (
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "require_station_reset_authority",
+                return_value={"validation": "current"},
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "verify_reset_target",
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "reset_fixture",
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "resolve_actor_identity",
+                side_effect=lambda endpoint, _deployment, role: SimpleNamespace(
+                    role=role,
+                    account_ref=f"station-account:{role}@p.t",
+                    ptid=f"ptid:{role}",
+                    device_policy="single-active-session",
+                    display_name=f"Canonical {role.title()}",
+                    federated_handle=f"@{role}@station.example",
+                    home_station_peer_id=(
+                        "station-primary"
+                        if "primary" in endpoint
+                        else "station-secondary"
+                    ),
+                ),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "prepare_federation_contexts",
+                return_value=(
+                    "fed_chat_"
+                    + hashlib.sha256(
+                        b"station-primary\x00station-secondary"
+                    ).hexdigest()[:20]
+                ),
+            ),
+        ):
+            provisioner._prepare_actor_fixture(
+                "mobile-simulator-social-convergence-e2e",
+                bindings,
+                provisioner._load_overlay(),
+            )
+
+        bound_profiles = {
+            profile
+            for call_args in self.bound_reset_profiles.call_args_list
+            for profile in call_args.args[0]
+        }
+        self.assertEqual(
+            bound_profiles,
+            {"profile-primary", "profile-secondary"},
+        )
+
     def test_session_class_fixture_omits_unbound_federation_target(
         self,
     ) -> None:
@@ -2162,6 +2298,10 @@ class MobileSimulatorContractTests(unittest.TestCase):
         provisioner = ChatMixedNativeProvisioner(
             contract,
             overlay_path=path,
+            station_profiles={
+                "station-primary": "profile-primary",
+                "station-secondary": "profile-secondary",
+            },
         )
         evidence = FakeEvidenceRun()
         provisioner.bind_evidence_run(evidence)  # type: ignore[arg-type]
@@ -2858,6 +2998,67 @@ class MobileSimulatorContractTests(unittest.TestCase):
         self.assertFalse(hasattr(mobile_simulator_module, "_manifest_object"))
         self.assertFalse(hasattr(mobile_simulator_module, "AppiumSession"))
 
+    def test_desktop_profile_id_bounds_long_cross_station_environment(self) -> None:
+        # Regression: the 35-char cross-station environment id plus a 16-hex
+        # run id and the desktop client id produced a 66-char profile that
+        # native bootstrap rejected (active_profile::MAX_PROFILE_LEN = 64).
+        environment_id = (
+            mobile_simulator_module.SOCIAL_CROSS_STATION_MIXED_ENVIRONMENT_ID
+        )
+        run_id = "0a94dfce3b01c1df"
+        profile = mobile_simulator_module.ChatMixedNativeProvisioner._desktop_profile_id(
+            environment_id, run_id, "desktop-alice"
+        )
+
+        # Only the environment prefix is bounded; the run id and client id
+        # carry per-run uniqueness and survive whole.
+        self.assertEqual(
+            profile,
+            "social-cross-station-mobile-deskt"
+            "-0a94dfce3b01c1df-desktop-alice",
+        )
+        self.assertEqual(
+            len(profile),
+            mobile_simulator_module.ChatMixedNativeProvisioner.DESKTOP_PROFILE_ID_MAX_LEN,
+        )
+        self.assertTrue(
+            all(char.isalnum() or char in "-_." for char in profile),
+            profile,
+        )
+        self.assertTrue(profile.endswith(f"-{run_id}-desktop-alice"))
+
+    def test_desktop_profile_id_is_unchanged_when_it_fits(self) -> None:
+        profile = mobile_simulator_module.ChatMixedNativeProvisioner._desktop_profile_id(
+            "chat-mixed-native", "0a94dfce3b01c1df", "desktop-bob"
+        )
+        self.assertEqual(
+            profile, "chat-mixed-native-0a94dfce3b01c1df-desktop-bob"
+        )
+        self.assertLessEqual(
+            len(profile),
+            mobile_simulator_module.ChatMixedNativeProvisioner.DESKTOP_PROFILE_ID_MAX_LEN,
+        )
+
+    def test_desktop_profile_id_remains_distinct_per_client(self) -> None:
+        environment_id = (
+            mobile_simulator_module.SOCIAL_CROSS_STATION_MIXED_ENVIRONMENT_ID
+        )
+        run_id = "0a94dfce3b01c1df"
+        builder = mobile_simulator_module.ChatMixedNativeProvisioner._desktop_profile_id
+        profiles = {
+            builder(environment_id, run_id, client_id)
+            for client_id in ("desktop-alice", "desktop-bob")
+        }
+        self.assertEqual(len(profiles), 2)
+
+    def test_desktop_profile_id_rejects_suffix_that_overflows_limit(self) -> None:
+        # A 60-char run id makes the suffix alone longer than the 64-char
+        # boundary, so no prefix truncation can produce a valid profile.
+        with self.assertRaises(ValueError):
+            mobile_simulator_module.ChatMixedNativeProvisioner._desktop_profile_id(
+                "env", "a" * 60, "desktop-alice"
+            )
+
 
 class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
     def test_lifecycle_projector_keeps_scope_and_digests_nested_device_ids(
@@ -3012,6 +3213,7 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
                         "deviceRole": "simulator",
                         "profile": "sim-ios",
                         "device": "raw-ios-udid",
+                        "storageRoot": "/tmp/sim-ios",
                         "ports": {
                             "wda-local": 8101,
                             "mjpeg": 9101,
@@ -3025,6 +3227,7 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
                         "deviceRole": "peer-simulator",
                         "profile": "sim-ios-peer",
                         "device": "raw-ios-peer-udid",
+                        "storageRoot": "/tmp/sim-ios-peer",
                         "ports": {
                             "wda-local": 8102,
                             "mjpeg": 9201,
@@ -3111,6 +3314,8 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
             self.contract,
         )
         provisioner._base_manifest = self._base_manifest()
+        provisioner.bind_evidence_run(self.evidence_run)  # type: ignore[arg-type]
+        provisioner._manifest = provisioner._base_manifest
 
         with patch(
             "tooling.acceptance.gates.mobile.simulator_e2e."
@@ -3203,6 +3408,11 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
                 "tooling.acceptance.provisioners.mobile_simulator."
                 "verify_reset_target",
                 side_effect=verify_target,
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "bound_reset_profiles",
+                side_effect=lambda _profiles: contextlib.nullcontext(),
             ),
             patch.object(
                 provisioner,
@@ -3330,6 +3540,13 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
             self.assertTrue(reset_authorized)
             reset_calls.append((deployment, actors))
 
+        binding_entries: list[tuple[str, ...]] = []
+
+        @contextlib.contextmanager
+        def record_bound_profiles(profiles: object) -> object:
+            binding_entries.append(tuple(sorted(profiles)))  # type: ignore[arg-type]
+            yield
+
         services = {
             service_id: self._attestation(service_id)
             for service_id in ("station-primary", "station-secondary")
@@ -3348,6 +3565,11 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
                 "tooling.acceptance.provisioners.mobile_simulator."
                 "require_station_reset_authority",
                 return_value={"validation": "current"},
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "bound_reset_profiles",
+                side_effect=record_bound_profiles,
             ),
             patch.object(
                 provisioner,
@@ -3407,6 +3629,18 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
 
         self.assertEqual(manifest.state, ProvisioningState.FIXTURE_READY)
         self.assertTrue(context_cleanup.succeeded)
+        # One binding context during the provision pre-check, one during
+        # fixture preparation, and one per reverse cleanup target; every
+        # entry must authorize both distinct Stations.
+        self.assertEqual(
+            binding_entries,
+            [
+                ("primary", "secondary"),
+                ("primary", "secondary"),
+                ("primary", "secondary"),
+                ("primary", "secondary"),
+            ],
+        )
         payload = manifest.to_dict()
         self.assertNotEqual(
             manifest.run_id,
@@ -4032,13 +4266,16 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
         )
         self.assertEqual(
             (ios_assets / "index.html").read_text(encoding="utf-8"),
-            "fresh-mobile-web-bundle\n",
+            FIXTURE_WEB_INDEX_HTML,
         )
         self.assertTrue((ios_assets / "assets" / "main.js").is_file())
+        self.assertTrue(
+            (ios_assets / "assets" / FIXTURE_REGISTRY_CHUNK).is_file()
+        )
         self.assertEqual(self.fetches, [])
         self.assertEqual(
             self.executor.ios_asset_payloads,
-            ["fresh-mobile-web-bundle\n"],
+            [FIXTURE_WEB_INDEX_HTML],
         )
         self.assertTrue(
             (self.repo_root / IOS_WEB_ASSETS_RELATIVE_PATH / "index.html").is_file()
@@ -4344,7 +4581,7 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
         self.assertFalse((assets / "legacy.txt").exists())
         self.assertEqual(
             (assets / "index.html").read_text(encoding="utf-8"),
-            "fresh-mobile-web-bundle\n",
+            FIXTURE_WEB_INDEX_HTML,
         )
 
         self.provisioner.cleanup()
@@ -4354,6 +4591,85 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
             "preserve-me\n",
         )
         self.assertFalse((assets / "index.html").exists())
+
+    def test_ios_build_binds_cargo_to_immutable_dist_snapshot(self) -> None:
+        manifest = self.provisioner.provision(
+            "mobile-simulator-access-e2e"
+        )
+        self.assertEqual(manifest.state, ProvisioningState.FIXTURE_READY)
+
+        web_envs = [
+            environment
+            for command, environment in zip(
+                self.executor.commands, self.executor.environments
+            )
+            if command == ("pnpm", "--dir", "apps/mobile", "run", "build")
+        ]
+        self.assertTrue(web_envs)
+        self.assertNotIn(
+            IOS_TAURI_FRONTEND_CONFIG_ENV,
+            {key for environment in web_envs for key in environment},
+        )
+
+        xcode_envs = [
+            environment
+            for command, environment in zip(
+                self.executor.commands, self.executor.environments
+            )
+            if command[:1] == ("xcodebuild",)
+        ]
+        self.assertTrue(xcode_envs)
+        override_paths = {
+            environment[IOS_TAURI_FRONTEND_CONFIG_ENV]
+            for environment in xcode_envs
+        }
+        self.assertEqual(len(override_paths), 1)
+        override_path = Path(override_paths.pop())
+        self.assertEqual(
+            override_path.name, IOS_TAURI_FRONTEND_CONFIG_FILENAME
+        )
+        override = json.loads(override_path.read_text(encoding="utf-8"))
+        frontend_dist = Path(override["build"]["frontendDist"])
+        self.assertEqual(
+            frontend_dist.name, IOS_WEB_DIST_SNAPSHOT_DIRNAME
+        )
+        self.assertEqual(
+            (frontend_dist / "index.html").read_text(encoding="utf-8"),
+            FIXTURE_WEB_INDEX_HTML,
+        )
+        self.assertTrue(
+            (frontend_dist / "assets" / FIXTURE_REGISTRY_CHUNK).is_file()
+        )
+
+        # The run-owned snapshot must stay immutable even when a concurrent
+        # worktree web build overwrites the mutable dist directory.
+        worktree_dist = self.repo_root / MOBILE_WEB_DIST_RELATIVE_PATH
+        (worktree_dist / "assets" / "contaminated.js").write_text(
+            "stale\n",
+            encoding="utf-8",
+        )
+        self.assertFalse(
+            (frontend_dist / "assets" / "contaminated.js").exists()
+        )
+        self.provisioner.cleanup()
+
+    def test_ios_build_blocks_when_native_embedding_diverges(self) -> None:
+        self.executor = FakeCommandExecutor(
+            self.repo_root,
+            embed_staged_assets=False,
+        )
+        self.provisioner = self._new_provisioner()
+
+        manifest = self.provisioner.provision(
+            "mobile-simulator-access-e2e"
+        )
+
+        self.assertEqual(manifest.state, ProvisioningState.BLOCKED)
+        self.assertEqual(
+            manifest.blocked_resource,
+            IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
+        )
+        self.provisioner.cleanup()
 
     def test_missing_android_toolchain_does_not_block_dual_ios(
         self,
@@ -4843,6 +5159,41 @@ class MobileIOSLayoutSimulatorProvisionerTests(unittest.TestCase):
             f"simulator-delete:sim-ios-current:{device_id}",
             completed,
         )
+
+
+class MobileNativeOutputCaptureTests(unittest.TestCase):
+    def test_owned_output_generations_are_redacted_and_written_once(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            written: list[tuple[str, bytes, dict[str, Any]]] = []
+            owner = SimpleNamespace(
+                _raw_authority_values=lambda: ("test-session-secret",),
+                evidence_run=SimpleNamespace(write_bytes=lambda path, data, **kwargs:
+                                             written.append((path, data, kwargs))),
+            )
+            from tooling.acceptance.gates.mobile.simulator_native_output import ios_native_output_callbacks
+            launch, capture = ios_native_output_callbacks(
+                directory=Path(raw) / "native-output", client_id="sim-ios", device="owned-simulator",
+                application_id="com.peers.touch.mobile", writer=owner.evidence_run,
+                sensitive_values=owner._raw_authority_values(),
+            )
+            with patch.object(mobile_simulator_module.subprocess, "run",
+                              return_value=SimpleNamespace(returncode=0, stdout="", stderr="")) as run:
+                for generation in (1, 2):
+                    launch()
+                    argv = run.call_args.args[0]
+                    self.assertEqual(argv[-2:], ("owned-simulator", "com.peers.touch.mobile"))
+                    self.assertIn("--terminate-running-process", argv)
+                    root = Path(raw) / "native-output"
+                    (root / f"{generation}-stdout.log").write_text("station-route test-session-secret failed")
+                    (root / f"{generation}-stderr.log").write_text("native diagnostic")
+                    capture()
+                    capture()
+                    self.assertEqual(len(written), generation * 2)
+                self.assertEqual(run.call_count, 2)
+            self.assertEqual(len({path for path, _, _ in written}), 4)
+            self.assertTrue(all(b"test-session-secret" not in data for _, data, _ in written))
+            self.assertIn(b"station-route", written[0][1])
+            self.assertEqual(written[0][2]["role"], "mobile-native-stdout/sim-ios/1")
 
 
 if __name__ == "__main__":

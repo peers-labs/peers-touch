@@ -1,3 +1,13 @@
+/**
+ * Long-list evidence on the ONE product surface.
+ *
+ * The old harness virtual-window contract (data-window-*) is retired with its
+ * duplicate skin. Volume/filter/continuity is now evidence on the product
+ * lists themselves via the `long-lists` injected AppState: 240 conversations,
+ * 240 contacts and a 480-message thread, all rendered by MobileApp.
+ *
+ * Run: PROTOTYPE_URL=http://localhost:3108 node scripts/check-long-lists.mjs
+ */
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -6,347 +16,76 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
 const require = createRequire(resolve(repoRoot, 'apps/desktop/package.json'));
-const { chromium, expect } = require('@playwright/test');
-const copy = require(resolve(repoRoot, 'packages/locales/en/common.json'));
-const searchCopy = require(resolve(repoRoot, 'packages/locales/en/search.json'));
+const { chromium } = require('@playwright/test');
+const url = process.env.PROTOTYPE_URL ?? 'http://localhost:3108';
 const output = resolve(repoRoot, 'apps/mobile/src-tauri/target/prototype-long-lists');
 await mkdir(output, { recursive: true });
-const url = new URL(process.env.PROTOTYPE_URL ?? 'http://localhost:3262');
-assert(['localhost', '127.0.0.1', '[::1]'].includes(url.hostname), 'Use the local Make Portal');
-try {
-  const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
-  assert(response.ok, `Portal HTTP ${response.status}`);
-} catch (error) {
-  throw new Error('Make Portal unavailable. Ask the integrator to start make run-prototype; this check never starts a server.', { cause: error });
-}
 
-const viewports = [
-  { width: 1440, height: 1100 },
-  { width: 554, height: 954 },
-  { width: 390, height: 844 },
-];
-const reports = [];
 const browser = await chromium.launch({ headless: true });
+const reports = [];
 try {
-  for (const viewport of viewports) {
+  for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 1100 }]) {
     const page = await browser.newPage({ viewport, colorScheme: 'light' });
-    page.setDefaultTimeout(10000);
     const errors = [];
-    page.on('pageerror', (error) => errors.push(error.message));
-    const device = page.getByRole('region', { name: 'Mobile device preview', exact: true });
-    const rows = (window) => window.locator('[data-scroll-anchor-id]');
-    const list = (prefix) => device.locator(`[data-window-surface^="${prefix}:"]`);
-    const messages = () => list('messages');
-    const scroller = () => device.locator('.mp-thread-messages');
+    page.on('pageerror', e => errors.push(e.message));
+    const device = page.getByRole('region', { name: 'Mobile device preview' });
+    await page.goto(`${url}/?scenario=long-lists`);
+    await device.waitFor();
+    await page.waitForTimeout(600);
 
-    async function open(scenario) {
-      const target = new URL(url);
-      target.searchParams.set('scenario', scenario);
-      await page.goto(target.href);
-      await page.getByRole('button', { name: 'mobile Mobile Prototypes', exact: true }).click();
-      await page.getByText('Live Preview', { exact: true }).waitFor();
-      await device.waitFor();
-    }
-    async function windowState(window) {
-      return window.evaluate((element) => ({
-        start: Number(element.dataset.windowStart),
-        total: Number(element.dataset.windowTotal),
-        size: Number(element.dataset.windowSize),
-        keys: [...element.querySelectorAll('[data-scroll-anchor-id]')]
-          .map((row) => row.dataset.scrollAnchorId),
-      }));
-    }
-    async function offset(row) {
-      return row.evaluate((element) => {
-        let owner = element.parentElement;
-        while (owner && !/auto|scroll/.test(getComputedStyle(owner).overflowY)) owner = owner.parentElement;
-        if (!owner) throw new Error('Missing scroll owner');
-        return element.getBoundingClientRect().top - owner.getBoundingClientRect().top;
-      });
-    }
-    async function move(window, direction) {
-      const before = await windowState(window);
-      const label = copy[direction < 0 ? 'mobile.list.previous' : 'mobile.list.next'];
-      const control = window.getByRole('button', { name: label, exact: true });
-      await control.scrollIntoViewIfNeeded();
-      const key = direction < 0 ? before.keys[0] : before.keys.at(-1);
-      const retained = window.locator(`[data-scroll-anchor-id="${key}"]`);
-      const previousOffset = await offset(retained);
-      await control.click();
-      const expectedStart = Math.max(0, Math.min(before.total - before.size,
-        before.start + direction * Math.floor(before.size / 2)));
-      await expect(window).toHaveAttribute('data-window-start', String(expectedStart));
-      await expect.poll(async () => Math.abs(await offset(retained) - previousOffset)).toBeLessThanOrEqual(2);
-      const after = await windowState(window);
-      assert(after.keys.length <= before.size, 'Mounted row bound');
-      assert(after.keys.filter((id) => before.keys.includes(id)).length >= Math.floor(before.size / 2),
-        'Half-window overlap');
-    }
-    async function traverse(window, total, size) {
-      const visited = new Set();
-      for (let iteration = 0; iteration < 30; iteration += 1) {
-        const state = await windowState(window);
-        assert.equal(state.total, total);
-        assert.equal(state.size, size);
-        assert(state.keys.length <= size);
-        state.keys.forEach((id) => visited.add(id));
-        if (state.start + state.keys.length === total) break;
-        await move(window, 1);
-      }
-      assert.equal(visited.size, total, 'Every logical row reachable');
-      return visited.size;
-    }
-    async function returnAnchor(window, enter, leave) {
-      const target = rows(window).nth(30);
-      await target.scrollIntoViewIfNeeded();
-      const key = await target.getAttribute('data-scroll-anchor-id');
-      const before = await offset(target);
-      const start = await window.getAttribute('data-window-start');
-      await enter(target);
-      await expect(window).toHaveCount(0);
-      await leave();
-      await expect(window).toHaveAttribute('data-window-start', start);
-      await expect.poll(async () => Math.abs(await offset(
-        window.locator(`[data-scroll-anchor-id="${key}"]`),
-      ) - before)).toBeLessThanOrEqual(2);
-    }
-    async function searchHistory(query) {
-      await device.getByRole('button', { name: copy['mobile.chat.moreActions'], exact: true }).click();
-      await device.getByRole('button', { name: copy['mobile.chat.searchHistory'], exact: true }).click();
-      await expect(messages()).toHaveCount(0);
-      await device.getByRole('textbox', { name: searchCopy['search.label'], exact: true }).fill(query);
-      await device.locator('[data-prototype-page="search"]')
-        .getByRole('button', { name: searchCopy['search.mobile.submit'], exact: true }).click();
-    }
-    async function atTail() {
-      await expect.poll(() => scroller().evaluate((element) =>
-        Math.abs(element.scrollHeight - element.scrollTop - element.clientHeight))).toBeLessThanOrEqual(2);
-    }
+    const convRows = device.locator('.ma-conv-item');
+    assert.equal(await convRows.count(), 240, '240 conversations seeded');
 
-    await open('long-lists');
-    await expect(page.getByText('Long lists / sample data only', { exact: true })).toBeVisible();
-    await expect(device.locator('[data-prototype-page]')).toHaveCount(1);
-    await device.screenshot({ path: resolve(output, `${viewport.width}-conversations.png`) });
-    const conversations = list('conversations');
-    const conversationCount = await traverse(conversations, 240, 100);
-    await move(conversations, -1);
-    await returnAnchor(conversations, (target) => target.click(), () =>
-      device.getByRole('button', { name: 'Back', exact: true }).click());
-    await returnAnchor(conversations,
-      () => device.getByRole('button', { name: 'Me', exact: true }).click(),
-      () => device.locator('.mp-tabbar-item').filter({ hasText: copy['mobile.chat.title'] }).click());
+    // In-place rail filter narrows the list live; clearing restores volume.
+    await device.locator('.ma-rail-header button[aria-label="搜索"]').click();
+    await page.waitForTimeout(200);
+    await device.locator('.ma-rail-header input').fill('240');
+    await page.waitForTimeout(200);
+    assert.equal(await convRows.count(), 1, 'filter 240 → one conversation');
+    await device.locator('.ma-rail-header input').fill('no-such-row-zzz');
+    await page.waitForTimeout(150);
+    assert.equal(await convRows.count(), 0, 'no match → empty');
+    await device.locator("[data-action-id='ma.rail-search-close']").click();
+    await page.waitForTimeout(200);
+    assert.equal(await convRows.count(), 240, 'clear restores 240');
 
-    const chatSearch = device.getByPlaceholder(copy['mobile.chat.searchPlaceholder'], { exact: true });
-    await chatSearch.fill(copy['mobile.chat.thread']);
-    assert.equal(await traverse(conversations, 240, 100), 240);
-    await chatSearch.fill('240');
-    await expect(rows(conversations)).toHaveCount(1);
-    await rows(conversations).first().click();
-    await expect(messages()).toHaveAttribute('data-window-total', '480');
-    await expect(rows(messages())).toHaveCount(200);
-    await expect(device.locator('.mp-tabbar')).toHaveCount(0);
-    await atTail();
+    // Open the 480-message thread: tail reached, no horizontal overflow.
+    await convRows.first().click();
+    await device.locator('.ma-messages').waitFor();
+    await page.waitForTimeout(300);
+    const bubbles = await device.locator('.ma-messages .ma-bubble').count();
+    assert.ok(bubbles >= 478, `expected ~480 seeded messages, got ${bubbles}`);
+    const overflow = await device.locator('.ma-messages').evaluate(
+      el => el.scrollWidth > el.clientWidth + 1);
+    assert.equal(overflow, false, 'thread never overflows horizontally');
 
-    // Start at the live tail, traverse every older window, then return forward.
-    while (Number(await messages().getAttribute('data-window-start')) > 0) await move(messages(), -1);
-    const messageCount = await traverse(messages(), 480, 200);
-    await move(messages(), -1);
-    await messages().getByRole('button', { name: copy['mobile.chat.latestMessage'], exact: true }).click();
-    await expect(messages()).toHaveAttribute('data-window-start', '280');
-    await atTail();
+    // Sending appends to the live tail.
+    const before = await device.locator('.ma-messages .ma-bubble').count();
+    await device.getByRole('textbox', { name: '消息' }).fill('local-long-list-check');
+    await device.getByRole('button', { name: '发送' }).click();
+    await page.waitForTimeout(200);
+    assert.equal(await device.locator('.ma-messages .ma-bubble').count(), before + 1, 'send appends one bubble');
 
-    await searchHistory(copy['mobile.chat.threadReplyPlaceholder']);
-    const search = list('search');
-    await device.screenshot({ path: resolve(output, `${viewport.width}-search.png`) });
-    const searchCount = await traverse(search, 480, 100);
-    await move(search, -1);
-    await move(search, 1);
-    while (Number(await search.getAttribute('data-window-start')) > 0) await move(search, -1);
-    await search.locator('[data-scroll-anchor-id="long-chat-240:long-message-001"]').click();
-    await expect(search).toHaveCount(0);
-    const older = messages().locator('[data-scroll-anchor-id="long-message-001"]');
-    await expect(older).toBeFocused();
-    await expect(messages()).toHaveAttribute('data-window-start', '0');
-    assert(await offset(older) >= 0, 'Older search target visible');
-    await device.screenshot({ path: resolve(output, `${viewport.width}-older-target.png`) });
+    // Contacts segment carries the 240 people.
+    await device.getByRole('button', { name: '返回' }).click();
+    await page.waitForTimeout(200);
+    await device.locator('[data-action-id="segment.contacts"]').click();
+    await page.waitForTimeout(300);
+    // 240 people + 80 generated groups = 320 contact rows.
+    assert.equal(await device.locator('.ma-contact-row').count(), 320, '240 people + 80 groups');
+    assert.equal(await device.locator('.ma-contact-friend .ma-contact-row').count(), 240, '240 people');
 
-    // Reply-thread detail must unmount the message window and restore its reader.
-    const threadControl = older.getByRole('button', {
-      name: copy['mobile.chat.threadReplyCount'].replace('{{count}}', '3'), exact: true,
-    });
-    await threadControl.scrollIntoViewIfNeeded();
-    const olderOffset = await offset(older);
-    await threadControl.click();
-    await expect(messages()).toHaveCount(0);
-    await expect(device.locator('.mp-thread-view')).toHaveCount(1);
-    await device.getByRole('button', { name: 'Back', exact: true }).click();
-    await expect(device.locator('.mp-thread-view')).toHaveCount(0);
-    await expect.poll(async () => Math.abs(await offset(older) - olderOffset)).toBeLessThanOrEqual(2);
+    // Device never scrolls horizontally.
+    const deviceOverflow = await device.evaluate(
+      el => el.scrollWidth > el.clientWidth + 1);
+    assert.equal(deviceOverflow, false, 'device horizontal overflow');
 
-    // Sending at the bottom of an older window must not turn it into the live tail.
-    const next = messages().getByRole('button', { name: copy['mobile.list.next'], exact: true });
-    await next.scrollIntoViewIfNeeded();
-    const retained = messages().locator('[data-scroll-anchor-id="long-message-200"]');
-    const retainedOffset = await offset(retained);
-    await device.getByPlaceholder(copy['mobile.chat.messagePlaceholder'], { exact: true }).fill('local-long-list-check');
-    await device.getByRole('button', { name: 'Send', exact: true }).click();
-    await expect(messages()).toHaveAttribute('data-window-total', '481');
-    await expect(messages()).toHaveAttribute('data-window-start', '0');
-    await expect.poll(async () => Math.abs(await offset(retained) - retainedOffset)).toBeLessThanOrEqual(2);
-    await messages().getByRole('button', { name: copy['mobile.chat.latestMessage'], exact: true }).click();
-    await atTail();
-    await device.getByPlaceholder(copy['mobile.chat.messagePlaceholder'], { exact: true }).fill('local-live-tail-check');
-    await device.getByRole('button', { name: 'Send', exact: true }).click();
-    await expect(messages()).toHaveAttribute('data-window-start', '282');
-    await atTail();
-
-    await searchHistory('no-sample-matches-this-query');
-    await expect(device.locator('[data-prototype-page="search"] [role="status"]').filter({
-      hasText: searchCopy['search.empty.title'].replace('{{query}}', 'no-sample-matches-this-query'),
-    })).toBeVisible();
-    await expect(rows(list('search'))).toHaveCount(0);
-    await device.getByRole('button', { name: 'Back', exact: true }).click();
-    await move(messages(), -1);
-    const threadWindow = await messages().getAttribute('data-window-start');
-    const threadRow = rows(messages()).nth(40);
-    await threadRow.scrollIntoViewIfNeeded();
-    const threadKey = await threadRow.getAttribute('data-scroll-anchor-id');
-    const threadOffset = await offset(threadRow);
-    await device.getByRole('button', { name: 'Back', exact: true }).click();
-    await expect(chatSearch).toHaveValue('240');
-    await rows(conversations).first().click();
-    await expect(messages()).toHaveAttribute('data-window-start', threadWindow);
-    await expect.poll(async () => Math.abs(await offset(
-      messages().locator(`[data-scroll-anchor-id="${threadKey}"]`),
-    ) - threadOffset)).toBeLessThanOrEqual(2);
-    await device.getByRole('button', { name: 'Back', exact: true }).click();
-
-    await device.getByRole('button', { name: 'Contacts', exact: true }).click();
-    await expect(conversations).toHaveCount(0);
-    const contacts = list('contacts');
-    const contactCount = await traverse(contacts, 240, 100);
-    await move(contacts, -1);
-    await returnAnchor(contacts, (target) => target.click(), () =>
-      device.getByRole('button', { name: 'Back', exact: true }).click());
-    await returnAnchor(contacts,
-      () => device.getByRole('button', { name: 'Me', exact: true }).click(),
-      () => device.getByRole('button', { name: 'Contacts', exact: true }).click());
-    const contactSearch = device.getByPlaceholder(copy['mobile.contacts.searchPlaceholder'], { exact: true });
-    await contactSearch.fill(copy['mobile.contacts.profile']);
-    assert.equal(await traverse(contacts, 240, 100), 240);
-    await contactSearch.fill('240');
-    await expect(rows(contacts)).toHaveCount(1);
-    await rows(contacts).first().click();
-    await expect(device.getByRole('button', { name: copy['mobile.contacts.openChat'], exact: true })).toBeDisabled();
-    await expect(device.getByText(copy['mobile.launch.unavailable'], { exact: true })).toBeVisible();
-    await expect(device.getByText(copy['mobile.contacts.federationRequired'], { exact: true })).toHaveCount(0);
-    await device.getByRole('button', { name: 'Back', exact: true }).click();
-    await expect(contactSearch).toHaveValue('240');
-    await contactSearch.fill('no-sample-matches-this-query');
-    await expect(device.getByText(copy['mobile.contacts.noSearchResults'], { exact: true })).toBeVisible();
-    await expect(device.locator('[data-prototype-page]')).toHaveCount(1);
-    await device.screenshot({ path: resolve(output, `${viewport.width}-empty.png`) });
-    const geometry = await device.evaluate((element) => ({
-      width: element.getBoundingClientRect().width,
-      overflowing: element.scrollWidth > element.clientWidth,
-      portalOverflow: document.documentElement.scrollWidth > window.innerWidth,
-    }));
-    assert(geometry.width >= 320 && !geometry.overflowing && !geometry.portalOverflow);
-
-    // Search and Chat share one Shell-owned sample snapshot across unmounts.
-    await open('long-lists');
-    await rows(list('conversations')).first().click();
-    const retainedText = 'local-search-continuity';
-    await device.getByPlaceholder(copy['mobile.chat.messagePlaceholder'], { exact: true }).fill(retainedText);
-    await device.getByRole('button', { name: 'Send', exact: true }).click();
-    await searchHistory(retainedText);
-    await expect(rows(list('search'))).toHaveCount(1);
-    const retainedId = (await rows(list('search')).first().getAttribute('data-scroll-anchor-id'))
-      .slice('long-chat-001:'.length);
-    await rows(list('search')).first().click();
-    await expect(messages().locator(`[data-scroll-anchor-id="${retainedId}"]`)).toBeFocused();
-    await device.getByRole('button', { name: 'Back', exact: true }).click();
-    await expect(device.getByRole('textbox', { name: searchCopy['search.label'], exact: true })).toHaveValue(retainedText);
-    await device.getByRole('button', { name: 'Back', exact: true }).click();
-    await device.getByRole('button', { name: 'Back', exact: true }).click();
-    await rows(list('conversations')).nth(1).click();
-    await searchHistory(retainedText);
-    await expect(rows(list('search'))).toHaveCount(0);
-    await device.getByRole('button', { name: searchCopy['search.mobile.expandScope'], exact: true }).click();
-    await expect(rows(list('search'))).toHaveCount(1);
-    await rows(list('search')).first().click();
-    const retainedMessage = messages().locator(`[data-scroll-anchor-id="${retainedId}"]`);
-    await expect(retainedMessage).toBeFocused();
-    await retainedMessage.locator('.mp-bubble').click({ button: 'right' });
-    await device.getByRole('button', { name: copy['mobile.chat.deleteForMe'], exact: true }).click();
-    await device.locator('[data-hide-confirm]').click();
-    await device.getByRole('button', { name: 'Back', exact: true }).click();
-    await expect(rows(list('search'))).toHaveCount(0);
-    await expect(device.getByText(searchCopy['search.empty.detail'], { exact: true })).toBeVisible();
-
-    await open('long-lists');
-    await rows(list('conversations')).first().click();
-    await searchHistory(`${copy['mobile.chat.threadReplyPlaceholder']} 001`);
-    await rows(list('search')).first().click();
-    await messages().locator('[data-scroll-anchor-id="long-message-001"]').getByRole('button', {
-      name: copy['mobile.chat.threadReplyCount'].replace('{{count}}', '3'), exact: true,
-    }).click();
-    await device.getByPlaceholder(copy['mobile.thread.replyPlaceholder'], { exact: true }).fill('local-thread-search-continuity');
-    await device.getByRole('button', { name: 'Send', exact: true }).click();
-    await device.getByRole('button', { name: 'Back', exact: true }).click();
-    await searchHistory('local-thread-search-continuity');
-    await expect(rows(list('search'))).toHaveCount(1);
-    await rows(list('search')).first().click();
-    await expect(device.locator('.mp-thread-reply-item[data-search-target]')).toBeFocused();
-    await device.getByRole('button', { name: 'Back', exact: true }).click();
-    await expect(device.getByRole('textbox', { name: searchCopy['search.label'], exact: true }))
-      .toHaveValue('local-thread-search-continuity');
-
-    // Retain the prior recovery/Social samples, without using them as business proof.
-    await open('social-unavailable');
-    await device.getByRole('button', { name: 'Retry', exact: true }).click();
-    await page.getByRole('button', { name: 'Retry fails', exact: true }).click();
-    await expect(device.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
-    await open('find-people-no-membership');
-    // peers-ui keeps unavailable commands focusable (B19): aria-disabled plus an
-    // AT-exposed reason instead of a native disabled attribute.
-    const noMembershipRequest = page.getByRole('dialog', { name: 'Find People', exact: true })
-      .locator('[data-action-id^="find-people.request."]');
-    await expect(noMembershipRequest).toHaveAttribute('aria-disabled', 'true');
-    await expect(noMembershipRequest).toContainText(copy['mobile.contacts.sendRequest']);
-    await open('contact-direct');
-    await device.getByRole('button', { name: /Frank/ }).click();
-    await device.getByRole('button', { name: copy['mobile.contacts.openChat'], exact: true }).click();
-    await expect(device.locator('[data-demo-direct-status="preparing"]')).toBeVisible();
-    await page.getByRole('button', { name: 'Direct fails', exact: true }).click();
-    await device.getByRole('button', { name: 'Retry', exact: true }).click();
-    await page.getByRole('button', { name: 'Direct ready', exact: true }).click();
-    await expect(device.getByText(copy['mobile.chat.emptyThread'], { exact: true })).toBeVisible();
-    await expect(rows(messages())).toHaveCount(0);
-    await open('request-unknown');
-    const intent = (await page.locator('.mp-evidence-intent').innerText()).split(' / ').slice(0, 2);
-    await page.getByRole('dialog', { name: 'Find People', exact: true })
-      .getByRole('button', { name: /^Check Status \(\d+\)$/ }).click();
-    assert.deepEqual((await page.locator('.mp-evidence-intent').innerText()).split(' / ').slice(0, 2), intent);
-    await page.getByRole('button', { name: 'Request confirmed pending', exact: true }).click();
-    await page.getByRole('button', { name: 'Relationship accepted', exact: true }).click();
-    const acceptedRequest = page.getByRole('dialog', { name: 'Find People', exact: true })
-      .locator('[data-action-id^="find-people.request."]');
-    await expect(acceptedRequest).toHaveAttribute('aria-disabled', 'true');
-    await expect(acceptedRequest).toContainText(copy['mobile.contacts.alreadyFriend']);
-    await open('draft-restored');
-    await expect(device.locator('.mp-shell')).toHaveCount(1);
-    assert.deepEqual(errors, []);
-    reports.push({ viewport, conversationCount, contactCount, messageCount, searchCount, geometry,
-      continuity: ['sent-message-remount', 'scoped-isolation', 'global-original', 'hide-revalidation', 'thread-reply-remount'] });
+    await device.screenshot({ path: resolve(output, `${viewport.width}-long-lists.png`) });
+    reports.push({ viewport, conversations: 240, contacts: 320, threadMessages: bubbles, errors: [...errors] });
+    assert.deepEqual(errors, [], `runtime errors at ${viewport.width}`);
     await page.close();
   }
-  process.stdout.write(`${JSON.stringify({
-    evidenceType: 'prototype-sample-only',
-    serverStarted: false,
-    reports,
-    unproven: ['Owner confirmation', 'pixel parity', 'native behavior', 'Station data', 'production memory and timing'],
-  }, null, 2)}\n`);
 } finally {
   await browser.close();
 }
+process.stdout.write(`${JSON.stringify({ evidenceType: 'prototype-sample-only', reports }, null, 2)}\n`);

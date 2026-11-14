@@ -359,16 +359,19 @@ func (s *oauthSubServer) handleProviders(c context.Context, ctx *app.RequestCont
 			})
 		}
 		providers = append(providers, map[string]any{
-			"id":              p.ID,
-			"name":            p.Name,
-			"description":     p.Description,
-			"icon":            p.Icon,
-			"color":           p.Color,
-			"category":        p.Category,
-			"builtin":         true,
-			"enabled":         p.Enabled,
-			"status":          p.Status,
-			"has_credentials": p.HasCredentials,
+			"id":          p.ID,
+			"name":        p.Name,
+			"description": p.Description,
+			"icon":        p.Icon,
+			"color":       p.Color,
+			"category":    p.Category,
+			"builtin":     true,
+			"enabled":     p.Enabled,
+			"status":      p.Status,
+			// Effective credential state: the static config flag declares
+			// intent, but a sign-in only works with client id/secret present
+			// in the Station environment.
+			"has_credentials": providerRuntimeHasCredentials(p.ID),
 			"connected":       false,
 			"callback_url":    p.CallbackURL,
 			"environments":    envs,

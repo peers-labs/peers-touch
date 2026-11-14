@@ -5,6 +5,7 @@ import {
 import { getUITokens, tokenVariables, type UITokens } from '@peers-touch/ui-tokens';
 import type { ThemeMode } from '@peers-touch/ui-contracts';
 import { FeedbackHost, type FeedbackChannel } from './application-feedback';
+import { InputFocusContext, restoreNavigationFocus, type InputFocusPolicy } from './focus';
 import './styles.css';
 
 interface OverlayRegistration { id: string; modal: boolean }
@@ -24,8 +25,10 @@ export interface UIProviderProps {
   className?: string;
   style?: CSSProperties;
   feedback?: FeedbackChannel;
+  /** Explicit input activation is required before a software keyboard may open. */
+  inputFocus?: InputFocusPolicy;
 }
-export function UIProvider({ children, theme = 'system', className = '', style, feedback }: UIProviderProps) {
+export function UIProvider({ children, theme = 'system', className = '', style, feedback, inputFocus = 'automatic' }: UIProviderProps) {
   const [systemDark, setSystemDark] = useState(() =>
     typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches);
   useEffect(() => {
@@ -62,7 +65,7 @@ export function UIProvider({ children, theme = 'system', className = '', style, 
     if (target.isConnected) lastTrigger.current = target;
     const frame = win.requestAnimationFrame(() => {
       focusFrames.current.delete(frame);
-      if (target.isConnected && !target.closest('[inert]')) target.focus();
+      restoreNavigationFocus(target);
     });
     focusFrames.current.set(frame, win);
   }, []);
@@ -74,8 +77,9 @@ export function UIProvider({ children, theme = 'system', className = '', style, 
   const tokens = useMemo(() => getUITokens(mode), [mode]);
   return (
     <ThemeContext.Provider value={tokens}>
+      <InputFocusContext.Provider value={inputFocus}>
       <OverlayContext.Provider value={host}>
-        <div className={`pt-ui ${className}`} data-pt-theme={mode}
+        <div className={`pt-ui ${className}`} data-pt-theme={mode} data-pt-input-focus={inputFocus}
           onClickCapture={event => {
             const target = event.target as Element;
             const trigger = target.closest<HTMLElement>('button,a[href],input,textarea,select,[tabindex]');
@@ -87,6 +91,7 @@ export function UIProvider({ children, theme = 'system', className = '', style, 
           {feedback && <FeedbackHost channel={feedback}/>}
         </div>
       </OverlayContext.Provider>
+      </InputFocusContext.Provider>
     </ThemeContext.Provider>
   );
 }
