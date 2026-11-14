@@ -331,14 +331,12 @@ describe('auth surface polish', () => {
       'TrafficLightMode::Ready => [false, false, false]',
     );
     expect(trafficLightRs).toContain('button.setHidden(hidden[slot])');
-    // Placement stays fully native: the module must never write button frames
-    // or subscribe to frame changes, because any programmatic move loses the
-    // live-resize layout race and clips the lights against the top corner.
+    // Native Auto Layout solves the compact cluster in the title-bar layout
+    // pass. Frame writes and resize callbacks would race that pass.
     expect(trafficLightRs).not.toContain('setFrameOrigin');
     expect(trafficLightRs).not.toContain('setFrame(');
     expect(trafficLightRs).not.toContain('NSViewFrameDidChangeNotification');
-    // No declarative inset either: with trafficLightPosition absent, AppKit
-    // keeps the lights at their native top-left inset through every resize.
+    // Tao's content-draw inset must not compete with title-bar constraints.
     const tauriConf = readFileSync(
       new URL('../../../src-tauri/tauri.conf.json', import.meta.url),
       'utf8',
@@ -346,6 +344,11 @@ describe('auth surface polish', () => {
     const windowConfig = JSON.parse(tauriConf).app.windows[0];
     expect(windowConfig.trafficLightPosition).toBeUndefined();
     expect(trafficLightRs).toContain('DispatchQueue::main().exec_async');
+    expect(trafficLightRs).toContain('NSLayoutConstraint::activateConstraints');
+    expect(trafficLightRs).toContain('setTranslatesAutoresizingMaskIntoConstraints(false)');
+    expect(trafficLightRs).toContain('constraintEqualToAnchor(&parent.centerYAnchor())');
+    expect(trafficLightRs).toContain('parent.constraints().iter()');
+    expect(trafficLightRs).not.toContain('addSubview');
 
     // main.rs no longer owns a one-shot configurator; it applies the auth
     // mode at setup and lets the surface commands drive later transitions.
@@ -530,30 +533,38 @@ describe('native auth/ready window surface', () => {
     expect(chatStyles).not.toMatch(/\.sc-rail-header\s*\{[^}]*min-height: 40px/);
   });
 
-  it('reserves a horizontal stage inset so top headers clear the traffic lights', () => {
+  it('keeps the native cluster inside the rail without shifting stage headers', () => {
     const northstar = readFileSync(
       new URL('../../ui/northstar.css', import.meta.url),
       'utf8',
     );
-    // Off macOS the token collapses to zero so native-title-bar platforms keep
-    // their original padding; macOS pins stage headers 28px from the stage edge.
-    expect(northstar).toMatch(/--pt-stage-traffic-inset:\s*0px/);
-    expect(northstar).toContain('--pt-stage-traffic-inset: 28px');
-
-    // The settings tab row consumes the token via max() so its gear/tabs never
-    // park under the green light while non-macOS keeps the 14px base padding.
-    expect(northstar).toContain(
-      'padding: 8px 14px 10px max(14px, var(--pt-stage-traffic-inset))',
+    expect(northstar).not.toContain('--pt-stage-traffic-inset');
+    expect(northstar).toMatch(
+      /\.sc-settings__subbar\s*\{[^}]*padding: 8px 14px 10px;/,
     );
 
-    // The chat session-rail header shares the same title-band avoidance.
     const chatStyles = readFileSync(
       new URL('../../ui/chat.css', import.meta.url),
       'utf8',
     );
-    expect(chatStyles).toContain(
-      'padding: 6px 16px 6px max(16px, var(--pt-stage-traffic-inset))',
+    expect(chatStyles).not.toContain('--pt-stage-traffic-inset');
+    expect(chatStyles).toMatch(
+      /\.sc-rail-header\s*\{[^}]*padding: 6px 16px;/,
     );
+
+    const trafficLightRs = readFileSync(
+      new URL('../../../src-tauri/src/application/traffic_lights.rs', import.meta.url),
+      'utf8',
+    );
+    const nativeConstant = (name: string) =>
+      Number(trafficLightRs.match(new RegExp(`${name}: f64 = ([\\d.]+)`))?.[1]);
+    const diameter = nativeConstant('LIGHT_DIAMETER');
+    const inset = nativeConstant('LEADING_INSET');
+    const step = nativeConstant('LIGHT_STEP');
+    expect(diameter).toBeGreaterThan(0);
+    expect(inset).toBeGreaterThan(0);
+    expect(step).toBeGreaterThan(diameter);
+    expect(inset + 2 * step + diameter).toBeLessThan(60);
   });
 
   it('defines the auth and ready geometry constants and ready fallback', () => {

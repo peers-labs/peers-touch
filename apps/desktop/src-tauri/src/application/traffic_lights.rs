@@ -1,25 +1,14 @@
 //! Surface-aware macOS traffic-light chrome.
 //!
-//! # Placement is owned entirely by AppKit, never by this module
+//! # Compact placement is solved by AppKit Auto Layout
 //!
-//! The traffic lights must stay at their unmodified native position. We tried
-//! three ways to move them and every one clipped the lights against the
-//! window's top rounded corner during a live resize:
-//!
-//! * manual `setFrame` re-asserted from a resize callback / frame notification
-//!   always runs one frame late, after the drifted frame is already displayed;
-//! * Tao's declarative `trafficLightPosition` re-applies an inset from the
-//!   content view's `drawRect:`, but the lights live in the title-bar container,
-//!   which AppKit re-lays out on its own resize cycle. Shrinking that container
-//!   and re-parenting the button origins still loses the race, so the top half
-//!   of the cluster is transiently sliced off mid-drag.
-//!
-//! The only race-free behaviour is the platform default: with no
-//! `trafficLightPosition` in `tauri.conf.json`, AppKit positions and keeps the
-//! lights at the native top-left inset for every frame, including live resize.
-//! This module therefore never writes button geometry. It only expresses what
-//! native placement cannot: the auth / ready surface difference, where login
-//! hides minimize and zoom while close stays visible.
+//! The real standard window buttons stay in their original title-bar container
+//! with their native actions. Constraints compact the cluster into the 60pt
+//! icon rail; AppKit resolves them in its own layout pass, including resize.
+//! The container and vertical center remain native. Manual frame writes,
+//! resize callbacks and Tao's content-draw inset lose that layout race and can
+//! clip the lights against the rounded corner.
+//! Login hides minimize and zoom; the ready shell shows all three.
 
 /// Traffic-light chrome matching the auth / ready window surfaces.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -44,9 +33,8 @@ fn hidden_flags(mode: TrafficLightMode) -> [bool; LIGHT_COUNT] {
     }
 }
 
-/// Process-wide traffic-light state. Placement lives in Tao, so there is no
-/// native frame state to carry; this only records the active mode so repeated
-/// surface transitions stay idempotent.
+/// Process-wide traffic-light mode. Native constraints belong to their views,
+/// so repeated surface transitions do not need to carry native frame state.
 #[derive(Debug, Default)]
 pub(crate) struct TrafficLightState {
     last_mode: std::sync::Mutex<Option<TrafficLightMode>>,
@@ -55,8 +43,8 @@ pub(crate) struct TrafficLightState {
 impl TrafficLightState {
     /// Apply the traffic-light chrome for the given surface. Idempotent and
     /// best-effort: a chrome failure never blocks the window geometry
-    /// transition. Horizontal placement is untouched (Tao owns it); only the
-    /// minimize / zoom hidden state changes.
+    /// transition. AppKit owns constraint layout; this installs the compact
+    /// cluster and updates the minimize / zoom hidden state.
     #[cfg(target_os = "macos")]
     pub(crate) fn apply<W: NativeWindowHandle>(
         window: &W,
@@ -68,7 +56,7 @@ impl TrafficLightState {
             return;
         };
         state.remember_mode(mode);
-        macos::apply_visibility(window_handle, mode);
+        macos::apply_chrome(window_handle, mode);
     }
 
     /// Non-macOS hosts keep their native title bar; nothing to reconfigure.
@@ -112,7 +100,8 @@ impl NativeWindowHandle for tauri::WebviewWindow {
 #[cfg(target_os = "macos")]
 mod macos {
     use super::*;
-    use objc2_app_kit::{NSWindow, NSWindowButton};
+    use objc2_app_kit::{NSLayoutConstraint, NSWindow, NSWindowButton};
+    use objc2_foundation::{NSArray, NSString};
 
     const KINDS: [NSWindowButton; LIGHT_COUNT] = [
         NSWindowButton::CloseButton,
@@ -120,17 +109,56 @@ mod macos {
         NSWindowButton::ZoomButton,
     ];
 
-    /// Toggle only the hidden flags. Frame geometry is deliberately never
-    /// touched here — AppKit owns native placement, and any frame write would
-    /// reintroduce the live-resize clipping documented on the module.
-    pub(super) fn apply_visibility(window_handle: usize, mode: TrafficLightMode) {
+    const LIGHT_DIAMETER: f64 = 14.0;
+    const LEADING_INSET: f64 = 5.0;
+    const LIGHT_STEP: f64 = 18.0;
+
+    pub(super) fn apply_chrome(window_handle: usize, mode: TrafficLightMode) {
         dispatch2::DispatchQueue::main().exec_async(move || {
             let ns_window = unsafe { &*(window_handle as *const NSWindow) };
             let hidden = hidden_flags(mode);
             for (slot, kind) in KINDS.iter().enumerate() {
                 if let Some(button) = ns_window.standardWindowButton(*kind) {
+                    // SAFETY: The window owns the view tree throughout this
+                    // uninterrupted main-thread operation.
+                    if let Some(parent) = unsafe { button.superview() } {
+                        let identifier =
+                            NSString::from_str(&format!("peers.traffic-light.{slot}.leading"));
+                        let installed = parent.constraints().iter().any(|constraint| {
+                            constraint.isActive()
+                                && constraint.identifier().as_deref() == Some(&*identifier)
+                        });
+                        if !installed {
+                            button.setTranslatesAutoresizingMaskIntoConstraints(false);
+                            let leading = button.leadingAnchor().constraintEqualToAnchor_constant(
+                                &parent.leadingAnchor(),
+                                LEADING_INSET + LIGHT_STEP * slot as f64,
+                            );
+                            leading.setIdentifier(Some(&identifier));
+                            let constraints = NSArray::from_retained_slice(&[
+                                leading,
+                                button
+                                    .centerYAnchor()
+                                    .constraintEqualToAnchor(&parent.centerYAnchor()),
+                                button
+                                    .widthAnchor()
+                                    .constraintEqualToConstant(LIGHT_DIAMETER),
+                                button
+                                    .heightAnchor()
+                                    .constraintEqualToConstant(LIGHT_DIAMETER),
+                            ]);
+                            NSLayoutConstraint::activateConstraints(&constraints);
+                        }
+                    }
                     button.setHidden(hidden[slot]);
                 }
+            }
+            // SAFETY: The content view's parent is owned by this live window.
+            if let Some(frame_view) = ns_window
+                .contentView()
+                .and_then(|view| unsafe { view.superview() })
+            {
+                frame_view.layoutSubtreeIfNeeded();
             }
         });
     }
