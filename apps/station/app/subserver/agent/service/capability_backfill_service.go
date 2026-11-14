@@ -17,6 +17,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/sandbox"
 	"google.golang.org/protobuf/proto"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -81,6 +82,8 @@ type legacyAgentChatConfig struct {
 	Skills             []string                     `json:"skills"`
 	Connectors         []legacyAgentConnectorConfig `json:"connectors"`
 	KnowledgeResources json.RawMessage              `json:"knowledgeResources"`
+	ExecutorKind       string                       `json:"executorKind"`
+	ExecutorKindSnake  string                       `json:"executor_kind"`
 }
 
 type legacyAgentConnectorConfig struct {
@@ -307,6 +310,9 @@ func (s *CapabilityBackfillService) scanBuiltinTools(
 	for _, definition := range definitions {
 		incrementBackfillScanned(reports, "builtin_tool")
 		result = append(result, capabilityToolManifestSeed(definition))
+		if capabilityID, ok := sandbox.SandboxCapabilityForTool(definition.Name); ok {
+			result = append(result, sandboxToolManifestSeed(definition, capabilityID))
+		}
 	}
 	return result
 }
@@ -645,11 +651,14 @@ func (s *CapabilityBackfillService) scanAgentConfigs(
 	reports []CapabilityBackfillSourceReport,
 ) ([]capabilityManifestSeed, []capabilityBindingSeed, []CapabilityBackfillRejection) {
 	knownTools := make(map[string]capabilityManifestSeed)
+	knownSandboxTools := make(map[string]capabilityManifestSeed)
 	knownSkills := make(map[string]capabilityManifestSeed)
 	for _, seed := range knownManifests {
 		switch {
 		case seed.source == "builtin_tool":
 			knownTools[seed.manifest.GetSourceInstanceId()] = seed
+		case seed.source == "builtin_tool_sandbox":
+			knownSandboxTools[seed.manifest.GetSourceInstanceId()] = seed
 		case seed.manifest.GetSourceKind() ==
 			model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_SKILL:
 			knownSkills[seed.manifest.GetSourceInstanceId()] = seed
@@ -670,8 +679,18 @@ func (s *CapabilityBackfillService) scanAgentConfigs(
 			))
 			continue
 		}
+		sandboxExecutor := agentConfigUsesSandboxExecutor(config)
 		for _, toolName := range normalizedStrings(config.Tools) {
+			// A workspace-sandbox agent binds the Station-owned sandbox variant
+			// of its local-* tools; every other agent keeps the existing
+			// desktop client-capability binding. The tool name and approval
+			// surface are identical; only the execution owner/target change.
 			manifest, ok := knownTools[toolName]
+			if sandboxExecutor {
+				if sandboxManifest, sandboxOK := knownSandboxTools[toolName]; sandboxOK {
+					manifest, ok = sandboxManifest, true
+				}
+			}
 			if !ok {
 				rejections = append(rejections, backfillRejection(
 					"agent_config", agent.ID+":tool:"+toolName, "unknown_tool",
@@ -716,6 +735,17 @@ func (s *CapabilityBackfillService) scanAgentConfigs(
 		}
 	}
 	return manifests, bindings, rejections
+}
+
+// agentConfigUsesSandboxExecutor reports whether the agent config explicitly
+// selects the WORKSPACE_SANDBOX executor kind (camelCase or snake_case).
+func agentConfigUsesSandboxExecutor(config legacyAgentChatConfig) bool {
+	kind := strings.ToLower(strings.TrimSpace(config.ExecutorKind))
+	if kind == "" {
+		kind = strings.ToLower(strings.TrimSpace(config.ExecutorKindSnake))
+	}
+	return kind == "workspace_sandbox" ||
+		kind == strings.ToLower(model.ExecutorKind_EXECUTOR_KIND_WORKSPACE_SANDBOX.String())
 }
 
 func (s *CapabilityBackfillService) scanClientCapabilities(
@@ -829,13 +859,17 @@ func capabilityToolManifestSeed(definition *domain.ToolDefinition) capabilityMan
 	case strings.HasPrefix(definition.Name, "lark_"):
 		secretBoundary = "channel-requester"
 		riskClass = "external-read"
-	case strings.HasPrefix(definition.Name, "local_"):
+	case strings.HasPrefix(definition.Name, "local_"),
+		strings.HasPrefix(definition.Name, "browser_"):
 		sourceKind = model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_CLIENT_NATIVE
 		owner = model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_CLIENT_CAPABILITY
 		availability = model.CapabilityAvailability_CAPABILITY_AVAILABILITY_AVAILABLE
 		approval = model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_MANUAL
 		secretBoundary = "client"
 		requiredRuntimeCapabilities = nil
+		if strings.HasPrefix(definition.Name, "browser_") {
+			riskClass = "client-browser"
+		}
 		if mappedID := capabilityIDForTool(definition.Name); mappedID != "" {
 			capabilityID = mappedID
 			version = "1"
@@ -871,6 +905,33 @@ func capabilityToolManifestSeed(definition *domain.ToolDefinition) capabilityMan
 			SecretBoundary:              secretBoundary,
 			Availability:                availability,
 		},
+	}
+}
+
+// sandboxToolManifestSeed is the WORKSPACE_SANDBOX variant of a local-* tool
+// capability. It keeps the identical tool name (source instance id) and input
+// schema so the model and approval surface are unchanged, but executes on
+// Station (owner STATION, kind BUILTIN_TOOL) under a workspace.sandbox.*
+// capability id; readiness therefore does not depend on a desktop lease. The
+// same manual approval policy as the desktop local tools is preserved — the
+// only thing that changes is WHERE the approved call runs.
+func sandboxToolManifestSeed(definition *domain.ToolDefinition, capabilityID string) capabilityManifestSeed {
+	base := capabilityToolManifestSeed(definition)
+	manifest := proto.Clone(base.manifest).(*model.CapabilityManifest)
+	manifest.CapabilityId = capabilityID
+	manifest.Version = "1"
+	manifest.SourceKind = model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_BUILTIN_TOOL
+	manifest.SourceInstanceId = definition.Name
+	manifest.ExecutionOwner = model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_STATION
+	manifest.Availability = model.CapabilityAvailability_CAPABILITY_AVAILABILITY_AVAILABLE
+	manifest.DefaultApprovalPolicy = model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_MANUAL
+	manifest.SecretBoundary = "station"
+	manifest.RiskClass = "sandbox-local"
+	manifest.RequiredRuntimeCapabilities = nil
+	return capabilityManifestSeed{
+		source:   "builtin_tool_sandbox",
+		sourceID: "sandbox:" + definition.Name,
+		manifest: manifest,
 	}
 }
 

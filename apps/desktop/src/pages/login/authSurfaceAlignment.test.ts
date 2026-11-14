@@ -330,24 +330,22 @@ describe('auth surface polish', () => {
     expect(trafficLightRs).toContain(
       'TrafficLightMode::Ready => [false, false, false]',
     );
-    expect(trafficLightRs).toContain('.setHidden(hidden[index])');
-    // The close light uses rail-derived geometry matched to WeChat's compact
-    // corner cluster, never a relative default-origin shift that overflows.
-    expect(trafficLightRs).toContain('const RAIL_WIDTH: f64 = 60.0;');
-    expect(trafficLightRs).toContain('const TRAFFIC_LIGHT_PITCH: f64 = 18.0;');
-    expect(trafficLightRs).toContain('const CLOSE_LEFT_INSET: f64 = 5.0;');
-    expect(trafficLightRs).toContain('fn position_close_light');
-    expect(trafficLightRs).toContain('fn position_ready_cluster');
-    expect(trafficLightRs).toContain('setFrame(CGRect::new(');
-    // Pristine frames donate size/baseline only; the ready cluster is re-laid
-    // against the rail so the zoom light never overflows into content.
-    expect(trafficLightRs).toContain('original_frames');
-    expect(trafficLightRs).toContain('index as f64 * TRAFFIC_LIGHT_PITCH');
-    // AppKit re-lays standard buttons after a window resize and can discard
-    // setFrame; the frames must be re-asserted on a second run-loop pass.
-    expect(trafficLightRs).toContain('fn layout_buttons');
+    expect(trafficLightRs).toContain('button.setHidden(hidden[slot])');
+    // Placement stays fully native: the module must never write button frames
+    // or subscribe to frame changes, because any programmatic move loses the
+    // live-resize layout race and clips the lights against the top corner.
+    expect(trafficLightRs).not.toContain('setFrameOrigin');
+    expect(trafficLightRs).not.toContain('setFrame(');
+    expect(trafficLightRs).not.toContain('NSViewFrameDidChangeNotification');
+    // No declarative inset either: with trafficLightPosition absent, AppKit
+    // keeps the lights at their native top-left inset through every resize.
+    const tauriConf = readFileSync(
+      new URL('../../../src-tauri/tauri.conf.json', import.meta.url),
+      'utf8',
+    );
+    const windowConfig = JSON.parse(tauriConf).app.windows[0];
+    expect(windowConfig.trafficLightPosition).toBeUndefined();
     expect(trafficLightRs).toContain('DispatchQueue::main().exec_async');
-    expect(trafficLightRs.match(/layout_buttons\(ns_window, target_frames, hidden\)/g)?.length).toBeGreaterThanOrEqual(2);
 
     // main.rs no longer owns a one-shot configurator; it applies the auth
     // mode at setup and lets the surface commands drive later transitions.
@@ -363,14 +361,49 @@ describe('auth surface polish', () => {
       /fn apply_traffic_light_mode[\s\S]*?cfg!\(feature = "acceptance-webdriver"\)/,
     );
 
-    // The native rail constant must match the CSS rail width so the whole
-    // three-light cluster (zoom right edge = 60px) never crosses the first
-    // column's right edge.
+    // The icon rail keeps its fixed 60px column; the native light cluster sits
+    // in the shared overlay title-bar strip above it, so it never collides with
+    // the rail's avatar and icon content.
     const northstar = readFileSync(
       new URL('../../ui/northstar.css', import.meta.url),
       'utf8',
     );
     expect(northstar).toMatch(/\.ds-rail\s*\{[^}]*width:\s*60px/);
+  });
+
+  it('keeps the rail column hairline below the traffic-light title band', () => {
+    const northstar = readFileSync(
+      new URL('../../ui/northstar.css', import.meta.url),
+      'utf8',
+    );
+    // A full-height hard seam made the native green light straddle the
+    // rail/stage boundary. The base rail rule must no longer paint the 1px
+    // inset line (only the soft glow spans the whole column).
+    const railRule = northstar.match(/\.ds-rail\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(railRule).not.toContain('inset -1px 0 0');
+    // The hairline moves to a pseudo that starts under the title band, so the
+    // lights float on one continuous strip (--pt-rail-top is 40px on macOS,
+    // 0 elsewhere, where the line correctly runs the full edge again).
+    const seam = northstar.match(/\.ds-rail::after\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(seam).toContain('top: var(--pt-rail-top)');
+    expect(seam).toContain('width: 1px');
+    expect(seam).toContain(
+      'background: color-mix(in srgb, var(--pt-text) 5%, transparent)',
+    );
+  });
+
+  it('lets the frosted rail own the left edge instead of painting a frame on it', () => {
+    const northstar = readFileSync(
+      new URL('../../ui/northstar.css', import.meta.url),
+      'utf8',
+    );
+    // The rail is a translucent blurred material no solid color can match, so
+    // the shell frame is three-sided: zero left border (rail fills to the
+    // rounded corner), 3px subtle frame only on the stage edges.
+    const shell = northstar.match(/\.ds-shell\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(shell).toContain('border-width: 3px 3px 3px 0');
+    expect(shell).toContain('border-color: var(--pt-subtle)');
+    expect(shell).not.toContain('border: 3px solid');
   });
 });
 
@@ -411,6 +444,15 @@ describe('auth surface structural hooks', () => {
     expect(pageSource).toContain('const showInlineStationSetup = gateStage === \'station_setup\'');
     // First run renders the inline Station card before any credential view.
     expect(pageSource).toContain('<StationSetupPanel');
+    // Rule priority: existing accounts and a configured Station both reach
+    // auth; first-run proceeds only via the session-only proceeded flag.
+    expect(gateStageSource).toContain('input.hasAccounts || input.hasStation || input.proceeded');
+    expect(pageSource).toContain('hasAccounts: hasExistingAccount');
+    expect(pageSource).toContain('proceeded: firstRunProceeded');
+    // The top-left "continue to sign in" action exists and is disabled until
+    // a Station is configured, so first-run cannot reach sign-in empty-handed.
+    expect(setupPanelSource).toContain('actionId="auth.station.continue-to-login"');
+    expect(pageSource).toContain('disabled: !stationRegistry.hasStation');
   });
 
   it('keeps a single Station registry hook as the shared data source', () => {
@@ -464,21 +506,28 @@ describe('native auth/ready window surface', () => {
     expect(mainWindow.maximizable).toBe(true);
   });
 
-  it('reserves a 48px rail header band so the avatar anchors the content top', () => {
+  it('reserves a slim 40px rail header band so the avatar anchors near the top', () => {
     const northstar = readFileSync(
       new URL('../../ui/northstar.css', import.meta.url),
       'utf8',
     );
     expect(northstar).toContain("--pt-titlebar-inset: 8px");
-    // The rail-top matches the 48px chat rail header rhythm: the traffic
-    // lights own the header band and the avatar starts on the content band.
-    expect(northstar).toContain("--pt-rail-top: 48px");
+    // The rail-top matches the 40px chat rail header rhythm: the traffic
+    // lights keep their native top position and the avatar rises into the
+    // reclaimed 8px instead of sitting under an oversized empty strip.
+    expect(northstar).toContain("--pt-rail-top: 40px");
     expect(northstar).toContain('padding: var(--pt-rail-top) 0 14px');
     const chatStyles = readFileSync(
       new URL('../../ui/chat.css', import.meta.url),
       'utf8',
     );
-    expect(chatStyles).toMatch(/\.sc-rail-header\s*\{[^}]*min-height: 48px/);
+    // The rail header keeps one FIXED height across the idle segmented island
+    // (36px content) and the expanded search field (34px content). A min-height
+    // let the band shrink 2px on search open and lift the Recent list, so it is
+    // a locked height with overflow hidden instead.
+    expect(chatStyles).toMatch(/\.sc-rail-header\s*\{[^}]*height: 48px/);
+    expect(chatStyles).toMatch(/\.sc-rail-header\s*\{[^}]*overflow: hidden/);
+    expect(chatStyles).not.toMatch(/\.sc-rail-header\s*\{[^}]*min-height: 40px/);
   });
 
   it('defines the auth and ready geometry constants and ready fallback', () => {

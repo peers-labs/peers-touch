@@ -928,6 +928,7 @@ func migrateToolCallColumns(tx *gorm.DB) error {
 		"external_idempotency_key":       "ExternalIdempotencyKey",
 		"receipt_recovery_credential_id": "ReceiptRecoveryCredentialID",
 		"reconciliation_deadline":        "ReconciliationDeadline",
+		"conversation_id":                "ConversationID",
 	} {
 		if tx.Migrator().HasColumn("agent_tool_calls", column) {
 			continue

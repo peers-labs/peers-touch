@@ -1,0 +1,205 @@
+syntax = "proto3";
+
+package peers_touch.model.agent.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model;model";
+
+// WE-20261104: allocation/authorization truth for a Station-side workspace
+// sandbox. Station owns this row; it never owns the process. The container
+// runtime lives behind the independent workspace-sandbox-provisioner.
+enum SandboxState {
+  SANDBOX_STATE_UNSPECIFIED = 0;
+  SANDBOX_STATE_REQUESTED = 1;
+  // Container running and proven live by the provisioner.
+  SANDBOX_STATE_ALLOCATED = 2;
+  // Container stopped; the persistent workspace volume is retained.
+  SANDBOX_STATE_DORMANT = 3;
+  // Backend fail-closed; not running. Must never silently move execution to
+  // the desktop.
+  SANDBOX_STATE_FAILED = 4;
+  // Terminal; container gone. Volume retained or deleted per the release op.
+  SANDBOX_STATE_RELEASED = 5;
+}
+
+message WorkspaceSandbox {
+  // Opaque id shared with the provisioner ("wbox-<ULID>").
+  string sandbox_ref = 1;
+  string actor_ptid = 2;
+  string agent_id = 3;
+  // Logical workspace identity; persistence unit is (this + the volume).
+  string workspace_root = 4;
+  // Whitelisted repository image pinned by digest; mutable tags are rejected.
+  string image_ref = 5;
+  SandboxState state = 6;
+  // oci_linux | oci_desktop_vm | microvm (future).
+  string backend_kind = 7;
+  // Persistent workspace volume reference.
+  string volume_ref = 8;
+  uint64 revision = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp last_live_at = 11;
+  google.protobuf.Timestamp released_at = 12;
+}
+
+// Platform-independent security intent; each backend translates it into its
+// native primitives and fails closed if it cannot provide strong isolation.
+message SandboxSecuritySpec {
+  bool non_root = 1;
+  bool no_new_privileges = 2;
+  bool read_only_rootfs = 3;
+  repeated string drop_capabilities = 4;
+  string seccomp_profile = 5;
+  bool isolate_station_network = 6;
+  repeated string egress_host_allowlist = 7;
+  SandboxQuota quota = 8;
+  // Fixed to /workspace inside the container.
+  string workspace_mount_target = 9;
+}
+
+message SandboxQuota {
+  uint64 cpu_millis = 1;
+  uint64 memory_bytes = 2;
+  uint64 pids_limit = 3;
+}
+
+// ── Station → provisioner narrow RPC messages (typed HTTP transport) ────────
+
+message ProbeRequest {}
+
+message ProbeResponse {
+  bool available = 1;
+  string backend_kind = 2;
+  string reason = 3;
+}
+
+message AllocateSandboxRequest {
+  string sandbox_ref = 1;
+  string actor_ptid = 2;
+  string image_ref = 3;
+  string volume_ref = 4;
+  SandboxSecuritySpec security = 5;
+  // Short-lived execution token proving Station authorized this allocation.
+  string execution_token = 6;
+}
+
+message AllocateSandboxResponse {
+  WorkspaceSandbox sandbox = 1;
+}
+
+message ExecRequest {
+  string sandbox_ref = 1;
+  string execution_token = 2;
+  string command = 3;
+  repeated string args = 4;
+  string cwd = 5;
+  // Allowlisted environment variables only; secrets are never transited here.
+  map<string, string> env = 6;
+  uint64 timeout_ms = 7;
+}
+
+message ExecChunk {
+  // stdout / stderr / done stream markers.
+  bytes stdout = 1;
+  bytes stderr = 2;
+  bool done = 3;
+  int32 exit_code = 4;
+  // POSIX errno name on an OS-level refusal (e.g. EACCES, EPERM), else empty.
+  string os_errno = 5;
+  bool truncated = 6;
+}
+
+message OpenPtyRequest {
+  string sandbox_ref = 1;
+  string execution_token = 2;
+  string pty_id = 3;
+  string command = 4;
+  repeated string args = 5;
+  string cwd = 6;
+  uint32 cols = 7;
+  uint32 rows = 8;
+}
+
+message PtyHandle {
+  string pty_id = 1;
+  uint32 pid = 2;
+}
+
+message WritePtyRequest {
+  string sandbox_ref = 1;
+  string execution_token = 2;
+  string pty_id = 3;
+  bytes data = 4;
+}
+
+message WritePtyResponse {
+  uint64 bytes_written = 1;
+}
+
+message ResizePtyRequest {
+  string sandbox_ref = 1;
+  string execution_token = 2;
+  string pty_id = 3;
+  uint32 cols = 4;
+  uint32 rows = 5;
+}
+
+message ResizePtyResponse {}
+
+message ReadPtyRequest {
+  string sandbox_ref = 1;
+  string execution_token = 2;
+  string pty_id = 3;
+  // Bounded ring cursor; replay only what the viewer missed.
+  uint64 cursor = 4;
+  uint32 max_bytes = 5;
+}
+
+message ReadPtyResponse {
+  bytes data = 1;
+  uint64 next_cursor = 2;
+  bool truncated = 3;
+  uint32 pid = 4;
+  // running | exited | killed | unknown (unknown until live proof after a
+  // provisioner/container restart).
+  string state = 5;
+  int32 exit_code = 6;
+}
+
+message SignalPtyRequest {
+  string sandbox_ref = 1;
+  string execution_token = 2;
+  string pty_id = 3;
+  int32 signal = 4;
+}
+
+message SignalPtyResponse {}
+
+message ReconcileSandboxesRequest {
+  // Refs Station currently believes are live; the provisioner returns truth.
+  repeated string sandbox_refs = 1;
+}
+
+message SandboxLiveProof {
+  string sandbox_ref = 1;
+  bool live = 2;
+  string state = 3;
+}
+
+message ReconcileSandboxesResponse {
+  repeated SandboxLiveProof proofs = 1;
+}
+
+message ReleaseSandboxRequest {
+  string sandbox_ref = 1;
+  string execution_token = 2;
+  // Keep the persistent workspace volume (default true on idle reclaim;
+  // workspace deletion passes false).
+  bool keep_volume = 3;
+}
+
+message ReleaseSandboxResponse {
+  bool released = 1;
+  bool volume_deleted = 2;
+}

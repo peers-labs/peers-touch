@@ -49,9 +49,12 @@ describe('detail sheet header actions (north-star .sk-side-head parity)', () => 
     expect(buttons).toContain('border-radius: 8px');
   });
 
-  it('uses the prototype 52px side-head band with 8px/12px padding', () => {
-    expect(detail).toContain('const DETAIL_HEADER_HEIGHT = 52');
+  it('shares the conversation 48px header band so the bottom rules align', () => {
+    expect(detail).toContain('const DETAIL_HEADER_HEIGHT = 48');
     const header = chatCss.match(/\.sc-detail__header\s*\{([^}]*)\}/)?.[1] ?? '';
-    expect(header).toContain('padding: 8px 12px 0');
+    expect(header).toContain('padding: 0 12px');
+    // The conversation header it must line up with is the 48px .sc-chat-head.
+    const chatHead = chatCss.match(/\.sc-chat-head\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(chatHead).toContain('min-height: 48px');
   });
 });

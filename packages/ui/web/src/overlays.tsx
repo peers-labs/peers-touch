@@ -14,6 +14,12 @@ import { Button, IconButton } from './actions';
 import { Icon } from './icon';
 
 const focusable = 'button:not(:disabled),a[href],input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex]:not([tabindex="-1"])';
+
+// Convert probe keys (without the data- prefix) into React data-* attributes.
+function toDataAttributes(data?: Record<string, string>): Record<string, string> | undefined {
+  if (!data) return undefined;
+  return Object.fromEntries(Object.entries(data).map(([key, value]) => [`data-${key}`, value]));
+}
 /** Floating layers must stay inside the app surface that clips their anchor.
  * Viewport clamping alone lets a menu escape a rounded overflow:hidden app
  * frame and paint over the outer page; the nearest hidden/clip ancestor is
@@ -217,6 +223,8 @@ export function Popover({ children, content, open: controlled, onOpenChange, pla
 export interface MenuEntry extends Omit<MenuAction,'label'|'onActivate'> {
   label: ReactNode; leading?: ReactNode; kind?: 'action'|'separator';
   onActivate?: (event: React.MouseEvent<HTMLElement>) => void; children?: readonly MenuEntry[];
+  /** App-owned class merged onto the rendered menu item for surface layout. */
+  className?: string;
 }
 export interface MenuProps extends Omit<PopoverProps, 'content'> {
   actions: readonly MenuEntry[]; anchorPoint?: {x:number;y:number};
@@ -242,7 +250,7 @@ export function Menu({ actions, ...props }: MenuProps) {
   const focus = (index: number) => { setActive(index); menu.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')[index]?.focus(); };
   useEffect(() => { if (open) setActive(nextEnabledIndex(-1, 1, commands.length, i => commands[i].availability?.kind === 'disabled')); }, [open, actions]);
   return <>{trigger}<OverlayLayer open={open} kind="menu" anchor={anchor} inputMode={inputMode}
-    placement={props.placement} anchorPoint={props.anchorPoint} label={props.label} onDismiss={reason => close(reason !== 'outside')}>
+    placement={props.placement} anchorPoint={props.anchorPoint} label={props.label} className={props.className} onDismiss={reason => close(reason !== 'outside')}>
     {(() => {const content=<div ref={menu} onKeyDown={event => {
       let index = active;
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp')
@@ -255,8 +263,9 @@ export function Menu({ actions, ...props }: MenuProps) {
       {entries.map(action => action.kind==='separator' ? <div key={action.id} role="separator" className="pt-menu-separator">{action.label}</div> : <Button key={action.id} actionId={action.id}
         role="menuitem" tabIndex={commands.indexOf(action) === active ? 0 : -1} emphasis="quiet"
         tone={asActionTone(action.tone)}
-        availability={action.availability} className="pt-menu-item"
+        availability={action.availability} className={`pt-menu-item ${action.className ?? ''}`}
         leading={action.leading ?? (action.iconId ? <Icon iconId={action.iconId as never} /> : undefined)}
+        {...toDataAttributes(action.data)}
         onActivate={event => { close(true); action.onActivate?.(event); props.onAction?.(action.id,event); }}>{action.label}</Button>)}
     </div>;return props.contentFrame?props.contentFrame(content):content;})()}
   </OverlayLayer></>;

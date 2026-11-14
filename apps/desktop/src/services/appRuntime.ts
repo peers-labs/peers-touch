@@ -9,6 +9,7 @@ import { bootstrapRuntime, installRuntime, registerRuntime, teardownRuntime } fr
 import { searchRuntime } from '../runtimes/searchRuntime';
 import { settingsRuntime } from '../runtimes/settingsRuntime';
 import { deviceLinkRuntime } from '../runtimes/deviceLinkRuntime';
+import { loginApprovalRuntime } from '../runtimes/loginApprovalRuntime';
 import { socialRuntime } from '../runtimes/socialRuntime';
 import { federationRuntime } from '../runtimes/federationRuntime';
 import { homeRuntime } from '../runtimes/homeRuntime';
@@ -56,6 +57,7 @@ export function registerKernelRuntimes(): void {
   registerRuntime(messagingRecoveryRuntime);
   registerRuntime(toolRuntime);
   registerRuntime(evaluationRuntime);
+  registerRuntime(loginApprovalRuntime);
 }
 
 let installed = false;
@@ -189,6 +191,7 @@ export function teardownAppRuntime(): void {
   teardownRuntime(messagingRecoveryRuntime.id);
   teardownRuntime(toolRuntime.id);
   teardownRuntime(evaluationRuntime.id);
+  teardownRuntime(loginApprovalRuntime.id);
   teardownMediaRuntime();
   teardownNavigationBadgeProjection();
   teardownSessionKickBridge();

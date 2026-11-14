@@ -71,9 +71,6 @@ test('FLOW-A01 Hook permits ordinary work without identity, declaration, or Plan
     assert.equal(result.action, 'ALLOW');
     assert.equal(result.executionRoot, root);
     assert.match(result.additionalContext, /docs\/global\/workflow\.md/);
-    assert.match(result.additionalContext, /pt-god-view\/SKILL\.md/);
-    assert.match(result.additionalContext, /pt-dev-workflow\/SKILL\.md/);
-    assert.match(result.additionalContext, /pt-read-before-edit\/SKILL\.md/);
   } finally {
     cleanupFixture(root);
   }
@@ -156,7 +153,7 @@ test('FLOW-A04 context lookup failure falls back to base project guidance', asyn
       },
     });
     assert.equal(result.action, 'ALLOW');
-    assert.match(result.additionalContext, /Hook context is advisory/);
+    assert.match(result.additionalContext, /advisory delivery does not make the workflow optional/);
   } finally {
     cleanupFixture(root);
   }
@@ -173,6 +170,60 @@ test('FLOW-A04 Stop never blocks completion', async () => {
       }),
     );
     assert.equal(result.action, 'ALLOW');
+  } finally {
+    cleanupFixture(root);
+  }
+});
+
+test('PostCompact re-asserts the workflow instead of silently dropping it', async () => {
+  const root = fixture();
+  try {
+    const result = await evaluateWorkflowEvent(
+      event(root, {
+        event: 'POST_COMPACT',
+        hostEvent: 'PostCompact',
+        willEditFilepaths: [],
+      }),
+    );
+    assert.equal(result.action, 'CONTEXT');
+    assert.equal(result.code, 'WORKFLOW_REENTRY_AFTER_COMPACTION');
+    assert.equal(result.executionRoot, root);
+    assert.match(result.additionalContext, /pt-god-view/);
+    assert.match(result.additionalContext, /mandatory unless the user explicitly declares an opt-out/);
+  } finally {
+    cleanupFixture(root);
+  }
+});
+
+test('PreCompact carries the same re-entry directive', async () => {
+  const root = fixture();
+  try {
+    const result = await evaluateWorkflowEvent(
+      event(root, {
+        event: 'PRE_COMPACT',
+        hostEvent: 'PreCompact',
+        willEditFilepaths: [],
+      }),
+    );
+    assert.equal(result.action, 'CONTEXT');
+    assert.equal(result.code, 'WORKFLOW_REENTRY_AFTER_COMPACTION');
+  } finally {
+    cleanupFixture(root);
+  }
+});
+
+test('Subagent lifecycle events normalize but do not block', async () => {
+  const root = fixture();
+  try {
+    const result = await evaluateWorkflowEvent(
+      event(root, {
+        event: 'SUBAGENT_STOP',
+        hostEvent: 'SubagentStop',
+        willEditFilepaths: [],
+      }),
+    );
+    assert.equal(result.action, 'ALLOW');
+    assert.equal(result.code, 'PROJECT_GUIDANCE_AVAILABLE');
   } finally {
     cleanupFixture(root);
   }

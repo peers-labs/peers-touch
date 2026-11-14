@@ -25,10 +25,14 @@ type Memory struct {
 	TrustScore     float64 `gorm:"not null;default:0.5"`
 	RetrievalCount int     `gorm:"not null;default:0"`
 	LastAccessedAt *time.Time
-	HelpfulCount   int       `gorm:"not null;default:0"`
-	HarmfulCount   int       `gorm:"not null;default:0"`
-	CreatedAt      time.Time `gorm:"not null;autoCreateTime"`
-	UpdatedAt      time.Time `gorm:"not null;autoUpdateTime"`
+	HelpfulCount   int `gorm:"not null;default:0"`
+	HarmfulCount   int `gorm:"not null;default:0"`
+	// Lifecycle gate: candidate | confirmed | rejected. Default confirmed keeps
+	// pre-gate rows and explicit writes active; extracted candidates start as
+	// candidate and are excluded from retrieval until human confirmation.
+	Status    string    `gorm:"not null;type:varchar(20);default:'confirmed';index:idx_memories_status"`
+	CreatedAt time.Time `gorm:"not null;autoCreateTime"`
+	UpdatedAt time.Time `gorm:"not null;autoUpdateTime"`
 }
 
 // TableName sets the table name.

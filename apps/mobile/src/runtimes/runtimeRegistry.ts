@@ -55,6 +55,7 @@ import {
 } from './accessRuntime';
 import { createDeviceSettingsRuntimeDescriptor } from './deviceSettingsRuntime';
 import { createDeviceLinkRuntimeDescriptor, fenceMobileDeviceLink } from './deviceLinkRuntime';
+import { loginApprovalRuntime } from './loginApprovalRuntime';
 import { installMobileNativeEventBridge } from './mobileNativeEventBridge';
 import { fetchLifecycleGeneration } from './nativeLifecycleBridge';
 import { createMessagingRuntimeDescriptor } from './messagingRuntime';
@@ -740,6 +741,7 @@ export function createMobileRuntimeDescriptors(): MobileRuntimeDescriptor[] {
     createDeviceSettingsRuntimeDescriptor(),
     createSecureStorageDescriptor(),
     createDeviceLinkRuntimeDescriptor(),
+    loginApprovalRuntime,
     createXConfigRuntimeDescriptor(),
     createStationRuntimeDescriptor(),
     createAuthRuntimeDescriptor(),

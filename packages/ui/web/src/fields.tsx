@@ -31,6 +31,9 @@ export function FieldFrame({ invalid, disabled, className = '', ...props }: Fiel
 export interface TextFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'size'> {
   leading?: ReactNode; trailing?: ReactNode; density?: Density;
   availability?: Availability; clearable?: boolean; onClear?: () => void;
+  /** Class applied to the wrapping FieldFrame (layout), distinct from
+      `className`, which lands on the inner <input>. */
+  frameClassName?: string;
   // Semantic value channel, parallel to NumberField/Select/Slider. FormField
   // binds through it; it is destructured here so it never reaches the DOM
   // (React rejects unknown on* props on native elements).
@@ -39,10 +42,10 @@ export interface TextFieldProps extends Omit<InputHTMLAttributes<HTMLInputElemen
 }
 export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(function TextField({
   leading, trailing, density = 'normal', availability, clearable, onClear, onEnter, onKeyDown,
-  onChange, onValueChange, className = '', style, ...props
+  onChange, onValueChange, className = '', frameClassName = '', style, ...props
 }, ref) {
   const reason = disabledReason(availability), disabled = props.disabled || availability?.kind === 'disabled';
-  return <FieldFrame disabled={disabled} invalid={!!props['aria-invalid']} style={style}>
+  return <FieldFrame disabled={disabled} invalid={!!props['aria-invalid']} style={style} className={frameClassName}>
     {leading}<input {...props} ref={ref} className={`pt-input ${className}`} disabled={disabled}
       title={reason ?? props.title} data-density={density}
       onChange={event => { onChange?.(event); onValueChange?.(event.target.value); }}
@@ -59,15 +62,18 @@ export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(function T
 export interface TextAreaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   minimumRows?: number; maximumRows?: number; onEnter?: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   characterCount?: boolean; framing?: 'field' | 'embedded';
+  /** Class applied to the wrapping FieldFrame (layout), distinct from
+      `className`, which lands on the inner <textarea>. */
+  frameClassName?: string;
   // Semantic value channel; destructured so FormField's binding never leaks
   // onto the native textarea.
   onValueChange?: (value: string) => void;
 }
 export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(function TextArea({
-  className = '', style, minimumRows, maximumRows, onEnter, onKeyDown, characterCount, framing = 'field',
+  className = '', frameClassName = '', style, minimumRows, maximumRows, onEnter, onKeyDown, characterCount, framing = 'field',
   onChange, onValueChange, ...props
 }, ref) {
-  return <FieldFrame invalid={!!props['aria-invalid']} disabled={props.disabled} style={style} data-framing={framing} data-multiline="true">
+  return <FieldFrame invalid={!!props['aria-invalid']} disabled={props.disabled} style={style} className={frameClassName} data-framing={framing} data-multiline="true">
     <textarea {...props} ref={ref} className={`pt-textarea ${className}`} rows={props.rows ?? minimumRows ?? 3}
       style={maximumRows ? { maxHeight: `${maximumRows * 1.5 + 1}em` } : undefined}
       onChange={event => { onChange?.(event); onValueChange?.(event.target.value); }}

@@ -85,8 +85,10 @@ import {
 } from '../../runtimes/chatStorageRuntime';
 import { confirmRequest, notifyError, notifySuccess } from '../../ui/feedback';
 
-// Prototype .sk-side-head: 8px top inset + a 44px title row = one 52px band.
-const DETAIL_HEADER_HEIGHT = 52;
+// Side-sheet header band. It must match the conversation `.sc-chat-head`
+// height (48px) so the two headers' bottom rules line up when the sheet opens
+// beside the chat; a taller 52px band left a visible step between the panes.
+const DETAIL_HEADER_HEIGHT = 48;
 
 type DetailAttachment = ChatAttachmentLike;
 type DetailAttachmentKind = 'media' | 'file';

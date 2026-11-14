@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChatSessionList, type ChatRailTab } from '../components/chat/ChatSessionList';
-import { MessagingRecoveryGate } from '../components/chat/MessagingRecoveryGate';
 import { ChatContactsPanel } from '../components/chat/ChatContactsPanel';
 import { ChatMessageArea } from '../components/chat/ChatMessageArea';
+import { ChatRailResizer } from '../components/chat/ChatRailResizer';
+import {
+  CHAT_RAIL_DEFAULT_WIDTH,
+  clampChatRailWidth,
+  persistChatRailWidth,
+  readStoredChatRailWidth,
+} from '../components/chat/chatRailWidth';
 import { ChatDetailPanel } from '../components/chat/ChatDetailPanel';
 import { ChatThreadPanel } from '../components/chat/ChatThreadPanel';
 import { AttachmentDetailHost } from '../components/chat/AttachmentDetailHost';
@@ -114,16 +120,36 @@ export function SocialChatPage() {
     setDirectOpenIntent(null);
   }, []);
 
-  // Narrow single-pane swap (prototype sk-narrow-open parity): below 720px
-  // the catalog rail owns the screen until a conversation opens; the header
-  // back control returns to the rail. The swap itself is CSS-driven via
-  // data-narrow-open, this state only decides which pane is active.
+  // Narrow single-pane navigation (WeChat-style push): below 720px the catalog
+  // rail owns the stage until a conversation opens; the conversation slides in
+  // from the right and the header back control pops it back out. The motion is
+  // CSS-driven via data-narrow-open (transform/visibility), this state only
+  // decides whether the conversation layer is active.
   const isNarrow = useMediaQuery(NARROW_MEDIA_QUERY);
   const narrowOpen = isNarrow && (!!activeSessionUlid || !!directOpenIntent);
   const backToCatalog = useCallback(() => {
     cancelDirectOpenIntent();
     selectSession('');
   }, [cancelDirectOpenIntent, selectSession]);
+
+  // Manually resizable catalog rail (wide surfaces only). The numeric width
+  // feeds a CSS custom property; the rail's width declaration stays in
+  // chat.css so the 720px media query can still override it. Drag previews
+  // update state only, pointer drop / keyboard actions commit to localStorage.
+  const [railWidth, setRailWidth] = useState<number>(() =>
+    readStoredChatRailWidth(window.localStorage));
+  const previewRailWidth = useCallback(
+    (next: number) => setRailWidth(clampChatRailWidth(next)),
+    [],
+  );
+  const commitRailWidth = useCallback((next: number) => {
+    setRailWidth(persistChatRailWidth(next, window.localStorage));
+  }, []);
+  const resetRailWidth = useCallback(() => {
+    setRailWidth(
+      persistChatRailWidth(CHAT_RAIL_DEFAULT_WIDTH, window.localStorage),
+    );
+  }, []);
 
   const openDirectConversation = useCallback((contact: FriendContactSelection) => {
     const requestGeneration = ++directOpenGenerationRef.current;
@@ -272,6 +298,7 @@ export function SocialChatPage() {
       data-narrow-open={narrowOpen ? 'true' : 'false'}
       data-chat-active-peer-ptid={activePeerDid ?? ''}
       data-chat-side-panel-open={openThreadRootUlid || showDetail ? 'true' : 'false'}
+      style={{ '--pt-chat-rail-width': `${railWidth}px` } as React.CSSProperties}
     >
       {/* Unified 300px rail: Segmented 消息/联系人 header lives inside
           ChatSessionList; contacts render in the same rail and open
@@ -302,6 +329,14 @@ export function SocialChatPage() {
 
       {/* The conversation stage is always present; selecting a contact flips
           the rail back to 消息 and opens the conversation here. */}
+      {!isNarrow && (
+        <ChatRailResizer
+          width={railWidth}
+          onPreview={previewRailWidth}
+          onCommit={commitRailWidth}
+          onReset={resetRailWidth}
+        />
+      )}
       <AttachmentDetailHost />
       <ChatMessageArea
         directOpenIntent={directOpenIntent}
@@ -314,12 +349,6 @@ export function SocialChatPage() {
           stays visible regardless of which conversation is open. */}
       <CallSurface />
       <GroupCallSurface />
-
-      {/* Actor identity continuity gate: when the local device identity
-          does not match the Station continuity record, the messaging engine
-          stays inactive. Project an explicit recovery action instead of a
-          half-working conversation surface. */}
-      <MessagingRecoveryGate />
     </div>
   );
 }

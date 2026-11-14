@@ -1,5 +1,7 @@
 import {
+  useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -48,6 +50,7 @@ import {
 } from './message/chatMessageModel';
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 import { notifyError } from '../../ui/feedback';
+import { isChatMessageTailPinned } from './message/chatMessageTimelinePolicy';
 
 const EMPTY_SOCIAL_MESSAGES: SocialMessage[] = [];
 
@@ -259,6 +262,14 @@ export function ChatThreadPanel() {
   const [deleteTarget, setDeleteTarget] = useState<ChatMessage | null>(null);
   const [deletingMessage, setDeletingMessage] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // Tail-pin state for the thread viewport. Without this, sending a reply
+  // appends content below the current scroll position, so the newest message
+  // hides behind the composer and the panel visibly jumps. Mirroring the main
+  // timeline, we only follow the tail while the user is already at the tail;
+  // a manual scroll-up is never overridden.
+  const tailPinnedRef = useRef(true);
+  const prevThreadKeyRef = useRef('');
   const [highlightedAnchor, setHighlightedAnchor] = useState<string | null>(null);
   // Last thread key for which ephemeral reply/delete state was reset.
   const [resetThreadKey, setResetThreadKey] = useState<string | null>(null);
@@ -318,7 +329,7 @@ export function ChatThreadPanel() {
     const element = Array.from(panelRef.current?.querySelectorAll<HTMLElement>('[data-thread-message-id]') ?? [])
       .find(node => node.dataset.threadMessageId === scrollToMessageUlid);
     if (!element) return;
-    const viewport = panelRef.current?.querySelector<HTMLElement>('.chat-thread-scroll');
+    const viewport = scrollRef.current;
     if (!viewport) return;
     const target = element.getBoundingClientRect();
     const bounds = viewport.getBoundingClientRect();
@@ -326,8 +337,52 @@ export function ChatThreadPanel() {
     element.tabIndex = -1;
     element.focus({ preventScroll: true });
     setHighlightedAnchor(scrollToMessageUlid);
+    // An explicit anchor navigation takes over from tail pinning until the
+    // user scrolls back to the tail.
+    tailPinnedRef.current = false;
     setScrollToMessageUlid(null);
   }, [scrollToMessageUlid, displayMessages, setScrollToMessageUlid]);
+
+  const scrollToThreadTail = useCallback(() => {
+    const viewport = scrollRef.current;
+    if (!viewport) return;
+    viewport.scrollTop = viewport.scrollHeight - viewport.clientHeight;
+  }, []);
+
+  const handleThreadScroll = useCallback(() => {
+    const viewport = scrollRef.current;
+    if (!viewport) return;
+    tailPinnedRef.current = isChatMessageTailPinned({
+      clientHeight: viewport.clientHeight,
+      scrollHeight: viewport.scrollHeight,
+      scrollTop: viewport.scrollTop,
+    });
+  }, []);
+
+  // Keep the newest reply visible. Runs before paint (useLayoutEffect) so the
+  // post-send re-render settles already anchored at the tail and never flashes
+  // a scrolled/jumped frame — this removes both the "shake" and the last
+  // message hiding under the composer. A freshly opened thread starts pinned.
+  useLayoutEffect(() => {
+    if (scrollToMessageUlid) return; // explicit anchor owns positioning
+    if (prevThreadKeyRef.current !== threadKey) {
+      prevThreadKeyRef.current = threadKey;
+      tailPinnedRef.current = true;
+    }
+    if (tailPinnedRef.current) scrollToThreadTail();
+  }, [displayMessages.length, threadKey, scrollToMessageUlid, scrollToThreadTail]);
+
+  // Re-pin when the content box resizes while pinned (image load, composer
+  // auto-grow), matching the main timeline's ResizeObserver behaviour.
+  useEffect(() => {
+    const viewport = scrollRef.current;
+    if (!viewport || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (tailPinnedRef.current) scrollToThreadTail();
+    });
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, [scrollToThreadTail]);
 
   useEffect(() => {
     if (!highlightedAnchor) return;
@@ -482,7 +537,11 @@ export function ChatThreadPanel() {
         </div>
       ) : (
         <>
-          <div className="chat-thread-scroll sc-thread__scroll">
+          <div
+            ref={scrollRef}
+            className="chat-thread-scroll sc-thread__scroll"
+            onScroll={handleThreadScroll}
+          >
             {loadingThread && (
               <div className="sc-thread__loading">
                 <PtSpin size="small" />

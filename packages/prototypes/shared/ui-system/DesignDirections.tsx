@@ -16,7 +16,7 @@
  */
 import { useEffect, useState, type CSSProperties, type ChangeEvent } from 'react';
 import {
-  Search, MessageCircle, Sparkles, Settings,
+  Search, MessageCircle, Sparkles, Settings, Bot,
   Upload, ImageIcon,
   type LucideIcon,
 } from 'lucide-react';
@@ -25,6 +25,7 @@ import { SettingsFeature } from './settings/SettingsFeature';
 import type { SettingsNavigationRequest } from './settings/SettingsFeature';
 import { ChatFeature } from './chat/ChatFeature';
 import type { ChatNavigationRequest } from './chat/ChatFeature';
+import { AgentFeature } from './agent/AgentFeature';
 import { MomentsFeature, type MomentsNavigationRequest } from './moments/MomentsFeature';
 import { MOMENT_SEEDS } from './moments/moments-data';
 import { GlobalSearchOverlay } from './search/GlobalSearchOverlay';
@@ -72,9 +73,10 @@ const WALLPAPERS: { id: string; name: string; value: string }[] = [
   { id: 'night', name: '夜航', value: 'radial-gradient(120% 120% at 20% 0%,#3a4a63,#1c2536 70%)' },
 ];
 
-type RailTab = 'moments' | 'chat' | 'settings';
-const RAIL_NAV: { icon: LucideIcon; key: RailTab; labelKey: 'tab.chats' | 'nav.moments' }[] = [
+type RailTab = 'moments' | 'chat' | 'agent' | 'settings';
+const RAIL_NAV: { icon: LucideIcon; key: RailTab; labelKey: 'tab.chats' | 'nav.moments' | 'nav.agent' }[] = [
   { icon: MessageCircle, key: 'chat', labelKey: 'tab.chats' },
+  { icon: Bot, key: 'agent', labelKey: 'nav.agent' },
   { icon: Sparkles, key: 'moments', labelKey: 'nav.moments' },
 ];
 
@@ -304,6 +306,9 @@ export function DesignDirections() {
           <div className="sk-feed-pane" data-pane-active={isChat ? 'true' : 'false'}>
             <ChatFeature navigation={chatNav} newChatSignal={newChatSignal} onUnreadTotal={setChatUnread}
               onOpenMomentsProfile={openMomentsProfile} onOpenMoment={openMoment} />
+          </div>
+          <div className="sk-feed-pane" data-pane-active={railTab === 'agent' ? 'true' : 'false'}>
+            <AgentFeature />
           </div>
           <div className="sk-feed-pane" data-pane-active={railTab === 'moments' ? 'true' : 'false'}>
             <MomentsFeature navigation={momentsNav} />

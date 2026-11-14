@@ -25,6 +25,7 @@ export * from './navigation';
 export * from './content';
 export * from './markdown';
 export * from './media';
+export * from './terminal';
 export * from './advanced-fields';
 export * from './advanced-layout';
 export * from './runtime';

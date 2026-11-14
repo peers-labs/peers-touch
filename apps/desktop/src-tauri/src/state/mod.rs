@@ -64,6 +64,7 @@ impl AppState {
             sessions: WindowSessionRegistry::new().with_change_observer(std::sync::Arc::new(
                 move |window| {
                     crate::application::device_link::invalidate(window);
+                    crate::application::login_approval::invalidate();
                     let prefix = format!("{window}\0");
                     search_identity
                         .invalidate_partitions(|partition| partition.starts_with(&prefix));

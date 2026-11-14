@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 import {
+  reportHookObservation,
   runHook,
   workspaceContext,
 } from './hook-entry.mjs';
@@ -45,23 +46,45 @@ function projectFixture(parent, name) {
   return realpathSync(root);
 }
 
-test('Hook returns workflow guidance with filesystem writes denied', () => {
-  const response = JSON.parse(execFileSync(process.execPath, [
-    '--permission', '--allow-fs-read=*', '--allow-child-process',
-    path.join(installationRoot, 'tooling/plugins/pt-ew-plugin/scripts/hook-entry.mjs'),
-    '--host', 'trae', '--event', 'PreToolUse',
-  ], {
-    cwd: installationRoot,
-    input: JSON.stringify({
-      cwd: installationRoot,
-      tool_name: 'Write',
-      tool_input: { file_path: 'README.md' },
-    }),
-    encoding: 'utf8',
-    stdio: ['pipe', 'pipe', 'pipe'],
-  }));
-  assert.equal(response.hookSpecificOutput.permissionDecision, 'allow');
-  assert.match(response.hookSpecificOutput.additionalContext, /pt-dev-workflow\/SKILL\.md/);
+test('reports the current worktree without changing hook admission', async () => {
+  const calls = [];
+  const result = await reportHookObservation(
+    { host: 'trae', hostEvent: 'UserPromptSubmit' },
+    '/tmp/worktree',
+    {
+      report(options) {
+        calls.push(options);
+        return { workspaceId: '0123456789abcdef' };
+      },
+    },
+  );
+  assert.equal(result.status, 'REPORTED');
+  assert.deepEqual(calls, [
+    {
+      workspaceRoot: '/tmp/worktree',
+      host: 'trae',
+      event: 'UserPromptSubmit',
+      minimumIntervalMs: 15_000,
+    },
+  ]);
+});
+
+test('observation failure is isolated from hook admission', async () => {
+  const result = await reportHookObservation(
+    { host: 'codex', hostEvent: 'PreToolUse' },
+    '/tmp/worktree',
+    {
+      report() {
+        const error = new Error('disk unavailable');
+        error.code = 'WORKTREE_OBSERVATION_FAILED';
+        throw error;
+      },
+    },
+  );
+  assert.deepEqual(result, {
+    status: 'UNAVAILABLE',
+    code: 'WORKTREE_OBSERVATION_FAILED',
+  });
 });
 
 test('loads ordered roots from the installed TRAE workspace descriptor', () => {
@@ -85,13 +108,36 @@ test('loads ordered roots from the installed TRAE workspace descriptor', () => {
 
     assert.deepEqual(workspaceContext(workspace), {
       workspaceRoots: [realpathSync(first), realpathSync(second)],
+      skippedFolders: [],
     });
   } finally {
     rmSync(temporary, { recursive: true, force: true });
   }
 });
 
-test('rejects a workspace descriptor with a missing folder', () => {
+test('skips a missing folder but keeps the resolvable roots', () => {
+  const temporary = mkdtempSync(path.join(tmpdir(), 'pt-hook-workspace-'));
+  try {
+    const keep = path.join(temporary, 'keep');
+    mkdirSync(keep);
+    const workspace = path.join(temporary, 'fixture.code-workspace');
+    writeFileSync(
+      workspace,
+      JSON.stringify({
+        folders: [{ path: 'keep' }, { path: 'missing' }],
+      }),
+    );
+    const result = workspaceContext(workspace);
+    assert.deepEqual(result.workspaceRoots, [realpathSync(keep)]);
+    assert.deepEqual(result.skippedFolders, [
+      { value: 'missing', reason: 'unresolved' },
+    ]);
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
+});
+
+test('rejects a descriptor when every folder is missing', () => {
   const temporary = mkdtempSync(path.join(tmpdir(), 'pt-hook-workspace-'));
   try {
     const workspace = path.join(temporary, 'fixture.code-workspace');
@@ -132,9 +178,8 @@ test('FLOW-A04 thin TRAE adapter attaches guidance without identity authority', 
     response.hookSpecificOutput.additionalContext,
     /docs\/global\/workflow\.md/,
   );
-  assert.match(response.hookSpecificOutput.additionalContext, /pt-god-view\/SKILL\.md/);
-  assert.match(response.hookSpecificOutput.additionalContext, /pt-dev-workflow\/SKILL\.md/);
-  assert.equal(reports.length, 0);
+  assert.equal(reports.length, 1);
+  assert.equal(reports[0].host, 'trae');
 });
 
 test('FLOW-A04 installed Hook ignores an explicit sibling worktree', async () => {
@@ -185,5 +230,66 @@ test('FLOW-A04 installed Hook ignores an explicit sibling worktree', async () =>
       maxRetries: 5,
       retryDelay: 100,
     });
+  }
+});
+
+test('pre-tool events are traced through the injected skill recorder', async () => {
+  const temporary = mkdtempSync(path.join(tmpdir(), 'pt-hook-trace-'));
+  try {
+    const workspace = path.join(temporary, 'fixture.code-workspace');
+    writeFileSync(
+      workspace,
+      JSON.stringify({ folders: [{ path: installationRoot }] }),
+    );
+    const traced = [];
+    const response = await runHook({
+      argv: ['--host', 'trae', '--event', 'PreToolUse', '--workspace', workspace],
+      input: Readable.from([
+        Buffer.from(JSON.stringify({ tool_name: 'Skill', tool_input: {} })),
+      ]),
+      report() {
+        return { workspaceId: 'observed' };
+      },
+      recordSkill(record) {
+        traced.push(record);
+      },
+    });
+    assert.equal(traced.length, 1);
+    assert.equal(traced[0].host, 'trae');
+    assert.equal(traced[0].toolName, 'Skill');
+    // The advisory allow/context response is unaffected by tracing.
+    assert.ok(response.hookSpecificOutput);
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
+});
+
+test('a failing skill recorder never blocks the hook response', async () => {
+  const temporary = mkdtempSync(path.join(tmpdir(), 'pt-hook-trace-fail-'));
+  try {
+    const workspace = path.join(temporary, 'fixture.code-workspace');
+    writeFileSync(
+      workspace,
+      JSON.stringify({ folders: [{ path: installationRoot }] }),
+    );
+    const response = await runHook({
+      argv: ['--host', 'trae', '--event', 'PreToolUse', '--workspace', workspace],
+      input: Readable.from([
+        Buffer.from(JSON.stringify({ tool_name: 'Write', tool_input: {} })),
+      ]),
+      report() {
+        return { workspaceId: 'observed' };
+      },
+      recordSkill() {
+        throw new Error('disk full');
+      },
+    });
+    assert.ok(response.hookSpecificOutput);
+    assert.notEqual(
+      response.hookSpecificOutput?.permissionDecision,
+      'deny',
+    );
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
   }
 });

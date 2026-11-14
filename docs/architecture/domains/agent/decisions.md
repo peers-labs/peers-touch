@@ -20,6 +20,14 @@
 | MCA-D20 | 使用发布者签名 catalog 与权威读回 | accepted |
 | MCA-D22 | 使用 Station-owned 能力场景控制面 | accepted |
 | MCA-D23 | 单一场景控制面覆盖 ToolCall、MCP 与 Connector | accepted |
+| WE-D01 | Station 沙盒用 sibling 容器，禁止 DinD/挂 docker.sock | accepted |
+| WE-D02 | 沙盒持久单元是 workspace（容器一次性、卷持久） | accepted |
+| WE-D03 | 沙盒非 root + no-new-priv + 只读 rootfs 为硬前提 | accepted |
+| WE-D04 | 禁止沙盒→本机回落；落点由 capability 执行面唯一决定 | accepted |
+| WE-D05 | 沙盒网络默认隔离，出网走 allowlist 代理 | accepted |
+| WE-D06 | 跨 OS 收敛到 ExecutorBackend SPI；Win/mac 目标 runner 后置 REMOTE_CONNECTOR | accepted |
+| WE-D07 | 提权走线下 owner 授权，无对话内提权通道 | accepted |
+| WE-D08 | TerminalSession 双落点同构、Desktop 单面板标注 | accepted |
 
 ## MCA-D14: Home 工作状态由 Station 投影
 
@@ -273,3 +281,208 @@ ToolCall、MCP 和 Connector 的错误、取消与竞态需要一致的执行身
 ### Consequences
 
 所有场景必须证明零执行或一次执行边界，并保留完整 ToolCall lineage。
+
+---
+
+> 以下 WE-* 决策的完整论证（含证据分级、拓扑与跨 OS 矩阵）见
+> [workspace-execution/decisions.md](./workspace-execution/decisions.md)。
+
+## WE-D01: Station 沙盒用 sibling 容器，禁止 DinD/挂 docker.sock
+
+**Status**: accepted
+**Date**: 2026-11-04
+
+### Context
+
+Station 容器当前无 docker.sock、非特权、只挂数据卷；docker.sock 实际等同宿主 root。
+
+### Decision
+
+沙盒由独立 workspace-sandbox-provisioner 在宿主命名空间创建为 sibling 容器；Station 永不挂 sock、不 privileged、不 DinD。
+
+### Rationale
+
+把"能建容器"收敛为可独立审计/鉴权/配额的窄服务，形成大脑/身体分离，保持 Station 最小权限。
+
+### Alternatives Considered
+
+DinD（privileged、嵌套存储网络、放大逃逸面）；把 sock 直接挂进 Station（等于交宿主 root）。
+
+### Consequences
+
+隔离清晰但新增一个部署单元；切换 microVM 控制面时 Station 无特权原则不变。
+
+## WE-D02: 沙盒持久单元是 workspace
+
+**Status**: accepted
+**Date**: 2026-11-04
+
+### Context
+
+agent 是轻量配置行且可多工作区；每命令一容器丢状态，每 agent 单容器隔离过粗。
+
+### Decision
+
+sandbox_ref = (actor, agent, workspace_root) 的分配；容器一次性、可回收/重建，workspace 命名卷持久。
+
+### Rationale
+
+以工作区为安全域；持久身份落卷，便于镜像升级、配额与并发回收。
+
+### Alternatives Considered
+
+每命令容器（无法跑长服务/保 cwd）；每 agent 常驻单容器（粗隔离、回收复杂）。
+
+### Consequences
+
+需要分配表与卷回收策略；冷启动成本由懒启动/warm pool 缓解。
+
+## WE-D03: 沙盒非 root + no-new-priv + 只读 rootfs 为硬前提
+
+**Status**: accepted
+**Date**: 2026-11-04
+
+### Context
+
+"突破沙盒自然报错"只有在工作负载非特权且无法提权时才由 OS 强制成立。
+
+### Decision
+
+沙盒以非 root 运行，开启 no-new-privileges、drop caps、seccomp、只读 rootfs，仅 /workspace 可写。
+
+### Rationale
+
+越界自然 EACCES/EPERM，应用层无需伪装拒绝。
+
+### Alternatives Considered
+
+以 root 跑再靠应用层判断（提权后不报 EACCES，语义不成立）。
+
+### Consequences
+
+系统依赖需入镜像或走 owner 授权，不允许运行时提权安装。
+
+## WE-D04: 禁止沙盒→本机回落
+
+**Status**: accepted
+**Date**: 2026-11-04
+
+### Context
+
+沙盒失败偷偷改在用户桌面执行是静默提权/数据越界路径。
+
+### Decision
+
+落点由 turn 绑定 capability 执行面唯一决定；同一 turn 不混用；binding 未就绪/失败一律 fail-closed。
+
+### Rationale
+
+执行边界必须可预期、可审计。
+
+### Alternatives Considered
+
+失败自动回退 desktop（可用性换安全，拒绝）。
+
+### Consequences
+
+本机专属能力与服务端隔离任务须分 turn，调度需显式表达。
+
+## WE-D05: 沙盒网络默认隔离，出网走 allowlist 代理
+
+**Status**: accepted
+**Date**: 2026-11-04
+
+### Context
+
+Station 内网含 Postgres 凭据与多 actor 数据。
+
+### Decision
+
+沙盒与 Station 内网隔离，默认不可达 DB/内部端口，外网经 egress allowlist 代理。
+
+### Rationale
+
+阻断沙盒内恶意依赖对 Station 的横向访问。
+
+### Alternatives Considered
+
+共享默认 bridge（横向可达，拒绝）。
+
+### Consequences
+
+需声明依赖源 allowlist；私有包源显式放行。
+
+## WE-D06: 跨 OS 收敛到 ExecutorBackend SPI；Win/mac 目标 runner 后置
+
+**Status**: accepted
+**Date**: 2026-11-04
+
+### Context
+
+宿主平台差异大，但构建/服务目标绝大多数是 Linux，mac/Win 已用 Linux VM+OCI 统一跑 Linux 容器。
+
+### Decision
+
+差异收敛到 provisioner 后端 SPI；首期 Linux OCI，mac/Win dev 经 OrbStack/Docker Desktop/WSL2；以 Win/macOS 为目标 OS 的执行体走 REMOTE_CONNECTOR 专用 runner，列项目末期。
+
+### Rationale
+
+不为跨宿主重写多套沙盒，也不假装 Linux 容器能构建原生 Win/mac 产物。
+
+### Alternatives Considered
+
+在 Station 内自支持 Windows/macOS 容器（不可移植、需 Apple 硬件）。
+
+### Consequences
+
+Linux 跨宿主一致；原生 mac/iOS/Windows 构建后期建专用 runner 池。
+
+## WE-D07: 提权走线下 owner 授权
+
+**Status**: accepted
+**Date**: 2026-11-04
+
+### Context
+
+对话内提权按钮易被模型/提示诱导，且绕过既有绑定模型。
+
+### Decision
+
+需要更高权限/挂载/角色时产出授权请求工件；owner 带外改绑定并升 revision、重走 readiness 后下一条命令直接执行。
+
+### Rationale
+
+把权限授予留在 capability binding/revision/owner 模型内，责任可审计。
+
+### Alternatives Considered
+
+对话内"允许 sudo"（拒绝）。
+
+### Consequences
+
+首次配置略重，靠合理默认镜像/挂载减少触发。
+
+## WE-D08: TerminalSession 双落点同构、Desktop 单面板
+
+**Status**: accepted
+**Date**: 2026-11-04
+
+### Context
+
+D5 已有设备 TerminalSession 的 viewer/cursor/UNKNOWN 诚实语义。
+
+### Decision
+
+TerminalSession 增加 execution_target+sandbox_ref；PTY/ring 在 sandbox 模式归 provisioner；Station 元数据/状态合同不变；Desktop 同一面板只标注落点。
+
+### Rationale
+
+复用成熟合同，不造第二套终端。
+
+### Alternatives Considered
+
+为沙盒另建一套终端状态/UI（拒绝）。
+
+### Consequences
+
+provisioner 需实现与 worker 等价的 PTY/ring/reconcile 能力。

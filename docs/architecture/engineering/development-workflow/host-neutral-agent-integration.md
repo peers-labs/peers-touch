@@ -27,9 +27,41 @@ worktree observation。
 
 保留现有事件归一化和各宿主支持的上下文格式。只注入相关规范、知识和明确选定任务的简短进度；无 task 选择不记录任务轨迹。
 
+流程 Skill 默认必须执行；只有用户在当前 scope 显式声明跳过才可豁免。Hook 仍不提供
+DENY 阻断（见下条），因此这条规则通过上下文注入表达而不是机械拦截：`SessionStart`、
+`UserPromptSubmit` 与压缩事件都会带出该口径。`PreCompact`/`PostCompact` 是恢复边界——
+压缩会用摘要替换实时上下文，故二者归一化为有效事件并返回 `CONTEXT`，明确要求先经
+`pt-god-view` 重新入场、再恢复所属流程 Skill，禁止把冻结 Plan、交接摘要当作流程已执行
+的证据；`SubagentStart`/`SubagentStop` 归一化为有效事件但保持 `ALLOW`，不产生提示。
+
 未知事件、未知工具、输入错误、知识缺失或内部异常采用中性输出并安全退出，不能产生普通工具 DENY 或 Stop 阻断。输出有大小和耗时上限，诊断不得带原始 prompt、凭据、会话 ID 或命令日志。
 
 宿主不支持上下文输出时，报告该提示能力不可用。不得把提示伪装成已经执行的验证或授权。
+
+### 3.1 工具与技能调用追踪
+
+Hook 不能阻断，但可以留痕。`PreToolUse`/`PostToolUse` 归一化后保留宿主原始
+`tool_name`（同一字段跨 trae/cursor/codex），由 `hook-entry` 以 best-effort 方式
+追加到当前 worktree 本地的
+`.dev-workflow/observations/skill-events.jsonl`，每行记录
+`{host, event, toolName, isSkill, at}`。写盘失败只输出诊断，不改变 ALLOW/CONTEXT 决策。
+
+追踪文件与 `worktree.json` 一样只允许写在 worktree 内部：宿主 hook 子进程（尤其
+命令执行类工具）运行在文件系统沙箱内，只保证对执行 worktree 的写权限，写入机器级
+`~/.peers-touch/dev/` 会确定性失败。跨 worktree 的可见性由非沙箱 CLI 工具以只读
+拉取方式统一收集（显式 `workspaceRoots` 或经 machine registry 的
+`registeredCanonicalRoots` 发现），收集方只读取、不回写。
+
+- `isSkill` 由保守规则（工具名包含 `skill`）判定，只用于检索，不作为合规权威。trae 已
+  实测技能工具名为 `Skill`，与该规则一致；cursor/codex 的真实技能工具名待真机确认后再收紧。
+- 追踪复用多根归属判定：当 `executionRoot` 无法唯一解析时不写记录，宁可缺记也不把事件
+  记到错误 worktree（与 §2 的多根保护一致）。
+- 描述符对失效 worktree 条目具备韧性：`workspaceContext` 跳过磁盘上不存在或非目录的
+  folder 并在 `skippedFolders` 报告，只有零个可解析 root 才判 `TRAE_WORKSPACE_DESCRIPTOR_INVALID`。
+  因此单个被删除的 sibling worktree 不会再让整个多根 workspace 的 hook 失活。
+- trae 已用真实 hook 链路验证：普通工具（`RunCommand`/`Read`）与技能调用（`tool_name="Skill"`，
+  pre/post 均触发、带顶层 `cwd`）都能正确落盘，`isSkill` 分类正确；cursor/codex 走同一归一化
+  代码路径，结构上已覆盖但尚未做真机验证。
 
 ## 4. 安装与审计
 

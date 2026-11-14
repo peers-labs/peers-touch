@@ -155,3 +155,56 @@ export function mergeActorSearchResults(
   }
   return [...byActorPtid.values()];
 }
+
+export interface FederationScopeOption {
+  federationId: string;
+  federationName: string;
+}
+
+/**
+ * Order the Find-People Federation chips. The most-recently-used context is
+ * pinned first when present; everything else falls back to a stable Latin
+ * alphabetical order on the display name (then id), so the row never depends
+ * on backend return order. Pure and side-effect free for deterministic tests.
+ */
+export function orderFederationOptions(
+  options: readonly FederationScopeOption[],
+  recentFederationId?: string,
+): FederationScopeOption[] {
+  const recent = recentFederationId?.trim();
+  const label = (option: FederationScopeOption): string =>
+    (option.federationName.trim() || option.federationId.trim()).toLowerCase();
+  const sorted = [...options].sort((a, b) => {
+    const byLabel = label(a).localeCompare(label(b), 'en');
+    if (byLabel !== 0) return byLabel;
+    return a.federationId.localeCompare(b.federationId, 'en');
+  });
+  if (!recent) return sorted;
+  const recentIndex = sorted.findIndex((option) => option.federationId === recent);
+  if (recentIndex <= 0) return sorted;
+  const [recentOption] = sorted.splice(recentIndex, 1);
+  return [recentOption, ...sorted];
+}
+
+const RECENT_FEDERATION_STORAGE_KEY = 'peers.find-people.recent-federation';
+
+/** Read the persisted most-recent Federation scope (best-effort, SSR-safe). */
+export function readRecentFederationId(): string {
+  try {
+    return window.localStorage.getItem(RECENT_FEDERATION_STORAGE_KEY)?.trim() ?? '';
+  } catch {
+    return '';
+  }
+}
+
+/** Persist the Federation scope the user just picked as the recent default. */
+export function writeRecentFederationId(federationId: string): void {
+  const id = federationId.trim();
+  if (!id) return;
+  try {
+    window.localStorage.setItem(RECENT_FEDERATION_STORAGE_KEY, id);
+  } catch {
+    // Storage can be unavailable (private mode); ordering just falls back to
+    // alphabetical, so ignore write failures.
+  }
+}

@@ -4773,6 +4773,11 @@ func agentExecutorKind(agent *domain.Agent) model.ExecutorKind {
 	switch executorKind {
 	case "desktop_device", strings.ToLower(model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE.String()):
 		return model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE
+	case "workspace_sandbox", strings.ToLower(model.ExecutorKind_EXECUTOR_KIND_WORKSPACE_SANDBOX.String()):
+		// WE-20261104: commands run inside a provisioned, isolated workspace
+		// sandbox dispatched by Station to an independent provisioner. Station
+		// itself never executes the command and never falls back to desktop.
+		return model.ExecutorKind_EXECUTOR_KIND_WORKSPACE_SANDBOX
 	case "station_hosted", strings.ToLower(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED.String()):
 		return model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED
 	}

@@ -3,6 +3,8 @@ import { ChatPage } from '../../../pages/ChatPage';
 import { AgentProfilePage } from '../../../pages/AgentProfilePage';
 import { useActiveAgentSlice } from '../useActiveAgentStores';
 import { PortalPanel } from '../../portal';
+import { WorkbenchPanel } from './WorkbenchPanel';
+import { AtelierPlaceholder } from './AtelierPlaceholder';
 
 interface ConversationRailProps {
   narrow: boolean;
@@ -79,7 +81,23 @@ export function ConversationRail({
             />
           </div>
         )}
+        {currentSurface === 'atelier' && (
+          <div
+            data-pt-agent-atelier-frame
+            aria-hidden={false}
+            style={{
+              display: 'flex',
+              flex: 1,
+              minWidth: 0,
+              minHeight: 0,
+              flexDirection: 'column',
+            }}
+          >
+            <AtelierPlaceholder agentName={selectedAgent} />
+          </div>
+        )}
       </div>
+      {currentSurface === 'chat' && <WorkbenchPanel />}
       {currentSurface === 'chat' && <PortalPanel artifactsOnly overlay={narrow} />}
     </main>
   );

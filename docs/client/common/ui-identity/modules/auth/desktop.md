@@ -154,6 +154,22 @@ Auth must represent each state on the same calm backdrop:
 - Expired-session re-auth (revoked vs. continue).
 - Active station known vs. unknown (friendly placeholder, never raw host).
 
+The outer Station gate resolves a single surface with this priority (first
+match wins), implemented in `resolveAuthGateStage`:
+
+1. A manual override (the header gear re-opening Station setup) always wins.
+2. Before the Station registry hydrates, stay on Station setup to avoid a
+   login-form flash.
+3. Any existing signed-in account → the auth surface (account list card),
+   even when no Station is configured. Account presence outranks Station setup.
+4. No account but a configured Station → the auth surface (sign-in) directly.
+5. No account and no Station → the Station setup card. Its top-left
+   "Continue to sign in" action is disabled until a Station exists; enabling it
+   and activating it is the only first-run exit to the auth surface.
+
+The gear-opened Station card uses a back control instead of the continue
+action; the two are mutually exclusive and share the same top-left slot.
+
 ## 8. Acceptance States
 
 Every Desktop Auth implementation must capture or manually verify:

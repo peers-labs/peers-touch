@@ -7,7 +7,7 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
-  readdirSync,
+  realpathSync,
   renameSync,
   statSync,
   unlinkSync,
@@ -16,11 +16,11 @@ import {
 import path from 'node:path';
 
 import {
-  machineWorkspacesPath,
   workspaceIdForRoot,
-  workspaceObservationLockPath,
-  workspaceObservationPath,
+  worktreeObservationFilePath,
+  worktreeObservationLockFilePath,
 } from '../lib/machine-dev-paths.mjs';
+import { registeredCanonicalRoots } from './machine-dev-registry.mjs';
 
 export const WORKTREE_OBSERVATION_KIND = 'peers-touch-worktree-observation';
 const WORKSPACE_ID = /^[0-9a-f]{16}$/;
@@ -270,7 +270,10 @@ function writeAtomic(file, record) {
 }
 
 export function readWorktreeObservation(options = {}) {
-  const file = options.file ?? workspaceObservationPath(options);
+  if (!options.file && !options.workspaceRoot) {
+    fail('WORKTREE_OBSERVATION_INVALID', 'workspace root is required');
+  }
+  const file = options.file ?? worktreeObservationFilePath(options.workspaceRoot);
   if (!existsSync(file)) return null;
   let record;
   try {
@@ -290,18 +293,9 @@ export function reportWorktreeObservation(options = {}) {
     'worktree root',
   );
   const workspaceId = workspaceIdForRoot(workspaceRoot);
-  const file =
-    options.file ??
-    workspaceObservationPath({
-      home: options.home,
-      workspaceId,
-    });
+  const file = options.file ?? worktreeObservationFilePath(workspaceRoot);
   const lockFile =
-    options.lockFile ??
-    workspaceObservationLockPath({
-      home: options.home,
-      workspaceId,
-    });
+    options.lockFile ?? worktreeObservationLockFilePath(workspaceRoot);
   const now = options.now ?? new Date();
   const minimumIntervalMs = options.minimumIntervalMs ?? 0;
   if (minimumIntervalMs > 0) {
@@ -340,36 +334,61 @@ export function reportWorktreeObservation(options = {}) {
   }
 }
 
+// Pull-based collection. Observation files live inside each worktree, so the
+// collector enumerates worktree roots (explicit override, else machine
+// registry discovery) and reads every local record without writing anything.
+// One unresolvable root or corrupt record is isolated into `errors` instead
+// of masking the healthy worktrees.
 export function readAllWorktreeObservations(options = {}) {
-  const root = options.root ?? machineWorkspacesPath(options.home);
-  if (!existsSync(root)) return { records: [], errors: [] };
   const records = [];
   const errors = [];
-  for (const entry of readdirSync(root, { withFileTypes: true })) {
-    if (!entry.isDirectory() || !WORKSPACE_ID.test(entry.name)) continue;
-    const file = options.root
-      ? path.join(root, entry.name, 'observations', 'worktree.json')
-      : workspaceObservationPath({
-          home: options.home,
-          workspaceId: entry.name,
-        });
+  let roots;
+  try {
+    roots = Array.isArray(options.workspaceRoots)
+      ? [...new Set(options.workspaceRoots)]
+      : registeredCanonicalRoots(options);
+  } catch (error) {
+    return {
+      records,
+      errors: [
+        {
+          workspaceId: null,
+          code: error.code ?? 'WORKSPACE_REGISTRY_INVALID',
+          message: error.message,
+        },
+      ],
+    };
+  }
+  for (const candidate of roots) {
+    let workspaceRoot;
+    try {
+      workspaceRoot = realpathSync(candidate);
+    } catch {
+      errors.push({
+        workspaceId: null,
+        code: 'WORKTREE_OBSERVATION_ROOT_UNRESOLVED',
+        message: `cannot resolve worktree root: ${candidate}`,
+      });
+      continue;
+    }
+    const workspaceId = workspaceIdForRoot(workspaceRoot);
+    const file = worktreeObservationFilePath(workspaceRoot);
     if (!existsSync(file)) continue;
     try {
-      const record = readWorktreeObservation({
-        file,
-        workspaceId: entry.name,
-      });
+      const record = readWorktreeObservation({ file, workspaceId });
       if (record) records.push(record);
     } catch (error) {
       errors.push({
-        workspaceId: entry.name,
+        workspaceId,
         code: error.code ?? 'WORKTREE_OBSERVATION_INVALID',
         message: error.message,
       });
     }
   }
   records.sort((left, right) => left.workspaceId.localeCompare(right.workspaceId));
-  errors.sort((left, right) => left.workspaceId.localeCompare(right.workspaceId));
+  errors.sort((left, right) =>
+    String(left.workspaceId).localeCompare(String(right.workspaceId)),
+  );
   return { records, errors };
 }
 

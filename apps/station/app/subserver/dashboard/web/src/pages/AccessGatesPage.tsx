@@ -43,6 +43,10 @@ const GATE_OPTIONS = [
   { value: ACCESS_GATE_TYPE.AUTH_LOGIN, label: 'Login' },
   { value: ACCESS_GATE_TYPE.INVITE_ALLOWLIST, label: 'Invite allowlist' },
   { value: ACCESS_GATE_TYPE.INVITE_CODE, label: 'Invite code' },
+  {
+    value: ACCESS_GATE_TYPE.DEVICE_APPROVAL,
+    label: 'Device approval — require an enrolled device to approve new sign-ins',
+  },
 ];
 
 /** Convert a newline/comma separated textarea value into a trimmed list. */
@@ -73,6 +77,8 @@ export default function AccessGatesPage() {
         mode: policy.mode || ACCESS_POLICY_MODE.OPEN,
         self_service_invite: policy.self_service_invite ?? false,
         enabled_gates: policy.enabled_gates ?? [],
+        device_approval_enabled: policy.device_approval_enabled ?? false,
+        device_approval_max_devices: policy.device_approval_max_devices ?? 0,
         allowed_emails: (policy.allowed_emails ?? []).join('\n'),
         allowed_usernames: (policy.allowed_usernames ?? []).join('\n'),
         allowed_actor_ptids: (policy.allowed_actor_ptids ?? []).join('\n'),
@@ -106,6 +112,8 @@ export default function AccessGatesPage() {
         mode: values.mode,
         self_service_invite: values.self_service_invite,
         enabled_gates: values.enabled_gates ?? [],
+        device_approval_enabled: values.device_approval_enabled ?? false,
+        device_approval_max_devices: values.device_approval_max_devices ?? 0,
         allowed_emails: parseList(values.allowed_emails || ''),
         allowed_usernames: parseList(values.allowed_usernames || ''),
         allowed_actor_ptids: parseList(values.allowed_actor_ptids || ''),
@@ -240,6 +248,23 @@ export default function AccessGatesPage() {
         tooltip="When on, the Station offers the invite.code gate so visitors can redeem a code themselves."
       >
         <Switch />
+      </Form.Item>
+
+      <Form.Item
+        name="device_approval_enabled"
+        label="Device login approval"
+        valuePropName="checked"
+        tooltip="Requires a sign-in on a new device to be approved by an already enrolled device. Only takes effect when 'Device approval' is also pinned into the gate chain above; the first device of an account is always admitted without approval."
+      >
+        <Switch />
+      </Form.Item>
+
+      <Form.Item
+        name="device_approval_max_devices"
+        label="Max devices per account"
+        tooltip="Optional ceiling on enrolled devices. Zero means no explicit limit; the approval gate still governs new sign-ins while enabled."
+      >
+        <InputNumber min={0} precision={0} style={{ width: '100%' }} placeholder="0 (no limit)" />
       </Form.Item>
 
       <Form.Item

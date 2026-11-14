@@ -30,11 +30,11 @@
   letter-spacing: 0;
 }
 
+/* Full-bleed Federation column: no centered 920px cap and no extra horizontal
+   padding — the outer settings scroll pane already owns the shared edge gutter,
+   so Channels lines up with every other settings tab. */
 .pt-channel-page-header,
 .pt-channel-main {
-  margin-inline: auto;
-  max-width: 920px;
-  padding-inline: clamp(20px, 5vw, 56px);
   width: 100%;
 }
 

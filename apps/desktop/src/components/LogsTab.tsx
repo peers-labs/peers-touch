@@ -307,7 +307,7 @@ export function LogsTab() {
   };
 
   return (
-    <SettingsContainer fullHeight tier="standard" style={{ overflow: "hidden" }}>
+    <SettingsContainer tier="standard">
       <SettingsPanelHeader
         icon={<Icon iconId="file-text" size={20} className="sc-logs-title-icon" />}
         title={t("provider.logs.title")}

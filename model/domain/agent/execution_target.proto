@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package peers_touch.model.agent.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model;model";
+
+// WE-S1: where an agent command (one-shot shell/file tool or a persistent
+// TerminalSession) executes. This is orthogonal to ExecutorKind: the local
+// Desktop worker is the only executor for DESKTOP_DEVICE today, while
+// WORKSPACE_SANDBOX is served by the independent workspace-sandbox-provisioner.
+enum ExecutionTarget {
+  EXECUTION_TARGET_UNSPECIFIED = 0;
+  // Executed by the Desktop Rust worker on the user's device (TW-D4/D5).
+  EXECUTION_TARGET_DESKTOP_DEVICE = 1;
+  // Executed inside an isolated sandbox already allocated to this agent's
+  // workspace (WE-20261104). Station only dispatches; it never runs the
+  // command itself or falls back to the desktop on failure.
+  EXECUTION_TARGET_WORKSPACE_SANDBOX = 2;
+}
+
+// Resolved execution placement for one turn's executional tool calls.
+//
+// Invariant: all executional tool calls in one turn must share the same
+// target. For WORKSPACE_SANDBOX, sandbox_ref and binding_id are required and
+// the binding must be READY, otherwise dispatch is rejected.
+message ExecutionPlacement {
+  ExecutionTarget target = 1;
+  // Required when target=WORKSPACE_SANDBOX: allocated sandbox instance.
+  string sandbox_ref = 2;
+  // Working root inside the target; the only writable area for a sandbox.
+  string workspace_root = 3;
+  // Capability/binding this placement was resolved from (audit + dispatch).
+  string capability_id = 4;
+  string binding_id = 5;
+  uint64 binding_revision = 6;
+}

@@ -229,6 +229,22 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
       };
     }
 
+    case 'amended': {
+      // TW-D2: the request merged into the still-pre-dispatch Turn. The
+      // optimistic assistant placeholder belongs to no new Turn and is
+      // settled by the store; the user message is bound to the running Turn.
+      const admission = d.admission && typeof d.admission === 'object'
+        ? d.admission as Record<string, unknown>
+        : {};
+      const boundTurnId = s(admission.turnId || admission.turn_id);
+      return {
+        ...msg,
+        turnId: boundTurnId || msg.turnId,
+        loading: false,
+        lastEventAt: Date.now(),
+      };
+    }
+
     case 'snapshot': {
       const status = s(d.status).toLowerCase();
       const terminalReason = terminalReasonFromStreamData(d);
@@ -322,7 +338,8 @@ export function isTerminalEvent(event: TurnStreamEvent): boolean {
     || event.event === 'budget_exhausted'
     || event.event === 'cancelled'
     || event.event === 'queued'
-    || event.event === 'admission_replayed';
+    || event.event === 'admission_replayed'
+    || event.event === 'amended';
 }
 
 export function isApprovalEvent(event: TurnStreamEvent): boolean {

@@ -76,16 +76,37 @@ export function workspaceStatePath(options = {}) {
   return path.join(machineWorkspacesPath(options.home), resolveWorkspaceId(options));
 }
 
-export function workspaceObservationsRootPath(options = {}) {
-  return path.join(workspaceStatePath(options), 'observations');
+// Observation surface is worktree-local, not machine-central. Host hook
+// subprocesses (notably command-execution tools) run inside a filesystem
+// sandbox that only guarantees writes within the executing worktree, so each
+// worktree owns its observation files under the gitignored local state
+// directory. Cross-worktree visibility is a read-only pull performed by
+// unsandboxed CLI tooling through the machine registry.
+export const WORKTREE_LOCAL_STATE_DIR = '.dev-workflow';
+export const WORKTREE_OBSERVATIONS_DIR = 'observations';
+
+export function worktreeObservationsRootPath(workspaceRoot) {
+  return path.join(
+    workspaceRoot,
+    WORKTREE_LOCAL_STATE_DIR,
+    WORKTREE_OBSERVATIONS_DIR,
+  );
 }
 
-export function workspaceObservationPath(options = {}) {
-  return path.join(workspaceObservationsRootPath(options), 'worktree.json');
+export function worktreeObservationFilePath(workspaceRoot) {
+  return path.join(worktreeObservationsRootPath(workspaceRoot), 'worktree.json');
 }
 
-export function workspaceObservationLockPath(options = {}) {
-  return path.join(workspaceObservationsRootPath(options), 'worktree.lock');
+export function worktreeObservationLockFilePath(workspaceRoot) {
+  return path.join(worktreeObservationsRootPath(workspaceRoot), 'worktree.lock');
+}
+
+// Append-only log of pre-tool tool names. It lets a reviewer answer "which
+// workflow skills did this session actually invoke" without trusting the agent
+// to self-report. Host-neutral: every adapter normalizes tool_name into the
+// same field, so trae/cursor/codex share this one worktree-local path.
+export function worktreeSkillEventLogPath(workspaceRoot) {
+  return path.join(worktreeObservationsRootPath(workspaceRoot), 'skill-events.jsonl');
 }
 
 export function workspaceRuntimePath(name, options = {}) {

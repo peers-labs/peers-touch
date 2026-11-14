@@ -1,0 +1,644 @@
+{
+  "evidenceClass": "source-inspection-and-design-proposal",
+  "reviewDate": "2026-11-01",
+  "repository": "https://github.com/openai/codex",
+  "sourceRoot": "/home/shuxian/some-projects/codex",
+  "head": "67f0994b532b8740f14b5b738af7b7b2a915b1d6",
+  "checkout": "complete-files-shallow-history",
+  "license": "Apache-2.0; preserve LICENSE and NOTICE when applicable",
+  "source": [
+    {
+      "path": "/home/shuxian/peers-some/peers-touch/apps/desktop/src-tauri/src/application/desktop_executor_worker/local_executor.rs",
+      "sha256": "ffcb26ab3353bc719b3e2769bd635f652004767d01120774546d167ef217ab87",
+      "anchors": [
+        "L94-L198"
+      ]
+    },
+    {
+      "path": "/home/shuxian/peers-some/peers-touch/apps/desktop/src/components/agent/workbench/AgentWorkbench.tsx",
+      "sha256": "d2896cecea8f2fe8c550605e49d7b2f1aac81cc7350349e6e7f477fa6c0e7cab",
+      "anchors": []
+    },
+    {
+      "path": "/home/shuxian/peers-some/peers-touch/apps/desktop/src/components/portal/PortalPanel.tsx",
+      "sha256": "d259be454c834b49baa5f92f68621c9f3be9c02b1757026520468f54689923dd",
+      "anchors": []
+    },
+    {
+      "path": "/home/shuxian/peers-some/peers-touch/apps/station/app/subserver/agent/service/authorized_capability_set.go",
+      "sha256": "014d6bfea9ea4b2ffd1ec08cf4832a13a89142039a66d35ce14111c19a204758",
+      "anchors": [
+        "L180-L258"
+      ]
+    },
+    {
+      "path": "/home/shuxian/peers-some/peers-touch/apps/station/app/subserver/agent/service/connector_manifest_service.go",
+      "sha256": "2bdfa1a5c11c60ccb3272c0953e29868b51acb60bdf8560df10ed5893b8444e5",
+      "anchors": []
+    },
+    {
+      "path": "/home/shuxian/peers-some/peers-touch/apps/station/app/subserver/agent/service/mcp_server_service.go",
+      "sha256": "a2f398100743e6fb5b239e8385384930cbbd79529210589861601a7d5fb34ff9",
+      "anchors": [
+        "L43-L115"
+      ]
+    },
+    {
+      "path": "/home/shuxian/peers-some/peers-touch/apps/station/app/subserver/agent/service/memory_embedding.go",
+      "sha256": "63fe03ebdd56d9725b1b4bc773e8e3245eadf320844cc5080c33b9b05453ec30",
+      "anchors": [
+        "L19-L70"
+      ]
+    },
+    {
+      "path": "/home/shuxian/peers-some/peers-touch/apps/station/app/subserver/agent/service/memory_service.go",
+      "sha256": "e097b84065a0175f5e31a66ba033300ff4e606018d2168797bfd7d88d00f72de",
+      "anchors": [
+        "L1362-L1400"
+      ]
+    },
+    {
+      "path": "/home/shuxian/peers-some/peers-touch/apps/station/app/subserver/agent/service/prompt_assembly_service.go",
+      "sha256": "5a239e04a82eb94c1f3d50990fcc507bded04091667ab9dcd2d3d0a7aed2a552",
+      "anchors": [
+        "L164-L192"
+      ]
+    },
+    {
+      "path": "/home/shuxian/peers-some/worktrees/agent-usability-shared-base-20261027/packages/prototypes/desktop/shared/RailSearchHeader.tsx",
+      "sha256": "77230367b6df9fe85fd08f02e0f608c2c754e39925bbf85c7c1de4ceaf9e0647",
+      "anchors": []
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/LICENSE",
+      "sha256": "d17f227e4df5da1600391338865ce0f3055211760a36688f816941d58232d8dc",
+      "anchors": []
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/NOTICE",
+      "sha256": "9d71575ecfd9a843fc1677b0efb08053c6ba9fd686a0de1a6f5382fd3c220915",
+      "anchors": []
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/app-server-client/Cargo.toml",
+      "sha256": "9f941218c5bc7932bf1d675cbea2715820a563a41e5d871dd45207e1c285ba3e",
+      "anchors": [
+        "L15-L38"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/app-server-client/src/lib.rs",
+      "sha256": "3ab3d894c169989ba9319fb4c7fb9daf09a9de53a2ff80b739ff38abde0f2f75",
+      "anchors": [
+        "L5-L27"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/app-server-protocol/src/precomputed_exports.rs",
+      "sha256": "661397f6329f7fac05e9d7ccfc7bceead266389d0975da7d1ef57544ee5aaa0c",
+      "anchors": [
+        "L14-L96"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/app-server-protocol/src/protocol/common.rs",
+      "sha256": "4c449f1da399848c714c780fc1304ba566d0089aeaef8c33c3a9c7eb986e4272",
+      "anchors": [
+        "L503-L681",
+        "L1855-L1889",
+        "L2022-L2071",
+        "L646-L681",
+        "L631-L645"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/app-server-protocol/src/protocol/v1.rs",
+      "sha256": "6e767472256756ec8262097f32a2b88330a469de4a4879255835c9f99f178139",
+      "anchors": [
+        "L42-L78",
+        "L79-L94"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/app-server-protocol/src/protocol/v2/item.rs",
+      "sha256": "1a2bdd6ae42f6d7e7b423b7c95dfd09b66b2014119b45b7a4ac04e7a49ef9930",
+      "anchors": [
+        "L354-L437",
+        "L68-L115"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/app-server-protocol/src/protocol/v2/plugin.rs",
+      "sha256": "21fda4faeecd746cdb49766c82421f0d344b06cc144dc1347c6b24a678474508",
+      "anchors": [
+        "L704-L779"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/app-server-protocol/src/protocol/v2/thread.rs",
+      "sha256": "f5a99bd250950ddaa3a07a8cae84e434c77d645650c11ec037e140945fa2c500",
+      "anchors": [
+        "L1711-L1734",
+        "L419-L439",
+        "L1737-L1875",
+        "L62-L111"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/app-server-protocol/src/protocol/v2/turn.rs",
+      "sha256": "198434210e6d0d9b11ddc842e499004a34184185ef19d80a47023056fa9c2a6b",
+      "anchors": [
+        "L30-L39",
+        "L321-L359"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/app-server/README.md",
+      "sha256": "a74bced01a83db7b3d4e88bdba6eb4e6430900893b44ada50e01fc4c9544300b",
+      "anchors": [
+        "L472-L495",
+        "L1-L16",
+        "L685-L704",
+        "L403-L470"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/app-server/src/bespoke_event_handling.rs",
+      "sha256": "be97e0152518ba89d99324b3d194bb487349c0d84ecbc6947fc950cc5c111b2d",
+      "anchors": [
+        "L192-L206",
+        "L1269-L1282",
+        "L1636-L1650"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/app-server/src/command_exec.rs",
+      "sha256": "772a643ee76491d9103698ad64872af85d273529a6da74e48e2af8861b557738",
+      "anchors": [
+        "L64-L114",
+        "L388-L415"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/app-server/src/effective_plugin_change.rs",
+      "sha256": "45e2ceb73dab590dd54a20dfb894882f8c03e724b70c0ed74c795ddda26cc03d",
+      "anchors": [
+        "L22-L68"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/app-server/src/lib.rs",
+      "sha256": "a44b0266619d6adda0c1e7135d5be18e6581cff44307e78097efecc5195f8b6c",
+      "anchors": [
+        "L1196-L1220"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/app-server/src/outgoing_message.rs",
+      "sha256": "c6a200bbced4757e7337a9eeb6e729d124c14dab62eb01baf65833b4742643dd",
+      "anchors": [
+        "L388-L438",
+        "L525-L578"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/app-server/src/request_processors/plugins.rs",
+      "sha256": "961610398f6eb5d70d2fc4092628bc3d0840b5ee3da0931d4d3e122ac417d46e",
+      "anchors": [
+        "L1481-L1593",
+        "L2012-L2042",
+        "L1794-L1861"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/app-server/src/request_processors/thread_goal_processor.rs",
+      "sha256": "28a3c515685b68cd986a9de616de91fa84d4fbb4e0d5d0a035c6fbe068e32c39",
+      "anchors": [
+        "L115-L205"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/app-server/src/request_processors/thread_memory.rs",
+      "sha256": "0c6f9301ea6a5baf5e0db7f1d3e14069927dcbb210a108b2cb1d11bc642f2074",
+      "anchors": [
+        "L1-L30"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/app-server/src/request_processors/thread_queue_processor.rs",
+      "sha256": "2e2aa119a090fc4da2e7858a06af55be5d2e181679d101c8fd50521d8f584581",
+      "anchors": []
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/app-server/src/request_processors/turn_processor.rs",
+      "sha256": "63293d7e2073442d9d5df8c2c146041b28f8ab363c28a4304057ded7c179afb5",
+      "anchors": [
+        "L660-L720",
+        "L1077-L1135",
+        "L1470-L1534"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/app-server/tests/suite/v2/command_exec.rs",
+      "sha256": "c34a9badce6e46545d631c6fc843eec54feb67c12d102bae2f77ecc1a0ffc74c",
+      "anchors": [
+        "L1167-L1248",
+        "L868-L930"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/app-server/tests/suite/v2/config_requirements_browser_use_tests.rs",
+      "sha256": "d1c70fbf06020e5b4860e43507b1fd468126759265e46252ce117113985d639a",
+      "anchors": []
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/app-server/tests/suite/v2/plugin_read.rs",
+      "sha256": "a861e0bee394db5bf7e7b04f61c5a25aa5e658cf153d4c35d31cee25ba4a78b7",
+      "anchors": [
+        "L2140-L2177"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/app-server/tests/suite/v2/plugin_uninstall.rs",
+      "sha256": "b1c0770cb325f62c2050355781f07f2e6629b290a750d46914898e5890ef440d",
+      "anchors": [
+        "L30-L65"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/app-server/tests/suite/v2/thread_fork.rs",
+      "sha256": "bb8ab9b38eb7f905ca478163fc91b59280c0873417a7830602d2b9d4cedb1c36",
+      "anchors": [
+        "L321-L359"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/app-server/tests/suite/v2/thread_queue.rs",
+      "sha256": "d5cfa888ad794a1d0619c9be7e490e0bd0ac6dddf5cba092295e71d592bddabe",
+      "anchors": [
+        "L430-L455",
+        "L560-L581",
+        "L701-L721"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/app-server/tests/suite/v2/turn_steer.rs",
+      "sha256": "165e2792da6556b41d303486bc652463560413943b0f90c56217da1cbcad980b",
+      "anchors": [
+        "L41-L68"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/config/src/browser_computer_use_requirements.rs",
+      "sha256": "dc16a09a6aec4623e9c9870198ff8420015a4f46c0dc2835a641db079bb02e3b",
+      "anchors": []
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/config/src/browser_use.rs",
+      "sha256": "4c155e61ea607ae8f3dd6e0670a3d104a9a77f90aa3380050d37477da91a9d0b",
+      "anchors": [
+        "L1-L22"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/config/src/computer_use.rs",
+      "sha256": "167520f5585cac4e06c75acb3a6a4e9b513015cb6ba82afcb025b3a1aaa96d39",
+      "anchors": []
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/config/src/types.rs",
+      "sha256": "99a4377be6d6f834f853acb530e3bd0c546f6096387afc708785b459233897b2",
+      "anchors": [
+        "L322-L343",
+        "L322-L365"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/core-plugins/src/artifact_operation.rs",
+      "sha256": "c73c13e22eb773b7cebb2121f27462d94b4d3ec4c7fcdbc418e51a4d0ce09bcd",
+      "anchors": [
+        "L16-L108"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/core-plugins/src/artifact_operation_tests.rs",
+      "sha256": "52e59868c58f78e8350f089f752ee5aef0ce47306fd7cdb80cb6bd7a9f1baf66",
+      "anchors": [
+        "L31-L105"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/core-plugins/src/manifest.rs",
+      "sha256": "cb6cc5e8e2004d1533141a3f11f3460a1aa8c2e0295c9583ae9726c6a75b2802",
+      "anchors": [
+        "L48-L122"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/core/src/mcp_tool_call.rs",
+      "sha256": "7dcde75d8d18649d9b6fc3f4f14bd67f1ca065488da7a71d11cfb536fdd567c0",
+      "anchors": [
+        "L1428-L1495"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/ext/memories/src/extension.rs",
+      "sha256": "ea7d722cd241b6e419942d3872ec8c454ef2029cebeb292db944dd100d13e32e",
+      "anchors": [
+        "L37-L149"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/ext/memories/src/prompts.rs",
+      "sha256": "05fd1987748219a053074b9d3a6f79647875eda289f544e6047abafce7d470ab",
+      "anchors": [
+        "L31-L68"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/ext/memories/src/prompts_tests.rs",
+      "sha256": "49dd40f0595aa9c743f89644b13f65f6cbfb52eabeaa8276278d5be5381125eb",
+      "anchors": [
+        "L38-L66"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/ext/queue/tests/queue_service.rs",
+      "sha256": "e38ebc8f31c5159ea9313d679b5024565549d269b057130551a26454d96ff320",
+      "anchors": [
+        "L480-L518",
+        "L826-L880"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/ext/skills/src/preparation.rs",
+      "sha256": "140491e465ce9390602e14b2d954a5e27f18bf9734689a872545252d02a72adc",
+      "anchors": [
+        "L1-L132"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/ext/skills/src/render.rs",
+      "sha256": "2dccf3b8ed0de052163704c3a358f3bb0595a35bd27793a6b34019e8e8de3e54",
+      "anchors": [
+        "L22-L34"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/ext/skills/tests/executor_file_system_authority.rs",
+      "sha256": "d82298ee2a31c6360af3a7994c91d9c64acd08f6d40cc118c62fee3b7dada97f",
+      "anchors": [
+        "L260-L285",
+        "L1076-L1101"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/features/src/lib.rs",
+      "sha256": "905c8c54b2104d7f37eb4b15b963c37f9ff15850dc9c46662a6dc5be0b77e396",
+      "anchors": [
+        "L1398-L1404",
+        "L2114-L2120"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/memories/write/src/phase1.rs",
+      "sha256": "4f7b9ad31b5e8dda0da75b473a1c399955ce555062f0b8ff150ced19e2032b2e",
+      "anchors": [
+        "L119-L189"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/memories/write/src/phase2.rs",
+      "sha256": "ddb2b32092a5af586fceb6017da34b00dd3d164458df5879fc67d8d9ac754cc1",
+      "anchors": [
+        "L50-L163",
+        "L310-L368"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/memories/write/src/start.rs",
+      "sha256": "6e0d44ed5a5c22c82d2528c2dd471c007251e7fbb29eda9c09ef0564ea078557",
+      "anchors": [
+        "L20-L95"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/protocol/src/items.rs",
+      "sha256": "866fe86a01fe893aea653d07e10b8a20e04de6880ef57b6056f3e1259173a6d0",
+      "anchors": [
+        "L442-L452"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/state/migrations/0051_thread_artifacts.sql",
+      "sha256": "efe186d7676d199609260993e577ed59500c96b3c26a181762e1dbc15453bf9e",
+      "anchors": []
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/state/migrations/0055_thread_attachments.sql",
+      "sha256": "f8066b833560b527a546d3d34a746e66a4432e6f3ad940e3d006b141646667f6",
+      "anchors": []
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/state/src/runtime/memories.rs",
+      "sha256": "2e0d5a739a5db0d427744af2eb43dd2364a81b55c94d01a4dce45aaf06cca37c",
+      "anchors": [
+        "L859-L934",
+        "L1260-L1305"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/thread-store/src/local/paginated_fork.rs",
+      "sha256": "6572812524bec5016382926e3608bb4dfbe10cf6faa2ea20616dad3b9ce89e9e",
+      "anchors": [
+        "L15-L86",
+        "L87-L166"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/tui/src/app/thread_routing.rs",
+      "sha256": "e5cfb33a5a8bcf886b3eff506d10562a591b5ccc633155048a072fe4d70197e3",
+      "anchors": [
+        "L465-L510",
+        "L1795-L1865"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/tui/src/chatwidget.rs",
+      "sha256": "b4ad748e85d24e5e9238b9de78eb05897521fd492de5a52438a721a3142b9d2e",
+      "anchors": [
+        "L1-L31"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/tui/src/chatwidget/input_restore.rs",
+      "sha256": "f97570cb741383bfb800b6149dbcdc947ac2941b0197864da87bfe1a10199a20",
+      "anchors": [
+        "L1-L140"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/tui/src/chatwidget/tests/plugin_catalog_tests.rs",
+      "sha256": "c4df138a42ece23fd17fffa09a4f9efda9ac83e674f187714757d50a1a5b2ae5",
+      "anchors": []
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/tui/src/history_cell/mcp.rs",
+      "sha256": "76a40cd01e1ae89bfea5bf52a651fbc0e471da6e4c3092a253fe411872853f41",
+      "anchors": [
+        "L61-L73"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/tui/src/thread_transcript/computer_groups.rs",
+      "sha256": "00923f43d1e494c278d8cd5e4ac5d05655c2df282b2ae42cd0d1684851b501e3",
+      "anchors": []
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/tui/src/thread_transcript/computer_groups_tests.rs",
+      "sha256": "289f17e53d9db55c593581fec553fbc064579feab0ea0e8990d79009e26f33bf",
+      "anchors": [
+        "L1-L108"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/tui/src/thread_transcript/exploration_groups.rs",
+      "sha256": "d231723d3a0551ef9e8da5cb5b5c89daf1d79cf758920d8304a9cbef182a89c5",
+      "anchors": []
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/tui/src/transcript_view/search_footer.rs",
+      "sha256": "e05cddc8a7f3d26d8d42bd5fff19d6108343f22a76374b70b08d2e6a496335aa",
+      "anchors": []
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/codex-rs/tui/src/transcript_view/search_tests.rs",
+      "sha256": "7fde9f601e94cf802a82e4556071ab8f47f8e3e669c4ced9a539dcb969b5e588",
+      "anchors": [
+        "L115-L155",
+        "L1020-L1060",
+        "L1412-L1450"
+      ]
+    },
+    {
+      "path": "/home/shuxian/some-projects/codex/sdk/typescript/src/exec.ts",
+      "sha256": "0df2fe1ccd90e05b2f2fb0cb3e1bd3293e23f36e3bbb369258edc6a63ae8655c",
+      "anchors": [
+        "L78-L183"
+      ]
+    }
+  ],
+  "documents": [
+    {
+      "path": "README.md",
+      "sha256": "b0f3252118a9ca9257c1e817e03f893ba4eb0b267591f72af6776e9e4c2a9ca7"
+    },
+    {
+      "path": "capability-review.md",
+      "sha256": "7a5c381074a209b992b05fd160b2f18c1ba608884a041ba4c91ca75c4b4829f7"
+    },
+    {
+      "path": "design-review.md",
+      "sha256": "7c7c24f73757c372b5247bb21e8763a7714b7a6508af1605915df92f4d6b3f3d"
+    },
+    {
+      "path": "integration-contract.md",
+      "sha256": "cc9d504d205c2d8f7271b6392c52bd55abd152c29d02f38973730589a5ccd7c1"
+    },
+    {
+      "path": "source-analysis.md",
+      "sha256": "27ef99cc7f60026d60a4ed1b700e3599c0fccb44928302fd0ac5d12515a7be35"
+    },
+    {
+      "path": "validation-plan.md",
+      "sha256": "7339da6be8db3f1f331f8de103b811529517101960d88874f5965710c48a5f86"
+    }
+  ],
+  "peersSourceEvidence": {
+    "path": "/data00/home/shuxian/peers-some/peers-touch/.local/deliverables/agent-workbench-implementation-20261101/source-evidence.json",
+    "inspectedSourceCount": 37,
+    "inspectedDigestsMatch": true
+  },
+  "reviewMechanisms": [
+    "S01",
+    "S02",
+    "S03",
+    "S04",
+    "S05",
+    "S06",
+    "S07",
+    "S08",
+    "S09",
+    "S10",
+    "S11",
+    "S12",
+    "S13",
+    "S14"
+  ],
+  "designConstraints": [
+    "F01",
+    "F02",
+    "F03",
+    "F04",
+    "F05",
+    "F06",
+    "F07",
+    "F08",
+    "F09",
+    "F10",
+    "F11",
+    "F12",
+    "F13",
+    "F14"
+  ],
+  "capabilityDimensions": [
+    "C01",
+    "C02",
+    "C03",
+    "C04",
+    "C05",
+    "C06",
+    "C07",
+    "C08"
+  ],
+  "plannedRealValidation": [
+    "V01",
+    "V02",
+    "V03",
+    "V04",
+    "V05",
+    "V06",
+    "V07",
+    "V08",
+    "V09"
+  ],
+  "visualEvidence": [
+    {
+      "path": "assets/after-narrow-document.png",
+      "sha256": "ed0fe5326f0057b0ab8a0d15d6c956314872cfb8256e82d0323fe67612240053",
+      "observationClass": "existing-prototype-static-screenshot"
+    },
+    {
+      "path": "assets/after-overview.png",
+      "sha256": "8465cc56eac167dc38700bc8ad59f6b05510c2ded8c10f4c2203c4e39f397a91",
+      "observationClass": "existing-prototype-static-screenshot"
+    }
+  ],
+  "validation": {
+    "localLinksChecked": 174,
+    "sourceFilesReferenced": 74,
+    "errors": []
+  },
+  "notPerformed": [
+    "codex-build",
+    "codex-tests",
+    "codex-model-execution",
+    "production-code-edit",
+    "native-integration-test",
+    "schema-migration",
+    "deployment",
+    "push",
+    "pull-request"
+  ],
+  "checkpointScope": "design-and-prototype-preservation; production-implementation-and-runtime-proof-pending"
+}

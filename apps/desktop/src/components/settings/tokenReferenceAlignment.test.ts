@@ -128,18 +128,39 @@ describe('pt custom-property references resolve to emitted tokens', () => {
     expect(cardRule).not.toContain('box-shadow');
   });
 
-  it('owns the settings edge inset once, as a uniform 8px gutter on every side', () => {
-    // The scroll layer is the single gutter owner; the column stays
-    // padding-free so the two never stack into a wider double inset.
-    expect(rule(northstarCss, '.sc-settings__scroll')).toContain('padding: 8px');
+  it('gives every settings pane a shared right edge gutter and a stable lane', () => {
+    // The scroll layer owns the inset; the column stays padding-free so the
+    // two never stack. Left/top/bottom stay at 8px while the right edge gets an
+    // explicit content gutter (the transparent scrollbar lane alone let cards
+    // crowd the window frame). Both scroll containers consume the same token so
+    // their content/scrollbar right edges line up across every settings tab.
+    // The gutter token lives on the second .sc-settings cascade block (the
+    // alias-token block), so match the block that actually declares it rather
+    // than the first .sc-settings layout rule.
+    const tokenBlock = northstarCss.match(
+      /\.sc-settings\s*\{[^}]*--pt-settings-edge-gutter:\s*16px[^}]*\}/,
+    );
+    expect(tokenBlock).not.toBeNull();
+    const scroll = rule(northstarCss, '.sc-settings__scroll');
+    expect(scroll).toContain(
+      'padding: 8px var(--pt-settings-edge-gutter) 8px 8px',
+    );
+    expect(scroll).toContain('scrollbar-gutter: stable');
+    // The provider detail now flows inside the same single column, so it adds
+    // no horizontal inset of its own — the outer pane owns the edge gutter.
+    expect(
+      rule(northstarCss, '.sc-provider-detail'),
+    ).toContain('padding: 8px 0 24px');
+    // The retired split-pane lock must leave no trace.
+    expect(northstarCss).not.toContain("data-scroll-lock='true'");
     expect(rule(northstarCss, '.sc-settings-column')).toContain('padding: 0');
     expect(rule(northstarCss, '.sc-settings-card')).toContain('padding: 0 8px');
   });
 
   it('fills the content width instead of capping and centering the column', () => {
     // A max-width cap plus margin-inline:auto left large dead bands on both
-    // sides of every settings card. The column now fills the region and only
-    // the scroll layer's 8px gutter separates cards from the viewport edge.
+    // sides of every settings card. The column now fills the region; the edge
+    // breathing room is owned solely by the scroll layer's right gutter token.
     const columnRule = rule(northstarCss, '.sc-settings-column');
     expect(columnRule).toContain('width: 100%');
     expect(columnRule).not.toContain('max-width');

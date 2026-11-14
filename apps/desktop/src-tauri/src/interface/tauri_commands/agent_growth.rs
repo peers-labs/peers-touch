@@ -40,6 +40,19 @@ pub fn agent_memory_list(
 }
 
 #[tauri::command]
+pub fn agent_memory_review(
+    input: app::AgentMemoryReviewInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    app::agent_memory_review(state.station.client(), input, &token)
+}
+
+#[tauri::command]
 pub fn agent_skill_list(
     input: app::AgentSkillListInput,
     state: State<'_, Arc<AppState>>,

@@ -30,6 +30,30 @@ var MemoryLayers = []MemoryLayer{
 	MemoryLayerActivity,
 }
 
+// MemoryStatus is the durable lifecycle gate. Only Confirmed entries may be
+// consumed by a Turn. Candidates await human confirmation; Rejected entries
+// are retained for audit but excluded from every consumption path.
+type MemoryStatus string
+
+const (
+	MemoryStatusCandidate MemoryStatus = "candidate"
+	MemoryStatusConfirmed MemoryStatus = "confirmed"
+	MemoryStatusRejected  MemoryStatus = "rejected"
+)
+
+// NormalizeMemoryStatus resolves an empty/unknown value to Confirmed so that
+// rows written before the lifecycle gate (and explicit writes) stay active.
+func NormalizeMemoryStatus(value string) MemoryStatus {
+	switch MemoryStatus(value) {
+	case MemoryStatusCandidate:
+		return MemoryStatusCandidate
+	case MemoryStatusRejected:
+		return MemoryStatusRejected
+	default:
+		return MemoryStatusConfirmed
+	}
+}
+
 type MemoryItem struct {
 	MemoryID       string
 	AgentID        string
@@ -48,6 +72,7 @@ type MemoryItem struct {
 	LastAccessedAt *time.Time
 	HelpfulCount   int
 	HarmfulCount   int
+	Status         MemoryStatus
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }
@@ -71,6 +96,9 @@ type MemorySnapshot struct {
 	PersonaContent string
 	RelevantItems  []MemoryItem
 	CapturedAt     time.Time
+	// Degraded is true when retrieval failed and the snapshot intentionally
+	// carries no injected memory rather than a full arbitrary snapshot.
+	Degraded bool
 }
 
 type MemoryAction string
@@ -85,6 +113,7 @@ type MemoryListOptions struct {
 	AgentID  string
 	Target   string
 	Layer    MemoryLayer
+	Status   MemoryStatus
 	Page     int
 	PageSize int
 	OrderBy  string
@@ -134,13 +163,16 @@ type MemoryStats struct {
 type MemoryEventType string
 
 const (
-	MemoryEventExtraction    MemoryEventType = "extraction"
-	MemoryEventRetrieval     MemoryEventType = "retrieval"
-	MemoryEventAccess        MemoryEventType = "access"
-	MemoryEventDedupSkip     MemoryEventType = "dedup_skip"
-	MemoryEventDeletion      MemoryEventType = "deletion"
-	MemoryEventPersonaUpdate MemoryEventType = "persona_update"
-	MemoryEventFeedback      MemoryEventType = "feedback"
+	MemoryEventExtraction         MemoryEventType = "extraction"
+	MemoryEventRetrieval          MemoryEventType = "retrieval"
+	MemoryEventAccess             MemoryEventType = "access"
+	MemoryEventDedupSkip          MemoryEventType = "dedup_skip"
+	MemoryEventDeletion           MemoryEventType = "deletion"
+	MemoryEventPersonaUpdate      MemoryEventType = "persona_update"
+	MemoryEventFeedback           MemoryEventType = "feedback"
+	MemoryEventCandidateConfirmed MemoryEventType = "candidate_confirmed"
+	MemoryEventCandidateRejected  MemoryEventType = "candidate_rejected"
+	MemoryEventRetrievalDegraded  MemoryEventType = "retrieval_degraded"
 )
 
 type MemoryEvent struct {

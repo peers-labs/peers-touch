@@ -65,6 +65,8 @@ schema-core = { path = "../../../packages/schema-core" }
 device-link-core = { path = "../../../packages/device-link-core" }
 station-libp2p-http = { path = "../../../packages/station-libp2p-http" }
 x-config-core = { path = "../../../packages/x-config-core" }
+portable-pty = "0.9"
+chromiumoxide = "0.9"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 dispatch2 = "0.3.1"

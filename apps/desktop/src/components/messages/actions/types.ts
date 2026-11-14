@@ -9,6 +9,8 @@ export interface MessageActionDef {
   danger?: boolean;
   disabled?: boolean;
   hidden?: boolean;
+  /** e2e probe attributes rendered as data-* on the resulting control. */
+  probe?: Record<string, string | undefined>;
   onClick: () => void;
 }
 
@@ -32,4 +34,6 @@ export interface MessageActionContext {
   onTurnDetails?: () => void;
   onExport: () => void;
   onForward: () => void;
+  /** Artifact claim/open entries spliced into the assistant "more" menu. */
+  artifactActions?: MessageActionDef[];
 }

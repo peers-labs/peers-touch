@@ -12,6 +12,13 @@ let installed = false;
 let reconcileTimer: ReturnType<typeof setInterval> | null = null;
 let unsubscribeAgentSelection: (() => void) | null = null;
 
+// The periodic agent roster poll rebuilds array/object references even when
+// nothing changed; comparing identities by signature prevents a reconcile
+// (and history bootstrap) storm on every poll.
+function rosterSignature(agents: Array<{ id: string; name?: string }>): string {
+  return agents.map((agent) => `${agent.id}:${agent.name ?? ''}`).join('|');
+}
+
 async function reconcileTopics(reason: string): Promise<void> {
   log.info('agentTopicRuntime', 'reconciling agent topic projection', { reason });
   const agentState = useAgentStore.getState();
@@ -85,7 +92,10 @@ export const agentTopicRuntime: RuntimeDescriptor = {
     installed = true;
     useSessionGroupStore.getState().loadGroups();
     unsubscribeAgentSelection = useAgentStore.subscribe((state, previous) => {
-      if (state.selectedAgent === previous.selectedAgent && state.agents === previous.agents) {
+      if (
+        state.selectedAgent === previous.selectedAgent
+        && rosterSignature(state.agents) === rosterSignature(previous.agents)
+      ) {
         return;
       }
       void reconcileTopics('agent-selection');

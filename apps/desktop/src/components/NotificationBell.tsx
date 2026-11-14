@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Badge, Empty, Icon, IconButton, Popover, Tooltip } from '@peers-touch/ui';
+import { Badge, Empty, Icon, IconButton, Popover, Spin, Tooltip } from '@peers-touch/ui';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useNotificationStore } from '../store/notification';
+import { useSessionStore } from '../store/session';
 import { eventBus } from '../kernel/events';
 import { EVENT } from '../kernel/events/catalog';
 import type { NotificationData } from '../services/desktop_api';
@@ -48,12 +49,20 @@ export function NotificationBell() {
   const { t } = useTranslation('moments');
   const notifications = useNotificationStore((s) => s.notifications);
   const unreadTotal = useNotificationStore((s) => s.unreadTotal);
+  const loading = useNotificationStore((s) => s.loading);
   const startPolling = useNotificationStore((s) => s.startPolling);
   const stopPolling = useNotificationStore((s) => s.stopPolling);
   const loadNotifications = useNotificationStore((s) => s.loadNotifications);
   const markRead = useNotificationStore((s) => s.markRead);
   const markAllRead = useNotificationStore((s) => s.markAllRead);
   const deleteNotifications = useNotificationStore((s) => s.deleteNotifications);
+  // Component-level auth gate from the task-workbench branch: the bell never
+  // polls before an actor is authenticated. The store also fail-closes, but
+  // keeping the gate here stops the effect lifecycle and any retry churn on
+  // the login surface.
+  const authenticatedActorPtid = useSessionStore(
+    (s) => (s.authenticated ? s.currentUser?.actorPtid ?? null : null),
+  );
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -62,9 +71,13 @@ export function NotificationBell() {
   }, [open, loadNotifications]);
 
   useEffect(() => {
+    if (!authenticatedActorPtid) {
+      stopPolling();
+      return undefined;
+    }
     startPolling();
     return () => stopPolling();
-  }, [startPolling, stopPolling]);
+  }, [authenticatedActorPtid, startPolling, stopPolling]);
 
   const openCommentMention = useCallback((item: NotificationData) => {
     const postId = item.metadata?.post_id?.trim();
@@ -109,9 +122,15 @@ export function NotificationBell() {
         </Tooltip>
       </div>
       <div className="ds-notify-list">
-        {notifications.length === 0
-          ? <Empty className="ds-notify-empty" description={t('moments.notification.empty')} />
-          : notifications.map((item) => (
+        {loading && notifications.length === 0
+          ? (
+            <span className="ds-notify-empty" role="status">
+              <Spin size="small" />
+            </span>
+            )
+          : notifications.length === 0
+            ? <Empty className="ds-notify-empty" description={t('moments.notification.empty')} />
+            : notifications.map((item) => (
             <NotificationItem
               key={item.id}
               item={item}
@@ -154,7 +173,11 @@ function NotificationItem({
   const isUnread = item.status === 1;
   const mention = isCommentMention(item);
 
-  const title = item.title || defaultTitle(item, t);
+  // Sender name stays ahead of the typed fallback title: station payloads
+  // without an explicit title carry the author in metadata.sender_name.
+  const title = item.title
+    || item.metadata?.sender_name
+    || defaultTitle(item, t);
   const body = item.body || (mention ? t('moments.notification.commentMentionBody') : '');
   const categoryLabel = CATEGORY_LABEL_KEY[item.category]
     ? t(CATEGORY_LABEL_KEY[item.category]!)

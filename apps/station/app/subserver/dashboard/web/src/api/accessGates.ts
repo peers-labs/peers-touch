@@ -19,6 +19,9 @@ export const ACCESS_GATE_TYPE = {
   AUTH_LOGIN: 'ACCESS_GATE_TYPE_AUTH_LOGIN',
   INVITE_ALLOWLIST: 'ACCESS_GATE_TYPE_INVITE_ALLOWLIST',
   INVITE_CODE: 'ACCESS_GATE_TYPE_INVITE_CODE',
+  // Registered for explicit enabled-gates policies only; it is absent from the
+  // Station's default chain and stays inert until device approval is enabled.
+  DEVICE_APPROVAL: 'ACCESS_GATE_TYPE_DEVICE_APPROVAL',
 } as const;
 
 export type AccessGateType = (typeof ACCESS_GATE_TYPE)[keyof typeof ACCESS_GATE_TYPE];
@@ -41,6 +44,10 @@ export interface AccessPolicy {
   allowed_actor_ptids?: string[];
   enabled_gates?: AccessGateType[];
   self_service_invite?: boolean;
+  // Device login approval. The gate only evaluates when DEVICE_APPROVAL is
+  // pinned into enabled_gates and device_approval_enabled is true.
+  device_approval_enabled?: boolean;
+  device_approval_max_devices?: number;
   updated_at?: string;
   updated_by?: string;
 }

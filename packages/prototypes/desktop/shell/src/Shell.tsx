@@ -49,6 +49,7 @@ import { T } from './theme';
 import { ToastHost } from '../../shared/Toast';
 import { ModernChatReview } from '../../features/modern-chat-agent/src/ModernChatReview';
 import { V2ProductReview } from '../../features/modern-chat-agent/src/V2ProductReview';
+import { TaskWorkbench } from './workbench/Workbench';
 import { OAuthLoginPrototype } from './OAuthLoginPrototype';
 import { SearchOverlay } from './search/SearchOverlay';
 import { toast } from '../../shared/Toast';
@@ -661,10 +662,11 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
   const showV2ProductReview = modernChatState.startsWith('v2-');
   const showAuthPrototype = modernChatState.startsWith('auth-oauth-');
   const showAgentChatReview = modernChatState === 'agent-chat';
+  const showTaskWorkbench = modernChatState === 'task-workbench';
   const requestedSurface = typeof window === 'undefined'
     ? ''
     : new URLSearchParams(window.location.search).get('surface') ?? '';
-  const defaultPage = showModernChatReview || showV2ProductReview || showAgentChatReview
+  const defaultPage = showModernChatReview || showV2ProductReview || showAgentChatReview || showTaskWorkbench
     ? 'agent'
     : initialPage ?? (requestedSurface === 'search' ? 'search-placeholder' : 'chat');
   const [page, setPage] = useState(defaultPage === 'search-placeholder' ? 'chat' : defaultPage);
@@ -896,7 +898,9 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
                     data-agent-surface="agent"
                     style={{ position: 'absolute', inset: 0, display: page === 'agent' || page === 'agent-profile' ? 'block' : 'none' }}
                   >
-                    {showV2ProductReview ? (
+                    {showTaskWorkbench ? (
+                      <TaskWorkbench />
+                    ) : showV2ProductReview ? (
                       <V2ProductReview initialState={modernChatState} />
                     ) : showModernChatReview ? (
                       <ModernChatReview initialState={modernChatState} withTopicRail />

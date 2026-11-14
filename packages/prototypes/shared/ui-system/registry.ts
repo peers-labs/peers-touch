@@ -54,6 +54,7 @@ export const CATEGORIES: { id: CategoryId; title: string }[] = [
 const CHAT = '桌面原型 · 消息';
 const MOMENTS = '桌面原型 · 动态';
 const SETTINGS = '桌面原型 · 设置';
+const AGENT = '桌面原型 · Agent';
 
 /** Implemented primitives/components actually shipped in packages/ui/web. */
 const IMPLEMENTED: Array<[CategoryId, string, string]> = [
@@ -210,6 +211,7 @@ const IMPLEMENTED: Array<[CategoryId, string, string]> = [
   ['code', 'CodeSnippet', '行内/小段代码片'],
   ['code', 'CodeEditor', '代码编辑器'],
   ['code', 'CodeDiff', '差异对比'],
+  ['code', 'TerminalSurface', '终端输出面（流/状态/退出码，纯展示）'],
   ['code', 'DiagramPreview', '图表预览'],
   ['code', 'Markdown', 'Markdown 渲染'],
   // advanced
@@ -261,6 +263,7 @@ const VETTED_CONSUMERS: Record<string, string[]> = {
   QrCode: [SETTINGS],
   ListSection: [SETTINGS],
   ListRow: [SETTINGS],
+  TerminalSurface: [AGENT],
 };
 
 /** Registered gaps — hand-rolled in prototypes today, awaiting promotion. */

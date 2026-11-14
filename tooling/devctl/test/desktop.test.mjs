@@ -587,6 +587,29 @@ test('desktop frontend readiness distinguishes mount from boot failure', async (
   assert.deepEqual(result, { ready: true });
 });
 
+test('desktop frontend readiness reads byte offsets safely across multibyte logs', async () => {
+  // Regression: fromOffset is a byte offset from fs.statSync(...).size. The
+  // default reader must slice the raw byte buffer before UTF-8 decoding;
+  // slicing the decoded string by that offset returns '' whenever the log
+  // contains multibyte characters and causes false mount timeouts.
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'devctl-frontend-'));
+  const logPath = path.join(directory, 'desktop-app-tauri.log');
+  const prefix = '[frontend] 中文日志与 emoji 😀 交通灯三灯就绪\n'.repeat(200);
+  const marker =
+    '[frontend] [841ms] React app mounted — dismissing boot fallback\n';
+  fs.writeFileSync(logPath, `${prefix}${marker}`);
+  const prefixByteOffset = Buffer.byteLength(prefix, 'utf8');
+  assert.ok(prefixByteOffset > prefix.length, 'fixture must contain multibyte content');
+
+  const result = await waitForDesktopFrontend(logPath, {
+    fromOffset: prefixByteOffset,
+    processAlive: () => true,
+    wait: async () => {},
+  });
+  assert.deepEqual(result, { ready: true });
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
 test('desktop acceptance enables the embedded WebDriver feature', () => {
   assert.deepEqual(
     desktopTauriArguments('/tmp/tauri.conf.json', {

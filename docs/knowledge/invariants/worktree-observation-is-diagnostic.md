@@ -5,6 +5,7 @@ status: active
 owns:
   - tooling/plugins/pt-ew-plugin/
   - tooling/scripts/local-dev/worktree-observation-store.mjs
+  - tooling/scripts/local-dev/skill-invocation-store.mjs
   - tooling/scripts/local-dev/worktree-observe.mjs
   - tooling/make/local-dev.mk
 referenced-by:
@@ -19,10 +20,24 @@ detected: 2026-09-23
 
 ## What must hold
 
-Each worktree may write only
-`~/.peers-touch/dev/workspaces/<workspaceId>/observations/worktree.json`, where
-`workspaceId` is derived from its own canonical root. Observation may describe
-branch, HEAD, dirty state, reporter event, and report time.
+Each worktree is the sole writer of its own observation files under its
+gitignored local state directory:
+
+```text
+<worktree-root>/.dev-workflow/observations/worktree.json
+<worktree-root>/.dev-workflow/observations/worktree.lock
+<worktree-root>/.dev-workflow/observations/skill-events.jsonl
+```
+
+The worktree never pushes observations into the machine control plane
+(`~/.peers-touch/dev/`). Observation may describe branch, HEAD, dirty state,
+reporter event, report time, and verbatim tool/skill invocation traces.
+
+Cross-worktree visibility is a read-only pull. Collectors enumerate worktree
+roots from explicit caller-supplied roots or the machine registry
+(`registeredCanonicalRoots`) and read each worktree's local files; they never
+write back, and one unresolvable root or corrupt record is isolated into an
+error list instead of masking healthy worktrees.
 
 Only the explicit `make dev-observe` reporter writes this diagnostic record.
 IDE Hooks remain read-only: a caught filesystem error can still make a sandboxed
@@ -40,16 +55,25 @@ remain separate clocks.
 
 ## Why this is non-negotiable
 
-A shared report table would recreate cross-workspace write contention.
+Host hook subprocesses run inside a filesystem sandbox that only guarantees
+writes within the executing worktree; a machine-central push path fails
+deterministically for command-execution tool hooks. Keeping observation files
+worktree-local makes every write stay inside the sandbox boundary while the
+unsandboxed CLI tooling retains machine-wide visibility through pulling.
+
+A shared report table would recreate cross-worktree write contention.
 Treating recent telemetry as authority would let an IDE hook acquire resources
-or hide stale workflow state. Separating push freshness from pull
+or hide stale workflow state. Separating local writes from pull
 reconciliation provides visibility without changing control-plane ownership.
 
 ## How to verify
 
 - `node --test tooling/scripts/local-dev/worktree-observation-store.test.mjs`
-  proves disjoint workspace paths, atomic records, monotonic time, and corrupt
-  record isolation.
+  proves disjoint worktree-local records, atomic writes, monotonic time,
+  pull-based collection, and corrupt record isolation.
+- `node --test tooling/scripts/local-dev/skill-invocation-store.test.mjs`
+  proves worktree-local append-only traces and cross-worktree collection with
+  workspaceId attribution.
 - `node --test tooling/scripts/local-dev/workflow-snapshot.test.mjs` proves
   stale observations cannot override Git branch/HEAD.
 - `rg -n 'reportWorktreeObservation' tooling/plugins/pt-ew-plugin

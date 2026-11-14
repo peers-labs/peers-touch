@@ -1418,6 +1418,11 @@ func TestAgentExecutorKindRequiresExplicitExecutorCapability(t *testing.T) {
 		want   model.ExecutorKind
 	}{
 		{
+			name:   "explicit workspace sandbox executor",
+			config: `{"executorKind":"workspace_sandbox"}`,
+			want:   model.ExecutorKind_EXECUTOR_KIND_WORKSPACE_SANDBOX,
+		},
+		{
 			name:   "explicit desktop executor",
 			config: `{"executorKind":"desktop_device"}`,
 			want:   model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE,
@@ -5048,6 +5053,7 @@ func openResumeCollaborationTaskDB(t *testing.T, name string) *gorm.DB {
 						last_accessed_at datetime,
 						helpful_count integer NOT NULL DEFAULT 0,
 						harmful_count integer NOT NULL DEFAULT 0,
+						status text NOT NULL DEFAULT 'confirmed',
 						created_at datetime NOT NULL,
 						updated_at datetime NOT NULL
 				)`,

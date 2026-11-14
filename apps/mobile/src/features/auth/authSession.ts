@@ -40,6 +40,7 @@ export const ACCESS_GATE_TYPE_INVITE_CODE = 5;
 export const ACCESS_GATE_TYPE_DEVICE_TRUST = 6;
 export const ACCESS_GATE_TYPE_TERMS_ACCEPTANCE = 8;
 export const ACCESS_GATE_TYPE_AUTH_OAUTH = 9;
+export const ACCESS_GATE_TYPE_DEVICE_APPROVAL = 10;
 export const ACCESS_GATE_TYPE_CUSTOM = 100;
 export const ACCESS_GATE_STATE_ACTION_REQUIRED = 2;
 export const ACCESS_DECISION_PENDING = 1;
@@ -75,6 +76,7 @@ const KNOWN_GATE_TYPES = new Set<number | string>([
   7,
   ACCESS_GATE_TYPE_TERMS_ACCEPTANCE,
   ACCESS_GATE_TYPE_AUTH_OAUTH,
+  ACCESS_GATE_TYPE_DEVICE_APPROVAL,
   ACCESS_GATE_TYPE_CUSTOM,
   'ACCESS_GATE_TYPE_STATION_CAPABILITY',
   'ACCESS_GATE_TYPE_AUTH_LOGIN',
@@ -85,6 +87,7 @@ const KNOWN_GATE_TYPES = new Set<number | string>([
   'ACCESS_GATE_TYPE_MAINTENANCE',
   'ACCESS_GATE_TYPE_TERMS_ACCEPTANCE',
   'ACCESS_GATE_TYPE_AUTH_OAUTH',
+  'ACCESS_GATE_TYPE_DEVICE_APPROVAL',
   'ACCESS_GATE_TYPE_CUSTOM',
 ]);
 
@@ -195,6 +198,16 @@ export function isInviteCodeGate(gate: AccessGate | undefined): boolean {
 export function isLoginGate(gate: AccessGate | undefined): boolean {
   return gate?.type === ACCESS_GATE_TYPE_AUTH_LOGIN
     || gate?.type === 'ACCESS_GATE_TYPE_AUTH_LOGIN';
+}
+
+/**
+ * True when the gate type denotes claimant-first device approval. Matches both
+ * the numeric enum and the protojson string name per the access-gate wire
+ * contract invariant.
+ */
+export function isDeviceApprovalGate(gate: AccessGate | undefined): boolean {
+  return gate?.type === ACCESS_GATE_TYPE_DEVICE_APPROVAL
+    || gate?.type === 'ACCESS_GATE_TYPE_DEVICE_APPROVAL';
 }
 
 export interface AdvertisedCredentialChoices {

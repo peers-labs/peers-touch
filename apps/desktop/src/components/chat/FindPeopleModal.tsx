@@ -32,7 +32,10 @@ import {
   friendRequestFederationId,
   localActorToSearchResult,
   mergeActorSearchResults,
+  orderFederationOptions,
+  readRecentFederationId,
   resolvedProfileToSearchResult,
+  writeRecentFederationId,
   type ActorSearchResult,
 } from './findPeopleIdentity';
 import { notifySuccess } from '../../ui/feedback';
@@ -43,6 +46,9 @@ interface Props {
 }
 
 type SearchScope = 'all' | 'federation';
+
+/** Federation chips shown on the single collapsed row (after the All chip). */
+const COLLAPSED_FEDERATION_VISIBLE = 3;
 
 const FEDERATED_HANDLE_RE = /^@?([a-zA-Z0-9._-]+)(?:@([a-zA-Z0-9.-]+(?::\d+)?))?$/;
 
@@ -116,9 +122,24 @@ export function FindPeopleModal({ open, onClose }: Props) {
     void refreshFederationContexts();
   }, [open, refreshFederationContexts]);
 
+  // Single-row scope chips: collapse the long Federation list behind a More
+  // toggle instead of wrapping into a tall column that pushes results around.
+  const [scopesExpanded, setScopesExpanded] = useState(false);
+  // Most-recently-used Federation scope, persisted across modal sessions and
+  // used to pin that context to the front of the chip row.
+  const [recentFederationId, setRecentFederationId] = useState<string>('');
+
+  useEffect(() => {
+    if (!open) return;
+    setRecentFederationId(readRecentFederationId());
+  }, [open]);
+
   const federationOptions = useMemo(
-    () => federations.map((f) => ({ federationId: f.federationId, federationName: f.name })),
-    [federations],
+    () => orderFederationOptions(
+      federations.map((f) => ({ federationId: f.federationId, federationName: f.name })),
+      recentFederationId,
+    ),
+    [federations, recentFederationId],
   );
   const defaultFederationId = useMemo(
     () => singleFederationId(federations),
@@ -133,6 +154,14 @@ export function FindPeopleModal({ open, onClose }: Props) {
   const [selectedFederationId, setSelectedFederationId] = useState<string>('');
   const [searchError, setSearchError] = useState('');
   const [requestErrors, setRequestErrors] = useState<Record<string, string>>({});
+
+  const hiddenFederationCount = Math.max(
+    0,
+    federationOptions.length - COLLAPSED_FEDERATION_VISIBLE,
+  );
+  const visibleFederationOptions = scopesExpanded || hiddenFederationCount === 0
+    ? federationOptions
+    : federationOptions.slice(0, COLLAPSED_FEDERATION_VISIBLE);
 
   const pendingReceiverIds = useMemo(() => {
     const ids = new Set<string>();
@@ -186,47 +215,49 @@ export function FindPeopleModal({ open, onClose }: Props) {
       const query = parsed.localPart || trimmed.replace(/^@/, '');
       let localSearchError: unknown;
       let catalogSearchError: unknown;
-      // A specific federation scope searches the catalog only; "all" fans out
-      // to local actors and the catalog in parallel, degrading gracefully
-      // when either side is unavailable instead of failing the whole search.
-      const wantCatalog = searchScope !== 'all' || Boolean(activeFederationId);
+      // "all" must search BOTH the local Station actors and every Federation
+      // catalog. A specific Federation scope searches only that catalog.
+      // Fanning the catalog out across all contexts is what lets "all" reach
+      // the local/self actors that the actor-only search misses; each request
+      // degrades independently so one unreachable federation never blanks the
+      // whole result set.
       const wantLocal = searchScope === 'all';
-      if (!wantCatalog && !wantLocal) {
+      const catalogFederationIds = searchScope === 'federation'
+        ? (activeFederationId ? [activeFederationId] : [])
+        : federationOptions.map((option) => option.federationId);
+      if (!wantLocal && catalogFederationIds.length === 0) {
         setSearchError(t('chat.social.findPeople.catalogNoFederation'));
         return;
       }
-      const [localSearch, catalogSearch] = await Promise.all([
+
+      const [localSearch, catalogResponses] = await Promise.all([
         wantLocal
           ? api.actorSearchActors(query).catch((error: unknown) => {
             localSearchError = error;
             return null;
           })
           : Promise.resolve(null),
-        wantCatalog && activeFederationId
-          ? api.federationCatalogSearch({
-            federation_id: activeFederationId,
+        Promise.all(catalogFederationIds.map((federationId) =>
+          api.federationCatalogSearch({
+            federation_id: federationId,
             prefix: query,
             page_size: 20,
           }).catch((error: unknown) => {
-            catalogSearchError = error;
+            catalogSearchError ??= error;
             return null;
-          })
-          : Promise.resolve(null),
+          }),
+        )),
       ]);
 
-      if (!wantCatalog && activeFederationId == null) {
-        setSearchError(t('chat.social.findPeople.catalogNoFederation'));
-        return;
-      }
-
-      if (!localSearch && !catalogSearch) {
+      const anyCatalogResponse = catalogResponses.some((response) => response !== null);
+      if (!localSearch && !anyCatalogResponse) {
         throw localSearchError || catalogSearchError || new Error('Search unavailable');
       }
 
       const localResults = (localSearch?.items ?? [])
         .map(localActorToSearchResult)
         .filter((item): item is ActorSearchResult => item !== null);
-      const catalogEntries = catalogSearch?.entries ?? [];
+      const catalogEntries = catalogResponses.flatMap((response) => response?.entries ?? []);
       rememberCatalogEntries(catalogEntries);
       setResults(mergeActorSearchResults(
         localResults,
@@ -308,6 +339,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
     setSelectedFederationId('');
     setSearchError('');
     setRequestErrors({});
+    setScopesExpanded(false);
     onClose();
   };
 
@@ -317,6 +349,10 @@ export function FindPeopleModal({ open, onClose }: Props) {
   ) => {
     setSearchScope(scope);
     setSelectedFederationId(scope === 'federation' ? federationId : '');
+    if (scope === 'federation' && federationId) {
+      writeRecentFederationId(federationId);
+      setRecentFederationId(federationId);
+    }
     setSearchError('');
     setResults([]);
   };
@@ -378,8 +414,11 @@ export function FindPeopleModal({ open, onClose }: Props) {
           aria-label={t('chat.social.findPeople.title')}
         />
 
-        {/* Scope chips */}
-        <div className="sc-find__scopes">
+        {/* Scope chips — one row; long Federation lists collapse behind More. */}
+        <div
+          className="sc-find__scopes"
+          data-chat-find-people-scopes-expanded={scopesExpanded ? 'true' : 'false'}
+        >
           <PtToggle
             actionId="find-people-scope-all"
             className="sc-scope-chip"
@@ -390,7 +429,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
             {t('chat.social.findPeople.scopeAll')}
           </PtToggle>
 
-          {federationOptions.map((fed) => {
+          {visibleFederationOptions.map((fed) => {
             const isActive = searchScope === 'federation'
               && selectedFederationId === fed.federationId;
             const presentation = findPeopleScopePresentation(
@@ -423,6 +462,21 @@ export function FindPeopleModal({ open, onClose }: Props) {
               </PtTooltip>
             );
           })}
+
+          {hiddenFederationCount > 0 ? (
+            <PtToggle
+              actionId="find-people-scope-more"
+              className="sc-scope-chip sc-scope-chip--more"
+              selected={false}
+              onSelectedChange={() => setScopesExpanded((value) => !value)}
+              data-chat-find-people-scope-more
+              aria-expanded={scopesExpanded}
+            >
+              {scopesExpanded
+                ? t('chat.social.findPeople.scopeLess')
+                : t('chat.social.findPeople.scopeMore', { count: hiddenFederationCount })}
+            </PtToggle>
+          ) : null}
 
           {federationOptions.length === 0 && (
             <span className="sc-find__no-federation">

@@ -685,7 +685,7 @@ export function MyFilesSettings() {
   ];
 
   return (
-    <SettingsContainer fullHeight tier="wide">
+    <SettingsContainer tier="wide">
       <SettingsPanelHeader
         title={t('settings.myFiles.title')}
         icon={<Icon iconId="folder-open" size={20} />}

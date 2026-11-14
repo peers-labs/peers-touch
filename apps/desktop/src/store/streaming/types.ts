@@ -71,6 +71,7 @@ export type TurnStreamEventType =
   | 'conversation_created'
   | 'queued'
   | 'admission_replayed'
+  | 'amended'
   | 'budget_exhausted'
   | 'error'
   | 'cancelled'

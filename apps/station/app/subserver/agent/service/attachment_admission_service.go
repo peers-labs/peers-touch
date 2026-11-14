@@ -125,8 +125,11 @@ func (s *AttachmentAdmissionService) Admit(
 			}
 		}
 
-		mimeType := strings.ToLower(strings.TrimSpace(candidate.GetMimeType()))
-		if mimeType != strings.ToLower(strings.TrimSpace(meta.Mime)) {
+		// Compare MIME essences: parameters (e.g. "text/plain; charset=utf-8"
+		// stored by the OSS layer) do not change the admitted material type.
+		mimeType := attachmentMimeEssence(candidate.GetMimeType())
+		storedMimeType := attachmentMimeEssence(meta.Mime)
+		if mimeType != storedMimeType {
 			return nil, attachmentRejected(attachmentID, "attachment MIME metadata does not match stored object")
 		}
 		if !attachmentMimeAllowed(mimeType) {
@@ -199,6 +202,16 @@ func attachmentMimeAllowed(mimeType string) bool {
 	}
 }
 
+// attachmentMimeEssence returns the lowercase media type without
+// parameters, so "text/plain; charset=utf-8" admits as "text/plain".
+func attachmentMimeEssence(mimeType string) string {
+	normalized := strings.ToLower(strings.TrimSpace(mimeType))
+	if idx := strings.IndexByte(normalized, ';'); idx >= 0 {
+		normalized = strings.TrimSpace(normalized[:idx])
+	}
+	return normalized
+}
+
 func attachmentContentMatches(mimeType string, body []byte) bool {
 	switch mimeType {
 	case "image/png":
@@ -224,8 +237,13 @@ func attachmentOmissionReason(
 	if mimeType == "application/pdf" && !input.GetFile() {
 		return "selected_model_has_no_file_input"
 	}
-	if mimeType == "text/plain" && !input.GetFile() {
-		return "selected_model_has_no_file_input"
+	// Plain text rides the universal text modality: every provider adapter
+	// inlines a text/plain body as an ordinary text content part, so it must
+	// not be gated on (or require) model file-input capability. Gating it on
+	// File made text material fail on capable text models that simply do not
+	// advertise file uploads (e.g. Volcengine ARK chat endpoints).
+	if mimeType == "text/plain" && !input.GetText() {
+		return "selected_model_has_no_text_input"
 	}
 	return ""
 }
@@ -266,6 +284,66 @@ func attachmentRefs(attachments []AdmittedAttachment) []*model.AgentAttachmentRe
 		refs = append(refs, attachment.Ref)
 	}
 	return refs
+}
+
+// attachmentObjectRefSet indexes attachment refs by their Station object
+// reference for per-input attribution after TW-D2 amendment re-admission.
+func attachmentObjectRefSet(attachments []*model.AgentAttachmentRef) map[string]struct{} {
+	set := make(map[string]struct{}, len(attachments))
+	for _, attachment := range attachments {
+		if attachment == nil {
+			continue
+		}
+		if objectRef := strings.TrimSpace(attachment.GetObjectRef()); objectRef != "" {
+			set[objectRef] = struct{}{}
+		}
+	}
+	return set
+}
+
+// appendMissingAttachmentRefs unions amendment attachment refs into the
+// primary Turn's ref list, preserving order and skipping duplicates.
+func appendMissingAttachmentRefs(
+	primary []*model.AgentAttachmentRef,
+	extra []*model.AgentAttachmentRef,
+) []*model.AgentAttachmentRef {
+	known := attachmentObjectRefSet(primary)
+	for _, attachment := range extra {
+		if attachment == nil {
+			continue
+		}
+		objectRef := strings.TrimSpace(attachment.GetObjectRef())
+		if objectRef == "" {
+			continue
+		}
+		if _, exists := known[objectRef]; exists {
+			continue
+		}
+		primary = append(primary, attachment)
+		known[objectRef] = struct{}{}
+	}
+	return primary
+}
+
+// filterAttachmentRefs returns admitted refs whose object_ref belongs to the
+// given per-input attribution set.
+func filterAttachmentRefs(
+	admitted []*model.AgentAttachmentRef,
+	include map[string]struct{},
+) []*model.AgentAttachmentRef {
+	if len(include) == 0 {
+		return nil
+	}
+	filtered := make([]*model.AgentAttachmentRef, 0, len(include))
+	for _, attachment := range admitted {
+		if attachment == nil {
+			continue
+		}
+		if _, ok := include[strings.TrimSpace(attachment.GetObjectRef())]; ok {
+			filtered = append(filtered, attachment)
+		}
+	}
+	return filtered
 }
 
 func attachmentContextSegments(attachments []AdmittedAttachment) []ContextSegment {
