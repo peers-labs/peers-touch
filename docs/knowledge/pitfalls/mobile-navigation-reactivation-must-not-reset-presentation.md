@@ -49,7 +49,10 @@ reveal; cancel only an undispatched debounce timer. The component browser
 fixture exercises both actual pages, preserving results and selection in the
 first return frame and clearing them once on a hidden exit.
 
-Verify on the native Journey that page/header nodes remain identical on
+## How to detect a recurrence
+
+Run `node apps/mobile/scripts/check-navigation-lifetime.mjs` to check the
+retained-view ownership rules. Verify on the native Journey that page/header nodes remain identical on
 return, scroll does not jump on the first frame, frame count remains bounded,
 hidden work/capture stops, assets survive suspension but release on eviction,
 and an identity replacement clears the old tree. Generic CSS DOM selectors
