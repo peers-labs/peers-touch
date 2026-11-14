@@ -2,7 +2,7 @@ import { Component, StrictMode, type ErrorInfo, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { App } from './App';
-import { MobileThemeProvider } from './app/MobileThemeProvider';
+import { MobileNorthStarProvider } from './app/MobileNorthStarProvider';
 import { installMobileWebGuards } from './app/installMobileWebGuards';
 import enCommon from '../../../packages/locales/en/common.json';
 import zhCommon from '../../../packages/locales/zh-CN/common.json';
@@ -120,11 +120,11 @@ if (import.meta.env.VITE_ACCEPTANCE_HARNESS === '1') {
 
 createRoot(document.getElementById('root') as HTMLElement).render(
   <StrictMode>
-    <MobileThemeProvider>
+    <MobileNorthStarProvider>
       <RootErrorBoundary>
         <App />
       </RootErrorBoundary>
-    </MobileThemeProvider>
+    </MobileNorthStarProvider>
   </StrictMode>,
 );
 

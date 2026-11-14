@@ -99,15 +99,76 @@ const dark: typeof light = {
   mediaStageText: 'rgba(255,255,255,0.66)',
 };
 
-// Pine grammar radius family (frame: control 12, avatar 11, card 20).
-const radius = { xs: '5px', sm: '8px', md: '11px', lg: '16px', xl: '20px' };
+/**
+ * Glass material layer (Pine-on-neutral grammar).
+ *
+ * The palette above stays flat neutral paper; the glass tokens describe the
+ * frosted *card* material that lifts content off that floor: translucent
+ * fills over the paper, one backdrop-blur radius, a hairline border and a
+ * top-lit inset plus a soft outer shadow. They are material roles, never
+ * hue: pine still lives only on `--pt-accent` touch points.
+ */
+const glass = {
+  light: {
+    blur: '22px',
+    // Resting content card / raised sheet.
+    surface: 'rgba(255,255,255,0.68)',
+    // Modal dialog over a dim scrim: near-opaque so form text keeps full
+    // contrast (a .68 fill here reads muddy against the dark backdrop).
+    surfaceModal: 'rgba(255,255,255,0.94)',
+    // Secondary card one tonal step deeper (nav wells, nested panels).
+    surfaceAlt: 'rgba(255,255,255,0.54)',
+    // Subtle fill inside a glass card (segmented tracks, presses).
+    tile: 'rgba(255,255,255,0.52)',
+    border: 'rgba(22,26,24,0.09)',
+    topLight: 'rgba(255,255,255,0.55)',
+    shadow: 'inset 0 1px 0 rgba(255,255,255,0.55), 0 10px 30px -18px rgba(20,24,22,0.22)',
+  },
+  dark: {
+    blur: '22px',
+    surface: 'rgba(33,37,36,0.66)',
+    surfaceModal: 'rgba(40,44,43,0.94)',
+    surfaceAlt: 'rgba(28,32,31,0.60)',
+    tile: 'rgba(40,44,43,0.55)',
+    border: 'rgba(255,255,255,0.10)',
+    topLight: 'rgba(255,255,255,0.06)',
+    shadow: 'inset 0 1px 0 rgba(255,255,255,0.06), 0 12px 34px -18px rgba(0,0,0,0.55)',
+  },
+} as const;
 
-export function northStarVariables(mode: 'light' | 'dark' = 'light'): Record<string, string> {
+// Pine grammar radius family (frame: control 12, avatar 11, card 20, sheet 22).
+const radius = { xs: '5px', sm: '8px', md: '11px', lg: '16px', xl: '20px', '2xl': '22px' };
+
+export type NorthStarMaterial = 'flat' | 'glass';
+
+export function northStarVariables(
+  mode: 'light' | 'dark' = 'light',
+  options: { material?: NorthStarMaterial } = {},
+): Record<string, string> {
   const palette = mode === 'dark' ? dark : light;
   const vars: Record<string, string> = Object.fromEntries(
     Object.entries(palette).map(([key, value]) => [`--pt-${key}`, value]),
   );
   for (const [key, value] of Object.entries(radius)) vars[`--pt-radius-${key}`] = value;
+  // Glass is the canonical north-star material: surfaces are frosted over
+  // neutral paper. `material: 'flat'` falls back to opaque palette fills for
+  // harnesses that need a non-translucent canvas.
+  const material = options.material ?? 'glass';
+  const g = mode === 'dark' ? glass.dark : glass.light;
+  if (material === 'glass') {
+    vars['--pt-surface'] = g.surface;
+    vars['--pt-raised'] = g.surface;
+    vars['--pt-subtle'] = g.tile;
+  }
+  vars['--pt-glass-blur'] = g.blur;
+  vars['--pt-glass-surface'] = g.surface;
+  // Modal surface frosts under glass, but stays fully opaque in flat mode.
+  vars['--pt-glass-surface-modal'] = material === 'glass' ? g.surfaceModal : palette.raised;
+  vars['--pt-glass-surface-alt'] = g.surfaceAlt;
+  vars['--pt-glass-tile'] = g.tile;
+  vars['--pt-glass-border'] = g.border;
+  vars['--pt-glass-top-light'] = g.topLight;
+  vars['--pt-glass-shadow'] = g.shadow;
   vars['--pt-font'] = 'Manrope, -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif';
   vars['--pt-shadow-rest'] = mode === 'dark'
     ? '0 1px 2px rgba(0,0,0,0.30)'

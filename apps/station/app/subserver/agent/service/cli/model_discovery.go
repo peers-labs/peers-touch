@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/cli/environment"
 )
 
 const (
@@ -19,8 +21,13 @@ const (
 type ModelDiscoveryRequest struct {
 	Command             []string
 	Environment         map[string]string
+	Credentials         map[string]string
+	StateRoot           string
 	Timeout             time.Duration
 	RuntimeCapabilities []string
+	// PathEntries are prepended to PATH when resolving the discovery
+	// binary, e.g. the actor's managed-runtime bin directory.
+	PathEntries []string
 }
 
 type DiscoveredModel struct {
@@ -58,7 +65,8 @@ func DiscoverModels(
 	if len(req.Command) == 0 || strings.TrimSpace(req.Command[0]) == "" {
 		return nil, fmt.Errorf("model discovery command is not registered")
 	}
-	if _, err := exec.LookPath(req.Command[0]); err != nil {
+	program, err := findProgram(req.Command[0], req.PathEntries)
+	if err != nil {
 		return nil, fmt.Errorf("model discovery binary is unavailable")
 	}
 
@@ -69,12 +77,18 @@ func DiscoverModels(
 	execCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	command := exec.Command(req.Command[0], req.Command[1:]...)
+	command := exec.Command(program, req.Command[1:]...)
 	configureProcessGroup(command)
-	command.Env = restrictedEnv()
-	for key, value := range req.Environment {
-		command.Env = append(command.Env, key+"="+value)
+	command.Env, err = environment.Build(req.StateRoot, req.PathEntries, req.Environment)
+	if err != nil {
+		return nil, fmt.Errorf("model discovery environment is invalid")
 	}
+	command.Dir = req.StateRoot
+	credentials, err := environment.Credentials(req.Credentials)
+	if err != nil {
+		return nil, err
+	}
+	command.Env = append(command.Env, credentials...)
 	stdout := &boundedCapture{limit: maxDiscoveryOutputBytes}
 	stderr := &boundedCapture{limit: maxStderrCaptureLen}
 	command.Stdout = stdout

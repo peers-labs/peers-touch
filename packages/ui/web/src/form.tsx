@@ -3,6 +3,7 @@ import {
   type FormHTMLAttributes, type ReactElement, type ReactNode,
 } from 'react';
 import { Field } from './fields';
+import { restoreNavigationFocus } from './focus';
 
 export interface ValidationRule<T = unknown> {
   required?: boolean; message?: string; minimum?: number; maximum?: number; pattern?: RegExp;
@@ -114,7 +115,7 @@ export function Form<T extends object>({
         if (!(error instanceof FormValidationError)) throw error;
         const first = Object.keys(error.errors)[0];
         const input = formElement.elements.namedItem(first);
-        if (input instanceof HTMLElement) input.focus();
+        if (input instanceof HTMLElement) restoreNavigationFocus(input);
       });
     }}>{children}</form>
   </FormContext.Provider>;

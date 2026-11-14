@@ -35,7 +35,7 @@ SWITCH_COUNT = 10
 MIN_ROUTE_EXPIRY_WAIT_SECONDS = 310
 MAX_ROUTE_EXPIRY_WAIT_SECONDS = 360
 PROVEN_SCOPE = (
-    "AS-04 simulator valid-session restore and same-account revocation",
+    "AS-04 simulator valid-session restore and same-account multi-device coexistence",
     (
         "AS-10 simulator Station switching, generation fencing, "
         "old-scope absence, and logout"
@@ -99,6 +99,21 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
             try:
                 binding = self.binding_factory()
                 journey_result = self._run_journey(binding)
+                assertions = self._assertions_from_lifecycle_evidence(
+                    journey_result,
+                    result,
+                )
+                failed_assertions = [
+                    item["name"]
+                    for item in assertions
+                    if not item["passed"]
+                ]
+                if failed_assertions:
+                    raise GateError(
+                        "Mobile lifecycle evidence assertions failed: "
+                        + ", ".join(failed_assertions)
+                    )
+                journey_result["assertions"] = assertions
                 status = "PASS"
                 if self.route_expiry_wait_seconds:
                     completion_status = "DONE"
@@ -277,42 +292,62 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
             raise GateError(
                 "same-account peer iOS login resolved a different Alice PTID"
             )
-        self._record(
-            "same-account-session-replaced",
-            PEER_IOS_CLIENT,
-            generation=int(peer_primary.scope["generation"]),
+        # SAL-D12: the peer is a distinct installation. A same-account login on
+        # another device occupies its own (Station, Actor, device_id) slot and
+        # must coexist with the primary session rather than evict it.
+        primary_station_peer_id = str(
+            ios_primary.scope["activeStationPeerId"]
         )
-
-        binding.call_action(IOS_CLIENT, "lifecycle.suspend")
-        binding.call_action(IOS_CLIENT, "lifecycle.resume")
-        revoked_scope = self._wait_for_scope(
+        primary_coexistence_scope = self._wait_for_authenticated_scope(
             binding,
             IOS_CLIENT,
-            self._scope_is_cleared,
+            expected_station_peer_id=primary_station_peer_id,
+            expected_actor_ptid=alice_ptid,
         )
-        if revoked_scope["launchState"] == "station-selection":
-            access = binding.begin_access_gate(IOS_CLIENT)
-            revoked_scope = _mapping(
-                access.get("scope"),
-                "revoked primary iOS access-gate scope",
-            )
-        self._assert_cleared_scope(
-            revoked_scope,
-            expected_station_peer_id=str(
-                ios_primary.scope["activeStationPeerId"]
-            ),
-            require_access_gate=True,
+        peer_coexistence_scope = self._wait_for_authenticated_scope(
+            binding,
+            PEER_IOS_CLIENT,
+            expected_station_peer_id=primary_station_peer_id,
+            expected_actor_ptid=peer_alice_ptid,
         )
-        if int(revoked_scope["generation"]) <= int(
-            restored_scope["generation"]
+        primary_device_id = primary_coexistence_scope.get("deviceId")
+        peer_device_id = peer_coexistence_scope.get("deviceId")
+        if (
+            not isinstance(primary_device_id, str)
+            or not isinstance(peer_device_id, str)
+            or primary_device_id == peer_device_id
         ):
             raise GateError(
-                "revoked primary iOS resume did not advance the lifecycle generation"
+                "same-account simulator clients must present distinct device ids"
             )
         self._record(
-            "revoked-session-cleared",
+            "same-account-multi-device-coexistence",
+            PEER_IOS_CLIENT,
+            primaryDeviceId=primary_device_id,
+            peerDeviceId=peer_device_id,
+        )
+
+        # Foreground suspend/resume revalidates the primary session. The peer
+        # login did not revoke it, so the primary must remain authenticated
+        # instead of being cleared to the Access Gate, and the peer stays live.
+        binding.call_action(IOS_CLIENT, "lifecycle.suspend")
+        binding.call_action(IOS_CLIENT, "lifecycle.resume")
+        resumed_primary_scope = self._wait_for_authenticated_scope(
+            binding,
             IOS_CLIENT,
-            generation=int(revoked_scope["generation"]),
+            expected_station_peer_id=primary_station_peer_id,
+            expected_actor_ptid=alice_ptid,
+        )
+        self._wait_for_authenticated_scope(
+            binding,
+            PEER_IOS_CLIENT,
+            expected_station_peer_id=primary_station_peer_id,
+            expected_actor_ptid=peer_alice_ptid,
+        )
+        self._record(
+            "same-account-session-preserved-after-resume",
+            IOS_CLIENT,
+            generation=int(resumed_primary_scope["generation"]),
         )
 
         ios_secondary = self._select(
@@ -320,9 +355,9 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
             IOS_CLIENT,
             SECONDARY_BINDING,
         )
-        if ios_secondary.remote_revocation != "not-required":
+        if ios_secondary.remote_revocation != "confirmed":
             raise GateError(
-                "revoked session switch unexpectedly retained revocation work"
+                "active primary session switch did not confirm remote revocation"
             )
         self._assert_cleared_scope(
             ios_secondary.scope,
@@ -331,7 +366,7 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
             ),
         )
         if int(ios_secondary.scope["generation"]) <= int(
-            revoked_scope["generation"]
+            resumed_primary_scope["generation"]
         ):
             raise GateError(
                 "secondary Station binding did not advance generation"
@@ -509,12 +544,12 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
                 "accessGateVisible": True,
                 "oldScopeAbsent": True,
             },
-            "revocation": {
-                "revokedClientId": IOS_CLIENT,
-                "replacementClientId": PEER_IOS_CLIENT,
-                "authCleared": True,
-                "accessGateVisible": True,
-                "oldScopeAbsent": True,
+            "coexistence": {
+                "primaryClientId": IOS_CLIENT,
+                "peerClientId": PEER_IOS_CLIENT,
+                "distinctDeviceIds": True,
+                "primaryRemainedAuthenticated": True,
+                "peerRemainedAuthenticated": True,
                 "bindingProof": peer_primary.binding_proofs[
                     PRIMARY_BINDING
                 ].to_dict(),
@@ -839,6 +874,146 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
                 }
             )
         return "; ".join(failures) if failures else None
+
+    def _assertions_from_lifecycle_evidence(
+        self,
+        journey: Mapping[str, Any],
+        report_base: Mapping[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Build explicit, evidence-derived assertions for the proof contract.
+
+        Each predicate restates an observation already enforced while the
+        lifecycle journey ran (valid-session restore, SAL-D12 multi-device
+        coexistence on distinct device ids, resume revalidation preserving the
+        primary, confirmed device-scoped revocation on every Station switch with
+        monotonic generations, logout teardown, closed binding proofs). Core
+        proof never accepts the PASS label alone, so a missing observation
+        surfaces as ``passed: False`` and the caller fails closed before sealing
+        the report.
+        """
+        events_by_name: dict[str, list[dict[str, Any]]] = {}
+        for event in self.events:
+            events_by_name.setdefault(
+                str(event.get("event")),
+                [],
+            ).append(event)
+
+        def has_event(name: str) -> bool:
+            return bool(events_by_name.get(name))
+
+        coexistence_events = events_by_name.get(
+            "same-account-multi-device-coexistence",
+            [],
+        )
+        coexistence = (
+            coexistence_events[0] if coexistence_events else {}
+        )
+        distinct_device_ids = (
+            isinstance(coexistence.get("primaryDeviceId"), str)
+            and isinstance(coexistence.get("peerDeviceId"), str)
+            and bool(coexistence.get("primaryDeviceId"))
+            and coexistence.get("primaryDeviceId")
+            != coexistence.get("peerDeviceId")
+        )
+
+        switch_events = events_by_name.get("binding-selected", [])[
+            -SWITCH_COUNT:
+        ]
+        switch_generations = [
+            int(event["lifecycleGeneration"])
+            for event in switch_events
+            if isinstance(event.get("lifecycleGeneration"), int)
+        ]
+        monotonic_generations = (
+            len(switch_generations) == SWITCH_COUNT
+            and all(
+                later > earlier
+                for earlier, later in zip(
+                    switch_generations,
+                    switch_generations[1:],
+                )
+            )
+        )
+        switches = journey.get("switches")
+        binding_proofs_closed = (
+            isinstance(switches, list)
+            and len(switches) == SWITCH_COUNT
+            and all(
+                isinstance(item, Mapping)
+                and isinstance(item.get("bindingProof"), Mapping)
+                and bool(item.get("bindingProof"))
+                and item.get("remoteRevocation") == "confirmed"
+                for item in switches
+            )
+        )
+
+        assertions: list[dict[str, Any]] = [
+            {
+                "name": "lifecycle:valid-session-restored-after-restart",
+                "passed": has_event("valid-session-restored"),
+            },
+            {
+                "name": (
+                    "lifecycle:same-account-multi-device-coexistence-"
+                    "distinct-device-ids"
+                ),
+                "passed": has_event(
+                    "same-account-multi-device-coexistence"
+                )
+                and distinct_device_ids,
+            },
+            {
+                "name": (
+                    "lifecycle:primary-session-preserved-through-resume-"
+                    "revalidation"
+                ),
+                "passed": has_event(
+                    "same-account-session-preserved-after-resume"
+                ),
+            },
+            {
+                "name": (
+                    "lifecycle:station-switch-remote-revocation-confirmed"
+                ),
+                "passed": len(switch_events) == SWITCH_COUNT
+                and all(
+                    event.get("remoteRevocation") == "confirmed"
+                    for event in switch_events
+                ),
+            },
+            {
+                "name": "lifecycle:switch-generations-strictly-monotonic",
+                "passed": monotonic_generations,
+            },
+            {
+                "name": "lifecycle:binding-proof-closure-on-every-switch",
+                "passed": binding_proofs_closed,
+            },
+            {
+                "name": "lifecycle:logout-cleared-session-and-scope",
+                "passed": has_event("logout-cleared"),
+            },
+            {
+                "name": "lifecycle:production-actions-without-station-mocks",
+                "passed": report_base.get("stationMocksUsed") is False,
+            },
+            {
+                "name": "lifecycle:simulator-does-not-claim-physical-device",
+                "passed": report_base.get("physicalDeviceClaimed") is False,
+            },
+        ]
+        if self.route_expiry_wait_seconds:
+            assertions.append(
+                {
+                    "name": (
+                        "lifecycle:expired-route-same-session-resumed"
+                    ),
+                    "passed": has_event(
+                        "expired-route-resumed-with-same-session"
+                    ),
+                }
+            )
+        return assertions
 
     def _result_base(self, status: str) -> dict[str, Any]:
         observed_scope = list(PROVEN_SCOPE)

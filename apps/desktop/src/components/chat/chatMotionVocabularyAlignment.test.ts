@@ -47,9 +47,13 @@ describe('north-star motion vocabulary', () => {
   });
 
   it('uses 140ms cubic-bezier(.22,1,.36,1) for search field focus', () => {
-    const field = chatCss.match(/\.sc-rail-search \.pt-field-frame\s*\{([^}]*)\}/)?.[1] ?? '';
-    expect(field).toContain('border-color 0.14s cubic-bezier(0.22, 1, 0.36, 1)');
-    expect(field).toContain('box-shadow 0.14s cubic-bezier(0.22, 1, 0.36, 1)');
+    const field = readFileSync(new URL('../../../../../packages/ui/web/src/styles.css', import.meta.url), 'utf8');
+    const tokens = readFileSync(new URL('../../../../../packages/ui/tokens/src/index.ts', import.meta.url), 'utf8');
+    expect(field).toContain('border-color var(--pt-motion-surface) var(--pt-motion-searchFocus)');
+    expect(field).toContain('box-shadow var(--pt-motion-surface) var(--pt-motion-searchFocus)');
+    expect(tokens).toContain('surface: 140');
+    expect(tokens).toContain("searchFocus: 'cubic-bezier(.22,1,.36,1)'");
+    expect(chatCss).not.toMatch(/\.sc-rail-search \.pt-field-frame/);
   });
 
   it('does not invent 140/150/200ms ease fades on shared list chrome', () => {

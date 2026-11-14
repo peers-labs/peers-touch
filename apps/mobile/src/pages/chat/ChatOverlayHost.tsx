@@ -1,31 +1,28 @@
 import { useState, type ReactNode } from 'react';
-import { Alert, Button, Empty, Input, List, Modal, Spin, Switch, Tag, Typography } from 'antd';
 import {
-  Ban,
-  Bell,
-  Image,
-  Laugh,
-  MessageSquare,
-  Pencil,
-  Pin,
-  RotateCcw,
-  Search,
-  Trash2,
-  Users,
-  VolumeX,
-  X,
-  CornerUpLeft,
-  EyeOff,
-  Flag,
-  Forward as ForwardIcon,
-  ShieldX,
-} from 'lucide-react';
+  Button,
+  BottomSheet,
+  CopyButton,
+  Empty,
+  Icon,
+  IconButton,
+  Spin,
+  Switch,
+  Tag,
+  Text,
+  TextArea,
+  TextField,
+} from '@peers-touch/ui';
 import { isRecalledChatMessage } from '@peers-touch/client-chat-core';
 
+import { confirm, confirmDestructive } from '../../app/feedback/mobileFeedback';
 import { useMobileI18n } from '../../app/mobileI18n';
+import { mobileClipboard } from '../../services/platform/mobileClipboard';
 import { BoundedList } from '../../components/BoundedList';
 import { MobileAvatar } from '../../components/MobileAvatar';
 import { actorDisplayName } from '../../features/social/socialProjection';
+import { MobileNotice } from '../../components/MobileNotice';
+import { readableErrorMessage } from '../../features/social/socialTypes';
 import {
   CHAT_BACKGROUND_OPTIONS,
   type ChatBackgroundId,
@@ -55,7 +52,6 @@ import {
 import { isOwnChatMessage } from '../../features/chat/chatSelectors';
 import type { ConversationSettingsFeedback } from './conversationSettingsState';
 
-const { Text } = Typography;
 const MOBILE_MESSAGE_REACTIONS = ['\u{1F44D}', '\u{2764}\u{FE0F}', '\u{1F602}', '\u{1F62E}', '\u{1F389}'] as const;
 
 export function ChatOverlayHost({ children }: { readonly children: ReactNode }) {
@@ -82,6 +78,8 @@ export function MessageActionSheet({
   onHideForMe,
   canModerate,
   onModerate,
+  onSelect,
+  onCopyError,
 }: {
   readonly message: SocialMessage | undefined;
   readonly currentUserPtid: string | null;
@@ -102,6 +100,8 @@ export function MessageActionSheet({
   readonly onHideForMe: () => void;
   readonly canModerate: boolean;
   readonly onModerate: () => void;
+  readonly onSelect?: () => void;
+  readonly onCopyError?: (error: unknown) => void;
 }) {
   const { t } = useMobileI18n();
   if (!message) return null;
@@ -111,55 +111,58 @@ export function MessageActionSheet({
   const unavailable = recalled || metadata.moderated;
 
   return (
-    <div
-      className="chat-action-sheet-shell message-action-sheet-shell"
-      data-product-surface="chat.message-actions"
-    >
-      <button className="chat-action-sheet-backdrop" type="button" aria-label={t('common.action.close')} onClick={onClose} />
-      <aside className="chat-action-sheet message-action-sheet" role="dialog" aria-modal="true" aria-labelledby="message-action-sheet-title">
-        <div className="chat-action-sheet-handle" aria-hidden="true" />
+    <BottomSheet open title={t('mobile.chat.messageActions')} onDismiss={onClose}
+      className="message-action-sheet" data-product-surface="chat.message-actions">
         <div className="chat-action-sheet-header">
-          <Text strong id="message-action-sheet-title">{t('mobile.chat.messageActions')}</Text>
-          <button className="header-action" type="button" aria-label={t('common.action.close')} onClick={onClose}><X size={18} /></button>
+          <IconButton actionId="chat.message-actions.close" iconId="close" density="comfortable" emphasis="quiet"
+            label={t('common.action.close')} onActivate={onClose} />
         </div>
         <div className="chat-action-list">
           <div className="chat-background-section message-action-reactions">
-            <Text type="secondary" className="chat-background-title">{t('mobile.chat.addReaction')}</Text>
+            <Text tone="secondary" className="chat-background-title">{t('mobile.chat.addReaction')}</Text>
             <div className="chat-background-grid">
               {MOBILE_MESSAGE_REACTIONS.map((reaction) => {
                 const active = metadata.reactions.some(
                   (item) => item.actorPtid === currentUserPtid && item.reaction === reaction,
                 );
                 return (
-                  <button
+                  <Button
                     key={reaction}
-                    type="button"
-                    className={`chat-background-choice message-reaction-choice ${active ? 'active' : ''}`}
+                    actionId={`chat.message.react.${reaction}`}
+                    emphasis="quiet" density="comfortable"
                     aria-label={t('mobile.chat.reactWith', { reaction })}
                     aria-pressed={active}
-                    disabled={commandBusy}
-                    onClick={() => onToggleReaction(reaction)}
+                    availability={commandBusy || unavailable ? { kind: 'disabled', reason: t('mobile.chat.commandPending') } : undefined}
+                    onActivate={() => onToggleReaction(reaction)}
                   >
-                    <Laugh size={14} />
                     <span>{reaction}</span>
-                  </button>
+                  </Button>
                 );
               })}
             </div>
           </div>
           <div className="chat-action-group">
-            <ChatActionButton icon={<CornerUpLeft size={18} />} title={t('mobile.chat.reply')} onClick={onReply} />
-            <ChatActionButton icon={<ForwardIcon size={18} />} title={t('mobile.chat.forward')} disabled={commandBusy || unavailable} onClick={onForward} />
-            <ChatActionButton icon={<MessageSquare size={18} />} title={t('mobile.chat.thread')} onClick={onOpenThread} />
+            {!!message.content && !unavailable && (
+              <CopyButton actionId="chat.message.copy" text={message.content}
+                clipboardPort={mobileClipboard}
+                label={t('mobile.chat.copy')} copiedLabel={t('mobile.chat.copied')}
+                emphasis="quiet" density="comfortable" onCopyError={onCopyError} />
+            )}
+            <ChatActionButton icon={<Icon iconId="corner-up-left" size={18} />} title={t('mobile.chat.reply')} onClick={onReply} />
+            <ChatActionButton icon={<Icon iconId="forward" size={18} />} title={t('mobile.chat.forward')} disabled={commandBusy || unavailable} onClick={onForward} />
+            <ChatActionButton icon={<Icon iconId="message-square" size={18} />} title={t('mobile.chat.thread')} onClick={onOpenThread} />
+            {onSelect && !unavailable && (
+              <ChatActionButton icon={<Icon iconId="check" size={18} />} title={t('mobile.chat.selectMessage')} onClick={onSelect} />
+            )}
             <ChatActionButton
-              icon={<Pin size={18} />}
+              icon={<Icon iconId="pin" size={18} />}
               title={t(metadata.pinnedByPtid ? 'mobile.chat.unpinMessage' : 'mobile.chat.pinMessage')}
               active={Boolean(metadata.pinnedByPtid)}
               disabled={commandBusy}
               onClick={onTogglePin}
             />
             <ChatActionButton
-              icon={<Flag size={18} />}
+              icon={<Icon iconId="flag" size={18} />}
               title={flagLabel}
               active={flagged}
               disabled={flagLoading}
@@ -168,21 +171,20 @@ export function MessageActionSheet({
           </div>
           {mine && !unavailable ? (
             <div className="chat-action-group">
-              {canEdit ? <ChatActionButton icon={<Pencil size={18} />} title={t('mobile.chat.edit')} disabled={commandBusy} onClick={onEdit} /> : null}
-              <ChatActionButton icon={<RotateCcw size={18} />} title={t('mobile.chat.recall')} disabled={commandBusy} onClick={onRecall} />
+              {canEdit ? <ChatActionButton icon={<Icon iconId="edit" size={18} />} title={t('mobile.chat.edit')} disabled={commandBusy} onClick={onEdit} /> : null}
+              <ChatActionButton icon={<Icon iconId="rotate-ccw" size={18} />} title={t('mobile.chat.recall')} disabled={commandBusy} onClick={onRecall} />
             </div>
           ) : null}
           {!unavailable ? (
             <div className="chat-action-group">
               {canModerate ? (
-                <ChatActionButton icon={<ShieldX size={18} />} title={t('mobile.chat.moderate')} disabled={commandBusy} onClick={onModerate} danger />
+                <ChatActionButton icon={<Icon iconId="shield-x" size={18} />} title={t('mobile.chat.moderate')} disabled={commandBusy} onClick={onModerate} danger />
               ) : null}
-              <ChatActionButton icon={<EyeOff size={18} />} title={t('mobile.chat.deleteForMe')} disabled={commandBusy} onClick={onHideForMe} danger />
+              <ChatActionButton icon={<Icon iconId="eye-off" size={18} />} title={t('mobile.chat.deleteForMe')} disabled={commandBusy} onClick={onHideForMe} danger />
             </div>
           ) : null}
         </div>
-      </aside>
-    </div>
+    </BottomSheet>
   );
 }
 
@@ -227,12 +229,12 @@ export function ForwardMessageSheet({
         <div className="chat-action-sheet-handle" aria-hidden="true" />
         <div className="chat-action-sheet-header">
           <Text strong id="message-forward-sheet-title">{t('mobile.chat.forwardTitle')}</Text>
-          <button className="header-action" type="button" aria-label={t('common.action.close')} onClick={onClose}><X size={18} /></button>
+          <button className="header-action" type="button" aria-label={t('common.action.close')} onClick={onClose}><Icon iconId="close" size={18} /></button>
         </div>
         <div className="chat-action-list">
-          {error ? <Alert type="error" showIcon title={error} /> : null}
+          {error ? <div className="chat-overlay-alert error" role="alert"><Icon iconId="warning" size={16} /><span>{error}</span></div> : null}
           {destinations.length === 0 ? (
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('mobile.chat.forwardEmpty')} />
+            <Empty description={t('mobile.chat.forwardEmpty')} />
           ) : (
             <BoundedList
               surfaceKey="message-forward-destinations"
@@ -240,37 +242,36 @@ export function ForwardMessageSheet({
               itemKey={(destination) => destination.key}
               size={100}
             >
-              {(rows) => (
-                <List
-                  dataSource={rows}
-                  rowKey={(destination) => destination.key}
-                  renderItem={(destination) => (
-                    <List.Item
-                      className="conversation-item"
-                      actions={[
-                        <Button
-                          key="forward"
-                          type="text"
-                          icon={pendingDestinationId === destination.conversationId ? <Spin size="small" /> : <ForwardIcon size={17} />}
-                          aria-label={t('mobile.chat.forwardTo', { destination: destination.title })}
-                          disabled={Boolean(pendingDestinationId)}
-                          onClick={() => onSelect(destination)}
-                        />,
-                      ]}
-                    >
-                      <List.Item.Meta
-                        avatar={(
-                          <MobileAvatar src={destination.avatar}>
-                            {destination.title.slice(0, 1).toUpperCase()}
-                          </MobileAvatar>
-                        )}
-                        title={destination.title}
-                        description={destination.subtitle}
+              {(rows) => rows.map((destination) => (
+                <div key={destination.key} className="contact-item conversation-item forward-destination-row">
+                  <div className="contact-item-meta">
+                    <MobileAvatar src={destination.avatar}>
+                      {destination.title.slice(0, 1).toUpperCase()}
+                    </MobileAvatar>
+                    <span className="contact-item-copy">
+                      <Text strong>{destination.title}</Text>
+                      <span className="contact-item-description">{destination.subtitle}</span>
+                    </span>
+                  </div>
+                  <span className="contact-item-actions">
+                    {pendingDestinationId === destination.conversationId ? (
+                      <Spin size="small" />
+                    ) : (
+                      <IconButton
+                        actionId="message-forward-select"
+                        iconId="forward"
+                        iconSize={17}
+                        label={t('mobile.chat.forwardTo', { destination: destination.title })}
+                        emphasis="quiet"
+                        availability={Boolean(pendingDestinationId)
+                          ? { kind: 'disabled', reason: t('mobile.chat.forwardTitle') }
+                          : undefined}
+                        onActivate={() => onSelect(destination)}
                       />
-                    </List.Item>
-                  )}
-                />
-              )}
+                    )}
+                  </span>
+                </div>
+              ))}
             </BoundedList>
           )}
         </div>
@@ -337,7 +338,7 @@ export function ChatActionSheet({
         <div className="chat-action-sheet-handle" aria-hidden="true" />
         <div className="chat-action-sheet-header">
           <Text strong id="chat-action-sheet-title">{t('mobile.chat.moreActions')}</Text>
-          <button className="header-action" type="button" aria-label={t('common.action.close')} onClick={onClose}><X size={18} /></button>
+          <button className="header-action" type="button" aria-label={t('common.action.close')} onClick={onClose}><Icon iconId="close" size={18} /></button>
         </div>
         <div className="chat-action-list">
           <ConversationSettingsFeedbackNotice
@@ -345,13 +346,13 @@ export function ChatActionSheet({
             onRetry={onRetrySettings}
           />
           <div className="chat-action-group">
-            <ChatActionButton icon={<Search size={18} />} title={t('mobile.chat.quickSearch')} onClick={onSearch} />
-            <ChatActionButton icon={<VolumeX size={18} />} title={t('mobile.chat.quickMute')} active={state.muted} disabled={settingsBusy} onClick={onToggleMute} />
-            <ChatActionButton icon={<Pin size={18} />} title={t('mobile.chat.quickSticky')} active={state.sticky} disabled={settingsBusy} onClick={onToggleSticky} />
-            <ChatActionButton icon={<Bell size={18} />} title={t('mobile.chat.quickAlert')} active={state.alertEnabled} disabled={settingsBusy} onClick={onToggleAlert} />
+            <ChatActionButton icon={<Icon iconId="search" size={18} />} title={t('mobile.chat.quickSearch')} onClick={onSearch} />
+            <ChatActionButton icon={<Icon iconId="volume-x" size={18} />} title={t('mobile.chat.quickMute')} active={state.muted} disabled={settingsBusy} onClick={onToggleMute} />
+            <ChatActionButton icon={<Icon iconId="pin" size={18} />} title={t('mobile.chat.quickSticky')} active={state.sticky} disabled={settingsBusy} onClick={onToggleSticky} />
+            <ChatActionButton icon={<Icon iconId="bell" size={18} />} title={t('mobile.chat.quickAlert')} active={state.alertEnabled} disabled={settingsBusy} onClick={onToggleAlert} />
           </div>
           <div className="chat-background-section">
-            <Text type="secondary" className="chat-background-title">{t('mobile.chat.quickBackground')}</Text>
+            <Text tone="secondary" className="chat-background-title">{t('mobile.chat.quickBackground')}</Text>
             <div className="chat-background-grid">
               {CHAT_BACKGROUND_OPTIONS.map((option) => (
                 <button
@@ -361,21 +362,21 @@ export function ChatActionSheet({
                   disabled={settingsBusy}
                   onClick={() => onSelectBackground(option)}
                 >
-                  <Image size={14} />
+                  <Icon iconId="image" size={14} />
                   <span>{t(`mobile.chat.background.${option}`)}</span>
                 </button>
               ))}
             </div>
           </div>
           <div className="chat-action-group">
-            {onManageGroup ? <ChatActionButton icon={<Users size={18} />} title={t('mobile.group.members')} onClick={onManageGroup} /> : null}
+            {onManageGroup ? <ChatActionButton icon={<Icon iconId="users" size={18} />} title={t('mobile.group.members')} onClick={onManageGroup} /> : null}
           </div>
           <div className="chat-action-group danger">
-            <ChatActionButton icon={<Trash2 size={18} />} title={t('mobile.chat.quickClearHistory')} danger disabled={settingsBusy} onClick={onClearHistory} />
+            <ChatActionButton icon={<Icon iconId="delete" size={18} />} title={t('mobile.chat.quickClearHistory')} danger disabled={settingsBusy} onClick={onClearHistory} />
             {isFriendThread ? (
               peerBlocked
-                ? <ChatActionButton icon={<RotateCcw size={18} />} title={t('mobile.contacts.unblock')} onClick={onUnblockPeer} />
-                : <ChatActionButton icon={<Ban size={18} />} title={t('mobile.contacts.block')} danger onClick={onBlockPeer} />
+                ? <ChatActionButton icon={<Icon iconId="rotate-ccw" size={18} />} title={t('mobile.contacts.unblock')} onClick={onUnblockPeer} />
+                : <ChatActionButton icon={<Icon iconId="ban" size={18} />} title={t('mobile.contacts.block')} danger onClick={onBlockPeer} />
             ) : null}
           </div>
         </div>
@@ -421,15 +422,28 @@ export function ChatDestructiveConfirmSheet({
           <Text strong id="chat-clear-confirm-title">
             {t('mobile.chat.clearHistoryConfirmTitle')}
           </Text>
-          <Text type="secondary" id="chat-clear-confirm-description">
+          <Text tone="secondary" id="chat-clear-confirm-description">
             {t('mobile.chat.clearHistoryConfirmBody')}
           </Text>
         </div>
         <div className="chat-confirm-actions">
-          <Button block disabled={busy} onClick={onCancel}>
+          <Button
+            actionId="chat-destructive-cancel"
+            fullWidth
+            emphasis="secondary"
+            availability={busy ? { kind: 'disabled', reason: t('common.action.cancel') } : undefined}
+            onActivate={onCancel}
+          >
             {t('common.action.cancel')}
           </Button>
-          <Button block danger type="primary" loading={busy} onClick={onConfirm}>
+          <Button
+            actionId="chat-destructive-confirm"
+            fullWidth
+            emphasis="primary"
+            tone="danger"
+            execution={busy ? 'pending' : 'idle'}
+            onActivate={onConfirm}
+          >
             {t('mobile.chat.quickClearHistory')}
           </Button>
         </div>
@@ -524,51 +538,30 @@ export function GroupManagementModal({
     try {
       await operation();
       setPendingOperation('');
-    } catch {
-      setOperationError(t(failureKey));
+    } catch (error) {
+      setOperationError(`${t(failureKey)}: ${readableErrorMessage(error, 'operation_failed')}`);
       setPendingOperation('');
     }
   };
 
   return (
-    <div
-      className="chat-action-sheet-shell"
+    <BottomSheet
+      open={open}
+      title={t('mobile.group.members')}
+      onDismiss={onClose}
       data-product-surface={!canManage ? 'chat.group-role-denied' : undefined}
+      data-acceptance-id="group-management"
     >
-      <button
-        className="chat-action-sheet-backdrop"
-        type="button"
-        aria-label={t('common.action.close')}
-        onClick={onClose}
-      />
-      <aside
-        className="chat-action-sheet group-management-sheet"
-        data-acceptance-id="group-management"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="group-management-title"
+      <section
+        className="group-management-panel"
       >
-        <div className="chat-action-sheet-handle" aria-hidden="true" />
-        <div className="chat-action-sheet-header">
-          <Text strong id="group-management-title">{t('mobile.group.members')}</Text>
-          <button
-            className="header-action"
-            type="button"
-            aria-label={t('common.action.close')}
-            onClick={onClose}
-          >
-            <X size={18} />
-          </button>
-        </div>
-        <div className="chat-action-list group-management-panel">
+        <div className="group-management-content">
           {!canManage ? (
-            <Alert
-              type="info"
-              showIcon
-              title={t('mobile.group.roleDenied')}
-            />
+            <MobileNotice>{t('mobile.group.roleDenied')}</MobileNotice>
           ) : null}
-          {operationError ? <Alert type="error" showIcon title={operationError} /> : null}
+          {operationError ? (
+            <MobileNotice tone="error">{operationError}</MobileNotice>
+          ) : null}
           {visibleGroupOutcome ? (
             <GroupCommandNotice outcome={visibleGroupOutcome} />
           ) : null}
@@ -577,29 +570,31 @@ export function GroupManagementModal({
             title={t('mobile.group.profile')}
             count={conversation.memberPtids.length}
           />
-          <Input
+          <TextField
             value={groupNameDraft}
-            onChange={(event) => setGroupNameDraft(event.target.value)}
             placeholder={t('mobile.group.namePlaceholder')}
             disabled={!canManage || Boolean(pendingOperation) || groupCommandBusy}
+            onValueChange={setGroupNameDraft}
           />
-          <Input.TextArea
+          <TextArea
             value={groupDescriptionDraft}
-            onChange={(event) => setGroupDescriptionDraft(event.target.value)}
             placeholder={t('mobile.group.descriptionPlaceholder')}
-            autoSize={{ minRows: 2, maxRows: 4 }}
+            minimumRows={2}
+            maximumRows={4}
             disabled={!canManage || Boolean(pendingOperation) || groupCommandBusy}
+            onValueChange={setGroupDescriptionDraft}
           />
           {canManage ? (
             <Button
-              type="primary"
-              loading={pendingOperation === 'save'}
-              disabled={
-                !groupNameDraft.trim()
+              actionId="group-management-save"
+              emphasis="primary"
+              execution={pendingOperation === 'save' ? 'pending' : 'idle'}
+              availability={!groupNameDraft.trim()
                 || Boolean(pendingOperation)
                 || groupCommandBusy
-              }
-              onClick={() => void runOperation(
+                ? { kind: 'disabled', reason: t('common.action.save') }
+                : undefined}
+              onActivate={() => void runOperation(
                 'save',
                 'mobile.group.operationUpdateFailed',
                 () => onSaveGroup(
@@ -618,7 +613,7 @@ export function GroupManagementModal({
               aria-label={t('mobile.group.myMuted')}
               checked={Boolean(conversationSettings?.isMuted)}
               disabled={Boolean(pendingOperation) || groupCommandBusy}
-              onChange={(value) => void runOperation(
+              onCheckedChange={(value) => void runOperation(
                 'settings:mute',
                 'mobile.settings.dirty.saveFailed',
                 async () => onUpdateMySettings({ isMuted: value }),
@@ -631,7 +626,7 @@ export function GroupManagementModal({
               aria-label={t('mobile.group.pinned')}
               checked={Boolean(conversationSettings?.isPinned)}
               disabled={Boolean(pendingOperation) || groupCommandBusy}
-              onChange={(value) => void runOperation(
+              onCheckedChange={(value) => void runOperation(
                 'settings:pin',
                 'mobile.settings.dirty.saveFailed',
                 async () => onUpdateMySettings({ isPinned: value }),
@@ -646,11 +641,7 @@ export function GroupManagementModal({
               items={[...members]}
               itemKey={(member) => member.ptid}
             >
-              {(rows) => (
-                <List
-                  dataSource={rows}
-                  rowKey="ptid"
-                  renderItem={(member) => {
+              {(rows) => rows.map((member) => {
                     const profile = peerProfiles[member.ptid];
                     const memberName = groupMemberDisplayName(profile, t);
                     const memberSubtitle = profile?.federatedHandle
@@ -670,63 +661,91 @@ export function GroupManagementModal({
                       conversation.conversationId,
                       member.ptid,
                     );
+                    const controlsDisabled = Boolean(pendingOperation) || groupCommandBusy;
                     return (
-                      <List.Item
+                      <div
+                        key={member.ptid}
+                        className="contact-item group-member-row"
                         data-scroll-anchor-id={member.ptid}
                         data-group-membership-state={membershipOutcome?.state}
-                        actions={[
-                          canManageTarget && myRole === MemberRole.OWNER ? (
-                            <Button
-                              key="role"
-                              size="small"
-                              disabled={Boolean(pendingOperation) || groupCommandBusy}
-                              onClick={() => void runOperation(
-                                `${memberOperation}:role`,
-                                'mobile.group.operationUpdateMemberFailed',
-                                () => onUpdateMemberRole(
-                                  member.ptid,
-                                  member.role === MemberRole.ADMIN
-                                    ? 'member'
-                                    : 'admin',
-                                ),
-                              )}
-                            >
-                              {t(member.role === MemberRole.ADMIN
-                                ? 'mobile.group.demoteAdmin'
-                                : 'mobile.group.promoteAdmin')}
-                            </Button>
-                          ) : null,
-                          canManageTarget && myRole === MemberRole.OWNER ? (
-                            <Button
-                              key="transfer"
-                              size="small"
-                              disabled={Boolean(pendingOperation) || groupCommandBusy}
-                              onClick={() => {
-                                Modal.confirm({
-                                  title: t('mobile.group.transferOwnerConfirmTitle'),
-                                  content: t('mobile.group.transferOwnerConfirmBody', {
-                                    name: memberName,
-                                  }),
-                                  okText: t('mobile.group.transferOwner'),
-                                  cancelText: t('common.action.cancel'),
-                                  okButtonProps: { danger: true },
-                                  onOk: () => runOperation(
-                                    `${memberOperation}:transfer`,
-                                    'mobile.group.operationTransferOwnerFailed',
-                                    () => onTransferOwnership(member.ptid),
+                      >
+                        <div className="contact-item-meta">
+                          <MobileAvatar src={profile?.avatar}>
+                            {memberName.slice(0, 1)}
+                          </MobileAvatar>
+                          <span className="contact-item-copy">
+                            <Text strong>{memberName}</Text>
+                            <span className="contact-item-description">{memberSubtitle}</span>
+                          </span>
+                        </div>
+                        <span className="group-member-badges">
+                          <Tag>{groupRoleLabel(member.role, t)}</Tag>
+                          {member.muted ? <Tag tone="warning">{t('mobile.group.memberMuted')}</Tag> : null}
+                          {membershipOutcome ? (
+                            <GroupCommandTag outcome={membershipOutcome} />
+                          ) : null}
+                        </span>
+                        {canManageTarget ? (
+                          <span className="group-member-actions">
+                            {myRole === MemberRole.OWNER ? (
+                              <Button
+                                actionId={`${memberOperation}-role`}
+                                emphasis="secondary"
+                                density="compact"
+                                availability={controlsDisabled
+                                  ? { kind: 'disabled', reason: t('mobile.group.promoteAdmin') }
+                                  : undefined}
+                                onActivate={() => void runOperation(
+                                  `${memberOperation}:role`,
+                                  'mobile.group.operationUpdateMemberFailed',
+                                  () => onUpdateMemberRole(
+                                    member.ptid,
+                                    member.role === MemberRole.ADMIN
+                                      ? 'member'
+                                      : 'admin',
                                   ),
-                                });
-                              }}
-                            >
-                              {t('mobile.group.transferOwner')}
-                            </Button>
-                          ) : null,
-                          canManageTarget ? (
+                                )}
+                              >
+                                {t(member.role === MemberRole.ADMIN
+                                  ? 'mobile.group.demoteAdmin'
+                                  : 'mobile.group.promoteAdmin')}
+                              </Button>
+                            ) : null}
+                            {myRole === MemberRole.OWNER ? (
+                              <Button
+                                actionId={`${memberOperation}-transfer`}
+                                emphasis="secondary"
+                                density="compact"
+                                availability={controlsDisabled
+                                  ? { kind: 'disabled', reason: t('mobile.group.transferOwner') }
+                                  : undefined}
+                                onActivate={() => {
+                                  void confirmDestructive({
+                                    title: t('mobile.group.transferOwnerConfirmTitle'),
+                                    description: t('mobile.group.transferOwnerConfirmBody', {
+                                      name: memberName,
+                                    }),
+                                    confirmLabel: t('mobile.group.transferOwner'),
+                                    cancelLabel: t('common.action.cancel'),
+                                    onConfirm: () => runOperation(
+                                      `${memberOperation}:transfer`,
+                                      'mobile.group.operationTransferOwnerFailed',
+                                      () => onTransferOwnership(member.ptid),
+                                    ),
+                                  });
+                                }}
+                              >
+                                {t('mobile.group.transferOwner')}
+                              </Button>
+                            ) : null}
                             <Button
-                              key="mute"
-                              size="small"
-                              disabled={Boolean(pendingOperation) || groupCommandBusy}
-                              onClick={() => void runOperation(
+                              actionId={`${memberOperation}-mute`}
+                              emphasis="secondary"
+                              density="compact"
+                              availability={controlsDisabled
+                                ? { kind: 'disabled', reason: t('mobile.group.muteMember') }
+                                : undefined}
+                              onActivate={() => void runOperation(
                                 `${memberOperation}:mute`,
                                 'mobile.group.operationUpdateMemberFailed',
                                 () => onToggleMemberMuted(member.ptid, !member.muted),
@@ -736,21 +755,20 @@ export function GroupManagementModal({
                                 ? 'mobile.group.unmuteMember'
                                 : 'mobile.group.muteMember')}
                             </Button>
-                          ) : null,
-                          canManageTarget ? (
                             <Button
-                              key="remove"
-                              size="small"
-                              danger
-                              disabled={Boolean(pendingOperation) || groupCommandBusy}
-                              onClick={() => {
-                                Modal.confirm({
+                              actionId={`${memberOperation}-remove`}
+                              tone="danger"
+                              density="compact"
+                              availability={controlsDisabled
+                                ? { kind: 'disabled', reason: t('mobile.group.removeMember') }
+                                : undefined}
+                              onActivate={() => {
+                                void confirmDestructive({
                                   title: t('common.action.confirm'),
-                                  content: `${t('mobile.group.removeMember')} ${memberName}`,
-                                  okText: t('mobile.group.removeMember'),
-                                  cancelText: t('common.action.cancel'),
-                                  okButtonProps: { danger: true },
-                                  onOk: () => runOperation(
+                                  description: `${t('mobile.group.removeMember')} ${memberName}`,
+                                  confirmLabel: t('mobile.group.removeMember'),
+                                  cancelLabel: t('common.action.cancel'),
+                                  onConfirm: () => runOperation(
                                     `${memberOperation}:remove`,
                                     'mobile.group.operationRemoveFailed',
                                     () => onRemoveMember(member.ptid),
@@ -760,34 +778,14 @@ export function GroupManagementModal({
                             >
                               {t('mobile.group.removeMember')}
                             </Button>
-                          ) : null,
-                        ].filter(Boolean)}
-                      >
-                        <List.Item.Meta
-                          avatar={(
-                            <MobileAvatar src={profile?.avatar}>
-                              {memberName.slice(0, 1)}
-                            </MobileAvatar>
-                          )}
-                          title={<Text strong>{memberName}</Text>}
-                          description={<Text type="secondary">{memberSubtitle}</Text>}
-                        />
-                        <Tag>{groupRoleLabel(member.role, t)}</Tag>
-                        {member.muted ? <Tag color="warning">{t('mobile.group.memberMuted')}</Tag> : null}
-                        {membershipOutcome ? (
-                          <GroupCommandTag outcome={membershipOutcome} />
+                          </span>
                         ) : null}
-                      </List.Item>
+                      </div>
                     );
-                  }}
-                />
-              )}
+                  })}
             </BoundedList>
           ) : (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={t('mobile.group.noMembers')}
-            />
+            <Empty description={t('mobile.group.noMembers')} />
           )}
 
           <SectionTitle
@@ -800,11 +798,7 @@ export function GroupManagementModal({
               items={[...inviteCandidates]}
               itemKey={(candidate) => candidate.peerPtid}
             >
-              {(rows) => (
-                <List
-                  dataSource={rows}
-                  rowKey="peerPtid"
-                  renderItem={(candidate) => {
+              {(rows) => rows.map((candidate) => {
                     const membershipOutcome = groupCommandOutcomes[
                       groupCommandOutcomeKey(
                         conversation.conversationId,
@@ -812,80 +806,78 @@ export function GroupManagementModal({
                         candidate.peerPtid,
                       )
                     ];
+                    const invitePending = pendingOperation === `invite:${candidate.peerPtid}`
+                      || isGroupCommandBusy(membershipOutcome);
                     return (
-                      <List.Item
+                      <div
+                        key={candidate.peerPtid}
+                        className="contact-item group-invite-row"
                         data-scroll-anchor-id={candidate.peerPtid}
                         data-group-membership-state={membershipOutcome?.state}
-                        actions={[
+                      >
+                        <div className="contact-item-meta">
+                          <MobileAvatar src={candidate.peerAvatar}>
+                            {candidate.peerName.slice(0, 1)}
+                          </MobileAvatar>
+                          <span className="contact-item-copy">
+                            <Text strong>{candidate.peerName}</Text>
+                            <span className="contact-item-description">
+                              {t('mobile.chat.forwardDestinationDirect')}
+                            </span>
+                          </span>
+                        </div>
+                        {membershipOutcome ? (
+                          <GroupCommandTag outcome={membershipOutcome} />
+                        ) : null}
+                        <span className="contact-item-actions">
                           <Button
-                            key="invite"
-                            size="small"
-                            type="primary"
-                            disabled={Boolean(pendingOperation) || groupCommandBusy}
-                            loading={
-                              pendingOperation === `invite:${candidate.peerPtid}`
-                              || isGroupCommandBusy(membershipOutcome)
-                            }
-                            onClick={() => void runOperation(
+                            actionId={`invite:${candidate.peerPtid}`}
+                            emphasis="primary"
+                            density="compact"
+                            execution={invitePending ? 'pending' : 'idle'}
+                            availability={Boolean(pendingOperation) || groupCommandBusy
+                              ? { kind: 'disabled', reason: t('mobile.group.invite') }
+                              : undefined}
+                            onActivate={() => void runOperation(
                               `invite:${candidate.peerPtid}`,
                               'mobile.group.operationInviteFailed',
                               () => onInviteMember(candidate.peerPtid),
                             )}
                           >
                             {t('mobile.group.invite')}
-                          </Button>,
-                        ]}
-                      >
-                        <List.Item.Meta
-                          avatar={(
-                            <MobileAvatar src={candidate.peerAvatar}>
-                              {candidate.peerName.slice(0, 1)}
-                            </MobileAvatar>
-                          )}
-                          title={<Text strong>{candidate.peerName}</Text>}
-                          description={(
-                            <Text type="secondary">
-                              {t('mobile.chat.forwardDestinationDirect')}
-                            </Text>
-                          )}
-                        />
-                        {membershipOutcome ? (
-                          <GroupCommandTag outcome={membershipOutcome} />
-                        ) : null}
-                      </List.Item>
+                          </Button>
+                        </span>
+                      </div>
                     );
-                  }}
-                />
-              )}
+                  })}
             </BoundedList>
           ) : (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={t('mobile.group.noInviteCandidates')}
-            />
+            <Empty description={t('mobile.group.noInviteCandidates')} />
           )}
 
           <div className="chat-action-group danger">
             <Button
-              danger
-              block
-              disabled={Boolean(pendingOperation) || groupCommandBusy}
-              loading={pendingOperation === 'leave-or-dissolve'}
-              onClick={() => {
+              actionId="group-leave-or-dissolve"
+              tone="danger"
+              fullWidth
+              execution={pendingOperation === 'leave-or-dissolve' ? 'pending' : 'idle'}
+              availability={Boolean(pendingOperation) || groupCommandBusy
+                ? { kind: 'disabled', reason: t('mobile.group.leaveGroup') }
+                : undefined}
+              onActivate={() => {
                 const owner = myRole === MemberRole.OWNER;
-                Modal.confirm({
+                void confirmDestructive({
                   title: t(owner
                     ? 'mobile.group.dissolveGroupConfirmTitle'
                     : 'mobile.group.leaveGroupConfirmTitle'),
-                  content: t(owner
+                  description: t(owner
                     ? 'mobile.group.dissolveGroupConfirmBody'
                     : 'mobile.group.leaveGroupConfirmBody'),
-                  okText: t(owner
+                  confirmLabel: t(owner
                     ? 'mobile.group.dissolveGroup'
                     : 'mobile.group.leaveGroup'),
-                  cancelText: t('common.action.cancel'),
-                  okButtonProps: { danger: true },
-                  onOk: () => runOperation(
+                  cancelLabel: t('common.action.cancel'),
+                  onConfirm: () => runOperation(
                     'leave-or-dissolve',
                     owner
                       ? 'mobile.group.operationDissolveFailed'
@@ -901,8 +893,8 @@ export function GroupManagementModal({
             </Button>
           </div>
         </div>
-      </aside>
-    </div>
+      </section>
+    </BottomSheet>
   );
 }
 
@@ -922,13 +914,15 @@ function GroupCommandNotice({
 }) {
   const { t } = useMobileI18n();
   return (
-    <Alert
+    <div
+      className="chat-overlay-alert"
       data-group-command-state={outcome.state}
-      type={outcome.state === 'failed' ? 'error' : 'info'}
+      data-tone={outcome.state === 'failed' ? 'error' : 'info'}
       role={outcome.state === 'failed' ? 'alert' : 'status'}
-      showIcon
-      title={t(groupCommandStateLabel(outcome))}
-    />
+    >
+      <Icon iconId={outcome.state === 'failed' ? 'warning' : 'info'} size={16} />
+      <span>{t(groupCommandStateLabel(outcome))}</span>
+    </div>
   );
 }
 
@@ -940,11 +934,11 @@ function GroupCommandTag({
   const { t } = useMobileI18n();
   return (
     <Tag
-      color={outcome.state === 'failed'
-        ? 'error'
+      tone={outcome.state === 'failed'
+        ? 'danger'
         : outcome.state === 'uncertain'
           ? 'warning'
-          : 'processing'}
+          : 'info'}
     >
       {t(groupCommandStateLabel(outcome))}
     </Tag>
@@ -995,23 +989,33 @@ function ConversationSettingsFeedbackNotice({
         ? 'mobile.settings.dirty.saved'
         : 'mobile.settings.dirty.saveFailed';
 
+  const tone = feedback.phase === 'failed'
+    ? 'error'
+    : feedback.phase === 'committed'
+      ? 'success'
+      : 'info';
+
   return (
-    <Alert
+    <div
+      className="chat-overlay-alert"
       data-conversation-settings-state={feedback.phase}
-      type={feedback.phase === 'failed'
-        ? 'error'
-        : feedback.phase === 'committed'
-          ? 'success'
-          : 'info'}
+      data-tone={tone}
       role={feedback.phase === 'failed' ? 'alert' : 'status'}
-      showIcon
-      title={t(messageKey)}
-      action={feedback.phase === 'failed' ? (
-        <Button size="small" icon={<RotateCcw size={13} />} onClick={onRetry}>
+    >
+      <Icon iconId={tone === 'error' ? 'warning' : tone === 'success' ? 'check' : 'info'} size={16} />
+      <span>{t(messageKey)}</span>
+      {feedback.phase === 'failed' ? (
+        <Button
+          actionId="conversation-settings-retry"
+          emphasis="quiet"
+          density="compact"
+          leading={<Icon iconId="rotate-ccw" size={13} />}
+          onActivate={onRetry}
+        >
           {t('common.action.retry')}
         </Button>
-      ) : undefined}
-    />
+      ) : null}
+    </div>
   );
 }
 
@@ -1019,7 +1023,7 @@ function SectionTitle({ title, count }: { readonly title: string; readonly count
   return (
     <div className="social-section-title">
       <Text strong>{title}</Text>
-      <Text type="secondary">{count}</Text>
+      <Text tone="secondary">{count}</Text>
     </div>
   );
 }
@@ -1048,15 +1052,17 @@ function ChatActionButton({
   readonly disabled?: boolean;
   readonly onClick: () => void;
 }) {
+  const { t } = useMobileI18n();
   return (
-    <button
-      className={`chat-action-button ${active ? 'active' : ''} ${danger ? 'danger' : ''}`}
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
+    <Button
+      actionId={`chat.action.${title}`}
+      className="chat-action-button"
+      fullWidth emphasis="quiet" density="comfortable" tone={danger ? 'danger' : 'neutral'}
+      onActivate={onClick} aria-pressed={active || undefined}
+      availability={disabled ? { kind: 'disabled', reason: t('mobile.chat.commandPending') } : undefined}
+      leading={icon}
     >
-      <span className="chat-action-icon">{icon}</span>
-      <span>{title}</span>
-    </button>
+      {title}
+    </Button>
   );
 }

@@ -310,6 +310,34 @@ pub fn advance_engine_consumer_epoch(
     Ok(advanced)
 }
 
+/// Terminal worker failure that no retry can heal (e.g. the Station requires
+/// actor identity recovery before this endpoint may enroll). The engine stays
+/// Failed until a fresh activation replaces it; worker cycles must stop instead
+/// of re-driving the same failing operation.
+pub fn fail_engine(
+    current: &EngineLifecycleRecord,
+    fence: EngineFence,
+    now_unix_ms: i64,
+) -> Result<EngineLifecycleRecord, EngineLifecycleError> {
+    current.validate()?;
+    validate_engine_fence(current, fence)?;
+    if !matches!(
+        current.phase,
+        EnginePhase::Starting | EnginePhase::Active | EnginePhase::Suspended
+    ) || now_unix_ms <= current.updated_at_unix_ms
+    {
+        return Err(invalid_transition(
+            "messaging engine cannot fail from its current phase",
+        ));
+    }
+
+    let mut failed = current.clone();
+    failed.phase = EnginePhase::Failed;
+    failed.updated_at_unix_ms = now_unix_ms;
+    failed.validate()?;
+    Ok(failed)
+}
+
 pub fn recover_interrupted_engine(
     current: &EngineLifecycleRecord,
     now_unix_ms: i64,
@@ -487,6 +515,57 @@ mod tests {
                 .code,
             EngineLifecycleErrorCode::Cancelled
         );
+    }
+
+    #[test]
+    fn terminal_failure_parks_an_active_engine_under_its_fence() {
+        let starting = activate_engine(&inactive(), &Cancellation(false), 11).unwrap();
+        let active = complete_engine_start(&starting, starting.fence(), 3, 12).unwrap();
+
+        let failed = fail_engine(&active, active.fence(), 13).unwrap();
+
+        assert_eq!(failed.phase, EnginePhase::Failed);
+        assert_eq!(failed.lifecycle_generation, active.lifecycle_generation);
+        assert_eq!(failed.worker_generation, active.worker_generation);
+        assert_eq!(failed.consumer_epoch, active.consumer_epoch);
+    }
+
+    #[test]
+    fn terminal_failure_rejects_inactive_engines_and_stale_fences() {
+        let starting = activate_engine(&inactive(), &Cancellation(false), 11).unwrap();
+        let active = complete_engine_start(&starting, starting.fence(), 3, 12).unwrap();
+
+        assert_eq!(
+            fail_engine(&inactive(), inactive().fence(), 11)
+                .unwrap_err()
+                .code,
+            EngineLifecycleErrorCode::InvalidTransition
+        );
+        assert_eq!(
+            fail_engine(
+                &active,
+                EngineFence {
+                    lifecycle_generation: active.lifecycle_generation,
+                    worker_generation: active.worker_generation + 1,
+                },
+                13,
+            )
+            .unwrap_err()
+            .code,
+            EngineLifecycleErrorCode::LostWorkerLease
+        );
+    }
+
+    #[test]
+    fn a_failed_engine_can_be_reactivated() {
+        let starting = activate_engine(&inactive(), &Cancellation(false), 11).unwrap();
+        let active = complete_engine_start(&starting, starting.fence(), 3, 12).unwrap();
+        let failed = fail_engine(&active, active.fence(), 13).unwrap();
+
+        let restarted = activate_engine(&failed, &Cancellation(false), 14).unwrap();
+
+        assert_eq!(restarted.phase, EnginePhase::Starting);
+        assert_eq!(restarted.lifecycle_generation, active.lifecycle_generation + 1);
     }
 
     #[test]

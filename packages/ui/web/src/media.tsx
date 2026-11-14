@@ -1,9 +1,21 @@
 import { useEffect, useId, useRef, useState, type HTMLAttributes, type ImgHTMLAttributes, type ReactNode } from 'react';
 import QRCodeEngine from 'qrcode';
 import type { ResourceView } from '@peers-touch/ui-contracts';
-import { ActionGroup, Button } from './actions';
+import { ActionGroup, Button, IconButton, type IconButtonProps } from './actions';
 import { Empty, Alert, Spin } from './feedback';
 import { Dialog } from './overlays';
+
+/** Media-stage action: one shared touch target and a visible caption. */
+export interface CallControlProps extends IconButtonProps {
+  selected?: boolean;
+}
+export function CallControl({ selected, label, ...props }: CallControlProps) {
+  return <span className="pt-call-control" data-selected={selected || undefined}>
+    <IconButton {...props} label={label} aria-pressed={selected} iconSize={props.iconSize ?? 24}
+      className={`pt-call-control-button ${props.className ?? ''}`} />
+    <span className="pt-call-control-label" aria-hidden="true">{label}</span>
+  </span>;
+}
 
 export interface ImageProps extends Omit<ImgHTMLAttributes<HTMLImageElement>, 'src'|'resource'> {
   resource: ResourceView; fallback?: ReactNode; preview?: boolean; previewLabel?: string;

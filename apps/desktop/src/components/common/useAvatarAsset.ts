@@ -14,6 +14,14 @@ export interface AvatarAssetInput {
   identity?: string | null;
   /** Owner PTID for non-session actors (explicit peer avatars). */
   actorPtid?: string | null;
+  /**
+   * Stable non-actor owner of the pixels (e.g. `group-avatar:<conversationId>`).
+   * Same role as actorPtid for local last-good: once an image has been
+   * resolved it is repainted from cache across identity churn, transient
+   * decode failures and restarts instead of falling back to a placeholder.
+   * Such keys never match the session actor, so they stay peer-scoped.
+   */
+  assetOwnerKey?: string | null;
   profileRevision?: number | string | null;
   /** Native materialized path hint (login / account registry rows). */
   localPath?: string | null;
@@ -53,10 +61,13 @@ export function useAvatarAsset(input: AvatarAssetInput): {
   const identity = (input.identity ?? '').trim();
   const sessionUser = useSessionStore((state) => state.currentUser);
   const sessionEpoch = useSessionStore((state) => state.sessionEpoch);
+  // Non-actor stable owners (group conversations) share the local last-good
+  // machinery but can never be attributed to the authenticated session.
+  const ownerKey = input.assetOwnerKey?.trim() || null;
 
   const query = useMemo<ResolvedQuery>(() => {
     const localPath = input.localPath?.trim() || null;
-    const isSessionActor = Boolean(
+    const isSessionActor = !ownerKey && Boolean(
       sessionUser?.actorPtid
       && (input.actorPtid === sessionUser.actorPtid
         || identityBelongsToSession(identity, localPath, sessionUser)),
@@ -72,16 +83,26 @@ export function useAvatarAsset(input: AvatarAssetInput): {
       }
       : {
         identity,
-        actorPtid: input.actorPtid ?? null,
+        actorPtid: ownerKey ?? input.actorPtid ?? null,
         profileRevision: input.profileRevision ?? null,
         localPath,
       };
     return { ...base, key: avatarAssetKey(base) };
-  }, [identity, input.actorPtid, input.profileRevision, input.localPath, sessionEpoch, sessionUser]);
+  }, [identity, ownerKey, input.actorPtid, input.profileRevision, input.localPath, sessionEpoch, sessionUser]);
 
   const snapshot = useSyncExternalStore(
     avatarAssets.subscribe,
-    () => avatarAssets.getSnapshot(query.key),
+    () => {
+      const canonical = avatarAssets.getSnapshot(query.key);
+      if (canonical) return canonical;
+      // Identity momentarily unknown for an owned non-actor avatar (e.g. a
+      // reconcile dropped the group avatar field): keep painting its local
+      // last-good instead of falling back to a generated placeholder.
+      if (!identity && ownerKey) {
+        return avatarAssets.getOwnerLastGood(ownerKey);
+      }
+      return null;
+    },
     () => null,
   );
 

@@ -5,6 +5,7 @@ import unittest
 from tooling.acceptance.gates.agent.chat_operation_contract import (
     coverage_report,
     operation_contract,
+    RETIRED_PROVIDER_OPERATIONS,
 )
 
 
@@ -12,12 +13,16 @@ class OperationEvidenceTest(unittest.TestCase):
     def test_confirmed_baseline_and_production_authority_are_separate(self) -> None:
         rows = operation_contract()
         baseline = [row for row in rows if row["origin"] == "confirmed-prototype"]
-        self.assertEqual(len(baseline), 136)
+        self.assertEqual(len(baseline), 136 - len(RETIRED_PROVIDER_OPERATIONS))
         self.assertEqual(len({row["journey"] for row in baseline}), 11)
         self.assertEqual(len({row["operationId"] for row in rows}), len(rows))
         self.assertIn("profile.documents.provider-consumption", {
             row["operationId"] for row in rows
         })
+        self.assertFalse(RETIRED_PROVIDER_OPERATIONS.intersection(
+            row["operationId"] for row in rows))
+        self.assertIn("dashboard.provider.dm-create-consumed", {
+            row["operationId"] for row in rows})
 
     def test_mapping_alone_cannot_prove_any_operation(self) -> None:
         report = coverage_report({})
@@ -127,7 +132,7 @@ class OperationEvidenceTest(unittest.TestCase):
             if row["gateId"] not in depth_gates
         }.issubset(contract.scenario_ids))
         self.assertEqual(contract.max_provisioning_runs, 1)
-        self.assertEqual(contract.max_client_launches, 3)
+        self.assertEqual(contract.max_client_launches, 4)
 
     def test_depth_gate_traceability_binds_task_and_operations(self) -> None:
         from tooling.acceptance.gates.agent.chat_native_suite import (

@@ -156,6 +156,15 @@ async function runOperation(page, anchor, op) {
     case 'clickGlobal': await page.locator(op.target).first().click(); break;
     case 'focus': await target.evaluate(node => node.focus({ focusVisible: true })); break;
     case 'hover': await target.hover(); break;
+    case 'longPress':
+      // Touch surfaces open the long-press action sheet after a 420ms hold;
+      // the mouse path shares the same pointer timer, so a real press-hold at
+      // the element centre exercises the product gesture, not a synthetic call.
+      await target.hover();
+      await page.mouse.down();
+      await page.waitForTimeout(op.holdMs ?? 520);
+      await page.mouse.up();
+      break;
     case 'press': await page.keyboard.press(op.key); break;
     case 'type': await target.fill(op.value); break;
     case 'setFiles': {
@@ -213,6 +222,7 @@ async function checkOracle(page, anchor, oracle) {
       return document.activeElement === node;
     });
     case 'textContains': return (await textOf(await one())).includes(oracle.contains);
+    case 'textNotContains': return !(await textOf(await one())).includes(oracle.contains);
     case 'textEquals': return (await textOf(await one())) === oracle.equals;
     case 'attr': {
       const v = await (await one()).getAttribute(oracle.attr);

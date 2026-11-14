@@ -50,7 +50,8 @@ SELECTORS = {
     "chats_subpage": '[data-chat-subpage="chats"]',
     "contacts_subpage": '[data-chat-subpage="contacts"]',
     "new_menu": "[data-chat-new-menu]",
-    "find_people_menu": "[data-chat-find-people-menu]",
+    # peers-ui unified Menu renders actions as role=menuitem buttons keyed by data-action-id.
+    "find_people_item": '[role="menuitem"][data-action-id="find-people"]',
     "find_people": "[data-chat-find-people]",
     "find_people_input": "[data-chat-find-people-input]",
     "find_people_search": "[data-chat-find-people-search]",
@@ -357,7 +358,7 @@ class LifecycleOnboardingGate(NativeTwoClientGate):
         enter_chat_page(client)
         client.find_element(SELECTORS["chats_subpage"], 10).click()
         client.find_element(SELECTORS["new_menu"], 10).click()
-        client.find_element(SELECTORS["find_people_menu"], 10).click()
+        client.find_element(SELECTORS["find_people_item"], 10).click()
         client.find_element(SELECTORS["find_people"], 10)
 
     @staticmethod

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Button, Image, Lightbox, Spin, VideoPlayer, type ResourceView } from '@peers-touch/ui';
 import {
   ImageIcon,
@@ -13,8 +13,15 @@ import type {
   PrivateMomentMediaProjection,
 } from '../../services/privateMomentsNative';
 
+import {
+  getPrivateMediaLocalPreviews,
+  releasePrivateMediaLocalPreviews,
+  subscribePrivateMediaLocalPreviews,
+} from '../../services/privateMediaLocalPreview';
+
 interface PrivateMediaGridProps {
   media: PrivateMomentMediaProjection[];
+  postId: string;
   onOpen: (objectId: string) => void;
 }
 
@@ -24,12 +31,29 @@ function columnsFor(count: number): number {
   return 3;
 }
 
+// Transient states in the publish -> grant exchange where the publisher's
+// picked file can paint immediately.
+const LOCAL_PREVIEW_GRANT_GAP_STATES: ReadonlySet<PrivateMediaState> = new Set([
+  'MEDIA_PLACEHOLDER',
+  'MEDIA_GRANT_PENDING',
+  'MEDIA_DOWNLOADING',
+  'MEDIA_DECRYPTING',
+]);
+
+// Terminal states after which waiting for a grant is pointless. A local file
+// must never mask these: the owner still needs the error/retry tile.
+const TERMINAL_MEDIA_FAILURE_STATES: ReadonlySet<PrivateMediaState> = new Set([
+  'MEDIA_ACCESS_DENIED',
+  'MEDIA_INTEGRITY_FAILURE',
+  'MEDIA_OFFLINE_RETRYABLE',
+]);
+
 function isBusy(state: PrivateMediaState): boolean {
-  return [
-    'MEDIA_GRANT_PENDING',
-    'MEDIA_DOWNLOADING',
-    'MEDIA_DECRYPTING',
-  ].includes(state);
+  return LOCAL_PREVIEW_GRANT_GAP_STATES.has(state) && state !== 'MEDIA_PLACEHOLDER';
+}
+
+function canShowLocalPreview(state: PrivateMediaState): boolean {
+  return LOCAL_PREVIEW_GRANT_GAP_STATES.has(state);
 }
 
 function canOpen(item: PrivateMomentMediaProjection): boolean {
@@ -60,12 +84,28 @@ function MediaStateIcon({ state }: { state: PrivateMediaState }) {
   return <ImageIcon size={20} color="var(--pt-muted)" />;
 }
 
-export function PrivateMediaGrid({ media, onOpen }: PrivateMediaGridProps) {
+export function PrivateMediaGrid({ media, postId, onOpen }: PrivateMediaGridProps) {
   const { t } = useTranslation('moments');
+  // Publisher-owned local files shown during the publish -> grant gap. Ordered
+  // to match the projected media array (intent file order).
+  const localPreviews = useSyncExternalStore(
+    subscribePrivateMediaLocalPreviews,
+    () => getPrivateMediaLocalPreviews(postId),
+    () => [],
+  );
+  const allSettled = media.length > 0 && media.every((item) => (
+    item.state === 'MEDIA_READY' || TERMINAL_MEDIA_FAILURE_STATES.has(item.state)
+  ));
+  // Once every projected item has converged (granted or terminally failed),
+  // the local exchange is over; release the picked-file previews so the
+  // granted render URL (or the failure tile) owns the paint.
+  useEffect(() => {
+    if (allSettled) releasePrivateMediaLocalPreviews(postId);
+  }, [allSettled, postId]);
   const [selected, setSelected] = useState<string | null>(null);
   const resource = (item: PrivateMomentMediaProjection): ResourceView => ({
-    // Native-authorized render handles are the only source. A revoke removes
-    // the resource and closes any preview; a new grant has a new identity.
+    // The lightbox only consumes authorized native render handles. A revoke
+    // closes it; publisher-owned picked files remain transient tile previews.
     resourceId: `${item.objectId}:${item.renderUrl}`,
     source: item.renderUrl,
     name: item.altText || t('moments.private.media.ready.alt'),
@@ -93,12 +133,19 @@ export function PrivateMediaGrid({ media, onOpen }: PrivateMediaGridProps) {
         maxWidth: single ? 300 : 340,
       }}
     >
-      {media.map((item) => (
+      {media.map((item, index) => {
+        // Publisher's local file during the grant gap (this post only).
+        // Fail closed for terminal states: the failure tile below owns those.
+        const localPreview = canShowLocalPreview(item.state)
+          ? localPreviews[index]
+          : undefined;
+        return (
         <div
           key={item.objectId}
           data-private-media-state={item.state}
           data-private-media-access-path={item.accessPath}
           data-private-media-retryable={item.retryable || undefined}
+          data-private-media-local={localPreview ? true : undefined}
           style={{
             position: 'relative',
             minHeight: single ? 180 : 108,
@@ -108,7 +155,30 @@ export function PrivateMediaGrid({ media, onOpen }: PrivateMediaGridProps) {
             background: 'var(--pt-subtle)',
           }}
         >
-          {item.state === 'MEDIA_READY'
+          {localPreview?.isVideo ? (
+            <VideoPlayer resource={{
+              resourceId: `local:${postId}:${item.objectId}:${localPreview.src}`,
+              source: localPreview.src,
+              name: item.altText || t('moments.private.media.ready.alt'),
+              state: 'available',
+            }} />
+          ) : localPreview ? (
+            <Image
+              resource={{
+                resourceId: `local:${postId}:${item.objectId}:${localPreview.src}`,
+                source: localPreview.src,
+                name: item.altText || t('moments.private.media.ready.alt'),
+                state: 'available',
+              }}
+              style={{
+                display: 'block',
+                width: '100%',
+                height: '100%',
+                minHeight: single ? 180 : 108,
+                objectFit: 'cover',
+              }}
+            />
+          ) : item.state === 'MEDIA_READY'
           && item.renderUrl
           && item.mimeType?.startsWith('video/') ? (
             <VideoPlayer resource={resource(item)} />
@@ -159,8 +229,30 @@ export function PrivateMediaGrid({ media, onOpen }: PrivateMediaGridProps) {
               )}
             </div>
           )}
+          {localPreview && (
+            <div
+              aria-hidden
+              data-private-media-local-badge
+              style={{
+                position: 'absolute',
+                left: 4,
+                bottom: 4,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 20,
+                height: 20,
+                borderRadius: '50%',
+                color: 'var(--pt-on-primary)',
+                background: 'rgba(0,0,0,0.45)',
+              }}
+            >
+              <Spin size="small" />
+            </div>
+          )}
         </div>
-      ))}
+        );
+      })}
     </div>
     <Lightbox images={images} index={selectedIndex < 0 ? null : selectedIndex}
       onIndexChange={index => setSelected(images[index].resourceId)} onDismiss={() => setSelected(null)}

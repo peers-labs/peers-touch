@@ -579,7 +579,7 @@ class DesktopOAuthNativeGate(AcceptanceGate):
         ).click()
         self._wait_for_displayed(
             session,
-            "[data-chat-find-people-menu]",
+            '[role="menuitem"][data-action-id="find-people"]',
             timeout=10,
         ).click()
         self._wait_for_displayed(

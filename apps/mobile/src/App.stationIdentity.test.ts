@@ -38,4 +38,12 @@ describe('Mobile App Station identity replacement', () => {
       /renderedLaunchState === 'shell'[\s\S]*renderedLaunchState === 'background'[\s\S]*renderedLaunchState === 'resume'[\s\S]*<MobileShell/,
     );
   });
+
+  it('supplies an OAuth provider directory for the fixture OAuth surface', () => {
+    // The Quick/OAuth tab only renders once the provider directory is loaded
+    // with a usable provider; the entry.access-oauth fixture must inject one or
+    // the inventory surface can never appear in a simulator without live OAuth.
+    expect(source).toContain("if (surfaceId === 'entry.access-oauth')");
+    expect(source).toContain("availableProviders: ['github', 'google']");
+  });
 });

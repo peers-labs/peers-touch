@@ -1,5 +1,7 @@
 use super::group::MlsGroupManager;
-use crate::codec::private_content::encode_message_private_content;
+use crate::codec::private_content::{
+    encode_message_private_content, encode_message_private_content_with_mentions, MessageMentions,
+};
 use crate::outbox::send::plan_required_recipient_count;
 use crate::proto::actor_device_ptid;
 use crate::proto::chat::{
@@ -22,6 +24,8 @@ pub struct GroupSendTextIntent<'a> {
     pub reply_to_message_id: &'a str,
     pub thread_root_message_id: &'a str,
     pub attachments: &'a [AttachmentPlaintextMetadata],
+    /// @mention set sealed into the MLS application ciphertext.
+    pub mentions: &'a MessageMentions,
     pub client_timestamp_unix_ms: i64,
 }
 
@@ -81,7 +85,11 @@ impl<R: MlsOutboundRepository> MlsOutboundPreparer<R> {
 
         let expected_mls_epoch = u64::try_from(plan.mls_epoch)
             .map_err(|_| "messaging MLS epoch is invalid".to_string())?;
-        let private_content = encode_message_private_content(intent.plaintext, intent.attachments)?;
+        let private_content = encode_message_private_content_with_mentions(
+            intent.plaintext,
+            intent.attachments,
+            intent.mentions,
+        )?;
         let prepared = self.manager.prepare_outbound_application(
             intent.conversation_id,
             expected_mls_epoch,
@@ -93,8 +101,7 @@ impl<R: MlsOutboundRepository> MlsOutboundPreparer<R> {
 
         let command = build_send_command(plan, intent, &self.endpoint, &prepared.ciphertext)?;
         let command_bytes = command.encode_to_vec();
-        let required_device_count =
-            plan_required_recipient_count(plan, &self.endpoint.ptid)?;
+        let required_device_count = plan_required_recipient_count(plan, &self.endpoint.ptid)?;
         self.store
             .persist_mls_outbound_send(&MlsOutboundSendCommit {
                 command_bytes: &command_bytes,
@@ -174,6 +181,7 @@ impl<R: MlsOutboundRepository> MlsOutboundPreparer<R> {
         plan: &PrepareConversationCommandResponse,
         intent: &GroupForwardIntent<'_>,
     ) -> Result<ChatCommand, String> {
+        let forward_mentions = MessageMentions::empty();
         let send = GroupSendTextIntent {
             command_id: intent.command_id,
             message_id: intent.destination_message_id,
@@ -182,6 +190,7 @@ impl<R: MlsOutboundRepository> MlsOutboundPreparer<R> {
             reply_to_message_id: "",
             thread_root_message_id: "",
             attachments: intent.attachments,
+            mentions: &forward_mentions,
             client_timestamp_unix_ms: intent.client_timestamp_unix_ms,
         };
         validate_send_context(plan, &send, &self.endpoint)?;
@@ -205,8 +214,7 @@ impl<R: MlsOutboundRepository> MlsOutboundPreparer<R> {
         }
         let command = build_forward_command(plan, intent, &self.endpoint, &prepared.ciphertext)?;
         let command_bytes = command.encode_to_vec();
-        let required_device_count =
-            plan_required_recipient_count(plan, &self.endpoint.ptid)?;
+        let required_device_count = plan_required_recipient_count(plan, &self.endpoint.ptid)?;
         self.store
             .persist_mls_outbound_send(&MlsOutboundSendCommit {
                 command_bytes: &command_bytes,
@@ -243,7 +251,11 @@ fn validate_send_context(
     intent: &GroupSendTextIntent<'_>,
     endpoint: &CryptoEndpoint,
 ) -> Result<(), String> {
-    let private_content = encode_message_private_content(intent.plaintext, intent.attachments)?;
+    let private_content = encode_message_private_content_with_mentions(
+        intent.plaintext,
+        intent.attachments,
+        intent.mentions,
+    )?;
     if intent.command_id.trim().is_empty()
         || intent.message_id.trim().is_empty()
         || intent.conversation_id.trim().is_empty()
@@ -297,6 +309,7 @@ fn validate_edit_context(
     if intent.logical_intent_id.trim().is_empty() || !lineage_is_valid {
         return Err("messaging edit intent lineage is invalid".to_string());
     }
+    let edit_mentions = MessageMentions::empty();
     validate_send_context(
         plan,
         &GroupSendTextIntent {
@@ -307,6 +320,7 @@ fn validate_edit_context(
             reply_to_message_id: "",
             thread_root_message_id: "",
             attachments: &[],
+            mentions: &edit_mentions,
             client_timestamp_unix_ms: intent.client_timestamp_unix_ms,
         },
         endpoint,
@@ -643,6 +657,7 @@ mod tests {
                     reply_to_message_id: "",
                     thread_root_message_id: "",
                     attachments: std::slice::from_ref(&attachment),
+                    mentions: &MessageMentions::empty(),
                     client_timestamp_unix_ms: 100,
                 },
             )
@@ -724,6 +739,7 @@ mod tests {
         store.set_fail_persistence(true);
         let (alice, bob) = group();
         let preparer = preparer(store.clone(), alice);
+        let mentions = MessageMentions::empty();
         let intent = GroupSendTextIntent {
             command_id: "group-command-1",
             message_id: "group-message-1",
@@ -732,6 +748,7 @@ mod tests {
             reply_to_message_id: "",
             thread_root_message_id: "",
             attachments: &[],
+            mentions: &mentions,
             client_timestamp_unix_ms: 100,
         };
 

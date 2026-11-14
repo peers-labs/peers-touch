@@ -48,6 +48,44 @@
   ],
   "modules": [
     {
+      "id": "chat-group-calling",
+      "root": "docs/architecture/domains/chat/calling/group",
+      "status": "active",
+      "owner": "Chat Product Team",
+      "characteristics": {
+        "protocol": true,
+        "stateMachine": true,
+        "persistence": true,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": true,
+        "integration": true
+      },
+      "requiredDocuments": ["README.md", "design.md", "decisions.md", "data-model.md", "module-layout.md", "integration.md"],
+      "decisionIds": ["GC-D01", "GC-D02", "GC-D03", "GC-D04", "GC-D05"],
+      "governedPaths": [
+        "docs/architecture/domains/chat/calling/group",
+        "model/domain/realtime/group_call.proto",
+        "apps/station/app/subserver/groupcall",
+        "packages/client-chat-core/src/group-call",
+        "packages/client-chat-core/src/mediaReservation.ts",
+        "apps/desktop/src/modules/groupCall",
+        "apps/mobile/src/features/call/groupCallRuntime.ts"
+      ],
+      "capabilities": [
+        {
+          "id": "chat.group.live-media",
+          "owner": "chat.groupcall",
+          "contractRoots": ["model/domain/realtime/group_call.proto", "packages/client-chat-core/src/group-call"],
+          "consumers": ["apps/desktop/src/modules/groupCall", "apps/mobile/src/features/call", "apps/station/app/subserver/groupcall"],
+          "allowedDependencies": ["chat.conversation", "identity.actor", "identity.session", "federation.runtime", "livekit-client", "livekit.server-sdk"],
+          "evidenceGates": ["CHAT-G14", "chat-lifecycle-group-live-e2e"],
+          "reuseLayer": "shared-ts-core"
+        }
+      ],
+      "externalCapabilityRegistries": []
+    },
+    {
       "id": "acceptance",
       "root": "docs/architecture/engineering/acceptance",
       "status": "active",
@@ -1707,7 +1745,10 @@
         "SC-D27",
         "SC-D28",
         "SC-D29",
-        "SC-D30"
+        "SC-D30",
+        "SC-D31",
+        "SC-D32",
+        "SC-D33"
       ],
       "governedPaths": [
         "docs/architecture/shared/security/secure-content"

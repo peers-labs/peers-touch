@@ -88,6 +88,8 @@
 .nb-token-meta { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
 .nb-token-name { font-size: 12px; font-weight: 600; }
 .nb-token-code {
+  display: block;
+  max-width: 100%;
   font-family: var(--pt-mono, ui-monospace, Menlo, monospace);
   font-size: 10px; color: var(--pt-muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -294,25 +296,76 @@
 .nb-law strong { display: block; font-size: 13px; margin-bottom: 2px; }
 .nb-law span { font-size: 12px; line-height: 1.65; color: var(--pt-secondary); }
 
+/* ---- gate registry (mirror of evaluate-specimens suites) ---- */
+.nb-gates { display: flex; flex-direction: column; gap: 10px; }
+.nb-gate-suite {
+  border: 1px solid var(--pt-border);
+  border-radius: 12px;
+  background: var(--pt-surface);
+  overflow: hidden;
+}
+.nb-gate-suite > summary {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 14px; cursor: pointer; list-style: none;
+  font-size: 13px; color: var(--pt-text);
+}
+.nb-gate-suite > summary::-webkit-details-marker { display: none; }
+.nb-gate-suite > summary::after {
+  content: ''; margin-left: auto; width: 7px; height: 7px;
+  border-right: 1.5px solid var(--pt-muted); border-bottom: 1.5px solid var(--pt-muted);
+  transform: rotate(45deg); transition: transform .16s ease;
+}
+.nb-gate-suite[open] > summary::after { transform: rotate(-135deg); }
+.nb-gate-suite-name { font-weight: 650; }
+.nb-gate-count {
+  flex: 0 0 auto; font-size: 11px; line-height: 1;
+  padding: 4px 8px; border-radius: 999px;
+  background: var(--pt-accentSubtle); color: var(--pt-accent); font-weight: 650;
+}
+.nb-gate-source {
+  margin-left: 8px; font-size: 10.5px; color: var(--pt-muted);
+  background: var(--pt-subtle); padding: 2px 6px; border-radius: 6px;
+}
+.nb-gate-list {
+  margin: 0; padding: 6px 14px 12px; list-style: none;
+  display: flex; flex-direction: column; gap: 8px;
+  border-top: 1px solid var(--pt-border);
+}
+.nb-gate-item { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-items: baseline; }
+.nb-gate-level {
+  grid-row: 1 / span 2; align-self: start; margin-top: 2px;
+  font-size: 10px; font-weight: 650; letter-spacing: .02em; line-height: 1.4;
+  color: var(--pt-secondary); background: var(--pt-subtle);
+  border-radius: 6px; padding: 2px 7px; white-space: nowrap;
+}
+.nb-gate-title { font-size: 12.5px; line-height: 1.6; color: var(--pt-text); }
+.nb-gate-id {
+  font-size: 10.5px; color: var(--pt-muted);
+  background: transparent; padding: 0;
+}
+
 /* ---- phone frame ---- */
 .nb-phone-wrap { display: flex; gap: 28px; align-items: flex-start; flex-wrap: wrap; }
+/* The ONE device frame for every embedded mobile view (product surface AND
+   evidence harness): a dark bezel wraps the true 390pt-wide screen. Views
+   render INSIDE the screen and must not paint a second frame. */
 .nb-phone {
-  width: min(390px, 100%); flex-shrink: 0;
-  height: 780px;
-  border-radius: 0;
-  background: transparent;
-  padding: 0;
-  box-shadow: none;
-  border: 0;
+  width: 410px; flex-shrink: 0;
+  height: 800px;
+  display: flex; flex-direction: column;
+  border-radius: 46px;
+  background: #0c0e0c;
+  padding: 10px;
+  box-shadow: 0 24px 64px -24px rgba(10, 18, 14, 0.55), inset 0 0 0 2px #2a2e2a;
 }
 .nb-phone-screen {
-  width: 100%; height: 100%;
-  border-radius: 0; overflow: hidden;
+  flex: 1; min-height: 0; width: 100%;
+  border-radius: 36px; overflow: hidden;
   background: #fff;
   display: flex; flex-direction: column;
-  border: 1px solid var(--pt-border-strong);
+  border: 0;
 }
-.nb-phone-body { flex: 1; min-height: 0; overflow: auto; background: #fff; }
+.nb-phone-body { flex: 1; min-height: 0; overflow: hidden; background: #fff; }
 .nb-phone-side { flex: 1; min-width: 280px; display: flex; flex-direction: column; gap: 12px; }
 
 @media (max-width: 900px) {

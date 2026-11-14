@@ -6,8 +6,8 @@
  * adapter internals, provider wiring) are intentionally excluded.
  */
 
-export { groupCallManager } from './groupCallManager';
-export { LivekitAdapter } from './livekitAdapter';
+export { groupCallManager, groupCallAdmissionProbe } from './groupCallManager';
+export { LivekitAdapter } from '@peers-touch/client-chat-core/group-call/livekit';
 export type {
   GroupCallProvider,
   GroupCallSnapshot,
@@ -18,5 +18,5 @@ export type {
   Participant,
   ConnectionQualityGrade,
   Unsubscribe,
-} from './types';
-export { createIdleSnapshot } from './types';
+} from '@peers-touch/client-chat-core/group-call';
+export { createIdleSnapshot } from '@peers-touch/client-chat-core/group-call';

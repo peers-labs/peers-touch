@@ -8,7 +8,7 @@ mod membership_transition;
 mod mls_key_packages;
 mod mls_leave_intent;
 mod prekeys;
-mod private_content;
+pub(crate) mod private_content;
 mod recovery;
 mod search;
 mod store;

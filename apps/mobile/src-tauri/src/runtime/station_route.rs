@@ -570,11 +570,28 @@ impl RouteRuntime {
         if transport.len() >= 16 {
             return Err(route_error("transportCapacity"));
         }
-        let storage = self
+        let mut storage_guard = self
             .identity_storage
-            .read()
+            .write()
             .map_err(|_| route_error("runtimeLock"))?;
-        let storage = storage
+        if storage_guard.is_none() {
+            // The builder setup hook that normally installs the platform
+            // secure store is not guaranteed to run before the first route
+            // use on every mobile entry path. Lazily materialize the default
+            // platform store here so transport identity never depends on
+            // startup ordering. Install is idempotent once a store is present.
+            //
+            // Android has no standalone constructor: its SecureStorage is a
+            // Tauri plugin handle installed exclusively through
+            // install_transport_identity in the builder setup hook. Leave the
+            // guard empty on that target and fail with secureStorageUnavailable
+            // below instead of fabricating a store the plugin never wired.
+            #[cfg(not(target_os = "android"))]
+            {
+                *storage_guard = Some(SecureStorage::new());
+            }
+        }
+        let storage = storage_guard
             .as_ref()
             .ok_or_else(|| route_error("secureStorageUnavailable"))?;
         let keypair = crate::platform::transport_identity::keypair(storage, scope).map_err(|error| {
@@ -626,7 +643,25 @@ pub(crate) fn install_transport_identity(storage: SecureStorage) -> MobileResult
     if current.is_none() {
         *current = Some(storage);
     }
+    log::warn!(target: "station-route", "transport identity installed target_os={}", std::env::consts::OS);
     Ok(())
+}
+
+/// Idempotently copy the Tauri-managed SecureStorage into the global route
+/// runtime. The builder setup hook installs it first on every platform, but on
+/// Android the plugin-managed handle is the only available constructor, so the
+/// storage-aware commands also ensure it here. This makes transport identity
+/// independent of setup-hook ordering without fabricating a platform store.
+fn ensure_identity_storage(storage: &SecureStorage) -> MobileResult<()> {
+    if ROUTES
+        .identity_storage
+        .read()
+        .map(|guard| guard.is_some())
+        .unwrap_or(false)
+    {
+        return Ok(());
+    }
+    install_transport_identity(storage.clone())
 }
 
 fn route_transport_scope(route: &StationRouteCandidate) -> MobileResult<TransportIdentityScope> {
@@ -657,6 +692,7 @@ pub fn station_route_activate(
     storage: State<'_, SecureStorage>,
     input: StationRouteSelectionInput,
 ) -> MobileResult<StationRouteBindingProjection> {
+    ensure_identity_storage(&storage)?;
     let station_peer_id = clean_identifier(&input.station_peer_id, "stationPeerId")?;
     let route_id = clean_identifier(&input.route_id, "routeId")?;
     let cached = ROUTES.cached(&station_peer_id, &route_id)?;
@@ -673,6 +709,7 @@ pub async fn station_route_restore(
     storage: State<'_, SecureStorage>,
     input: StationRouteRestoreInput,
 ) -> MobileResult<StationRouteRefreshProjection> {
+    ensure_identity_storage(&storage)?;
     let station_peer_id = clean_identifier(&input.station_peer_id, "stationPeerId")?;
     let route_id = clean_identifier(&input.route_id, "routeId")?;
     let source = if input.source_ref.trim().is_empty() {
@@ -1746,7 +1783,7 @@ fn serve_proxy(listener: TcpListener) {
 
 fn proxy_stage<T>(stage: &'static str, result: MobileResult<T>) -> MobileResult<T> {
     result.map_err(|error| {
-        log::warn!(target: "station-route", "proxy failed stage={stage}");
+        log::warn!(target: "station-route", "proxy failed stage={stage} error={error}");
         error
     })
 }
@@ -1820,6 +1857,7 @@ fn standard_route(route: &ActiveRoute) -> MobileResult<StandardRoute> {
 
 fn open_standard_response(route: &ActiveRoute, request: &[u8]) -> MobileResult<StandardResponse> {
     let route_spec = standard_route(route)?;
+    log::warn!(target: "station-route", "round_trip dial={} type={:?}", route_spec.dial_multiaddr, route.candidate.route_type);
     let transport = ROUTES.standard_transport(&route_transport_scope(&route.candidate)?)?;
     let parsed = parse_proxy_request(request)?;
     let mut standard_request = StandardRequest::new(

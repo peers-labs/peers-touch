@@ -5355,26 +5355,6 @@ func openResumeCollaborationTaskDB(t *testing.T, name string) *gorm.DB {
                                   created_at datetime NOT NULL,
                                   updated_at datetime NOT NULL
                   )`,
-		`CREATE TABLE agent_providers (
-                                  id text PRIMARY KEY,
-                                  actor_ptid varchar(36) NOT NULL DEFAULT '',
-                                  name text NOT NULL,
-                                  display_name varchar(256),
-                                  base_url text,
-                                  key_vaults text,
-                                  config text,
-                                  hidden_models text,
-                                  source_type text,
-                                  check_model text,
-                                  runtime_kind text,
-                                  cli_command text,
-                                  models_command text,
-                                  protocol text,
-                                  enabled boolean NOT NULL DEFAULT true,
-                                  version bigint NOT NULL DEFAULT 1,
-                                  created_at datetime NOT NULL,
-                                  updated_at datetime NOT NULL
-                  )`,
 		`CREATE TABLE agents (
                                   id text PRIMARY KEY,
                                   name text NOT NULL,
@@ -5398,6 +5378,18 @@ func openResumeCollaborationTaskDB(t *testing.T, name string) *gorm.DB {
 			t.Fatalf("create test table: %v", err)
 		}
 	}
+	// agent_providers must follow the current persistence model (scope/access
+	// columns and sealed credentials), not the stale raw DDL above; the
+	// control-plane helper also migrates policy tables and seeds the station
+	// policy the DirectRun authority resolver reads.
+	if err := db.AutoMigrate(
+		&persistence.AgentProvider{},
+		&persistence.AgentModel{},
+		&persistence.Credential{},
+	); err != nil {
+		t.Fatalf("migrate current provider models: %v", err)
+	}
+	ensureProviderAuthorityTestSchema(t, db)
 	return db
 }
 

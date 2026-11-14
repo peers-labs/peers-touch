@@ -6,6 +6,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -272,6 +273,16 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
             activity.runOnUiThread {
                 try {
                     when (args.kind) {
+                        "copy_text" -> {
+                            val text = args.text
+                            if (text.isNullOrEmpty() || text.toByteArray(Charsets.UTF_8).size > 64 * 1024) {
+                                resolveSystemAction(invoke, "failed", "clipboard_text_invalid")
+                            } else {
+                                val clipboard = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("Peers Touch", text))
+                                resolveSystemAction(invoke, "completed", null)
+                            }
+                        }
                         "open_app_settings" -> {
                             val intent = Intent(
                                 Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
@@ -590,6 +601,8 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
                     return@execute
                 }
                 createCameraCapture(args)
+            } else if (args.capability == "photo_library") {
+                Triple(photoLibraryIntent(args.acceptedMediaKinds, args.maxItemCount), null, null)
             } else {
                 Triple(
                     Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
@@ -837,8 +850,8 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
                 "android.permission.microphone",
             )
             "photo-library" -> activityCapability(
-                Intent(Intent.ACTION_OPEN_DOCUMENT).apply { type = "image/*" },
-                "android.storage-access-framework",
+                photoLibraryIntent(listOf("image"), 1),
+                "android.photo-picker",
             )
             "document-picker" -> activityCapability(
                 Intent(Intent.ACTION_OPEN_DOCUMENT).apply { type = "application/pdf" },
@@ -889,6 +902,34 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
                 "android.intent",
             )
             else -> Triple("unsupported", "android.platform-host", "unknown-capability")
+        }
+    }
+
+    private fun photoLibraryIntent(mediaKinds: List<String>, maxItemCount: Int): Intent {
+        val mimeTypes = mediaKinds.mapNotNull {
+            when (it) {
+                "image" -> "image/*"
+                "video" -> "video/*"
+                else -> null
+            }
+        }
+        return if (Build.VERSION.SDK_INT >= 33) {
+            Intent(MediaStore.ACTION_PICK_IMAGES).apply {
+                mimeTypes.singleOrNull()?.let { type = it }
+                if (maxItemCount > 1) {
+                    putExtra(
+                        MediaStore.EXTRA_PICK_IMAGES_MAX,
+                        maxItemCount.coerceAtMost(MediaStore.getPickImagesMaxLimit()),
+                    )
+                }
+            }
+        } else {
+            Intent(Intent.ACTION_GET_CONTENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = mimeTypes.singleOrNull() ?: "*/*"
+                putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes.toTypedArray())
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, maxItemCount > 1)
+            }
         }
     }
 
@@ -1117,7 +1158,7 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
 
     private fun validMediaPickArgs(args: MediaPickArgs): Boolean {
         return args.requestId.isNotBlank()
-            && (args.surfaceKind == "chat_attachment" || args.surfaceKind == "moment_media")
+            && (args.surfaceKind == "chat_attachment" || args.surfaceKind == "moment_media" || args.surfaceKind == "profile_image")
             && (
                 args.capability == "photo_library"
                     || args.capability == "camera"

@@ -5,7 +5,7 @@ status: active
 owns:
   - tooling/acceptance/gates/mobile/simulator_social_e2e.py
   - apps/mobile/src/pages/moments/ExploreSortSheet.tsx
-  - apps/mobile/src/pages/moments/MomentsScopeHeader.tsx
+  - apps/mobile/src/pages/moments/MomentsHeader.tsx
 related:
   - docs/client/mobile/acceptance-setup.md
 referenced-by: []

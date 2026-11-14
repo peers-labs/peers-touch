@@ -1,35 +1,20 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
+import { create } from '@bufbuild/protobuf';
 import {
-  Avatar,
   Button,
-  Card,
   Checkbox,
   Empty,
-  Input,
+  Icon,
+  IconButton,
+  type IconId,
+  ListSection,
   Spin,
   Switch,
   Tag,
-  Typography,
-} from 'antd';
-import {
-  ArrowLeft,
-  Ban,
-  Bell,
-  Check,
-  ChevronRight,
-  Fingerprint,
-  Globe,
-  HardDrive,
-  Image as ImageIcon,
-  MessageCircle,
-  Palette,
-  RefreshCw,
-  Server,
-  Shield,
-  ShieldCheck,
-  Trash2,
-  User,
-} from 'lucide-react';
+  Text,
+  TextArea,
+  TextField,
+} from '@peers-touch/ui';
 
 import {
   setSettingsSurfaceFixture,
@@ -41,9 +26,14 @@ import {
   type MobileSettingDetailId,
 } from '../../app/navigation';
 import { useMobileI18n } from '../../app/mobileI18n';
+import { MobileAvatar } from '../../components/MobileAvatar';
 import { MobileNotice } from '../../components/MobileNotice';
-
-const { Text } = Typography;
+import { NotificationPreferenceSchema } from '../../gen/proto/domain/notification/notification_pb';
+import { MeIdentityHeader } from './MeIdentityHeader';
+import { MePreferencesSection } from './MePreferencesSection';
+import { SettingsNavigationRow } from './SettingsNavigationRow';
+import { AccountCredentialsSection } from './AccountCredentialsSection';
+import { mobileClipboard } from '../../services/platform/mobileClipboard';
 
 const FIXTURE_ACCOUNT_INITIALS = 'AC';
 const FIXTURE_ACCOUNT_NAME = 'Alice Chen';
@@ -56,6 +46,7 @@ const FIXTURE_STATION_NAME = 'Product Station';
 
 const SETTING_LABELS: Record<MobileSettingDetailId, string> = {
   'account-info': 'mobile.settings.accountInfo',
+  credentials: 'mobile.settings.credentials.title',
   notifications: 'mobile.settings.section.notifications',
   'privacy-security': 'mobile.settings.privacySecurity',
   'safety-number': 'mobile.settings.safetyNumber',
@@ -70,20 +61,21 @@ const SETTING_LABELS: Record<MobileSettingDetailId, string> = {
 
 const SUMMARY_DETAILS: ReadonlyArray<{
   readonly id: MobileSettingDetailId;
-  readonly icon: ReactNode;
+  readonly iconId: IconId;
   readonly value?: string;
 }> = [
-  { id: 'account-info', icon: <User size={17} /> },
-  { id: 'notifications', icon: <Bell size={17} /> },
-  { id: 'privacy-security', icon: <Shield size={17} /> },
-  { id: 'safety-number', icon: <Fingerprint size={17} /> },
-  { id: 'blocked-users', icon: <Ban size={17} />, value: '2' },
-  { id: 'chat-settings', icon: <MessageCircle size={17} /> },
-  { id: 'chat-background', icon: <ImageIcon size={17} /> },
-  { id: 'station-connection', icon: <Server size={17} />, value: FIXTURE_STATION_NAME },
-  { id: 'encryption', icon: <ShieldCheck size={17} /> },
-  { id: 'language', icon: <Globe size={17} />, value: FIXTURE_LANGUAGE_NAMES.en },
-  { id: 'about', icon: <ShieldCheck size={17} />, value: '1.0.0' },
+  { id: 'credentials', iconId: 'identity-fingerprint' },
+  { id: 'account-info', iconId: 'user' },
+  { id: 'notifications', iconId: 'bell' },
+  { id: 'privacy-security', iconId: 'shield' },
+  { id: 'safety-number', iconId: 'identity-fingerprint' },
+  { id: 'blocked-users', iconId: 'ban', value: '2' },
+  { id: 'chat-settings', iconId: 'message-circle' },
+  { id: 'chat-background', iconId: 'image' },
+  { id: 'station-connection', iconId: 'server', value: FIXTURE_STATION_NAME },
+  { id: 'encryption', iconId: 'shield-check' },
+  { id: 'language', iconId: 'globe', value: FIXTURE_LANGUAGE_NAMES.en },
+  { id: 'about', iconId: 'shield-check', value: '1.0.0' },
 ];
 
 const SUMMARY_SURFACES = new Set<SettingsSurfaceFixtureId>([
@@ -130,6 +122,9 @@ function SettingsFixtureSummary({
   const { t } = useMobileI18n();
   const loading = surfaceId === 'settings.summary-loading';
   const failed = surfaceId === 'settings.summary-error';
+  const [preferences, setPreferences] = useState([
+    create(NotificationPreferenceSchema, { enabled: true, soundEnabled: true }),
+  ]);
 
   return (
     <div
@@ -137,17 +132,14 @@ function SettingsFixtureSummary({
       data-product-surface={background ? undefined : surfaceId}
       aria-hidden={background || undefined}
     >
-      <header className="page-header">
-        <h1 className="header-title">{t('mobile.settings.title')}</h1>
-        <button
-          type="button"
-          className="header-action"
-          aria-label={t('mobile.settings.accountInfo')}
-          onClick={() => openSetting('account-info')}
-        >
-          <User size={20} />
-        </button>
-      </header>
+      <h1 className="visually-hidden">{t('mobile.settings.title')}</h1>
+      {!loading && !failed ? <MeIdentityHeader model={{
+        actorPtid: 'ptid:acceptance-alice', displayName: FIXTURE_ACCOUNT_NAME,
+        handle: '@alice', avatar: '', header: '', tags: ['Builder'],
+        posts: 34, following: 12, followers: 128, joined: '2025-01-01T00:00:00Z',
+      }} editingImage={null}
+        imageEditUnavailableReason={t('mobile.settings.profileUnavailable')}
+        onPickImage={() => undefined} /> : null}
       <div className="settings-body settings-fixture-summary">
         {loading ? (
           <FixtureState>
@@ -158,70 +150,37 @@ function SettingsFixtureSummary({
           <FixtureState>
             <MobileNotice>
               {t('common.state.error')}
-              <Button icon={<RefreshCw size={15} />}>
+              <Button
+                actionId="settings.fixture.retry-summary"
+                leading={<Icon iconId="rotate-ccw" size={15} />}
+              >
                 {t('common.action.retry')}
               </Button>
             </MobileNotice>
           </FixtureState>
         ) : (
           <>
-            <Card className="settings-profile-header-card" variant="borderless">
-              <div className="settings-profile-header">
-                <Avatar className="settings-fixture-avatar" size={64}>
-                  {FIXTURE_ACCOUNT_INITIALS}
-                </Avatar>
-                <div className="settings-profile-info">
-                  <Text strong className="settings-profile-name">
-                    {FIXTURE_ACCOUNT_NAME}
-                  </Text>
-                  <Text type="secondary" className="settings-profile-subtitle">
-                    {t('mobile.settings.connected')}
-                  </Text>
-                </div>
-                <ChevronRight size={20} />
-              </div>
-              <div className="settings-profile-stats">
-                {[
-                  ['128', 'mobile.settings.stats.friends'],
-                  ['12', 'mobile.settings.stats.groups'],
-                  ['34', 'mobile.settings.stats.moments'],
-                ].map(([value, label], index) => (
-                  <span className="settings-fixture-stat-fragment" key={label}>
-                    {index > 0 ? <span className="settings-stat-divider" /> : null}
-                    <span className="settings-stat">
-                      <Text strong className="settings-stat-value">{value}</Text>
-                      <Text type="secondary" className="settings-stat-label">
-                        {t(label)}
-                      </Text>
-                    </span>
-                  </span>
-                ))}
-              </div>
-            </Card>
-            <Card className="settings-group-card" variant="borderless">
-              {SUMMARY_DETAILS.map((item, index) => (
-                <button
-                  type="button"
-                  className={`setting-row ${index > 0 ? 'setting-row--border' : ''}`}
-                  data-settings-fixture-open={item.id}
-                  key={item.id}
-                  onClick={() => openSetting(item.id)}
-                >
-                  <span className="setting-row-icon">{item.icon}</span>
-                  <Text className="setting-row-label">{t(SETTING_LABELS[item.id])}</Text>
-                  {item.value ? <Text type="secondary">{item.value}</Text> : null}
-                  <ChevronRight size={17} />
-                </button>
+            <ListSection inset>
+              <SettingsNavigationRow actionId="me.credentials" settingId="credentials"
+                label={t(SETTING_LABELS.credentials)} description={`@alice · ${FIXTURE_STATION_NAME}`}
+                onActivate={() => openSetting('credentials')} />
+            </ListSection>
+            <MePreferencesSection controller={{
+              preferences, loading: false, unavailable: false, saveStatus: 'idle',
+              patch: (field, value) => setPreferences(rows => rows.map(row => create(NotificationPreferenceSchema, { ...row, [field]: value }))),
+            }} />
+            <ListSection inset title={t('mobile.settings.group.general')}>
+              {SUMMARY_DETAILS.filter(item => item.id !== 'credentials').map(item => (
+                <SettingsNavigationRow actionId={`me.setting.${item.id}`} settingId={item.id}
+                  key={item.id} label={t(SETTING_LABELS[item.id])} description={item.value}
+                  onActivate={() => openSetting(item.id)} />
               ))}
-            </Card>
-            <button
-              type="button"
-              className="settings-sign-out"
-              data-settings-fixture-logout
-              onClick={() => setSettingsSurfaceFixture('settings.logout-confirm')}
-            >
+            </ListSection>
+            <Button actionId="me.signout" density="comfortable" fullWidth emphasis="quiet" tone="danger"
+              data-settings-fixture-logout leading={<Icon iconId="log-out" size={16} />}
+              onActivate={() => setSettingsSurfaceFixture('settings.logout-confirm')}>
               {t('mobile.settings.signOut')}
-            </button>
+            </Button>
           </>
         )}
       </div>
@@ -257,15 +216,10 @@ function SettingsFixtureDetail({
       aria-hidden={background || undefined}
     >
       <header className="page-header">
-        <button
-          type="button"
-          className="header-action"
+        <IconButton actionId="settings.back" iconId="arrow-left" emphasis="quiet" density="comfortable"
           data-settings-fixture-back
-          aria-label={t('common.action.back')}
-          onClick={back}
-        >
-          <ArrowLeft size={20} />
-        </button>
+          label={t('common.action.back')}
+          onActivate={back} />
         <h1 className="header-title compact">{t(SETTING_LABELS[settingId])}</h1>
       </header>
       <div className="settings-detail-body settings-fixture-detail">
@@ -287,11 +241,14 @@ function SettingsFixtureState({
       <section className="settings-dirty-bar">
         <Text>{t('mobile.settings.dirty.unsavedChanges')}</Text>
         <div className="settings-dirty-buttons">
-          <Button>{t('mobile.settings.dirty.discardChanges')}</Button>
+          <Button actionId="settings.fixture.discard-changes">
+            {t('mobile.settings.dirty.discardChanges')}
+          </Button>
           <Button
-            type="primary"
+            actionId="settings.fixture.save"
+            emphasis="primary"
             data-settings-fixture-save
-            onClick={() => setSettingsSurfaceFixture('settings.detail-saving')}
+            onActivate={() => setSettingsSurfaceFixture('settings.detail-saving')}
           >
             {t('mobile.settings.dirty.saveChanges')}
           </Button>
@@ -310,7 +267,7 @@ function SettingsFixtureState({
   if (surfaceId === 'settings.detail-saved') {
     return (
       <MobileNotice tone="success">
-        <Check size={16} />
+        <Icon iconId="check" size={16} />
         {t('mobile.settings.dirty.saved')}
       </MobileNotice>
     );
@@ -319,7 +276,9 @@ function SettingsFixtureState({
     return (
       <MobileNotice>
         {t('mobile.settings.dirty.conflict')}
-        <Button data-settings-fixture-reload>{t('mobile.settings.dirty.reload')}</Button>
+        <Button actionId="settings.fixture.reload" data-settings-fixture-reload>
+          {t('mobile.settings.dirty.reload')}
+        </Button>
       </MobileNotice>
     );
   }
@@ -327,7 +286,9 @@ function SettingsFixtureState({
     return (
       <MobileNotice>
         {t('mobile.launch.unavailable')}
-        <Button data-settings-fixture-retry>{t('common.action.retry')}</Button>
+        <Button actionId="settings.fixture.retry-detail" data-settings-fixture-retry>
+          {t('common.action.retry')}
+        </Button>
       </MobileNotice>
     );
   }
@@ -343,7 +304,7 @@ function SettingsFixtureState({
     return (
       <MobileNotice>
         {t('mobile.settings.permissions.status.denied')}
-        <Button data-settings-fixture-permission>
+        <Button actionId="settings.fixture.enable-permission" data-settings-fixture-permission>
           {t('common.action.enable')}
         </Button>
       </MobileNotice>
@@ -353,11 +314,35 @@ function SettingsFixtureState({
     return (
       <MobileNotice>
         {t('mobile.settings.dirty.saveFailed')}
-        <Button data-settings-fixture-retry>{t('common.action.retry')}</Button>
+        <Button actionId="settings.fixture.retry-save" data-settings-fixture-retry>
+          {t('common.action.retry')}
+        </Button>
       </MobileNotice>
     );
   }
   return null;
+}
+
+function SettingsSection({
+  iconId,
+  title,
+  children,
+}: {
+  readonly iconId: IconId;
+  readonly title: string;
+  readonly children: ReactNode;
+}) {
+  return (
+    <section className="settings-section">
+      <div className="settings-section-body">
+        <div className="settings-section-header">
+          <Icon iconId={iconId} size={16} />
+          <Text strong>{title}</Text>
+        </div>
+        {children}
+      </div>
+    </section>
+  );
 }
 
 function SettingsFixtureContent({
@@ -368,46 +353,49 @@ function SettingsFixtureContent({
   readonly surfaceId: SettingsSurfaceFixtureId;
 }) {
   const { t } = useMobileI18n();
+  const [copyingField, setCopyingField] = useState<'username' | 'ptid' | null>(null);
+  if (settingId === 'credentials') {
+    return <AccountCredentialsSection username="@alice" actorPtid="ptid:acceptance-alice"
+      stationName={FIXTURE_STATION_NAME} copyingField={copyingField}
+      onCopy={(field, value) => {
+        setCopyingField(field);
+        void mobileClipboard.writeText(value).finally(() => setCopyingField(null)).catch(() => undefined);
+      }} />;
+  }
   if (settingId === 'account-info') {
     return (
-      <Card className="settings-section" variant="borderless">
-        <div className="settings-section-header">
-          <User size={16} />
-          <Text strong>{t('mobile.settings.section.profile')}</Text>
-        </div>
+      <SettingsSection iconId="user" title={t('mobile.settings.section.profile')}>
         <label className="settings-profile-field">
-          <Text type="secondary">{t('mobile.settings.profile.displayName')}</Text>
-          <Input
+          <Text tone="secondary">{t('mobile.settings.profile.displayName')}</Text>
+          <TextField
             aria-label={t('mobile.settings.profile.displayName')}
             value="Alice Chen"
             readOnly
           />
         </label>
         <label className="settings-profile-field">
-          <Text type="secondary">{t('mobile.settings.profile.bio')}</Text>
-          <Input.TextArea
+          <Text tone="secondary">{t('mobile.settings.profile.bio')}</Text>
+          <TextArea
             aria-label={t('mobile.settings.profile.bio')}
             value="Design systems and launch readiness."
-            autoSize={{ minRows: 2, maxRows: 3 }}
+            minimumRows={2}
+            maximumRows={3}
             readOnly
           />
         </label>
         <Button
+          actionId="settings.fixture.edit-profile"
           data-settings-fixture-change
-          onClick={() => setSettingsSurfaceFixture('settings.detail-dirty')}
+          onActivate={() => setSettingsSurfaceFixture('settings.detail-dirty')}
         >
           {t('mobile.settings.profile.editProfile')}
         </Button>
-      </Card>
+      </SettingsSection>
     );
   }
   if (settingId === 'notifications') {
     return (
-      <Card className="settings-section" variant="borderless">
-        <div className="settings-section-header">
-          <Bell size={16} />
-          <Text strong>{t('mobile.settings.section.notifications')}</Text>
-        </div>
+      <SettingsSection iconId="bell" title={t('mobile.settings.section.notifications')}>
         {[
           'mobile.settings.notifications.enabled',
           'mobile.settings.notifications.push',
@@ -421,17 +409,13 @@ function SettingsFixtureContent({
             />
           </div>
         ))}
-      </Card>
+      </SettingsSection>
     );
   }
   if (settingId === 'privacy-security') {
     return (
       <>
-        <Card className="settings-section" variant="borderless">
-          <div className="settings-section-header">
-            <Shield size={16} />
-            <Text strong>{t('mobile.settings.section.privacy')}</Text>
-          </div>
+        <SettingsSection iconId="shield" title={t('mobile.settings.section.privacy')}>
           <div className="settings-row">
             <Text>{t('mobile.settings.privacy.defaultVisibility')}</Text>
             <select
@@ -458,42 +442,36 @@ function SettingsFixtureContent({
               </option>
             </select>
           </div>
-        </Card>
-        <Card className="settings-section" variant="borderless">
-          <div className="settings-section-header">
-            <ShieldCheck size={16} />
-            <Text strong>{t('mobile.settings.section.permissions')}</Text>
-          </div>
+        </SettingsSection>
+        <SettingsSection iconId="shield-check" title={t('mobile.settings.section.permissions')}>
           <div className="settings-row">
             <Text>{t('mobile.settings.permissions.camera')}</Text>
-            <Tag color={surfaceId === 'settings.permission-denied' ? 'red' : 'green'}>
+            <Tag tone={surfaceId === 'settings.permission-denied' ? 'danger' : 'success'}>
               {t(surfaceId === 'settings.permission-denied'
                 ? 'mobile.settings.permissions.status.denied'
                 : 'mobile.settings.permissions.status.granted')}
             </Tag>
           </div>
-        </Card>
+        </SettingsSection>
       </>
     );
   }
   if (settingId === 'blocked-users') {
     return (
-      <Card className="settings-section" variant="borderless">
-        <div className="settings-section-header">
-          <Ban size={16} />
-          <Text strong>{t('mobile.settings.section.blocked')}</Text>
-        </div>
+      <SettingsSection iconId="ban" title={t('mobile.settings.section.blocked')}>
         {['Morgan Lee', 'Jordan Kim'].map((name) => (
           <div className="settings-row" key={name}>
-            <Avatar>{name.slice(0, 1)}</Avatar>
+            <MobileAvatar name={name}>{name.slice(0, 1)}</MobileAvatar>
             <span className="settings-fixture-person">
               <Text strong>{name}</Text>
-              <Text type="secondary">@{name.split(' ')[0].toLowerCase()}@design.peers</Text>
+              <Text tone="secondary">@{name.split(' ')[0].toLowerCase()}@design.peers</Text>
             </span>
-            <Button>{t('mobile.contacts.unblock')}</Button>
+            <Button actionId={`settings.fixture.unblock.${name.split(' ')[0].toLowerCase()}`}>
+              {t('mobile.contacts.unblock')}
+            </Button>
           </div>
         ))}
-      </Card>
+      </SettingsSection>
     );
   }
   if (settingId === 'chat-settings') {
@@ -501,34 +479,27 @@ function SettingsFixtureContent({
   }
   if (settingId === 'station-connection') {
     return (
-      <Card className="settings-section" variant="borderless">
-        <div className="settings-section-header">
-          <Server size={16} />
-          <Text strong>{t('mobile.settings.section.station')}</Text>
-        </div>
+      <SettingsSection iconId="server" title={t('mobile.settings.section.station')}>
         <div className="settings-row">
           <span className="settings-fixture-person">
             <Text strong>{FIXTURE_STATION_NAME}</Text>
-            <Text type="secondary">{t('mobile.settings.connected')}</Text>
+            <Text tone="secondary">{t('mobile.settings.connected')}</Text>
           </span>
-          <Tag color="green">{t('mobile.launch.verified')}</Tag>
+          <Tag tone="success">{t('mobile.launch.verified')}</Tag>
         </div>
         <Button
+          actionId="settings.fixture.change-station"
           data-settings-fixture-change-station
-          onClick={() => setSettingsSurfaceFixture('settings.station-change')}
+          onActivate={() => setSettingsSurfaceFixture('settings.station-change')}
         >
           {t('mobile.settings.station.changeStation')}
         </Button>
-      </Card>
+      </SettingsSection>
     );
   }
   if (settingId === 'language') {
     return (
-      <Card className="settings-section" variant="borderless">
-        <div className="settings-section-header">
-          <Globe size={16} />
-          <Text strong>{t('mobile.settings.section.language')}</Text>
-        </div>
+      <SettingsSection iconId="globe" title={t('mobile.settings.section.language')}>
         <select
           className="settings-fixture-select"
           aria-label={t('mobile.settings.section.language')}
@@ -538,30 +509,23 @@ function SettingsFixtureContent({
           <option value="en">{FIXTURE_LANGUAGE_NAMES.en}</option>
           <option value="zh-CN">{FIXTURE_LANGUAGE_NAMES['zh-CN']}</option>
         </select>
-      </Card>
+      </SettingsSection>
     );
   }
   if (settingId === 'safety-number' || settingId === 'chat-background') {
     return (
-      <Empty
-        image={Empty.PRESENTED_IMAGE_SIMPLE}
-        description={t('mobile.launch.unavailable')}
-      />
+      <Empty description={t('mobile.launch.unavailable')} />
     );
   }
   return (
-    <Card className="settings-section" variant="borderless">
-      <div className="settings-section-header">
-        <ShieldCheck size={16} />
-        <Text strong>{t(SETTING_LABELS[settingId])}</Text>
-      </div>
+    <SettingsSection iconId="shield-check" title={t(SETTING_LABELS[settingId])}>
       <div className="settings-row">
         <Text>{t(SETTING_LABELS[settingId])}</Text>
-        <Text type="secondary">
+        <Text tone="secondary">
           {settingId === 'about' ? '1.0.0' : t('mobile.launch.unavailable')}
         </Text>
       </div>
-    </Card>
+    </SettingsSection>
   );
 }
 
@@ -583,11 +547,7 @@ function SettingsFixtureStorage({
 
   return (
     <>
-      <Card className="settings-section" variant="borderless">
-        <div className="settings-section-header">
-          <Palette size={16} />
-          <Text strong>{t('mobile.settings.section.devicePrefs')}</Text>
-        </div>
+      <SettingsSection iconId="palette" title={t('mobile.settings.section.devicePrefs')}>
         <div className="settings-row">
           <Text>{t('mobile.settings.device.theme')}</Text>
           <select
@@ -610,14 +570,13 @@ function SettingsFixtureStorage({
             <option value="medium">{t('mobile.settings.device.fontSize.medium')}</option>
           </select>
         </div>
-      </Card>
-      <Card className="settings-section" variant="borderless">
+      </SettingsSection>
+      <SettingsSection iconId="hard-drive" title={t('mobile.settings.section.storage')}>
         <div className="settings-section-header">
-          <HardDrive size={16} />
-          <Text strong>{t('mobile.settings.section.storage')}</Text>
           <Button
+            actionId="settings.fixture.storage-manage"
             data-settings-fixture-storage-manage
-            onClick={() => setSettingsSurfaceFixture('settings.storage-manage')}
+            onActivate={() => setSettingsSurfaceFixture('settings.storage-manage')}
           >
             {t(managing
               ? 'mobile.settings.storage.batchDone'
@@ -635,13 +594,14 @@ function SettingsFixtureStorage({
           ) : null}
           <span className="settings-fixture-person">
             <Text strong>{FIXTURE_CONVERSATION_NAME}</Text>
-            <Text type="secondary">48 MB</Text>
+            <Text tone="secondary">48 MB</Text>
           </span>
           {managing && !confirming && !progress ? (
             <Button
-              danger
+              tone="danger"
+              actionId="settings.fixture.storage-select"
               data-settings-fixture-storage-select
-              onClick={() => setSettingsSurfaceFixture('settings.storage-confirm')}
+              onActivate={() => setSettingsSurfaceFixture('settings.storage-confirm')}
             >
               {t('mobile.settings.storage.batchClearSelected')}
             </Button>
@@ -651,9 +611,10 @@ function SettingsFixtureStorage({
           <MobileNotice tone="info">
             {t('mobile.settings.storage.batchConfirm', { bytes: '48 MB', count: 1 })}
             <Button
-              danger
+              tone="danger"
+              actionId="settings.fixture.storage-confirm"
               data-settings-fixture-storage-confirm
-              onClick={() => setSettingsSurfaceFixture('settings.storage-progress')}
+              onActivate={() => setSettingsSurfaceFixture('settings.storage-progress')}
             >
               {t('mobile.settings.storage.batchConfirmAction')}
             </Button>
@@ -676,7 +637,7 @@ function SettingsFixtureStorage({
               succeeded: 1,
               total: 2,
             })}
-            <Button data-settings-fixture-storage-retry>
+            <Button actionId="settings.fixture.storage-retry" data-settings-fixture-storage-retry>
               {t('mobile.settings.storage.batchRetry')}
             </Button>
           </MobileNotice>
@@ -684,8 +645,9 @@ function SettingsFixtureStorage({
         <div className="settings-row">
           <Text>{t('mobile.settings.storage.retentionTitle')}</Text>
           <Button
+            actionId="settings.fixture.retention"
             data-settings-fixture-retention
-            onClick={() => setSettingsSurfaceFixture('settings.storage-retention')}
+            onActivate={() => setSettingsSurfaceFixture('settings.storage-retention')}
           >
             {t('mobile.settings.storage.retention90Days')}
           </Button>
@@ -697,25 +659,30 @@ function SettingsFixtureStorage({
         ) : null}
         {!clearConfirm ? (
           <Button
+            actionId="settings.fixture.clear-cache"
             data-settings-fixture-clear-cache
-            icon={<Trash2 size={15} />}
-            onClick={() => setSettingsSurfaceFixture('settings.storage-clear-confirm')}
+            leading={<Icon iconId="delete" size={15} />}
+            onActivate={() => setSettingsSurfaceFixture('settings.storage-clear-confirm')}
           >
             {t('mobile.settings.storage.clearChatCacheAction')}
           </Button>
         ) : (
           <MobileNotice tone="info">
             {t('mobile.settings.storage.clearChatCacheConfirm')}
-            <Button danger>{t('mobile.settings.storage.clearChatCacheConfirmAction')}</Button>
+            <Button tone="danger" actionId="settings.fixture.clear-cache-confirm">
+              {t('mobile.settings.storage.clearChatCacheConfirmAction')}
+            </Button>
           </MobileNotice>
         )}
         {clearFailed ? (
           <MobileNotice>
             {t('mobile.settings.storage.clearChatCacheFailed')}
-            <Button data-settings-fixture-clear-retry>{t('common.action.retry')}</Button>
+            <Button actionId="settings.fixture.clear-retry" data-settings-fixture-clear-retry>
+              {t('common.action.retry')}
+            </Button>
           </MobileNotice>
         ) : null}
-      </Card>
+      </SettingsSection>
     </>
   );
 }
@@ -764,23 +731,29 @@ function SettingsFixtureOverlay({
           </Text>
           {stationChange ? (
             <div className="settings-fixture-station-choice">
-              <Server size={18} />
+              <Icon iconId="server" size={18} />
               <span className="settings-fixture-person">
                 <Text strong>{FIXTURE_STATION_NAME}</Text>
-                <Text type="secondary">{t('mobile.launch.verified')}</Text>
+                <Text tone="secondary">{t('mobile.launch.verified')}</Text>
               </span>
-              <Check size={18} />
+              <Icon iconId="check" size={18} />
             </div>
           ) : null}
           <div className="settings-fixture-sheet-actions">
-            <Button>{t(unsaved ? 'mobile.settings.exit.stay' : 'common.action.cancel')}</Button>
+            <Button actionId="settings.fixture.dialog-cancel" fullWidth>
+              {t(unsaved ? 'mobile.settings.exit.stay' : 'common.action.cancel')}
+            </Button>
             {unsaved ? (
               <>
-                <Button danger>{t('mobile.settings.exit.discard')}</Button>
-                <Button type="primary">{t('mobile.settings.exit.save')}</Button>
+                <Button tone="danger" actionId="settings.fixture.exit-discard" fullWidth>
+                  {t('mobile.settings.exit.discard')}
+                </Button>
+                <Button emphasis="primary" actionId="settings.fixture.exit-save" fullWidth>
+                  {t('mobile.settings.exit.save')}
+                </Button>
               </>
             ) : (
-              <Button danger type="primary">
+              <Button emphasis="primary" tone="danger" actionId="settings.fixture.dialog-confirm" fullWidth>
                 {t(stationChange
                   ? 'mobile.settings.station.changeStation'
                   : 'mobile.settings.logout')}

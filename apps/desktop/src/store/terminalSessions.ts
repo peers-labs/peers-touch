@@ -886,4 +886,3 @@ function findView(get: () => TerminalSessionState, sessionId: string): TerminalS
   }
   return undefined;
 }
-

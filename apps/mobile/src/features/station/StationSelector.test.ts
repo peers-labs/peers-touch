@@ -10,8 +10,8 @@ const source = readFileSync(
   new URL('./StationSelector.tsx', import.meta.url),
   'utf8',
 );
-const launchSource = readFileSync(
-  new URL('./StationLaunchScreen.tsx', import.meta.url),
+const entrySource = readFileSync(
+  new URL('../entry/EntryScreen.tsx', import.meta.url),
   'utf8',
 );
 const appSource = readFileSync(
@@ -27,9 +27,9 @@ describe('StationSelector removal contract', () => {
   it('requires an explicit destructive confirmation before removing a Station', () => {
     expect(source).toContain('setPendingRemoval(entry)');
     expect(source).toContain('open={pendingRemoval !== null}');
-    expect(source).toContain('onClick={confirmStationRemoval}');
-    expect(source).toContain('onCancel={() => setPendingRemoval(null)}');
-    expect(source).toContain('className="entry-confirmation-button danger"');
+    expect(source).toContain('onActivate={confirmStationRemoval}');
+    expect(source).toContain('onDismiss={() => setPendingRemoval(null)}');
+    expect(source).toMatch(/actionId="station.remove.confirm"[\s\S]*?tone="danger"/);
     expect(source).toContain('data-product-surface="entry.station-remove-confirm"');
   });
 
@@ -87,10 +87,12 @@ describe('StationSelector reachability states', () => {
     expect(appSource).toContain(
       'verifiedStationKeysForSelection.current.clear()',
     );
-    expect(launchSource).toContain(
-      'disabled={!activeStation || !activeStationChecked}',
+    expect(entrySource).toContain(
+      "checkedUrls.includes(activeStation?.url ?? '')",
     );
-    expect(launchSource).toContain("'common.action.retry'");
+    expect(entrySource).toContain(
+      "verifyingUrls.includes(activeStation?.url ?? '')",
+    );
   });
 });
 
@@ -99,7 +101,7 @@ describe('StationSelector X Config suggestions', () => {
     expect(source).toContain('data-x-config-seed-id');
     expect(source).toContain('common.stationPicker.suggestions');
     expect(source).toContain('common.stationPicker.suggestionStale');
-    expect(source).toContain('disabled={!suggestion.actionable || selecting}');
+    expect(source).toContain('availability={!suggestion.actionable || selectingSuggestionId !== null');
   });
 
   it('removes a suggestion only when a verified route owns the same origin', () => {
@@ -159,21 +161,24 @@ describe('StationSelector layout contract', () => {
     expect(source).toContain("surfaceFixture === 'address'");
     expect(source).toContain("buildStationUrl(stationUrl)?.startsWith('http://')");
     expect(source).toContain('className="station-field-helper warning"');
-    expect(source).toContain('className="station-submit"');
+    expect(source).toContain('actionId="station.submit"');
     expect(source).not.toContain('<select');
     expect(source).not.toContain('station-protocol-select');
   });
 
-  it('anchors the surface and preserves a useful one-line address field', () => {
+  it('anchors the surface and keeps the 16px input that prevents iOS focus zoom', () => {
     expect(styles).toMatch(
-      /\.launch-content\s*\{[^}]*flex:\s*1;[^}]*justify-content:\s*flex-end;/s,
+      /\.launch-content\s*\{[^}]*flex:\s*1;[^}]*justify-content:\s*flex-start;/s,
     );
     expect(styles).toMatch(
       /\.launch-content\s*\{[^}]*padding:\s*24px 22px calc\(var\(--safe-area-bottom\) \+ 12px\);/s,
     );
     expect(styles).toMatch(/\.launch-panel\s*\{[^}]*flex:\s*0 0 auto;/s);
+    expect(styles).toMatch(/\.launch-panel\s*\{[^}]*margin-top:\s*auto;/s);
+    // The peers-ui TextField input inherits the global 16px input rule, which
+    // stops iOS from auto-zooming on focus; the surface no longer hardcodes it.
     expect(styles).toMatch(
-      /\.station-address-input\s*\{[^}]*height:\s*44px;[^}]*font-size:\s*16px;/s,
+      /input,\s*textarea,\s*select\s*\{[^}]*font-size:\s*16px\s*!important/s,
     );
     expect(styles).toMatch(
       /\.station-field-helper\s*\{[^}]*white-space:\s*nowrap;/s,
@@ -184,31 +189,38 @@ describe('StationSelector layout contract', () => {
     expect(styles).not.toMatch(/\.launch-brand-logo\s*\{[^}]*border:/s);
   });
 
-  it('never draws an inner focus frame inside the outer control', () => {
-    expect(styles).toContain('.station-address-input:focus-visible');
-    expect(styles).toMatch(
-      /\.station-url-control\s+\.station-address-input:focus-visible\s*\{[\s\S]*?outline:\s*none\s*!important;/,
-    );
+  it('lets the peers-ui input primitive own the borderless inner focus chrome', () => {
+    expect(styles).not.toContain('.station-address-input');
+    expect(styles).not.toContain('.station-submit');
+    expect(source).toContain('data-acceptance-id="station-address-input"');
+    expect(source).toContain('aria-invalid={error ? true : undefined}');
   });
 });
 
-describe('Station launch visual contract', () => {
+describe('Station entry visual contract', () => {
   it('keeps the entry task compact and unframed', () => {
-    expect(launchSource).toContain('className="launch-content"');
-    expect(launchSource).toContain('className="launch-brand-logo"');
-    expect(launchSource).toContain('className="launch-panel"');
-    expect(launchSource).not.toContain('<Card');
-    expect(launchSource).not.toContain('launch-hero');
+    expect(entrySource).toContain('className="launch-content"');
+    expect(entrySource).toContain('className="launch-brand-logo"');
+    expect(entrySource).toContain('className="launch-panel"');
+    expect(entrySource).not.toContain('<Card');
+    expect(entrySource).not.toContain('launch-hero');
   });
 
-  it('uses one contextual primary action', () => {
-    expect(launchSource).toContain("'common.action.retry'");
-    expect(launchSource).toContain('disabled={!activeStation || !activeStationChecked}');
+  it('exposes scan as a quiet peers-ui IconButton in the top bar', () => {
+    expect(entrySource).toContain('actionId="entry.scan"');
+    expect(entrySource).toContain("label={t('mobile.deviceLink.scan')}");
+    expect(entrySource).not.toContain('entry-scan-button');
+  });
+
+  it('embeds the access gate inline instead of navigating to a separate page', () => {
+    expect(entrySource).toContain('<AccessGateHost');
+    expect(entrySource).toContain('embedded');
+    expect(entrySource).toContain("data-entry-action=\"change-station\"");
   });
 
   it('renders Station address as one parent field frame', () => {
-    expect(source).toContain('className="station-submit"');
-    expect(source).toContain('`station-url-control ${error ? \'error\' : \'\'}');
+    expect(source).toContain('actionId="station.submit"');
+    expect(source).toContain('className="station-url-field"');
     expect(source).not.toContain('station-url-divider');
     expect(source).not.toContain('station-protocol-select');
     expect(source).not.toContain('<Tag');

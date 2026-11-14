@@ -41,6 +41,49 @@ describe('Social profile refresh lifecycle', () => {
     useSessionStore.setState({ authenticated: false, currentUser: null });
   });
 
+  it('keeps friend requests off the loading surface during background reconciliation', async () => {
+    vi.useFakeTimers();
+    const list = vi.spyOn(api, 'socialFriendRequestList')
+      .mockResolvedValue({ requests: [] } as unknown as Awaited<ReturnType<typeof api.socialFriendRequestList>>);
+
+    // First load: loading gate drives the initial spinner.
+    const first = useSocialChatStore.getState().loadFriendRequests();
+    expect(useSocialChatStore.getState().friendRequestsLoading).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    await first;
+    const firstLoadedAt = useSocialChatStore.getState().friendRequestsLoadedAt;
+    expect(firstLoadedAt).toBeTruthy();
+    expect(useSocialChatStore.getState().friendRequestsLoading).toBe(false);
+
+    vi.advanceTimersByTime(30_000);
+
+    // Every later refresh (periodic realtime reconcile / mutation follow-up)
+    // must swap data in place without re-entering the loading gate.
+    const second = useSocialChatStore.getState().loadFriendRequests();
+    expect(useSocialChatStore.getState().friendRequestsLoading).toBe(false);
+    await vi.advanceTimersByTimeAsync(0);
+    await second;
+    expect(useSocialChatStore.getState().friendRequestsLoading).toBe(false);
+    expect(useSocialChatStore.getState().friendRequestsLoadedAt).not.toBe(firstLoadedAt);
+    expect(list).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
+  it('keeps the previous friend request projection when a background refresh fails', async () => {
+    vi.spyOn(api, 'socialFriendRequestList')
+      .mockResolvedValueOnce({ requests: [{ id: 'r1' }] } as unknown as Awaited<ReturnType<typeof api.socialFriendRequestList>>)
+      .mockRejectedValueOnce(new Error('transport unavailable'));
+
+    await useSocialChatStore.getState().loadFriendRequests();
+    const loadedAt = useSocialChatStore.getState().friendRequestsLoadedAt;
+
+    await expect(useSocialChatStore.getState().loadFriendRequests()).rejects.toThrow('transport unavailable');
+    const state = useSocialChatStore.getState();
+    expect(state.friendRequestsLoading).toBe(false);
+    expect(state.friendRequestsError).toBeNull();
+    expect(state.friendRequestsLoadedAt).toBe(loadedAt);
+  });
+
   it('preserves an already loaded peer profile when reconnect refresh fails', async () => {
     const previous = profile('previous-avatar');
     useSocialChatStore.setState({ peerProfiles: { [bob]: previous } });

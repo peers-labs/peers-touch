@@ -1419,6 +1419,84 @@ func TestConversationDDDCreateDirectReopensFollowerProjection(t *testing.T) {
 	assertCount(t, authority.db, &persistence.ConversationFollowerHeadModel{}, 0)
 }
 
+func TestConversationDDDFollowerStationAcceptsLocalMemberSettings(t *testing.T) {
+	// Member settings are actor-local preferences written on the actor's Home
+	// Station. A member whose Home Station only follows a conversation (the
+	// authority aggregate lives on the other Station) must still be able to
+	// mute it, authorized against the follower read projection.
+	authority := newDDDCompositionAtStation(t, "station-a")
+	alice := dddEndpoint("ptid:local-settings-alice", "alice-1")
+	bob := dddEndpoint("ptid:local-settings-bob", "bob-1")
+	seedDDDDevices(t, authority.db, dddDevice(alice, "station-a"))
+	created, err := authority.commands.CreateDirect(
+		context.Background(),
+		command.CreateDirectRequest{
+			Creator:           alice,
+			Peer:              bob.Actor,
+			Scope:             valueobject.MustFederationScope(dddFederationID),
+			AuthorityEpoch:    dddAuthorityEpoch,
+			CommandID:         "local-settings-create",
+			VerifiedRoutes:    dddDirectRoutes(alice, "station-a", bob, "station-b"),
+			ExactCommandBytes: []byte("local-settings-create"),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	follower := newDDDCompositionAtStation(t, "station-b")
+	seedDDDDevices(t, follower.db, dddDevice(bob, "station-b"))
+	if err := follower.commands.ApplyFollowerEvent(
+		context.Background(),
+		created.Event,
+	); err != nil {
+		t.Fatal(err)
+	}
+	// The follower Station holds a projection but no writable authority
+	// aggregate for this conversation.
+	assertCount(t, follower.db, &persistence.ConversationModel{}, 0)
+	assertCount(t, follower.db, &persistence.ConversationFollowerHeadModel{}, 1)
+
+	muted := true
+	settings, err := follower.commands.UpdateMemberSettings(
+		context.Background(),
+		created.Conversation.ID,
+		bob.Actor,
+		command.MemberSettingsPatch{Muted: &muted},
+	)
+	if err != nil {
+		t.Fatalf("follower UpdateMemberSettings failed: %v", err)
+	}
+	if !settings.Muted {
+		t.Fatalf("settings = %+v, want muted", settings)
+	}
+
+	// The query path reads the local preference back through the follower
+	// projection without a writable authority aggregate.
+	read, err := follower.queries.MemberSettings(
+		context.Background(),
+		created.Conversation.ID,
+		bob.Actor,
+	)
+	if err != nil {
+		t.Fatalf("follower MemberSettings read failed: %v", err)
+	}
+	if !read.Muted {
+		t.Fatalf("read settings = %+v, want muted", read)
+	}
+
+	// A non-member still cannot write preferences even with a projection.
+	charlie := dddEndpoint("ptid:local-settings-charlie", "charlie-1")
+	if _, err := follower.commands.UpdateMemberSettings(
+		context.Background(),
+		created.Conversation.ID,
+		charlie.Actor,
+		command.MemberSettingsPatch{Muted: &muted},
+	); !conversationdomain.IsCode(err, conversationdomain.ErrorCodeUnauthorized) {
+		t.Fatalf("non-member settings error = %v, want unauthorized", err)
+	}
+}
+
 func TestConversationDDDDirectFanoutUsesCurrentActiveActorDevices(t *testing.T) {
 	fixture := newDDDComposition(t)
 	alice := dddEndpoint("ptid:direct-devices-alice", "alice-1")

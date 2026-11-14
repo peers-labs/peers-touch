@@ -13,6 +13,7 @@ use messaging_core::attachment::{
     AttachmentRetryPolicy, AttachmentTransferControl, AttachmentTransferRecord,
     AttachmentTransferWorker,
 };
+use messaging_core::codec::private_content::MessageMentions;
 use messaging_core::contracts::{
     CommandStatusProjection, ConversationMessageProjection, ConversationProjection,
     CryptoEndpoint as CoreCryptoEndpoint,
@@ -29,8 +30,8 @@ use messaging_core::identity::{
 use messaging_core::inbox::{
     AcknowledgedItemObserver, ClaimedItemConsumer, CommandResultProcessor, ConsumerEpochObserver,
     ConversationStateProcessor, DeliveryReceiptProcessor, DirectMessageProcessor, DrainProgress,
-    MessagingItemConsumer, PublicEventProcessor, QueueDrain, ServicePlaintextProcessor,
-    SkippedPayloadProcessor,
+    MessagingItemConsumer, PublicEventProcessor, QuarantiningConsumer, QueueDrain,
+    ServicePlaintextProcessor, SkippedPayloadProcessor,
 };
 use messaging_core::mls::actor_device_identity::ActorDeviceIdentity;
 use messaging_core::mls::group::MlsGroupManager;
@@ -54,7 +55,8 @@ use messaging_core::outbox::{
 };
 use messaging_core::proto::actor::{ActorDevice, ActorKind, ActorRef};
 use messaging_core::proto::chat::{
-    chat_command, ActorReadCursor, AttachmentContentKind, AttachmentTransferState, ChatCommand,
+    chat_command, ActorReadCursor, AttachmentContentKind, AttachmentSourceStageRecord,
+    AttachmentTransferState, ChatCommand,
     ChatStorageOperationState, ChatStoragePolicy, ChatStorageResult, ChatStorageScope,
     ChatStorageSnapshot, Conversation, ConversationCommandKind, ConversationKind,
     ConversationMemberAuthorityAction, ConversationMemberAuthorityCommand, ConversationStatus,
@@ -271,6 +273,7 @@ pub enum MessagingAttachmentOpenProgress {
 
 #[derive(Debug, Clone)]
 struct StagedAttachment {
+    conversation_id: String,
     filename: String,
     mime_type: String,
     plaintext_size: u64,
@@ -405,7 +408,10 @@ fn validate_attachment_content_metadata(
 }
 
 type CoreItemConsumer =
-    MessagingItemConsumer<MobileMessagingStore, MlsItemProcessor<MobileMessagingStore>>;
+    QuarantiningConsumer<
+        MessagingItemConsumer<MobileMessagingStore, MlsItemProcessor<MobileMessagingStore>>,
+        MobileMessagingStore,
+    >;
 
 pub struct MobileMessagingEngine {
     profile_id: String,
@@ -593,16 +599,26 @@ impl MobileMessagingEngine {
         )?);
         let command_result =
             CommandResultProcessor::new(store.clone(), mls.clone(), endpoint.clone(), now_unix_ms)?;
-        let consumer = Arc::new(MessagingItemConsumer::new(
-            direct,
-            mls,
-            PublicEventProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
-            ConversationStateProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
-            command_result,
-            DeliveryReceiptProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
-            ServicePlaintextProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
-            SkippedPayloadProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
-        ));
+        let consumer = Arc::new(
+            QuarantiningConsumer::new(
+                store.clone(),
+                endpoint.clone(),
+                MessagingItemConsumer::new(
+                    direct,
+                    mls,
+                    PublicEventProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
+                    ConversationStateProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
+                    command_result,
+                    DeliveryReceiptProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
+                    ServicePlaintextProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
+                    SkippedPayloadProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
+                ),
+                now_unix_ms,
+            )
+            .map_err(|error| {
+                format!("mobile messaging quarantine consumer init failed: {error}")
+            })?,
+        );
         let consumer_id = random_consumer_id();
 
         Ok(Self {
@@ -1926,6 +1942,7 @@ impl MobileMessagingEngine {
 
     pub fn begin_attachment_stage(
         &self,
+        conversation_id: &str,
         filename: &str,
         mime_type: &str,
         plaintext_size: u64,
@@ -1933,7 +1950,8 @@ impl MobileMessagingEngine {
         duration_ms: u32,
         voice_note: Option<VoiceNoteMetadata>,
     ) -> Result<MessagingAttachmentStage, String> {
-        if filename.trim().is_empty()
+        if conversation_id.trim().is_empty() || conversation_id.len() > 255
+            || filename.trim().is_empty()
             || filename.len() > 1024
             || mime_type.trim().is_empty()
             || mime_type.len() > 255
@@ -1971,6 +1989,7 @@ impl MobileMessagingEngine {
             .and_then(|file| file.sync_all())
             .map_err(|error| format!("create mobile messaging attachment stage: {error}"))?;
         let stage = StagedAttachment {
+            conversation_id: conversation_id.to_string(),
             filename: filename.to_string(),
             mime_type: mime_type.to_string(),
             plaintext_size,
@@ -2052,6 +2071,9 @@ impl MobileMessagingEngine {
             .attachment_stages
             .lock()
             .map_err(|_| "mobile messaging attachment stage lock poisoned".to_string())?;
+        if let Some(record) = self.store.attachment_source_stage(stage_id)? {
+            return Ok(completed_stage_projection(&record));
+        }
         let stage = stages
             .get_mut(stage_id)
             .ok_or_else(|| "mobile messaging attachment stage is unavailable".to_string())?;
@@ -2061,17 +2083,75 @@ impl MobileMessagingEngine {
         {
             return Err("mobile messaging attachment stage is incomplete".to_string());
         }
-        stage.completed = true;
-        Ok(MessagingAttachmentStage {
+        std::fs::File::open(self.attachment_stage_path(stage_id)?)
+            .and_then(|file| file.sync_all())
+            .map_err(|error| format!("sync mobile attachment source: {error}"))?;
+        let sha256 = self.attachment_blobs()?.sha256(&path)?.to_vec();
+        let record = AttachmentSourceStageRecord {
+            conversation_id: stage.conversation_id.clone(),
             stage_id: stage_id.to_string(),
             filename: stage.filename.clone(),
             mime_type: stage.mime_type.clone(),
             plaintext_size: stage.plaintext_size,
+            plaintext_sha256: sha256,
             content_kind: stage.content_kind,
             duration_ms: stage.duration_ms,
             voice_note: stage.voice_note.clone(),
-            completed: true,
-        })
+        };
+        self.store.save_attachment_source_stage(&path, &record)?;
+        stages.remove(stage_id);
+        Ok(completed_stage_projection(&record))
+    }
+
+    pub fn restore_attachment_stage(
+        &self,
+        stage_id: &str,
+        owner: &str,
+    ) -> Result<(MessagingAttachmentStage, String, String), String> {
+        validate_opaque_file_id("attachment stage", stage_id)?;
+        let _guard = self.attachment_source_lock.lock()
+            .map_err(|_| "mobile messaging attachment source lock poisoned")?;
+        let record = self.store.attachment_source_stage(stage_id)?
+            .ok_or_else(|| "FILE_DRAFT_UNAVAILABLE".to_string())?;
+        let path = self.attachment_stage_path(stage_id)?;
+        let handle = self.attachment_file_access.grant(
+            owner, stage_id, &self.attachment_root, &path, &record.filename,
+            &record.mime_type, record.plaintext_size, &record.plaintext_sha256,
+        )?;
+        Ok((completed_stage_projection(&record), attachment_asset_url(&handle), handle))
+    }
+
+    pub fn release_attachment_stage_preview(&self, owner: &str, handle: &str) {
+        self.attachment_file_access.release(owner, handle);
+    }
+
+    pub(crate) fn recover_attachment_composer(
+        &self,
+        conversation_id: &str,
+        stage_ids: &[String],
+    ) -> Result<(Vec<MessagingAttachmentStage>, Option<super::adapter::AdoptedComposerMessage>), String> {
+        if conversation_id.is_empty() || stage_ids.len() > 128 {
+            return Err("FILE_DRAFT_INVALID".into());
+        }
+        let _guard = self.attachment_source_lock.lock()
+            .map_err(|_| "mobile messaging attachment source lock poisoned")?;
+        let stages = self.store.conversation_attachment_source_stages(conversation_id)?
+            .iter().map(completed_stage_projection).collect();
+        let mut adopted_message = None;
+        for stage_id in stage_ids {
+            let source = self.attachment_stage_ref(stage_id)?;
+            if let Some(message_id) = self.store.attachment_source_message(conversation_id, &source)? {
+                if adopted_message.as_ref().is_some_and(|previous| previous != &message_id) {
+                    return Err("FILE_DRAFT_INVALID".into());
+                }
+                adopted_message = Some(message_id);
+            }
+        }
+        let message = match adopted_message {
+            Some(message_id) => self.store.adopted_composer_message(conversation_id, &message_id)?,
+            None => None,
+        };
+        Ok((stages, message))
     }
 
     pub fn discard_attachment_stage(&self, stage_id: &str) -> Result<(), String> {
@@ -2083,11 +2163,41 @@ impl MobileMessagingEngine {
         if self.store.owns_attachment_source(&path)? {
             return Ok(());
         }
+        self.attachment_blobs()?.remove(&path)?;
+        self.store.remove_attachment_source_stage(stage_id)?;
         self.attachment_stages
             .lock()
             .map_err(|_| "mobile messaging attachment stage lock poisoned".to_string())?
             .remove(stage_id);
-        self.attachment_blobs()?.remove(&path)
+        Ok(())
+    }
+
+    /* Completed sources are read from SQLCipher; the in-memory map only owns
+       incomplete streams. */
+    fn completed_attachment_stage(&self, conversation_id: &str, stage_id: &str) -> Result<StagedAttachment, String> {
+        validate_opaque_file_id("attachment stage", stage_id)?;
+        let record = self.store.attachment_source_stage(stage_id)?
+            .ok_or_else(|| "FILE_DRAFT_UNAVAILABLE".to_string())?;
+        if record.conversation_id != conversation_id {
+            return Err("FILE_DRAFT_SCOPE_MISMATCH".into());
+        }
+        let path = self.attachment_stage_ref(stage_id)?;
+        if self.attachment_blobs()?.len(&path)? != record.plaintext_size
+            || self.attachment_blobs()?.sha256(&path)?.as_slice() != record.plaintext_sha256
+        {
+            return Err("FILE_INTEGRITY_FAILED".into());
+        }
+        Ok(StagedAttachment {
+            conversation_id: record.conversation_id,
+            filename: record.filename,
+            mime_type: record.mime_type,
+            plaintext_size: record.plaintext_size,
+            content_kind: record.content_kind,
+            duration_ms: record.duration_ms,
+            voice_note: record.voice_note,
+            written_size: record.plaintext_size,
+            completed: true,
+        })
     }
 
     pub fn submit_message(
@@ -2152,6 +2262,7 @@ impl MobileMessagingEngine {
                         reply_to_message_id,
                         thread_root_message_id,
                         attachments: &[],
+                        mentions: &MessageMentions::empty(),
                         client_timestamp_unix_ms: created_at_unix_ms,
                     },
                     &bootstraps,
@@ -2169,6 +2280,7 @@ impl MobileMessagingEngine {
                         reply_to_message_id,
                         thread_root_message_id,
                         attachments: &[],
+                        mentions: &MessageMentions::empty(),
                         client_timestamp_unix_ms: created_at_unix_ms,
                     },
                 )?;
@@ -2370,6 +2482,7 @@ impl MobileMessagingEngine {
                     &expected_plaintext_sha256,
                 )?;
                 let stage = StagedAttachment {
+                    conversation_id: destination_conversation_id.to_string(),
                     filename: attachment.filename.clone(),
                     mime_type: attachment.mime_type.clone(),
                     plaintext_size: attachment.plaintext_size,
@@ -2437,10 +2550,6 @@ impl MobileMessagingEngine {
             .attachment_source_lock
             .lock()
             .map_err(|_| "mobile messaging attachment source lock poisoned".to_string())?;
-        let mut stages = self
-            .attachment_stages
-            .lock()
-            .map_err(|_| "mobile messaging attachment stage lock poisoned".to_string())?;
         let mut seen = std::collections::HashSet::with_capacity(attachment_stage_ids.len());
         if attachment_stage_ids
             .iter()
@@ -2455,19 +2564,14 @@ impl MobileMessagingEngine {
         let mut uploads = attachment_stage_ids
             .iter()
             .map(|stage_id| {
-                let stage = stages.get(stage_id).ok_or_else(|| {
-                    "mobile messaging attachment stage is unavailable".to_string()
-                })?;
-                if !stage.completed {
-                    return Err("mobile messaging attachment stage is incomplete".to_string());
-                }
+                let stage = self.completed_attachment_stage(conversation_id, stage_id)?;
                 prepare_local_attachment_upload(
                     &blobs,
                     conversation_id,
                     &message_id,
                     &conversation.authority_station_id,
                     &self.attachment_stage_ref(stage_id)?,
-                    stage,
+                    &stage,
                     created_at_unix_ms,
                 )
             })
@@ -2483,9 +2587,6 @@ impl MobileMessagingEngine {
             created_at_unix_ms,
             &mut uploads,
         )?;
-        for stage_id in attachment_stage_ids {
-            stages.remove(stage_id);
-        }
         Ok(outcome)
     }
 
@@ -2974,7 +3075,9 @@ impl MobileMessagingEngine {
         item: &DurableDeviceInboxItem,
         consumer_epoch: u64,
     ) -> Result<(), String> {
-        self.consumer.consume(item, consumer_epoch)
+        self.consumer
+            .consume(item, consumer_epoch)
+            .map_err(|error| error.to_string())
     }
 
     pub fn drain_once(&self) -> Result<DrainProgress, String> {
@@ -3011,6 +3114,13 @@ impl MobileMessagingEngine {
             drain = drain.with_acknowledged_item_observer(observer);
         }
         let progress = drain.drain_once(cursor, expected_epoch)?;
+        if progress.quarantined > 0 {
+            log::warn!(
+                "mobile messaging drain quarantined {} permanently invalid inbox items at cursor {}",
+                progress.quarantined,
+                progress.cursor
+            );
+        }
         if let Err(error) = self.resume_redaction_file_cleanup() {
             log::warn!("mobile messaging redaction file cleanup remains pending: {error}");
         }
@@ -3309,7 +3419,8 @@ impl MobileMessagingEngine {
         )? {
             return Ok(access);
         }
-        let access = attachment_access_projection(&projection.metadata, transfer.as_ref(), false);
+        let access =
+            attachment_access_projection(&projection.metadata, transfer.as_ref(), false, false);
         if start_download && access.state == AttachmentAccessState::Remote as i32 {
             self.prepare_attachment_open(attachment_id)?;
         }
@@ -3351,9 +3462,15 @@ impl MobileMessagingEngine {
                 .retry(attachment_id, now_unix_ms())?;
         }
         transfer = self.store.attachment_transfer(attachment_id)?;
+        if let Some(access) = self.cached_attachment_access(
+            owner, &projection, transfer.as_ref(), retry,
+        )? {
+            return Ok(access);
+        }
         Ok(attachment_access_projection(
             &projection.metadata,
             transfer.as_ref(),
+            false,
             false,
         ))
     }
@@ -3369,7 +3486,11 @@ impl MobileMessagingEngine {
         use messaging_core::proto::chat::AttachmentAccessState;
         let attachment_id = &projection.metadata.attachment_id;
         let cache = PathBuf::from(self.attachment_cache_ref(attachment_id)?);
-        let mut access = attachment_access_projection(&projection.metadata, transfer, false);
+        // Observe the permit before checking bytes so a completed promotion
+        // cannot turn a pending reader into a stale Remote projection.
+        let transfer_active = self.attachment_transfer_control.is_transfer_active(attachment_id)?;
+        let mut access =
+            attachment_access_projection(&projection.metadata, transfer, false, transfer_active);
         if cache.is_file() {
             let grant = self.attachment_file_access.grant(
                 owner,
@@ -3383,7 +3504,7 @@ impl MobileMessagingEngine {
             );
             match grant {
                 Ok(handle) => {
-                    access = attachment_access_projection(&projection.metadata, transfer, true);
+                    access = attachment_access_projection(&projection.metadata, transfer, true, false);
                     access.asset_url = attachment_asset_url(&handle);
                     access.access_handle = handle;
                     return Ok(Some(access));
@@ -3401,7 +3522,7 @@ impl MobileMessagingEngine {
                 Err(error) => return Err(error),
             }
         }
-        Ok(None)
+        Ok((access.state == AttachmentAccessState::Verifying as i32).then_some(access))
     }
 
     pub(crate) fn attachment_handoff_root(&self) -> PathBuf {
@@ -3429,6 +3550,20 @@ impl MobileMessagingEngine {
                 .store
                 .attachment_download_projection(attachment_id)?
                 .is_none()
+        {
+            return Err("FILE_ACCESS_STALE".into());
+        }
+        Ok(())
+    }
+
+    pub(crate) fn validate_attachment_asset_handle(
+        &self,
+        owner: &str,
+        handle: &str,
+    ) -> Result<(), String> {
+        let attachment_id = self.attachment_file_access.attachment_id(owner, handle)?;
+        if self.store.attachment_download_projection(&attachment_id)?.is_none()
+            && self.store.attachment_source_stage(&attachment_id)?.is_none()
         {
             return Err("FILE_ACCESS_STALE".into());
         }
@@ -3560,6 +3695,7 @@ impl MobileMessagingEngine {
                             reply_to_message_id: &draft.reply_to_message_id,
                             thread_root_message_id: &draft.thread_root_message_id,
                             attachments: &draft.attachments,
+                            mentions: &MessageMentions::empty(),
                             client_timestamp_unix_ms: draft.created_at_unix_ms,
                         },
                         &bootstraps,
@@ -3596,6 +3732,7 @@ impl MobileMessagingEngine {
                             reply_to_message_id: &draft.reply_to_message_id,
                             thread_root_message_id: &draft.thread_root_message_id,
                             attachments: &draft.attachments,
+                            mentions: &MessageMentions::empty(),
                             client_timestamp_unix_ms: draft.created_at_unix_ms,
                         },
                     )?,
@@ -4020,13 +4157,27 @@ fn cleanup_incomplete_attachment_stages(
             continue;
         }
         let source_ref = path.to_string_lossy();
-        if !store.owns_attachment_source(&source_ref)? {
+        if !store.owns_attachment_source(&source_ref)?
+            && !store.owns_attachment_stage_source(&source_ref)? {
             std::fs::remove_file(&path).map_err(|error| {
                 format!("remove incomplete mobile messaging attachment stage: {error}")
             })?;
         }
     }
     Ok(())
+}
+
+fn completed_stage_projection(record: &AttachmentSourceStageRecord) -> MessagingAttachmentStage {
+    MessagingAttachmentStage {
+        stage_id: record.stage_id.clone(),
+        filename: record.filename.clone(),
+        mime_type: record.mime_type.clone(),
+        plaintext_size: record.plaintext_size,
+        content_kind: record.content_kind,
+        duration_ms: record.duration_ms,
+        voice_note: record.voice_note.clone(),
+        completed: true,
+    }
 }
 
 fn validate_opaque_file_id(label: &str, value: &str) -> Result<(), String> {
@@ -4904,9 +5055,12 @@ mod tests {
             Ulid::new()
         ));
         std::fs::create_dir_all(&root).unwrap();
-        let database_path = root.join("profile.sqlite3");
-        let engine = MobileMessagingEngine::open(
-            &database_path,
+        (reopen_test_engine(&root), root)
+    }
+
+    fn reopen_test_engine(root: &Path) -> MobileMessagingEngine {
+        MobileMessagingEngine::open(
+            &root.join("profile.sqlite3"),
             "profile-1".to_string(),
             "station-1".to_string(),
             "https://station.example".to_string(),
@@ -4919,8 +5073,7 @@ mod tests {
             &NoopSeedBackup,
             noop_prekey_backup(),
         )
-        .unwrap();
-        (engine, root)
+        .unwrap()
     }
 
     #[test]
@@ -5421,6 +5574,7 @@ mod tests {
         let (engine, root) = test_engine("attachment-stage");
         let stage = engine
             .begin_attachment_stage(
+                "conversation-1",
                 "sample.txt",
                 "text/plain",
                 6,
@@ -5446,6 +5600,118 @@ mod tests {
             .attachment_stage_path(&stage.stage_id)
             .unwrap()
             .exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn composer_preview_reads_verified_source_only_in_its_native_scope() {
+        let (engine, root) = test_engine("composer-preview-scope");
+        let stage = engine.begin_attachment_stage(
+            "conversation-a", "note.txt", "text/plain", 6,
+            AttachmentContentKind::File as i32, 0, None,
+        ).unwrap();
+        engine.write_attachment_stage(&stage.stage_id, 0, b"abcdef").unwrap();
+        engine.complete_attachment_stage(&stage.stage_id).unwrap();
+        let (_, url, handle) = engine.restore_attachment_stage(&stage.stage_id, "main:1").unwrap();
+        assert_eq!(url, attachment_asset_url(&handle));
+        engine.validate_attachment_asset_handle("main:1", &handle).unwrap();
+        let asset = engine.attachment_file_access.read_asset(
+            "main:1", &handle, Some("bytes=1-3"), false,
+        ).unwrap();
+        assert_eq!(asset.bytes, b"bcd");
+        assert_eq!(asset.total, 6);
+        assert!(asset.partial);
+        for owner in ["main:2", "other:1", "composer:conversation-a:1"] {
+            assert!(engine.validate_attachment_asset_handle(owner, &handle).is_err());
+            assert!(engine.attachment_file_access.read_asset(owner, &handle, None, false).is_err());
+            engine.release_attachment_stage_preview(owner, &handle);
+        }
+        engine.validate_attachment_asset_handle("main:1", &handle).unwrap();
+        assert_eq!(
+            engine.validate_attachment_handle("main:1", &handle, &stage.stage_id).unwrap_err(),
+            "FILE_ACCESS_STALE",
+        );
+        engine.discard_attachment_stage(&stage.stage_id).unwrap();
+        assert_eq!(
+            engine.validate_attachment_asset_handle("main:1", &handle).unwrap_err(),
+            "FILE_ACCESS_STALE",
+        );
+        engine.release_attachment_stage_preview("main:1", &handle);
+        assert!(engine.attachment_file_access.read_asset("main:1", &handle, None, false).is_err());
+        drop(engine);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn composer_preview_suspension_fences_old_grants_and_late_release() {
+        let (engine, root) = test_engine("composer-preview-suspension");
+        let stage = engine.begin_attachment_stage(
+            "conversation-a", "note.txt", "text/plain", 6,
+            AttachmentContentKind::File as i32, 0, None,
+        ).unwrap();
+        engine.write_attachment_stage(&stage.stage_id, 0, b"abcdef").unwrap();
+        engine.complete_attachment_stage(&stage.stage_id).unwrap();
+        let epoch = engine.attachment_file_access.epoch();
+        let (_, _, old) = engine.restore_attachment_stage(&stage.stage_id, "main:1").unwrap();
+        engine.attachment_file_access.revoke_all();
+        assert!(!engine.attachment_file_access.epoch_is_current(epoch));
+        assert!(engine.restore_attachment_stage(&stage.stage_id, "main:1").is_err());
+        engine.attachment_file_access.resume();
+        assert!(!engine.attachment_file_access.epoch_is_current(epoch));
+        assert!(engine.validate_attachment_asset_handle("main:1", &old).is_err());
+        let (_, _, current) = engine.restore_attachment_stage(&stage.stage_id, "main:2").unwrap();
+        assert_ne!(old, current);
+        engine.release_attachment_stage_preview("main:1", &old);
+        engine.validate_attachment_asset_handle("main:2", &current).unwrap();
+        assert_eq!(
+            engine.attachment_file_access.read_asset("main:2", &current, None, false).unwrap().bytes,
+            b"abcdef",
+        );
+        engine.release_attachment_stage_preview("main:2", &current);
+        assert!(engine.validate_attachment_asset_handle("main:2", &current).is_err());
+        engine.discard_attachment_stage(&stage.stage_id).unwrap();
+        drop(engine);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn composer_sources_reopen_without_envelope_and_validate_integrity_and_conversation() {
+        let (engine, root) = test_engine("composer-source-reopen");
+        let ready = engine.begin_attachment_stage(
+            "conversation-a", "note.txt", "text/plain", 6,
+            AttachmentContentKind::File as i32, 0, None,
+        ).unwrap();
+        engine.write_attachment_stage(&ready.stage_id, 0, b"abcdef").unwrap();
+        engine.complete_attachment_stage(&ready.stage_id).unwrap();
+        let incomplete = engine.begin_attachment_stage(
+            "conversation-a", "partial.txt", "text/plain", 6,
+            AttachmentContentKind::File as i32, 0, None,
+        ).unwrap();
+        let ready_path = engine.attachment_stage_path(&ready.stage_id).unwrap();
+        let incomplete_path = engine.attachment_stage_path(&incomplete.stage_id).unwrap();
+        drop(engine);
+        let engine = reopen_test_engine(&root);
+        assert!(ready_path.exists());
+        assert!(!incomplete_path.exists());
+        assert!(engine.attachment_stages.lock().unwrap().is_empty());
+        let (sources, adopted) = engine.recover_attachment_composer("conversation-a", &[]).unwrap();
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0].stage_id, ready.stage_id);
+        assert!(adopted.is_none());
+        assert!(engine.recover_attachment_composer("conversation-b", &[]).unwrap().0.is_empty());
+        assert!(engine.completed_attachment_stage("conversation-b", &ready.stage_id).is_err());
+        let (_, url, handle) = engine.restore_attachment_stage(&ready.stage_id, "composer-a").unwrap();
+        assert!(!url.contains(ready_path.to_str().unwrap()));
+        engine.release_attachment_stage_preview("composer-a", &handle);
+        std::fs::write(&ready_path, b"badbad").unwrap();
+        assert!(engine.completed_attachment_stage("conversation-a", &ready.stage_id).is_err());
+        assert!(engine.restore_attachment_stage(&ready.stage_id, "composer-a").is_err());
+        engine.discard_attachment_stage(&ready.stage_id).unwrap();
+        assert!(!ready_path.exists());
+        drop(engine);
+        let engine = reopen_test_engine(&root);
+        assert!(engine.recover_attachment_composer("conversation-a", &[]).unwrap().0.is_empty());
+        drop(engine);
         std::fs::remove_dir_all(root).unwrap();
     }
 

@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, Runtime, State};
+use std::sync::Arc;
+use tauri::{AppHandle, Manager, Runtime, State, Webview};
 
 use messaging_core::contracts::ConversationMessageProjection;
 use messaging_core::mls::membership_transition::MembershipTransitionIntentInput;
@@ -156,6 +157,7 @@ pub struct MessagingSendMessageInput {
 pub struct MessagingAttachmentStageBeginInput {
     station_peer_id: String,
     actor_ptid: String,
+    conversation_id: String,
     filename: String,
     mime_type: String,
     plaintext_size: u64,
@@ -616,6 +618,48 @@ pub struct MessagingAttachmentStageProjection {
     max_chunk_bytes: usize,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessagingAttachmentStagePreviewReleaseInput {
+    station_peer_id: String,
+    actor_ptid: String,
+    handle: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessagingAttachmentStageAccessProjection {
+    stage: MessagingAttachmentStageProjection,
+    asset_url: String,
+    access_handle: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessagingAttachmentComposerRecoveryInput {
+    station_peer_id: String,
+    actor_ptid: String,
+    conversation_id: String,
+    stage_ids: Vec<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessagingAttachmentComposerRecoveryProjection {
+    stages: Vec<MessagingAttachmentStageProjection>,
+    adopted_message: Option<MessagingAdoptedComposerProjection>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessagingAdoptedComposerProjection {
+    message_id: String,
+    plaintext: String,
+    reply_to_message_id: String,
+    thread_root_message_id: String,
+    attachment_ids: Vec<String>,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessagingSubmissionResult {
@@ -764,6 +808,40 @@ pub fn messaging_activate<R: Runtime>(
         actor_profile_revision,
         session.access_token().to_string(),
     )
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessagingRecoveryPreflightResult {
+    /// False when the Station holds no recovery revision for the actor:
+    /// prompting for a phrase would lead nowhere.
+    recovery_available: bool,
+}
+
+#[tauri::command]
+pub fn messaging_recovery_preflight(
+    storage: State<'_, SecureStorage>,
+    input: MessagingIdentityRecoveryInput,
+) -> MobileResult<MessagingRecoveryPreflightResult> {
+    let session = authenticated_native_session(
+        &storage,
+        &input.station_peer_id,
+        &input.actor_ptid,
+        &input.session_id,
+    )?;
+    // Blocking HTTP stays on the mobile IPC worker queue, never on the UI
+    // thread. This command must stay synchronous: on iOS a reply from an async
+    // command is evaluated in WKWebView from a detached worker thread, and on a
+    // static screen WebKit may not service that evaluation for minutes.
+    let available = crate::messaging::recovery::fetch_latest_revision(
+        session.station_origin(),
+        session.access_token(),
+    )
+    .map_err(MobileError::messaging)?
+    .is_some();
+    Ok(MessagingRecoveryPreflightResult {
+        recovery_available: available,
+    })
 }
 
 #[tauri::command]
@@ -2221,6 +2299,7 @@ pub async fn messaging_attachment_stage_begin(
     tauri::async_runtime::spawn_blocking(move || {
         engine
             .begin_attachment_stage(
+                &input.conversation_id,
                 &input.filename,
                 &input.mime_type,
                 input.plaintext_size,
@@ -2269,6 +2348,78 @@ pub async fn messaging_attachment_stage_complete(
     .await
     .map_err(|error| MobileError::messaging(format!("join attachment completion task: {error}")))?
     .map_err(MobileError::messaging)
+}
+
+#[tauri::command]
+pub async fn messaging_attachment_composer_recover(
+    runtime: State<'_, MobileMessagingRuntime>,
+    input: MessagingAttachmentComposerRecoveryInput,
+) -> MobileResult<MessagingAttachmentComposerRecoveryProjection> {
+    let engine = runtime.active_engine(&input.station_peer_id, &input.actor_ptid)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let (stages, message) = engine.recover_attachment_composer(
+            &input.conversation_id, &input.stage_ids,
+        )?;
+        Ok::<_, String>(MessagingAttachmentComposerRecoveryProjection {
+            stages: stages.into_iter().map(attachment_stage_projection).collect(),
+            adopted_message: message.map(|message| MessagingAdoptedComposerProjection {
+                message_id: message.message_id, plaintext: message.plaintext,
+                reply_to_message_id: message.reply_to_message_id,
+                thread_root_message_id: message.thread_root_message_id,
+                attachment_ids: message.attachment_ids,
+            }),
+        })
+    }).await
+        .map_err(|error| MobileError::messaging(format!("join composer recovery task: {error}")))?
+        .map_err(MobileError::messaging)
+}
+
+#[tauri::command]
+pub async fn messaging_attachment_stage_restore<R: Runtime>(
+    runtime: State<'_, MobileMessagingRuntime>,
+    webview: Webview<R>,
+    input: MessagingAttachmentStageInput,
+) -> MobileResult<MessagingAttachmentStageAccessProjection> {
+    let engine = runtime.active_engine(&input.station_peer_id, &input.actor_ptid)?;
+    let (current, owner) = runtime.file_access_scope(webview.label())?;
+    if !Arc::ptr_eq(&engine, &current) {
+        return Err(MobileError::messaging("FILE_ACCESS_STALE"));
+    }
+    let expected_engine = engine.clone();
+    let expected_owner = owner.clone();
+    let epoch = engine.attachment_file_access.epoch();
+    let projection = tauri::async_runtime::spawn_blocking(move || {
+        engine.restore_attachment_stage(&input.stage_id, &owner)
+            .map(|(stage, asset_url, access_handle)| MessagingAttachmentStageAccessProjection {
+                stage: attachment_stage_projection(stage), asset_url, access_handle,
+            })
+    }).await
+        .map_err(|error| MobileError::messaging(format!("join attachment restore task: {error}")))?
+        .map_err(MobileError::messaging)?;
+    if !expected_engine.attachment_file_access.epoch_is_current(epoch)
+        || !runtime.file_access_scope(webview.label()).is_ok_and(|(current, owner)| {
+            Arc::ptr_eq(&expected_engine, &current) && owner == expected_owner
+        })
+    {
+        expected_engine.release_attachment_stage_preview(&expected_owner, &projection.access_handle);
+        return Err(MobileError::messaging("FILE_ACCESS_STALE"));
+    }
+    Ok(projection)
+}
+
+#[tauri::command]
+pub async fn messaging_attachment_stage_preview_release<R: Runtime>(
+    runtime: State<'_, MobileMessagingRuntime>,
+    webview: Webview<R>,
+    input: MessagingAttachmentStagePreviewReleaseInput,
+) -> MobileResult<()> {
+    let engine = runtime.active_engine(&input.station_peer_id, &input.actor_ptid)?;
+    let (current, owner) = runtime.file_release_scope(webview.label())?;
+    if !Arc::ptr_eq(&engine, &current) {
+        return Err(MobileError::messaging("FILE_ACCESS_STALE"));
+    }
+    engine.release_attachment_stage_preview(&owner, &input.handle);
+    Ok(())
 }
 
 #[tauri::command]
@@ -2684,6 +2835,7 @@ mod tests {
                 last_error_code: None,
                 required_device_count: 0,
                 delivered_device_count: 0,
+                mentions_json: String::new(),
             },
             |_| Ok(None),
         )

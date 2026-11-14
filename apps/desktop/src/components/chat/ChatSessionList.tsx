@@ -525,6 +525,8 @@ export function ChatSessionList({
             <>
               <span className="sc-rail-search">
                 <TextField
+                  appearance="search"
+                  reveal
                   className="sc-rail-search-field"
                   data-chat-session-search
                   data-rail-search-value={searchText}
@@ -723,6 +725,7 @@ export function ChatSessionList({
                       {c.kind === 'group' ? (
                         <span className="sc-session-avatar sc-session-avatar--group">
                           <GroupSquareAvatar
+                            conversationId={c.id}
                             remoteUrl={c.avatar || undefined}
                             members={projectGroupAvatarSlots(
                               groupMembers[c.id] || [],

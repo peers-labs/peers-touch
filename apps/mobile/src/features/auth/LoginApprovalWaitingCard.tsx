@@ -1,13 +1,10 @@
 import { useState } from 'react';
-import { Button, Card, Typography } from 'antd';
-import { LoaderCircle, ShieldCheck } from 'lucide-react';
+import { Button, Icon, Spin, Text } from '@peers-touch/ui';
 
 import {
   LoginApprovalState,
   type LoginApprovalProjection,
 } from '../../services/loginApproval';
-
-const { Text, Title } = Typography;
 
 type Translate = (key: string, params?: Record<string, string | number>) => string;
 
@@ -58,21 +55,22 @@ export function LoginApprovalWaitingCard({
       data-product-surface="entry.login-approval-waiting"
       data-pt-approval-state={projection.state}
     >
-      <Card className="auth-gate-card" variant="borderless">
+      <div className="auth-gate-card">
+        <div className="auth-gate-card-body">
         <section className="auth-gate-brand">
-          <ShieldCheck size={32} aria-hidden="true" />
+          <Icon iconId="shield-check" size={32} />
           <div className="auth-gate-brand-copy">
-            <Title level={1} className="auth-gate-title">
+            <h1 className="auth-gate-title">
               {t('mobile.loginApproval.waiting.title')}
-            </Title>
-            <Text type="secondary">{t('mobile.loginApproval.waiting.subtitle')}</Text>
+            </h1>
+            <Text tone="secondary">{t('mobile.loginApproval.waiting.subtitle')}</Text>
           </div>
         </section>
 
-        {waiting ? <LoaderCircle size={20} aria-hidden="true" className="mobile-login-approval-spinner" /> : null}
+        {waiting ? <Spin active size="small" /> : null}
 
         <section className="mobile-login-approval-code-block">
-          <Text type="secondary">{t('mobile.loginApproval.comparison')}</Text>
+          <Text tone="secondary">{t('mobile.loginApproval.comparison')}</Text>
           <output
             className="mobile-login-approval-code"
             data-pt-approval-code={projection.comparisonCode}
@@ -83,34 +81,37 @@ export function LoginApprovalWaitingCard({
         </section>
 
         {reason ? (
-          <Text type="warning" role="status">
+          <Text tone="warning" role="status">
             {t(reason)}
           </Text>
         ) : null}
         {errorKey ? (
-          <Text type="danger" role="alert">
+          <Text tone="danger" role="alert">
             {t(errorKey)}
           </Text>
         ) : null}
 
         <div className="auth-actions">
-          <Button disabled={busy || !waiting} loading={busy} onClick={onCancel}>
+          <Button actionId="login-approval-cancel"
+            availability={busy || !waiting ? { kind: 'disabled', reason: t(reason ?? 'mobile.loginApproval.waiting.title') } : undefined}
+            execution={busy ? 'pending' : 'idle'} onActivate={onCancel}>
             {t('mobile.loginApproval.cancel')}
           </Button>
         </div>
 
-        <button
-          type="button"
-          className="mobile-login-approval-fallback-toggle"
+        <Button
+          actionId="login-approval-fallback"
+          emphasis="quiet"
           aria-expanded={showFallback}
-          onClick={() => setShowFallback((value) => !value)}
+          onActivate={() => setShowFallback((value) => !value)}
         >
           {t('mobile.loginApproval.fallback')}
-        </button>
+        </Button>
         {showFallback ? (
           <div className="mobile-login-approval-fallback">{fallback}</div>
         ) : null}
-      </Card>
+        </div>
+      </div>
     </main>
   );
 }

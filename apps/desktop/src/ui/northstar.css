@@ -605,6 +605,17 @@
   margin-bottom: 8px;
 }
 
+/* Inset raised card for a self-contained block inside a section card. */
+.sc-settings-item-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--pt-text) 6%, transparent);
+  background: var(--pt-subtle);
+}
+
 /* Row: label block left, intrinsic control right, one hairline between. */
 .sc-settings-row {
   display: flex;

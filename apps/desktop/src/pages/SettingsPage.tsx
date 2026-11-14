@@ -1,21 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Alert,
-  Button,
-  DataTable,
-  Dialog,
-  Empty,
-  Flex,
-  Select,
-  Segmented,
-  Spin,
-  Tag,
-  Text,
-  TextField,
-  type TableColumn,
-  type Tone,
-} from '@peers-touch/ui';
+import { Flexbox } from 'react-layout-kit';
+import { Alert, Tag, Table, Input, Typography, Collapse, Spin, message, theme, Modal, Select } from 'antd';
+import type { InputRef } from 'antd';
+import { Button } from '@lobehub/ui';
 import {
   Settings, Bot, Wrench, HelpCircle,
   MessageSquare, Puzzle, Sparkles,
@@ -25,21 +13,20 @@ import {
   Code, PenTool, Clock, Shield, ShieldCheck, File,
   Edit, Package, Plus, Send, RefreshCw,
   GitBranch, HardDrive, Image, Trash2, Server, AlertTriangle, RotateCcw,
-  Network, ChevronDown, ChevronRight, Info,
+  Database,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { getVersion } from '@tauri-apps/api/app';
 import { useProviderStore } from '../store/provider';
-import { api, type Agent, type AppletInfo, type HelpCategoryGroup, type StatisticsData, type ToolInfo } from '../services/desktop_api';
+import { api, type Agent, type AppletInfo, type HelpCategoryGroup, type StatisticsData } from '../services/desktop_api';
 import { useSessionStore } from '../store/session';
 import { SEARCH_FUNCTIONS } from '../components/search/functions';
 import { hasSettingsPanel, getAppletFrontend } from '../applets/registry';
 import { getModulesWithSettings } from '../modules/registry';
+import { PageHeader } from '../components/PageHeader';
 import { LanguageSwitcher } from '../components/common/LanguageSwitcher';
 import { log } from '../utils/logger';
-import { SettingsContainer, SettingsSection, SettingsRow } from '../components/settings/SettingsLayout';
+import { SettingsContainer, SettingsSection, SettingsItemCard, SettingsRow } from '../components/settings/SettingsLayout';
 import { ChatStorageSettings } from '../components/settings/ChatStorageSettings';
-import { FederationTab } from '../components/settings/FederationTab';
 import { RecoverySettings } from '../components/settings/RecoverySettings';
 import { usePrefetch } from '../kernel/usePrefetch';
 import {
@@ -56,7 +43,8 @@ import {
   formatChatScreenshotShortcut,
 } from '../utils/chatScreenshotShortcut';
 import { useActiveSettingsSlice } from './useActiveSettingsStore';
-import { confirmRequest, notifyError, notifySuccess } from '../ui/feedback';
+
+const { Text } = Typography;
 
 interface SettingsPageProps {
   activeTab?: string;
@@ -95,10 +83,7 @@ interface SectionDef {
 
 interface TabGroupDef {
   key: string;
-  /** Resolved display label (filled from labelKey inside useTabGroups). */
-  label?: string;
-  /** i18n key for the static five-group catalog. */
-  labelKey?: string;
+  label: string;
   icon: LucideIcon;
   sectionKeys: string[];
 }
@@ -126,16 +111,6 @@ function useSettingsSections(): SectionDef[] {
         icon: ShieldCheck,
         order: 15,
         render: () => <RecoverySettings />,
-      },
-      {
-        key: 'federation',
-        label: t('settings.tab.federation', { defaultValue: 'Federation' }),
-        icon: Network,
-        // Slot between built-in `account` (registry order, 5–10) and
-        // `general` so the user sees their identity → federation
-        // → general flow naturally.
-        order: 20,
-        render: () => <FederationTab />,
       },
       {
         key: 'storage',
@@ -181,58 +156,61 @@ function useSettingsSections(): SectionDef[] {
   }, [t]);
 }
 
-// North-star settings IA: five groups absorb every reachable desktop section.
-// The old 8-tab surface (federation/tools/applets/data/help as separate tabs)
-// folds into network / ai / channels / advanced to match the confirmed
-// prototype SettingsFeature anatomy.
-const SETTINGS_GROUP_ORDER: TabGroupDef[] = [
-  {
-    key: 'general',
-    labelKey: 'settings.group.general',
-    icon: Settings,
-    sectionKeys: ['account', 'security', 'general'],
-  },
-  {
-    key: 'network',
-    labelKey: 'settings.group.network',
-    icon: Globe,
-    sectionKeys: ['federation'],
-  },
-  {
-    key: 'ai',
-    labelKey: 'settings.group.ai',
-    icon: Sparkles,
-    sectionKeys: ['providers', 'models', 'discover', 'memory', 'skills', 'mcp', 'voice', 'cron'],
-  },
-  {
-    key: 'channels',
-    labelKey: 'settings.group.channels',
-    icon: Send,
-    sectionKeys: ['channels', 'connections', 'bots'],
-  },
-  {
-    key: 'advanced',
-    labelKey: 'settings.group.advanced',
-    icon: Wrench,
-    sectionKeys: ['storage', 'oss', 'logs', 'tools', 'command-menu', 'applets', 'help'],
-  },
-];
-
 function useTabGroups(): TabGroupDef[] {
   const { t } = useTranslation('settings');
 
   return useMemo(() => {
     const allSections = getModulesWithSettings().map((m) => m.id);
 
+    const groups: TabGroupDef[] = [
+      {
+        key: 'general',
+        label: t('settings.group.general'),
+        icon: Settings,
+        sectionKeys: ['account', 'security', 'general'],
+      },
+      {
+        key: 'ai',
+        label: t('settings.group.ai'),
+        icon: Sparkles,
+        sectionKeys: ['models', 'discover', 'memory', 'skills', 'mcp', 'voice'],
+      },
+      {
+        key: 'tools',
+        label: t('settings.group.tools'),
+        icon: Wrench,
+        sectionKeys: ['cron', 'command-menu', 'tools'],
+      },
+      {
+        key: 'channels',
+        label: t('settings.group.channels'),
+        icon: Send,
+        sectionKeys: ['channels', 'connections', 'bots'],
+      },
+      {
+        key: 'applets',
+        label: t('settings.group.applets'),
+        icon: Puzzle,
+        sectionKeys: ['applets'],
+      },
+      {
+        key: 'data',
+        label: t('settings.group.data'),
+        icon: Database,
+        sectionKeys: ['storage', 'oss', 'logs'],
+      },
+      {
+        key: 'help',
+        label: t('settings.group.help'),
+        icon: HelpCircle,
+        sectionKeys: ['help'],
+      },
+    ];
+
     // Only keep section keys that actually exist in the registry or local definitions
-    const knownKeys = new Set([
-      ...allSections,
-      'security', 'federation', 'storage', 'applets', 'general', 'tools', 'help',
-    ]);
-    return SETTINGS_GROUP_ORDER.map((g) => ({
-      key: g.key,
-      label: t(g.labelKey ?? g.key),
-      icon: g.icon,
+    const knownKeys = new Set([...allSections, 'security', 'storage', 'applets', 'general', 'tools', 'help']);
+    return groups.map((g) => ({
+      ...g,
       sectionKeys: g.sectionKeys.filter((k) => knownKeys.has(k)),
     })).filter((g) => g.sectionKeys.length > 0);
   }, [t]);
@@ -243,6 +221,7 @@ function findGroupForSection(groups: TabGroupDef[], sectionKey: string): string 
 }
 
 export function SettingsPage({ activeTab, highlightId, onNavConsumed }: SettingsPageProps) {
+  const { token } = theme.useToken();
   const { t } = useTranslation('settings');
   const sections = useSettingsSections();
   const groups = useTabGroups();
@@ -258,6 +237,7 @@ export function SettingsPage({ activeTab, highlightId, onNavConsumed }: Settings
       .filter((s): s is SectionDef => !!s);
   }, [activeGroup, groups, sections]);
 
+  const showSidebar = groupSections.length > 1;
   const activeSectionVisible = groupSections.some((section) => section.key === activeSection);
   const sectionDescriptors = useMemo<SectionDescriptor[]>(
     () => sections.map((section) => ({
@@ -326,62 +306,110 @@ export function SettingsPage({ activeTab, highlightId, onNavConsumed }: Settings
   }, [activeSection]);
 
   return (
-    <div className="sc-settings">
-      {/* L1 group switcher: one compact peers-ui Segmented island, the same
-          grammar as chat 消息/联系人 and moments 动态/圈友 (prototype
-          sk-settings-groups parity). Carries both the north-star
-          data-settings-group hooks and the legacy anchor inventory attrs. */}
-      <div className="sc-settings__subbar">
-        <Segmented<string>
-          className="sc-settings__groups"
-          density="compact"
-          aria-label={t('settings.groupsAria')}
-          value={activeGroup}
-          onValueChange={(value) => handleGroupChange(value ?? 'general')}
-          options={groups.map((group) => {
-            const GroupIcon = group.icon;
-            return {
-              value: group.key,
-              label: group.label ?? group.key,
-              leading: <GroupIcon size={13} />,
-              attributes: {
-                'data-settings-group': group.key,
-                'data-group-key': group.key,
-                'data-pt-secondary-tab': group.key,
-                'data-pt-secondary-tab-id': group.key,
-              } as Record<string, string>,
-            };
-          })}
-        />
-      </div>
+    <Flexbox style={{ height: '100%', overflow: 'hidden' }}>
+      <PageHeader
+        title={t('settings.title')}
+        icon={<Settings size={20} style={{ color: token.colorPrimary }} />}
+      />
 
-      {/* L2 section sidebar + content. The sidebar stays mounted for every
-          group so section anchors remain stable for external navigation. */}
-      <div className="sc-settings__body">
-        <nav className="sc-settings__sidebar" aria-label={t('settings.sectionsAria')}>
-          {groupSections.map((section) => {
-            const SectionIcon = section.icon;
-            const isActive = activeSection === section.key;
-            return (
-              <Button
-                key={section.key}
-                actionId={`settings.section.${section.key}`}
-                className={isActive ? 'sc-settings__side is-active' : 'sc-settings__side'}
-                emphasis="quiet"
-                density="compact"
-                fullWidth
-                aria-current={isActive ? 'page' : undefined}
-                leading={<SectionIcon size={15} />}
-                label={section.label}
-                data-settings-section={section.key}
-                data-section-key={section.key}
-                data-pt-section-item={section.key}
-                data-pt-section-item-id={section.key}
-                onActivate={() => handleSectionChange(section.key)}
-              />
-            );
-          })}
-        </nav>
+      {/* Horizontal tab group bar */}
+      <Flexbox
+        horizontal
+        align="center"
+        gap={2}
+        style={{
+          padding: '6px 24px 0',
+          borderBottom: `1px solid ${token.colorBorderSecondary}`,
+          flexShrink: 0,
+        }}
+      >
+        {groups.map((group) => {
+          const Icon = group.icon;
+          const isActive = activeGroup === group.key;
+          return (
+            <Flexbox
+              key={group.key}
+              horizontal
+              align="center"
+              gap={6}
+              role="tab"
+              tabIndex={0}
+              aria-selected={isActive}
+              data-group-key={group.key}
+              data-pt-secondary-tab={group.key}
+              data-pt-secondary-tab-id={group.key}
+              onClick={() => handleGroupChange(group.key)}
+              style={{
+                padding: '8px 16px',
+                cursor: 'pointer',
+                fontSize: 13,
+                fontWeight: isActive ? 600 : 400,
+                color: isActive ? token.colorPrimary : token.colorTextSecondary,
+                borderBottom: isActive ? `2px solid ${token.colorPrimary}` : '2px solid transparent',
+                marginBottom: -1,
+                transition: 'all 0.2s',
+                userSelect: 'none',
+              }}
+            >
+              <Icon size={15} />
+              <span>{group.label}</span>
+            </Flexbox>
+          );
+        })}
+      </Flexbox>
+
+      {/* Content area: optional left sidebar + right content */}
+      <Flexbox horizontal style={{ flex: 1, overflow: 'hidden' }}>
+        {showSidebar && (
+          <Flexbox
+            style={{
+              width: 180,
+              flexShrink: 0,
+              borderRight: `1px solid ${token.colorBorderSecondary}`,
+              padding: '12px 0',
+              overflowY: 'auto',
+            }}
+          >
+            {groupSections.map((section) => {
+              const Icon = section.icon;
+              const isActive = activeSection === section.key;
+              return (
+                <Flexbox
+                  key={section.key}
+                  horizontal
+                  align="center"
+                  gap={8}
+                  role="button"
+                  tabIndex={0}
+                  data-section-key={section.key}
+                  data-pt-section-item={section.key}
+                  data-pt-section-item-id={section.key}
+                  onClick={() => handleSectionChange(section.key)}
+                  style={{
+                    padding: '8px 14px',
+                    margin: '1px 8px',
+                    borderRadius: 8,
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    fontWeight: isActive ? 600 : 400,
+                    color: isActive ? token.colorPrimary : token.colorTextSecondary,
+                    background: isActive ? token.colorPrimaryBg : 'transparent',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  <Icon size={14} />
+                  <span style={{
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {section.label}
+                  </span>
+                </Flexbox>
+              );
+            })}
+          </Flexbox>
+        )}
 
         {/* SectionHost owns Settings section mount/cache policy. */}
         <div
@@ -396,20 +424,15 @@ export function SettingsPage({ activeTab, highlightId, onNavConsumed }: Settings
             surfacePrefix="settings:section-host"
           />
         </div>
-      </div>
-    </div>
+      </Flexbox>
+    </Flexbox>
   );
-}
-
-function appletStatusTone(status: string): Tone {
-  if (status === 'active') return 'success';
-  if (status === 'error') return 'danger';
-  return 'neutral';
 }
 
 function AppletsSettingsTab() {
   const [applets, setApplets] = useState<AppletInfo[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
+  const { token } = theme.useToken();
   const { t } = useTranslation('settings');
 
   useEffect(() => {
@@ -420,93 +443,123 @@ function AppletsSettingsTab() {
 
   if (SettingsPanel) {
     return (
-      <Flex className="sc-applets-detail" style={{ overflow: 'hidden', padding: '0 24px' }}>
-        <Flex
-          direction="row"
+      <Flexbox style={{ overflow: 'hidden', padding: '0 24px' }}>
+        <Flexbox
+          horizontal
           align="center"
           gap={8}
-          className="sc-applets-detail__bar"
+          style={{
+            padding: '12px 0',
+            borderBottom: `1px solid ${token.colorBorderSecondary}`,
+            flexShrink: 0,
+          }}
         >
-          <Button
-            actionId="applets-back"
-            emphasis="quiet"
-            density="compact"
-            label={t('settings.applets.backToApplets')}
-            onActivate={() => setSelected(null)}
-          />
-        </Flex>
+          <div
+            onClick={() => setSelected(null)}
+            style={{
+              cursor: 'pointer',
+              padding: '4px 8px',
+              borderRadius: 6,
+              fontSize: 13,
+              color: token.colorPrimary,
+              transition: 'background 0.2s',
+            }}
+            onMouseEnter={(e) => { (e.currentTarget).style.background = token.colorPrimaryBg; }}
+            onMouseLeave={(e) => { (e.currentTarget).style.background = 'transparent'; }}
+          >
+            {t('settings.applets.backToApplets')}
+          </div>
+        </Flexbox>
         <div style={{ flex: 1, overflow: 'auto' }}>
           <SettingsPanel />
         </div>
-      </Flex>
+      </Flexbox>
     );
   }
 
   return (
     <SettingsContainer>
-      <Text tone="secondary" style={{ fontSize: 13 }}>
+      <Text type="secondary" style={{ fontSize: 13 }}>
         {t('settings.applets.description')}
       </Text>
 
-      <Flex gap={10}>
+      <Flexbox gap={10}>
         {applets.map((applet) => {
           const hasSettings = hasSettingsPanel(applet.manifest.id);
           const IconComp = ICON_MAP[applet.manifest.icon];
-          const cardContent = (
-            <>
-              <div className="sc-applet-card__icon">
-                {IconComp ? <IconComp size={20} /> : <Puzzle size={20} />}
-              </div>
-              <Flex gap={2} flex={1}>
-                <Flex direction="row" align="center" gap={8}>
-                  <Text strong style={{ fontSize: 14 }}>{applet.manifest.name}</Text>
-                  <Tag tone={appletStatusTone(applet.status)} className="sc-applet-card__tag">
-                    {t(`settings.applets.status.${applet.status}`, { defaultValue: applet.status })}
-                  </Tag>
-                  <Tag className="sc-applet-card__tag">v{applet.manifest.version}</Tag>
-                </Flex>
-                <Text tone="secondary" style={{ fontSize: 12 }}>
-                  {applet.manifest.description}
-                </Text>
-              </Flex>
-              {hasSettings ? (
-                <ChevronRight size={16} className="sc-applet-card__chevron" />
-              ) : (
-                <Text tone="secondary" style={{ fontSize: 11, flexShrink: 0 }}>{t('settings.applets.noSettings')}</Text>
-              )}
-            </>
-          );
-          return hasSettings ? (
-            <Button
+          return (
+            <Flexbox
               key={applet.manifest.id}
-              actionId={`applets-open-${applet.manifest.id}`}
-              emphasis="quiet"
-              fullWidth
-              className="sc-applet-card"
-              data-has-settings="true"
-              onActivate={() => setSelected(applet.manifest.id)}
-            >
-              {cardContent}
-            </Button>
-          ) : (
-            <Flex
-              key={applet.manifest.id}
-              direction="row"
+              horizontal
               align="center"
               gap={14}
-              className="sc-applet-card"
+              onClick={hasSettings ? () => setSelected(applet.manifest.id) : undefined}
+              style={{
+                padding: '16px 20px',
+                borderRadius: 12,
+                background: token.colorBgContainer,
+                border: `1px solid ${token.colorBorderSecondary}`,
+                cursor: hasSettings ? 'pointer' : 'default',
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={(e) => {
+                if (hasSettings) {
+                  (e.currentTarget).style.borderColor = token.colorPrimary;
+                  (e.currentTarget).style.boxShadow = `0 2px 8px ${token.colorPrimaryBg}`;
+                }
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget).style.borderColor = token.colorBorderSecondary;
+                (e.currentTarget).style.boxShadow = 'none';
+              }}
             >
-              {cardContent}
-            </Flex>
+              <div
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 10,
+                  background: `linear-gradient(135deg, ${token.colorPrimaryBg}, ${token.colorPrimary}20)`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                {IconComp ? <IconComp size={20} style={{ color: token.colorPrimary }} /> : <Puzzle size={20} style={{ color: token.colorPrimary }} />}
+              </div>
+              <Flexbox flex={1} gap={2}>
+                <Flexbox horizontal align="center" gap={8}>
+                  <Text strong style={{ fontSize: 14 }}>{applet.manifest.name}</Text>
+                  <Tag
+                    color={applet.status === 'active' ? 'success' : applet.status === 'error' ? 'error' : 'default'}
+                    style={{ fontSize: 10, lineHeight: '16px', padding: '0 5px' }}
+                  >
+                    {t(`settings.applets.status.${applet.status}`, { defaultValue: applet.status })}
+                  </Tag>
+                  <Tag style={{ fontSize: 10, lineHeight: '16px', padding: '0 5px' }}>
+                    v{applet.manifest.version}
+                  </Tag>
+                </Flexbox>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {applet.manifest.description}
+                </Text>
+              </Flexbox>
+              {hasSettings && (
+                <Text type="secondary" style={{ fontSize: 18, flexShrink: 0 }}>›</Text>
+              )}
+              {!hasSettings && (
+                <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>{t('settings.applets.noSettings')}</Text>
+              )}
+            </Flexbox>
           );
         })}
-      </Flex>
+      </Flexbox>
 
       {applets.length === 0 && (
-        <Empty
-          icon={<Puzzle size={32} />}
-          description={t('settings.applets.noApplets')}
-        />
+        <Flexbox align="center" justify="center" gap={8} style={{ padding: 40 }}>
+          <Puzzle size={32} style={{ color: token.colorTextQuaternary }} />
+          <Text type="secondary">{t('settings.applets.noApplets')}</Text>
+        </Flexbox>
       )}
     </SettingsContainer>
   );
@@ -515,6 +568,7 @@ function AppletsSettingsTab() {
 /* ─── Activity Heatmap ───────────────────────────────────────────────── */
 
 function ActivityHeatmap({ activity }: { activity: { date: string; count: number }[] }) {
+  const { token } = theme.useToken();
   const { t } = useTranslation('settings');
 
   const today = new Date();
@@ -533,13 +587,12 @@ function ActivityHeatmap({ activity }: { activity: { date: string; count: number
   const maxCount = Math.max(1, ...activity.map((a) => a.count));
 
   function getColor(count: number): string {
-    // North-star heatmap grammar (.sk-heatmap): pine primary washes instead
-    // of the off-palette GitHub-green ramp.
-    if (count === 0) return 'var(--pt-subtle)';
+    if (count === 0) return token.colorFillQuaternary;
     const ratio = count / maxCount;
-    if (ratio <= 1 / 3) return 'color-mix(in srgb, var(--pt-primary) 25%, transparent)';
-    if (ratio <= 2 / 3) return 'color-mix(in srgb, var(--pt-primary) 55%, transparent)';
-    return 'var(--pt-primary)';
+    if (ratio <= 0.25) return '#9be9a8';
+    if (ratio <= 0.5) return '#40c463';
+    if (ratio <= 0.75) return '#30a14e';
+    return '#216e39';
   }
 
   const months: { label: string; col: number }[] = [];
@@ -574,7 +627,7 @@ function ActivityHeatmap({ activity }: { activity: { date: string; count: number
             gridRow: day + 1,
             width: 11,
             height: 11,
-            borderRadius: 4,
+            borderRadius: 2,
             background: getColor(count),
             cursor: 'default',
           }}
@@ -586,7 +639,7 @@ function ActivityHeatmap({ activity }: { activity: { date: string; count: number
   const totalMessages = activity.reduce((s, a) => s + a.count, 0);
 
   return (
-    <Flex gap={8}>
+    <Flexbox gap={8}>
       <div style={{ position: 'relative', paddingTop: 16 }}>
         <div style={{ display: 'flex', gap: 0, marginBottom: 4, paddingLeft: 0, position: 'relative', height: 14 }}>
           {months.map((m) => (
@@ -594,9 +647,9 @@ function ActivityHeatmap({ activity }: { activity: { date: string; count: number
               key={m.label + m.col}
               style={{
                 position: 'absolute',
-                left: m.col * 15,
+                left: m.col * 14,
                 fontSize: 10,
-                color: 'var(--pt-muted)',
+                color: token.colorTextTertiary,
               }}
             >
               {m.label}
@@ -608,33 +661,33 @@ function ActivityHeatmap({ activity }: { activity: { date: string; count: number
             display: 'grid',
             gridTemplateColumns: `repeat(${weeks}, 11px)`,
             gridTemplateRows: 'repeat(7, 11px)',
-            gap: 4,
+            gap: 3,
           }}
         >
           {cells}
         </div>
       </div>
-      <Flex direction="row" justify="space-between" align="center">
-        <Text tone="secondary" style={{ fontSize: 12 }}>
+      <Flexbox horizontal justify="space-between" align="center">
+        <Text type="secondary" style={{ fontSize: 12 }}>
           {t('settings.statistics.heatmapTotal', { count: totalMessages })}
         </Text>
-        <Flex direction="row" align="center" gap={4}>
-          <Text tone="secondary" style={{ fontSize: 10 }}>{t('settings.statistics.heatmapInactive')}</Text>
+        <Flexbox horizontal align="center" gap={4}>
+          <Text type="secondary" style={{ fontSize: 10 }}>{t('settings.statistics.heatmapInactive')}</Text>
           {[0, 0.25, 0.5, 0.75, 1].map((r, i) => (
             <div
               key={i}
               style={{
                 width: 10,
                 height: 10,
-                borderRadius: 4,
+                borderRadius: 2,
                 background: getColor(r * maxCount),
               }}
             />
           ))}
-          <Text tone="secondary" style={{ fontSize: 10 }}>{t('settings.statistics.heatmapActive')}</Text>
-        </Flex>
-      </Flex>
-    </Flex>
+          <Text type="secondary" style={{ fontSize: 10 }}>{t('settings.statistics.heatmapActive')}</Text>
+        </Flexbox>
+      </Flexbox>
+    </Flexbox>
   );
 }
 
@@ -653,62 +706,98 @@ function RankList({
   labelHeader: string;
   valueHeader: string;
 }) {
+  const { token } = theme.useToken();
   const { t } = useTranslation('settings');
 
   if (!items || items.length === 0) {
     return (
-      <div className="sc-rank-card">
-        <strong className="sc-rank-card__title">
-          <span className="sc-rank-card__title-icon">{icon}</span>
-          {title}
-        </strong>
-        <div className="sc-rank-card__empty">
-          <Layers size={32} className="sc-rank-card__empty-icon" />
-          <span>{t('settings.statistics.rankNoData')}</span>
-          <span className="sc-rank-card__empty-hint">{t('settings.statistics.rankNoDataHint')}</span>
-        </div>
-      </div>
+      <Flexbox
+        gap={8}
+        style={{
+          background: token.colorBgContainer,
+          borderRadius: 12,
+          padding: 20,
+          border: `1px solid ${token.colorBorderSecondary}`,
+          flex: 1,
+          minWidth: 200,
+        }}
+      >
+        <Flexbox horizontal align="center" gap={6}>
+          {icon}
+          <Text strong style={{ fontSize: 14 }}>{title}</Text>
+        </Flexbox>
+        <Flexbox align="center" justify="center" gap={8} style={{ padding: '24px 0' }}>
+          <Layers size={32} style={{ color: token.colorTextQuaternary }} />
+          <Text type="secondary" style={{ fontSize: 12 }}>{t('settings.statistics.rankNoData')}</Text>
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            {t('settings.statistics.rankNoDataHint')}
+          </Text>
+        </Flexbox>
+      </Flexbox>
     );
   }
 
   const maxVal = Math.max(1, ...items.map((i) => i.count));
 
   return (
-    <div className="sc-rank-card">
-      <strong className="sc-rank-card__title">
-        <span className="sc-rank-card__title-icon">{icon}</span>
-        {title}
-      </strong>
-      <div className="sc-rank-card__head">
-        <span>{labelHeader}</span>
-        <span>{valueHeader}</span>
-      </div>
-      <div className="sc-rank-card__rows">
-        {items.map((item, idx) => (
-          <div key={item.name} className="sc-rank-card__row">
-            <div className="sc-rank-card__row-line">
-              <span className="sc-rank-card__name">
-                <span className="sc-rank-card__index">{idx + 1}</span>
-                {item.name}
-              </span>
-              <span className="sc-rank-card__count">{item.count}</span>
-            </div>
-            <div className="sc-rank-card__track">
-              <div
-                className="sc-rank-card__bar"
-                style={{ width: `${(item.count / maxVal) * 100}%` }}
-              />
-            </div>
+    <Flexbox
+      gap={8}
+      style={{
+        background: token.colorBgContainer,
+        borderRadius: 12,
+        padding: 20,
+        border: `1px solid ${token.colorBorderSecondary}`,
+        flex: 1,
+        minWidth: 200,
+      }}
+    >
+      <Flexbox horizontal align="center" gap={6}>
+        {icon}
+        <Text strong style={{ fontSize: 14 }}>{title}</Text>
+      </Flexbox>
+      <Flexbox horizontal justify="space-between" style={{ padding: '0 4px' }}>
+        <Text type="secondary" style={{ fontSize: 11 }}>{labelHeader}</Text>
+        <Text type="secondary" style={{ fontSize: 11 }}>{valueHeader}</Text>
+      </Flexbox>
+      {items.map((item, idx) => (
+        <Flexbox key={item.name} gap={4}>
+          <Flexbox horizontal justify="space-between" align="center" style={{ padding: '0 4px' }}>
+            <Flexbox horizontal gap={6} align="center">
+              <Text style={{ fontSize: 12, color: token.colorTextTertiary, width: 16, textAlign: 'right' }}>
+                {idx + 1}
+              </Text>
+              <Text style={{ fontSize: 13 }}>{item.name}</Text>
+            </Flexbox>
+            <Text style={{ fontSize: 13, fontWeight: 500 }}>{item.count}</Text>
+          </Flexbox>
+          <div
+            style={{
+              height: 4,
+              borderRadius: 2,
+              background: token.colorFillSecondary,
+              marginLeft: 24,
+            }}
+          >
+            <div
+              style={{
+                height: '100%',
+                borderRadius: 2,
+                width: `${(item.count / maxVal) * 100}%`,
+                background: 'linear-gradient(90deg, #667eea, #764ba2)',
+                transition: 'width 0.6s ease',
+              }}
+            />
           </div>
-        ))}
-      </div>
-    </div>
+        </Flexbox>
+      ))}
+    </Flexbox>
   );
 }
 
 /* ─── Statistics Tab ─────────────────────────────────────────────────── */
 
 export function StatisticsTab() {
+  const { token } = theme.useToken();
   const { t } = useTranslation('settings');
   // Statistics is per-page heavy data: prefetched onto the idle window
   // by `kernel/usePrefetch` so the first click on the Statistics
@@ -724,9 +813,9 @@ export function StatisticsTab() {
 
   if (!data) {
     return (
-      <Flex align="center" justify="center" style={{ padding: 80 }}>
-        <Spin active />
-      </Flex>
+      <Flexbox align="center" justify="center" style={{ padding: 80 }}>
+        <Text type="secondary">{t('settings.statistics.loading')}</Text>
+      </Flexbox>
     );
   }
 
@@ -739,55 +828,66 @@ export function StatisticsTab() {
     first_date: '',
   };
 
-  const summaryCards: { label: string; value: string | number; icon: React.ReactNode }[] = [
+  const summaryCards: { label: string; value: string | number; sub?: string; icon: React.ReactNode }[] = [
     {
       label: t('settings.statistics.sessions'),
       value: summary.sessions,
-      icon: <MessageSquare size={20} />,
+      icon: <MessageSquare size={20} style={{ color: token.colorPrimary }} />,
     },
     {
       label: t('settings.statistics.messages'),
       value: summary.messages,
-      icon: <Hash size={20} />,
+      icon: <Hash size={20} style={{ color: '#52c41a' }} />,
     },
     {
       label: t('settings.statistics.totalWords'),
       value: summary.total_words >= 1000 ? `${(summary.total_words / 1000).toFixed(1)}K` : summary.total_words,
-      icon: <Type size={20} />,
+      icon: <Type size={20} style={{ color: '#fa8c16' }} />,
     },
     {
       label: t('settings.statistics.agents'),
       value: summary.agents,
-      icon: <Bot size={20} />,
+      icon: <Bot size={20} style={{ color: '#722ed1' }} />,
     },
   ];
 
   return (
     <SettingsContainer tier="standard">
-      <Flex gap={4}>
-        <Flex direction="row" align="center" gap={8}>
+      <Flexbox gap={4}>
+        <Flexbox horizontal align="center" gap={8}>
           <span style={{ fontSize: 16, fontWeight: 600 }}
             dangerouslySetInnerHTML={{
               __html: t('settings.statistics.daysWithUs', { days: summary.days_with_us })
-                .replace('<highlight>', '<span style="color: var(--pt-primary); font-weight: 700; font-size: 20px">')
+                .replace('<highlight>', `<span style="color: ${token.colorPrimary}; font-weight: 700; font-size: 20px">`)
                 .replace('</highlight>', '</span>'),
             }}
           />
-        </Flex>
-        <Text tone="secondary" style={{ fontSize: 12 }}>
+        </Flexbox>
+        <Text type="secondary" style={{ fontSize: 12 }}>
           {t('settings.statistics.firstActive', {
             date: summary.first_date ? new Date(summary.first_date).toLocaleDateString() : t('settings.statistics.firstActiveNA'),
           })}
         </Text>
-      </Flex>
+      </Flexbox>
 
-      <div className="sc-stat-grid" data-columns="4">
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
         {summaryCards.map((card) => (
-          <div key={card.label} className="sc-stat-card">
-            <span className="sc-stat-card__icon">{card.icon}</span>
-            <strong className="sc-stat-card__value">{card.value}</strong>
-            <span className="sc-stat-card__label">{card.label}</span>
-          </div>
+          <Flexbox
+            key={card.label}
+            gap={8}
+            style={{
+              background: token.colorBgContainer,
+              borderRadius: 12,
+              padding: 20,
+              border: `1px solid ${token.colorBorderSecondary}`,
+            }}
+          >
+            <Flexbox horizontal align="center" gap={8}>
+              {card.icon}
+              <Text type="secondary" style={{ fontSize: 13 }}>{card.label}</Text>
+            </Flexbox>
+            <Text style={{ fontSize: 28, fontWeight: 700, lineHeight: 1 }}>{card.value}</Text>
+          </Flexbox>
         ))}
       </div>
 
@@ -801,24 +901,24 @@ export function StatisticsTab() {
         </div>
       </SettingsSection>
 
-      <div className="sc-stat-grid" data-columns="3">
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
         <RankList
           title={t('settings.statistics.modelRank')}
-          icon={<Cpu size={16} />}
+          icon={<Cpu size={16} style={{ color: '#1890ff' }} />}
           items={data.model_rank}
           labelHeader={t('settings.statistics.rankLabelModel')}
           valueHeader={t('settings.statistics.rankLabelMessages')}
         />
         <RankList
           title={t('settings.statistics.agentRank')}
-          icon={<Bot size={16} />}
+          icon={<Bot size={16} style={{ color: '#722ed1' }} />}
           items={data.agent_rank}
           labelHeader={t('settings.statistics.rankLabelAgent')}
           valueHeader={t('settings.statistics.rankLabelMessages')}
         />
         <RankList
           title={t('settings.statistics.topicRank')}
-          icon={<Trophy size={16} />}
+          icon={<Trophy size={16} style={{ color: '#fa8c16' }} />}
           items={data.topic_rank}
           labelHeader={t('settings.statistics.rankLabelTopic')}
           valueHeader={t('settings.statistics.rankLabelMessages')}
@@ -833,6 +933,7 @@ export function StatisticsTab() {
 const PIN_LENGTH = 6;
 
 function SecuritySection() {
+  const { token } = theme.useToken();
   const { t } = useTranslation('settings');
   // Active account snapshot is owned by `runtimes/settingsRuntime.ts`;
   // reading from the store keeps this section synchronous and lets the
@@ -924,7 +1025,7 @@ function SecuritySection() {
           }
           await api.accountSetPin(accountId, verifiedPin);
           await refreshActiveAccount();
-          notifySuccess(t('settings.security.pinSetSuccess', { defaultValue: 'PIN has been set successfully.' }));
+          message.success(t('settings.security.pinSetSuccess', { defaultValue: 'PIN has been set successfully.' }));
           resetModal();
           return;
         }
@@ -961,7 +1062,7 @@ function SecuritySection() {
             return;
           }
           await api.accountSetPin(accountId, verifiedPin);
-          notifySuccess(t('settings.security.pinChangedSuccess', { defaultValue: 'PIN has been changed successfully.' }));
+          message.success(t('settings.security.pinChangedSuccess', { defaultValue: 'PIN has been changed successfully.' }));
           resetModal();
           return;
         }
@@ -972,7 +1073,7 @@ function SecuritySection() {
         const pin = digits.join('');
         await api.accountRemovePin(accountId, pin);
         await refreshActiveAccount();
-        notifySuccess(t('settings.security.pinRemovedSuccess', { defaultValue: 'PIN has been removed.' }));
+        message.success(t('settings.security.pinRemovedSuccess', { defaultValue: 'PIN has been removed.' }));
         resetModal();
         return;
       }
@@ -1034,6 +1135,20 @@ function SecuritySection() {
     return '';
   }, [modalMode, step, t]);
 
+  const pinInputStyle: React.CSSProperties = {
+    width: 44,
+    height: 48,
+    textAlign: 'center',
+    fontSize: 20,
+    fontWeight: 600,
+    borderRadius: 10,
+    border: `1.5px solid ${token.colorBorder}`,
+    background: token.colorBgContainer,
+    outline: 'none',
+    caretColor: token.colorPrimary,
+    transition: 'border-color 0.2s',
+  };
+
   if (loading) {
     return (
       <SettingsSection
@@ -1041,7 +1156,7 @@ function SecuritySection() {
         title={t('settings.security.title', { defaultValue: 'Security' })}
         subtitle={t('settings.security.subtitle', { defaultValue: 'Manage your account security settings.' })}
       >
-        <Spin active size="small" />
+        <Spin size="small" />
       </SettingsSection>
     );
   }
@@ -1053,58 +1168,84 @@ function SecuritySection() {
         title={t('settings.security.title', { defaultValue: 'Security' })}
         subtitle={t('settings.security.subtitle', { defaultValue: 'Manage your account security settings.' })}
       >
-        <SettingsRow
-          label={t('settings.security.pinLabel', { defaultValue: 'PIN Lock' })}
-          description={hasPin
-            ? t('settings.security.pinActive', { defaultValue: 'PIN is active. Your session is encrypted at rest.' })
-            : t('settings.security.pinInactive', { defaultValue: 'No PIN configured. Set a PIN to protect your session.' })}
-        >
-          {hasPin ? (
-            <Flex direction="row" gap={8}>
-              <Button
-                actionId="security-change-pin"
-                density="compact"
-                emphasis="quiet"
-                label={t('settings.security.changePin', { defaultValue: 'Change' })}
-                onActivate={openChangePin}
-              />
-              <Button
-                actionId="security-remove-pin"
-                density="compact"
-                tone="danger"
-                label={t('settings.security.removePin', { defaultValue: 'Remove' })}
-                onActivate={openRemovePin}
-              />
-            </Flex>
-          ) : (
-            <Button
-              actionId="security-set-pin"
-              density="compact"
-              emphasis="secondary"
-              label={t('settings.security.setPin', { defaultValue: 'Set PIN' })}
-              onActivate={openSetPin}
-            />
-          )}
-        </SettingsRow>
+        <SettingsItemCard>
+          <Flexbox horizontal align="center" justify="space-between">
+            <Flexbox horizontal align="center" gap={12}>
+              <Flexbox
+                align="center"
+                justify="center"
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 8,
+                  background: hasPin ? token.colorSuccessBg : token.colorFillSecondary,
+                }}
+              >
+                {hasPin ? (
+                  <ShieldCheck size={18} style={{ color: token.colorSuccess }} />
+                ) : (
+                  <Shield size={18} style={{ color: token.colorTextTertiary }} />
+                )}
+              </Flexbox>
+              <Flexbox gap={2}>
+                <Text strong style={{ fontSize: 14 }}>
+                  {t('settings.security.pinLabel', { defaultValue: 'PIN Lock' })}
+                </Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {hasPin
+                    ? t('settings.security.pinActive', { defaultValue: 'PIN is active. Your session is encrypted at rest.' })
+                    : t('settings.security.pinInactive', { defaultValue: 'No PIN configured. Set a PIN to protect your session.' })
+                  }
+                </Text>
+              </Flexbox>
+            </Flexbox>
+            <Flexbox horizontal gap={8}>
+              {hasPin ? (
+                <>
+                  <Button size="small" onClick={openChangePin}>
+                    {t('settings.security.changePin', { defaultValue: 'Change' })}
+                  </Button>
+                  <Button size="small" danger onClick={openRemovePin}>
+                    {t('settings.security.removePin', { defaultValue: 'Remove' })}
+                  </Button>
+                </>
+              ) : (
+                <Button type="primary" size="small" onClick={openSetPin}>
+                  {t('settings.security.setPin', { defaultValue: 'Set PIN' })}
+                </Button>
+              )}
+            </Flexbox>
+          </Flexbox>
+        </SettingsItemCard>
       </SettingsSection>
 
-      {/* PIN entry dialog — shared by set / change / remove flows */}
-      <Dialog
+      {/* PIN entry modal — shared by set / change / remove flows */}
+      <Modal
         open={!!modalMode}
-        onDismiss={resetModal}
-        title={modalTitle}
+        onCancel={resetModal}
+        footer={null}
+        centered
         width={360}
-        closeLabel={t('settings.danger.confirmCancel')}
-        contentStyle={{ padding: '32px 24px 24px' }}
+        destroyOnHidden
+        styles={{ body: { padding: '32px 24px 24px' } }}
       >
-        <Flex align="center" gap={20}>
-          <span className="sc-pin-dialog__icon">
-            <ShieldCheck size={24} />
-          </span>
+        <Flexbox align="center" gap={20}>
+          <Flexbox
+            align="center"
+            justify="center"
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: 12,
+              background: token.colorFillSecondary,
+            }}
+          >
+            <ShieldCheck size={24} style={{ color: token.colorPrimary }} />
+          </Flexbox>
 
-          <Flex align="center" gap={4}>
+          <Flexbox align="center" gap={4}>
             <Text strong style={{ fontSize: 18 }}>{modalTitle}</Text>
-            <Text tone="secondary" style={{ fontSize: 13, textAlign: 'center' }}>
+            <Text type="secondary" style={{ fontSize: 13, textAlign: 'center' }}>
               {step === 'confirm'
                 ? t('settings.security.confirmHint', { defaultValue: 'Enter the same PIN again to confirm.' })
                 : step === 'verify'
@@ -1112,9 +1253,9 @@ function SecuritySection() {
                   : t('settings.security.createHint', { defaultValue: 'Choose a 6-digit PIN.' })
               }
             </Text>
-          </Flex>
+          </Flexbox>
 
-          <Flex direction="row" gap={8} justify="center" style={{ margin: '8px 0' }}>
+          <Flexbox horizontal gap={8} justify="center" style={{ margin: '8px 0' }}>
             {Array.from({ length: PIN_LENGTH }).map((_, i) => (
               <input
                 key={i}
@@ -1126,19 +1267,21 @@ function SecuritySection() {
                 onChange={(e) => handleDigitChange(i, e.target.value)}
                 onKeyDown={(e) => handleKeyDown(i, e)}
                 onFocus={(e) => e.target.select()}
-                className="sc-pin-input"
-                data-filled={digits[i] ? true : undefined}
+                style={{
+                  ...pinInputStyle,
+                  borderColor: digits[i] ? token.colorPrimary : token.colorBorder,
+                }}
               />
             ))}
-          </Flex>
+          </Flexbox>
 
           {error && (
-            <Text tone="danger" style={{ fontSize: 13 }}>{error}</Text>
+            <Text type="danger" style={{ fontSize: 13 }}>{error}</Text>
           )}
 
-          {saving && <Spin active size="small" />}
-        </Flex>
-      </Dialog>
+          {saving && <Spin size="small" />}
+        </Flexbox>
+      </Modal>
     </>
   );
 }
@@ -1151,7 +1294,7 @@ function ChatShortcutSettingsSection() {
     shortcut: s.chatScreenshotShortcut,
     setShortcut: s.setChatScreenshotShortcut,
   }));
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<InputRef>(null);
   const [recording, setRecording] = useState(false);
 
   const handleShortcutKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
@@ -1166,7 +1309,7 @@ function ChatShortcutSettingsSection() {
     if (!nextShortcut) return;
     setShortcut(nextShortcut);
     setRecording(false);
-    notifySuccess(t('settings.general.chatShortcutSaved'));
+    message.success(t('settings.general.chatShortcutSaved'));
   };
 
   useEffect(() => {
@@ -1183,8 +1326,8 @@ function ChatShortcutSettingsSection() {
         label={t('settings.general.screenshotShortcutLabel')}
         description={t('settings.general.screenshotShortcutDescription')}
       >
-        <Flex direction="row" align="center" gap={8}>
-          <TextField
+        <Flexbox horizontal align="center" gap={8}>
+          <Input
             ref={inputRef}
             readOnly
             value={recording
@@ -1193,22 +1336,19 @@ function ChatShortcutSettingsSection() {
             onKeyDown={handleShortcutKeyDown}
             style={{ width: 190 }}
           />
+          <Button size="small" onClick={() => setRecording(true)}>
+            {recording ? t('settings.general.screenshotShortcutListening') : t('settings.general.screenshotShortcutRecord')}
+          </Button>
           <Button
-            actionId="shortcut-record"
-            density="compact"
-            label={recording ? t('settings.general.screenshotShortcutListening') : t('settings.general.screenshotShortcutRecord')}
-            onActivate={() => setRecording(true)}
-          />
-          <Button
-            actionId="shortcut-reset"
-            density="compact"
-            label={t('settings.general.screenshotShortcutReset')}
-            onActivate={() => {
+            size="small"
+            onClick={() => {
               setShortcut(DEFAULT_CHAT_SCREENSHOT_SHORTCUT);
-              notifySuccess(t('settings.general.chatShortcutSaved'));
+              message.success(t('settings.general.chatShortcutSaved'));
             }}
-          />
-        </Flex>
+          >
+            {t('settings.general.screenshotShortcutReset')}
+          </Button>
+        </Flexbox>
       </SettingsRow>
     </SettingsSection>
   );
@@ -1231,10 +1371,10 @@ function GeneralTab() {
         icon={<Globe size={18} />}
         title={t('settings.general.languageTitle')}
         subtitle={t('settings.general.languageDescription')}
+        extra={<LanguageSwitcher />}
       >
-        <SettingsRow label={t('settings.general.languageField')}>
-          <LanguageSwitcher variant="ghostSelect" label={t('settings.general.languageField')} />
-        </SettingsRow>
+        {/* Language section content managed by LanguageSwitcher in extra slot */}
+        <></>
       </SettingsSection>
 
       <SecuritySection />
@@ -1245,23 +1385,22 @@ function GeneralTab() {
         icon={<Bot size={18} />}
         title={t('settings.general.agentsTitle')}
         extra={
-          <Segmented<string>
-            density="compact"
-            aria-label={t('settings.agent.visibility.filter')}
-            data-agent-visibility-filter
+          <Select
+            size="small"
+            value={agentVisibilityFilter}
+            style={{ minWidth: 140 }}
             options={[
               { label: t('settings.agent.visibility.all'), value: 'all' },
               { label: t('settings.agent.visibility.private'), value: 'private' },
               { label: t('settings.agent.visibility.workspace'), value: 'workspace' },
               { label: t('settings.agent.visibility.public'), value: 'public' },
             ]}
-            value={agentVisibilityFilter}
-            onValueChange={(value) => setAgentVisibilityFilter(value ?? 'all')}
+            onChange={setAgentVisibilityFilter}
           />
         }
       >
         {visibleAgents.length === 0 ? (
-          <Text tone="secondary">{t('settings.general.noAgents')}</Text>
+          <Text type="secondary">{t('settings.general.noAgents')}</Text>
         ) : (
           visibleAgents.map((agent) => <AgentCard key={agent.name} agent={agent} />)
         )}
@@ -1269,15 +1408,6 @@ function GeneralTab() {
     </SettingsContainer>
   );
 }
-
-const TOOL_CATEGORY_TONES: Record<string, Tone> = {
-  filesystem: 'info',
-  shell: 'warning',
-  web: 'success',
-  memory: 'neutral',
-  mcp: 'info',
-  agent: 'info',
-};
 
 function ToolsTab() {
   const { tools, error, loadTools } = useActiveSettingsSlice((s) => ({
@@ -1293,26 +1423,35 @@ function ToolsTab() {
   // intentionally consume the entry.
   void toolsCache;
 
-  const toolColumns: Array<TableColumn<ToolInfo>> = [
+  const toolColumns = [
     {
-      id: 'name',
-      label: t('settings.tools.columnName'),
-      renderCell: (tool) => <Text strong>{tool.name}</Text>,
+      title: t('settings.tools.columnName'),
+      dataIndex: 'name',
+      key: 'name',
+      render: (name: string) => <Text strong>{name}</Text>,
     },
     {
-      id: 'category',
-      label: t('settings.tools.columnCategory'),
-      renderCell: (tool) => (
-        <Tag tone={TOOL_CATEGORY_TONES[tool.category] ?? 'neutral'}>{tool.category}</Tag>
-      ),
+      title: t('settings.tools.columnCategory'),
+      dataIndex: 'category',
+      key: 'category',
+      render: (cat: string) => {
+        const colorMap: Record<string, string> = {
+          filesystem: 'blue',
+          shell: 'orange',
+          web: 'green',
+          memory: 'purple',
+          mcp: 'cyan',
+          agent: 'geekblue',
+        };
+        return <Tag color={colorMap[cat] || 'default'}>{cat}</Tag>;
+      },
     },
     {
-      id: 'needs_approval',
-      label: t('settings.tools.columnApproval'),
-      renderCell: (tool) =>
-        tool.needs_approval
-          ? <Tag tone="warning">{t('settings.tools.approvalRequired')}</Tag>
-          : <Tag tone="success">{t('settings.tools.approvalAuto')}</Tag>,
+      title: t('settings.tools.columnApproval'),
+      dataIndex: 'needs_approval',
+      key: 'needs_approval',
+      render: (v: boolean) =>
+        v ? <Tag color="warning">{t('settings.tools.approvalRequired')}</Tag> : <Tag color="success">{t('settings.tools.approvalAuto')}</Tag>,
     },
   ];
 
@@ -1324,17 +1463,21 @@ function ToolsTab() {
       >
         {error && (
           <Alert
-            tone="danger"
-            title={t('settings.tools.operationFailed')}
+            type="error"
+            showIcon
+            message={t('settings.tools.operationFailed')}
             description={error}
-            className="sc-tools-alert"
+            style={{ marginBottom: 12 }}
           />
         )}
-        <DataTable<ToolInfo>
-          rows={tools}
+        <Table
+          dataSource={tools}
           columns={toolColumns}
           rowKey="name"
-          rowAttributes={(tool) => ({ 'data-item-id': tool.name } as React.HTMLAttributes<HTMLTableRowElement>)}
+          size="small"
+          pagination={false}
+          style={{ borderRadius: 8, overflow: 'hidden' }}
+          onRow={(record) => ({ 'data-item-id': record.name } as React.HTMLAttributes<HTMLElement>)}
         />
       </SettingsSection>
     </SettingsContainer>
@@ -1356,63 +1499,9 @@ function getIcon(name?: string, size = 16) {
   return Icon ? <Icon size={size} /> : null;
 }
 
-// Prototype AboutSection meta grid, fed by real host facts (no fabricated
-// build numbers): version comes from the Tauri app package, platform and
-// rendering engine from the user agent, runtime is the shipped stack.
-function detectHostPlatform(): string {
-  const ua = navigator.userAgent;
-  if (/Macintosh|Mac OS X/i.test(ua)) return 'macOS';
-  if (/Windows/i.test(ua)) return 'Windows';
-  if (/Linux|X11/i.test(ua)) return 'Linux';
-  return navigator.platform || '';
-}
-
-function detectRenderEngine(): string {
-  const ua = navigator.userAgent;
-  if (/AppleWebKit/i.test(ua)) return 'WebKit';
-  if (/Gecko\/\d/i.test(ua)) return 'Gecko';
-  return '';
-}
-
-function AboutMetaSection() {
-  const { t } = useTranslation('settings');
-  const unknown = t('settings.help.aboutUnknown');
-  const [version, setVersion] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    getVersion()
-      .then((value) => {
-        if (!cancelled) setVersion(value);
-      })
-      .catch(() => {
-        if (!cancelled) setVersion('');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const rows: ReadonlyArray<readonly [string, string]> = [
-    [t('settings.help.aboutVersion'), version ? version : unknown],
-    [t('settings.help.aboutPlatform'), detectHostPlatform() || unknown],
-    [t('settings.help.aboutEngine'), detectRenderEngine() || unknown],
-    [t('settings.help.aboutRuntime'), t('settings.help.aboutRuntimeValue')],
-  ];
-
-  return (
-    <div className="sc-about-grid" data-about-meta>
-      {rows.map(([label, value]) => (
-        <SettingsRow key={label} label={label} description={<code className="sc-about-grid__value">{value}</code>}>
-          <></>
-        </SettingsRow>
-      ))}
-    </div>
-  );
-}
-
 function HelpTab({ highlightId }: { highlightId?: string }) {
   const [activeKeys, setActiveKeys] = useState<string[]>(['search']);
+  const { token } = theme.useToken();
   const { t } = useTranslation('settings');
   const groups: HelpCategoryGroup[] = useMemo(() => [{
     category: { id: 'search', title: t('search.label', { ns: 'search' }), icon: 'Search' },
@@ -1439,94 +1528,109 @@ function HelpTab({ highlightId }: { highlightId?: string }) {
     }
   }, [highlightId, groups]);
 
-  const toggleKey = (key: string) => {
-    setActiveKeys((prev) =>
-      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
-    );
-  };
-
   return (
     <SettingsContainer>
       <SettingsSection
-        icon={<Info size={18} />}
+        icon={<Sparkles size={18} />}
         title={t('settings.help.aboutTitle')}
         subtitle={t('settings.help.aboutDescription')}
+        extra={<Tag style={{ fontSize: 11 }}>{t('settings.help.aboutTag')}</Tag>}
+        style={{ background: 'linear-gradient(135deg, #667eea15, #764ba215)' }}
       >
-        <AboutMetaSection />
+        {/* About section — content is in subtitle */}
+        <></>
       </SettingsSection>
 
-      <div className="sc-help-accordion">
-        {groups.map((group) => {
-          const open = activeKeys.includes(group.category.id);
-          return (
-            <div key={group.category.id} className="sc-help-accordion__block">
-              <Button
-                actionId={`help-accordion-${group.category.id}`}
-                className="sc-help-accordion__header"
-                emphasis="quiet"
-                aria-expanded={open}
-                onActivate={() => toggleKey(group.category.id)}
-                leading={open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-              >
-                <span className="sc-help-accordion__title">
-                  {getIcon(group.category.icon, 16)}
-                  <strong>{group.category.title}</strong>
-                  <Tag className="sc-help-accordion__count">{group.items.length}</Tag>
-                </span>
-              </Button>
-              {open && (
-                <Flex gap={8} className="sc-help-accordion__body">
-                  {group.category.description && (
-                    <Text tone="secondary" className="sc-help-accordion__desc">
-                      {group.category.description}
-                    </Text>
-                  )}
-                  {group.items.map((item) => (
-                    <Flex
-                      key={item.id}
-                      data-item-id={item.id}
-                      gap={12}
-                      className={item.source === 'applet' ? 'sc-help-item sc-help-item--applet' : 'sc-help-item'}
-                    >
-                      <div className="sc-help-item__icon">
-                        {getIcon(item.icon, 16) || <HelpCircle size={16} />}
-                      </div>
-                      <Flex gap={4} flex={1}>
-                        <Flex direction="row" align="center" gap={6}>
-                          <strong className="sc-help-item__title">{item.title}</strong>
-                          {item.source === 'applet' && (
-                            <Tag tone="warning" className="sc-help-item__applet-tag">{t('settings.help.appletTag')}</Tag>
-                          )}
-                        </Flex>
-                        <Text tone="secondary" className="sc-help-item__desc">
-                          {item.description}
-                        </Text>
-                        {item.usage && (
-                          <code className="sc-help-item__usage">
-                            {item.usage}
-                          </code>
-                        )}
-                      </Flex>
-                    </Flex>
-                  ))}
-                </Flex>
+      <Collapse
+        activeKey={activeKeys}
+        onChange={(keys) => setActiveKeys(keys as string[])}
+        ghost
+        items={groups.map((group) => ({
+          key: group.category.id,
+          label: (
+            <Flexbox horizontal align="center" gap={8}>
+              {getIcon(group.category.icon, 16)}
+              <Text strong style={{ fontSize: 15 }}>{group.category.title}</Text>
+              <Tag style={{ fontSize: 11 }}>{group.items.length}</Tag>
+            </Flexbox>
+          ),
+          children: (
+            <Flexbox gap={8}>
+              {group.category.description && (
+                <Text type="secondary" style={{ fontSize: 13, marginBottom: 4 }}>
+                  {group.category.description}
+                </Text>
               )}
-            </div>
-          );
-        })}
-      </div>
+              {group.items.map((item) => (
+                <Flexbox
+                  key={item.id}
+                  data-item-id={item.id}
+                  horizontal
+                  gap={12}
+                  style={{
+                    padding: '12px 16px',
+                    borderRadius: 8,
+                    background: item.source === 'applet' ? token.colorWarningBg : token.colorFillQuaternary,
+                    border: `1px solid ${token.colorBorderSecondary}`,
+                    transition: 'box-shadow 0.3s, border-color 0.3s',
+                  }}
+                >
+                  <div style={{ color: token.colorPrimary, paddingTop: 2, flexShrink: 0 }}>
+                    {getIcon(item.icon, 16) || <HelpCircle size={16} />}
+                  </div>
+                  <Flexbox gap={4} flex={1}>
+                    <Flexbox horizontal align="center" gap={6}>
+                      <Text strong style={{ fontSize: 14 }}>{item.title}</Text>
+                      {item.source === 'applet' && (
+                        <Tag color="orange" style={{ fontSize: 10 }}>{t('settings.help.appletTag')}</Tag>
+                      )}
+                    </Flexbox>
+                    <Text type="secondary" style={{ fontSize: 13, lineHeight: '1.5' }}>
+                      {item.description}
+                    </Text>
+                    {item.usage && (
+                      <code
+                        style={{
+                          fontSize: 12,
+                          background: token.colorFillSecondary,
+                          padding: '4px 8px',
+                          borderRadius: 4,
+                          color: token.colorTextSecondary,
+                          whiteSpace: 'pre-wrap',
+                          display: 'block',
+                          marginTop: 4,
+                        }}
+                      >
+                        {item.usage}
+                      </code>
+                    )}
+                  </Flexbox>
+                </Flexbox>
+              ))}
+            </Flexbox>
+          ),
+        }))}
+      />
 
-      <Flex gap={8} className="sc-help-extension">
-        <Flex direction="row" align="center" gap={6}>
-          <Puzzle size={14} />
-          <Text tone="secondary" style={{ fontSize: 12, fontWeight: 600 }}>
+      <Flexbox
+        gap={8}
+        style={{
+          background: token.colorFillQuaternary,
+          borderRadius: 12,
+          padding: 16,
+          border: `1px dashed ${token.colorBorderSecondary}`,
+        }}
+      >
+        <Flexbox horizontal align="center" gap={6}>
+          <Puzzle size={14} style={{ color: token.colorTextSecondary }} />
+          <Text type="secondary" style={{ fontSize: 12, fontWeight: 600 }}>
             {t('settings.help.extensionPointTitle')}
           </Text>
-        </Flex>
-        <Text tone="secondary" style={{ fontSize: 12 }}>
+        </Flexbox>
+        <Text type="secondary" style={{ fontSize: 12 }}>
           {t('settings.help.extensionPointDescription')}
         </Text>
-      </Flex>
+      </Flexbox>
 
       <DangerZoneResetOnboarding />
     </SettingsContainer>
@@ -1534,28 +1638,30 @@ function HelpTab({ highlightId }: { highlightId?: string }) {
 }
 
 function DangerZoneResetOnboarding() {
+  const { token } = theme.useToken();
   const { t } = useTranslation('settings');
   const [loading, setLoading] = useState(false);
 
   const handleReset = () => {
-    void confirmRequest({
-      tone: 'danger',
+    Modal.confirm({
       title: t('settings.danger.confirmTitle'),
-      description: (
-        <Flex gap={8}>
+      icon: <AlertTriangle size={20} style={{ color: token.colorError }} />,
+      content: (
+        <Flexbox gap={8}>
           <Text>{t('settings.danger.confirmContent')}</Text>
           <ul style={{ margin: 0, paddingLeft: 20 }}>
             <li>{t('settings.danger.confirmItem.session')}</li>
             <li>{t('settings.danger.confirmItem.oauth')}</li>
           </ul>
-          <Text tone="secondary" style={{ fontSize: 12 }}>
+          <Text type="secondary" style={{ fontSize: 12 }}>
             {t('settings.danger.confirmNote')}
           </Text>
-        </Flex>
+        </Flexbox>
       ),
-      confirmLabel: t('settings.danger.confirmOk'),
-      cancelLabel: t('settings.danger.confirmCancel'),
-      onConfirm: async () => {
+      okText: t('settings.danger.confirmOk'),
+      cancelText: t('settings.danger.confirmCancel'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
         setLoading(true);
         try {
           await useSessionStore.getState().logout();
@@ -1563,11 +1669,11 @@ function DangerZoneResetOnboarding() {
           const { clearWarmResume } = await import('../hooks/useAppLifecycle');
           clearWarmResume();
           sessionStorage.clear();
-          notifySuccess(t('settings.danger.resetSuccess'));
+          message.success(t('settings.danger.resetSuccess'));
           window.location.hash = '';
           window.location.reload();
         } catch (e) {
-          notifyError(e instanceof Error ? e.message : t('settings.danger.resetFailed'));
+          message.error(e instanceof Error ? e.message : t('settings.danger.resetFailed'));
         } finally {
           setLoading(false);
         }
@@ -1576,25 +1682,31 @@ function DangerZoneResetOnboarding() {
   };
 
   return (
-    <section className="sc-danger" data-danger-zone="reset-onboarding">
-      <header className="sc-danger__head">
-        <h3 className="sc-danger__title">
-          <AlertTriangle size={15} className="sc-danger__icon" />
-          {t('settings.danger.title')}
-        </h3>
-        <p className="sc-danger__desc">{t('settings.danger.description')}</p>
-      </header>
+    <Flexbox
+      gap={12}
+      style={{
+        padding: 16,
+        borderRadius: 12,
+        border: `1px solid ${token.colorErrorBorder}`,
+        background: token.colorErrorBg,
+      }}
+    >
+      <Flexbox horizontal align="center" gap={8}>
+        <AlertTriangle size={16} style={{ color: token.colorError }} />
+        <Text strong style={{ color: token.colorError }}>{t('settings.danger.title')}</Text>
+      </Flexbox>
+      <Text type="secondary" style={{ fontSize: 13 }}>
+        {t('settings.danger.description')}
+      </Text>
       <Button
-        actionId="danger-reset-onboarding"
-        className="sc-danger__button"
-        tone="danger"
-        emphasis="primary"
-        leading={<RotateCcw size={14} />}
-        execution={loading ? 'pending' : 'idle'}
-        label={t('settings.danger.logoutButton')}
-        onActivate={handleReset}
-      />
-    </section>
+        danger
+        icon={<RotateCcw size={14} />}
+        loading={loading}
+        onClick={handleReset}
+      >
+        {t('settings.danger.logoutButton')}
+      </Button>
+    </Flexbox>
   );
 }
 
@@ -1606,6 +1718,7 @@ function AgentCard({
   const [editing, setEditing] = useState(false);
   const [desc, setDesc] = useState(agent.description);
   const updateAgent = useActiveSettingsSlice((s) => s.updateAgent);
+  const { token } = theme.useToken();
   const { t } = useTranslation('settings');
 
   const handleSave = async () => {
@@ -1615,87 +1728,75 @@ function AgentCard({
 
   const handleEffortChange = async (effort: string) => {
     await updateAgent(agent.name, { effort });
-    notifySuccess(t('settings.agent.effortSaved'));
+    message.success(t('settings.agent.effortSaved'));
   };
 
   const handleVisibilityChange = async (visibility: string) => {
     await updateAgent(agent.name, { visibility });
-    notifySuccess(t('settings.agent.visibilitySaved'));
+    message.success(t('settings.agent.visibilitySaved'));
   };
 
   return (
-    <Flex gap={10} className="sc-agent-card">
-      <Flex direction="row" justify="space-between" align="center">
-        <Flex direction="row" gap={8} align="center">
+    <Flexbox
+      gap={10}
+      style={{
+        padding: 16,
+        borderRadius: 8,
+        background: token.colorFillQuaternary,
+        border: `1px solid ${token.colorBorderSecondary}`,
+      }}
+    >
+      <Flexbox horizontal justify="space-between" align="center">
+        <Flexbox horizontal gap={8} align="center">
           <Text strong style={{ fontSize: 15 }}>{agent.title || agent.name}</Text>
           <Tag>{t(`settings.agent.effort.${agent.effort || 'medium'}`)}</Tag>
           <Tag>{t(`settings.agent.visibility.${agent.visibility || 'private'}`)}</Tag>
-        </Flex>
-        <Flex direction="row" gap={4}>
+        </Flexbox>
+        <Flexbox horizontal gap={4}>
           {editing ? (
             <>
-              <Button
-                actionId={`agent-save-${agent.name}`}
-                density="compact"
-                emphasis="primary"
-                label={t('settings.agent.save')}
-                onActivate={() => void handleSave()}
-              />
-              <Button
-                actionId={`agent-cancel-${agent.name}`}
-                density="compact"
-                label={t('settings.agent.cancel')}
-                onActivate={() => setEditing(false)}
-              />
+              <Button type="primary" size="small" onClick={handleSave}>{t('settings.agent.save')}</Button>
+              <Button size="small" onClick={() => setEditing(false)}>{t('settings.agent.cancel')}</Button>
             </>
           ) : (
-            <Button
-              actionId={`agent-edit-${agent.name}`}
-              density="compact"
-              label={t('settings.agent.edit')}
-              onActivate={() => setEditing(true)}
-            />
+            <Button size="small" onClick={() => setEditing(true)}>{t('settings.agent.edit')}</Button>
           )}
-        </Flex>
-      </Flex>
+        </Flexbox>
+      </Flexbox>
       {editing ? (
-        <Flex gap={10}>
-          <TextField
+        <Flexbox gap={10}>
+          <Input
             value={desc}
-            onValueChange={setDesc}
+            onChange={(e) => setDesc(e.target.value)}
             placeholder={t('settings.agent.descriptionPlaceholder')}
           />
-          <Flex direction="row" gap={8} wrap="wrap" align="center">
-            <Select<string>
-              density="compact"
+          <Flexbox horizontal gap={8} wrap="wrap" align="center">
+            <Select
+              size="small"
               value={agent.effort || 'medium'}
               style={{ width: 132 }}
-              onValueChange={(value) => {
-                if (typeof value === 'string') void handleEffortChange(value);
-              }}
+              onChange={handleEffortChange}
               options={[
                 { value: 'low', label: t('settings.agent.effort.low') },
                 { value: 'medium', label: t('settings.agent.effort.medium') },
                 { value: 'high', label: t('settings.agent.effort.high') },
               ]}
             />
-            <Select<string>
-              density="compact"
+            <Select
+              size="small"
               value={agent.visibility || 'private'}
               style={{ width: 132 }}
-              onValueChange={(value) => {
-                if (typeof value === 'string') void handleVisibilityChange(value);
-              }}
+              onChange={handleVisibilityChange}
               options={[
                 { value: 'private', label: t('settings.agent.visibility.private') },
                 { value: 'workspace', label: t('settings.agent.visibility.workspace') },
               ]}
             />
-          </Flex>
-        </Flex>
+          </Flexbox>
+        </Flexbox>
       ) : (
-        <Text tone="secondary">{agent.description || t('settings.agent.noDescription')}</Text>
+        <Text type="secondary">{agent.description || t('settings.agent.noDescription')}</Text>
       )}
-    </Flex>
+    </Flexbox>
   );
 }

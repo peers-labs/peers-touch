@@ -64,6 +64,7 @@ export interface AdmissionInput {
 }
 
 export type SystemAction =
+  | { readonly kind: 'copy_text'; readonly text: string }
   | { readonly kind: 'open_app_settings' }
   | { readonly kind: 'open_external_url'; readonly url: string }
   | {

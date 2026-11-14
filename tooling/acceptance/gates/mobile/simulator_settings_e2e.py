@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import time
 from collections.abc import Callable, Mapping
@@ -31,6 +32,10 @@ PRIMARY_BINDING = "station-primary"
 POLL_INTERVAL_SECONDS = 0.25
 WRITE_ADMISSION_STABLE_SECONDS = 1.25
 WRITE_ADMISSION_TIMEOUT_SECONDS = 60.0
+# Mirrors the product foreground periodic repair (30s) but at a tighter,
+# deterministic cadence so one transient Messaging wake failure cannot consume
+# the whole wait budget without another recovery attempt.
+RECONCILE_RETRY_INTERVAL_SECONDS = 5.0
 PROFILE_FIELDS = (
     "displayName",
     "note",
@@ -96,7 +101,24 @@ class SimulatorSettingsGate(AcceptanceGate):
             binding: MobileSimulatorRuntimeBinding | None = None
             try:
                 binding = self.binding_factory()
-                result.update(self._run_journey(binding, artifacts.run_id[-12:]))
+                journey = self._run_journey(
+                    binding, artifacts.run_id[-12:]
+                )
+                result.update(journey)
+                assertions = self._assertions_from_settings_evidence(
+                    journey, result
+                )
+                failed_assertions = [
+                    item["name"]
+                    for item in assertions
+                    if not item["passed"]
+                ]
+                if failed_assertions:
+                    raise GateError(
+                        "Mobile settings evidence assertions failed: "
+                        + ", ".join(failed_assertions)
+                    )
+                result["assertions"] = assertions
                 status = "PASS"
                 completion_status = "DONE"
                 proof_status = "PROVEN"
@@ -270,7 +292,8 @@ class SimulatorSettingsGate(AcceptanceGate):
         )
         self._wait_for_mobile_write_admission(binding, IOS_CLIENT)
         notification_update = self._mapping(
-            binding.call_action(
+            self._call_with_admission_diagnostics(
+                binding,
                 IOS_CLIENT,
                 "settings.notifications.update",
                 changed_notification,
@@ -619,6 +642,7 @@ class SimulatorSettingsGate(AcceptanceGate):
         *,
         timeout_seconds: float = WRITE_ADMISSION_TIMEOUT_SECONDS,
         stable_seconds: float = WRITE_ADMISSION_STABLE_SECONDS,
+        reconcile_retry_seconds: float = RECONCILE_RETRY_INTERVAL_SECONDS,
     ) -> dict[str, Any]:
         initial = self._mapping(
             binding.call_action(client_id, "recovery.snapshot"),
@@ -629,17 +653,20 @@ class SimulatorSettingsGate(AcceptanceGate):
             return initial
 
         binding.call_action(client_id, "social.reconcile")
-        deadline = time.monotonic() + timeout_seconds
+        start = time.monotonic()
+        last_reconcile_at = start
+        deadline = start + timeout_seconds
         stable_since: float | None = None
         last_snapshot = initial
+        seen_handler_errors: set[str] = set()
         while time.monotonic() < deadline:
+            now = time.monotonic()
             snapshot = self._mapping(
                 binding.call_action(client_id, "recovery.snapshot"),
                 f"{client_id} recovery snapshot",
             )
             last_snapshot = snapshot
             if self._mobile_write_admission_open(snapshot):
-                now = time.monotonic()
                 if stable_since is None:
                     stable_since = now
                 if now - stable_since >= stable_seconds:
@@ -651,6 +678,27 @@ class SimulatorSettingsGate(AcceptanceGate):
                     return snapshot
             else:
                 stable_since = None
+                handler_error = self._write_revocation_handler_error(snapshot)
+                if handler_error and handler_error not in seen_handler_errors:
+                    seen_handler_errors.add(handler_error)
+                    self._record(
+                        "write-admission-runtime-diagnostics",
+                        client_id,
+                        ingressHandlerError=handler_error,
+                    )
+                # Re-drive the canonical recovery path while still fenced, so a
+                # single transient Messaging wake failure gets bounded retries
+                # (the product foreground timer does the same).
+                if now - last_reconcile_at >= reconcile_retry_seconds:
+                    try:
+                        binding.call_action(client_id, "social.reconcile")
+                    except Exception as reconcile_error:
+                        self._record(
+                            "write-admission-reconcile-retry-error",
+                            client_id,
+                            error=redact_text(str(reconcile_error)),
+                        )
+                    last_reconcile_at = now
             time.sleep(POLL_INTERVAL_SECONDS)
         admission = last_snapshot.get("writeAdmission")
         reason = (
@@ -659,8 +707,87 @@ class SimulatorSettingsGate(AcceptanceGate):
             else "invalid-snapshot"
         )
         raise GateError(
-            f"{client_id} Mobile write admission remained closed: {reason}"
+            f"{client_id} Mobile write admission remained closed: "
+            f"{reason}{self._runtime_diagnostic_detail(binding, client_id)}"
         )
+
+    def _call_with_admission_diagnostics(
+        self,
+        binding: MobileSimulatorRuntimeBinding,
+        client_id: str,
+        action: str,
+        payload: Mapping[str, Any],
+    ) -> Any:
+        try:
+            return binding.call_action(client_id, action, payload)
+        except Exception as error:
+            # The write fence can re-close between the admission wait and the
+            # mutation when an upstream Messaging worker-cycle fails. Attach the
+            # kernel's native diagnostics so the originating error is evidenced.
+            detail = self._runtime_diagnostic_detail(binding, client_id)
+            raise GateError(
+                f"{client_id} {action} failed after write admission closed: "
+                f"{type(error).__name__}: {error}{detail}"
+            ) from error
+
+    @staticmethod
+    def _write_revocation_handler_error(snapshot: Mapping[str, Any]) -> str | None:
+        for state in snapshot.get("states", []):
+            if not (isinstance(state, Mapping) and state.get("kind") == "write-revocation"):
+                continue
+            detail = state.get("detail")
+            if isinstance(detail, Mapping):
+                handler_error = detail.get("handlerError")
+                if isinstance(handler_error, str) and handler_error:
+                    return handler_error
+        return None
+
+    def _runtime_diagnostic_detail(
+        self,
+        binding: MobileSimulatorRuntimeBinding,
+        client_id: str,
+    ) -> str:
+        details: list[str] = []
+        try:
+            snapshot = self._mapping(
+                binding.call_action(client_id, "recovery.snapshot"),
+                f"{client_id} recovery snapshot diagnostics",
+            )
+            handler_error = self._write_revocation_handler_error(snapshot)
+            if handler_error:
+                details.append(f"ingressHandlerError={handler_error}")
+        except Exception as diagnostic_error:  # pragma: no cover - diagnostic only
+            details.append(
+                f"recovery-diagnostics-unavailable:"
+                f"{type(diagnostic_error).__name__}"
+            )
+        try:
+            readiness = self._mapping(
+                binding.call_action(
+                    client_id,
+                    "lifecycle.waitReady",
+                    {"includeDiagnostics": True},
+                ),
+                f"{client_id} lifecycle readiness diagnostics",
+            )
+            runtime_errors = readiness.get("runtimeErrors")
+            if isinstance(runtime_errors, list) and runtime_errors:
+                self._record(
+                    "write-admission-runtime-diagnostics",
+                    client_id,
+                    runtimeErrors=runtime_errors,
+                )
+                details.append("runtimeErrors=" + json.dumps(
+                    runtime_errors,
+                    sort_keys=True,
+                    default=str,
+                ))
+        except Exception as diagnostic_error:  # pragma: no cover - diagnostic only
+            details.append(
+                "kernel-diagnostics-unavailable: "
+                f"{type(diagnostic_error).__name__}"
+            )
+        return " | " + " | ".join(details) if details else ""
 
     @staticmethod
     def _mobile_write_admission_open(snapshot: Mapping[str, Any]) -> bool:
@@ -791,6 +918,74 @@ class SimulatorSettingsGate(AcceptanceGate):
                 **details,
             }
         )
+
+    def _assertions_from_settings_evidence(
+        self,
+        journey: Mapping[str, Any],
+        report_base: Mapping[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Build explicit, evidence-derived assertions for the proof contract.
+
+        Each predicate restates an observation already enforced while the
+        settings journey ran (same-actor convergence, owner profile and
+        notification readback, restart persistence, device isolation, closed
+        runtime binding proofs). Core proof never accepts the PASS label alone,
+        so a missing observation surfaces as ``passed: False`` and the caller
+        fails closed before sealing the report.
+        """
+        binding_proofs = journey.get("bindingProofs")
+        assertions: list[dict[str, Any]] = [
+            {
+                "name": "settings:same-actor-converges-on-both-simulators",
+                "passed": isinstance(journey.get("actorPtid"), str)
+                and journey.get("actorPtid", "").startswith("ptid:"),
+            },
+            {
+                "name": "settings:profile-owner-update-and-readback-observed",
+                "passed": isinstance(journey.get("profileUpdate"), Mapping)
+                and isinstance(journey.get("profileReadback"), Mapping)
+                and bool(journey.get("profileReadback")),
+            },
+            {
+                "name": "settings:notification-update-and-readback-observed",
+                "passed": isinstance(
+                    journey.get("notificationUpdate"), Mapping
+                )
+                and isinstance(journey.get("notificationReadback"), Mapping)
+                and bool(journey.get("notificationReadback")),
+            },
+            {
+                "name": "settings:device-settings-survive-ios-restart",
+                "passed": isinstance(journey.get("deviceReadback"), Mapping)
+                and bool(journey.get("deviceReadback")),
+            },
+            {
+                "name": "settings:device-settings-stay-local-per-client",
+                "passed": journey.get("deviceIsolation") is True,
+            },
+            {
+                "name": "settings:session-replacement-observed",
+                "passed": journey.get("sessionReplacementObserved") is True,
+            },
+            {
+                "name": "settings:both-clients-closed-runtime-binding-proofs",
+                "passed": isinstance(binding_proofs, Mapping)
+                and all(
+                    isinstance(binding_proofs.get(client_id), Mapping)
+                    and bool(binding_proofs.get(client_id))
+                    for client_id in (IOS_CLIENT, PEER_IOS_CLIENT)
+                ),
+            },
+            {
+                "name": "settings:production-actions-without-station-mocks",
+                "passed": report_base.get("stationMocksUsed") is False,
+            },
+            {
+                "name": "settings:simulator-does-not-claim-physical-device",
+                "passed": report_base.get("physicalDeviceClaimed") is False,
+            },
+        ]
+        return assertions
 
     def _result_base(self, status: str) -> dict[str, Any]:
         return {

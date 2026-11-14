@@ -29,6 +29,27 @@ function msg(id: string, role: ChatMessage['role'], content: string, extra: Part
 }
 
 describe('mergeServerMessages', () => {
+  it('retains the timeline and nested projections across identical snapshots', () => {
+    const current = [
+      msg('user-1', 'user', 'hello'),
+      msg('assistant-1', 'assistant', 'reply', {
+        toolCalls: [{ id: 'tool-1', name: 'search', args: '{}', result: 'done', pending: false }],
+        terminalStatus: 'completed',
+      }),
+    ];
+    const accepted = mergeServerMessages(current, structuredClone(current));
+    const normalized = mergeServerMessages(accepted, structuredClone(accepted));
+    const repeated = mergeServerMessages(normalized, structuredClone(normalized));
+    expect(repeated).toBe(normalized);
+    expect(repeated[1].toolCalls).toBe(normalized[1].toolCalls);
+    const changed = structuredClone(normalized);
+    changed[1].content = 'updated reply';
+    const refreshed = mergeServerMessages(normalized, changed);
+    expect(refreshed[0]).toBe(normalized[0]);
+    expect(refreshed[1].content).toBe('updated reply');
+    expect(refreshed[1]).not.toBe(normalized[1]);
+  });
+
   it('preserves an optimistic user message and in-flight assistant when server returns an empty page', () => {
     const current = [
       msg('temp-user-1', 'user', 'hello'),

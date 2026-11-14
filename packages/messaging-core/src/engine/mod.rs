@@ -4,7 +4,7 @@ mod store_policy;
 
 pub use lifecycle::{
     activate_engine, advance_engine_consumer_epoch, begin_engine_stop, complete_engine_start,
-    complete_engine_stop, recover_interrupted_engine, resume_engine, suspend_engine,
+    complete_engine_stop, fail_engine, recover_interrupted_engine, resume_engine, suspend_engine,
     validate_active_engine, validate_engine_fence, EngineFence, EngineLifecycleError,
     EngineLifecycleErrorCode, EngineLifecycleRecord, EnginePhase,
 };

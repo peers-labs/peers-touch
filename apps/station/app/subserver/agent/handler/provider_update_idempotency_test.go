@@ -7,6 +7,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/cli/managed"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 )
 
@@ -19,11 +20,16 @@ func TestProviderUpdateKeepsVersionForIdenticalConfig(t *testing.T) {
 	if err := db.AutoMigrate(
 		&persistence.AgentProvider{},
 		&persistence.Credential{},
+		&persistence.AgentModel{},
+		&persistence.ProviderPolicy{},
 	); err != nil {
 		t.Fatalf("migrate provider tables: %v", err)
 	}
 
 	actorPTID := "ptid:v1:actor:peers:p:provider-idempotency"
+	if err := db.Create(&persistence.ProviderPolicy{ID: "station", PersonalProvidersEnabled: true}).Error; err != nil {
+		t.Fatal(err)
+	}
 	providerID := "ark"
 	baseURL := "https://ark-cn-beijing.bytedance.net/api/v3"
 	configJSON := []byte(`{"base_url":"` + baseURL + `"}`)
@@ -54,6 +60,7 @@ func TestProviderUpdateKeepsVersionForIdenticalConfig(t *testing.T) {
 		service.NewRuntimeModelCatalog(),
 		service.NewProviderModelDiscoveryService(service.NewRuntimeModelCatalog()),
 		service.NewRuntimeDefaultService(),
+		managed.NewManager(t.TempDir()),
 	)
 	ctx := coreauth.WithSubject(context.Background(), &coreauth.Subject{ID: actorPTID})
 

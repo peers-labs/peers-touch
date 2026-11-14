@@ -21,6 +21,20 @@ export type CorePage = (typeof CORE_PAGES)[number];
 export type Page = CorePage | `applet:${string}`;
 export const DEFAULT_READY_PAGE: Page = 'chat';
 
+export function isDesktopAppletAvailable(appletId: string): boolean {
+  return appletId !== 'peers.atelier';
+}
+
+export function resolveAvailablePage(page: Page): Page {
+  // Atelier is withheld until its product design is accepted. Old bookmarks
+  // and restored routes return to Chat without removing applet/user data.
+  if (page === 'agent-orchestration'
+    || (page.startsWith('applet:') && !isDesktopAppletAvailable(page.slice('applet:'.length)))) {
+    return 'agent';
+  }
+  return page;
+}
+
 export function isCorePageOrKnown(segment: string): segment is Page {
   if ((CORE_PAGES as readonly string[]).includes(segment)) return true;
   if (segment.startsWith('applet:')) return true;

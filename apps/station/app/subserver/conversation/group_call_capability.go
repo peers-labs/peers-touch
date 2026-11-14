@@ -10,7 +10,80 @@ import (
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/aggregate"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
+	"github.com/peers-labs/peers-touch/station/frame/core/facility/mediaaccess"
 )
+
+// WithGroupCallFence uses the original Conversation UOW for grant issue and
+// admission. It does not expose the Conversation persistence model.
+func (s *subServer) WithGroupCallFence(ctx context.Context, groupID string, endpoint mediaaccess.Endpoint,
+	authority string, epoch uint64, commit func() error) error {
+	if commit == nil {
+		return fmt.Errorf("group call commit callback is required")
+	}
+	id, actor, err := groupSnapshotIdentity(groupID, endpoint.ActorPTID)
+	if err != nil {
+		return err
+	}
+	uow, err := s.groupSnapshotUnitOfWork()
+	if err != nil {
+		return err
+	}
+	return uow.Execute(ctx, func(tx ports.Transaction) error {
+		snapshot, err := tx.Repositories.Authority.LoadForUpdate(ctx, id)
+		if err != nil {
+			return err
+		}
+		if snapshot.Kind != valueobject.ConversationKindGroup ||
+			snapshot.Status != valueobject.ConversationStatusActive ||
+			string(snapshot.AuthorityStation) != authority || uint64(snapshot.AuthorityEpoch) != epoch {
+			return fmt.Errorf("group call authority scope is no longer active")
+		}
+		memberActive := false
+		for _, member := range snapshot.Members {
+			if member.Actor == actor && member.Active() && string(member.HomeStation) == endpoint.Home {
+				memberActive = true
+			}
+		}
+		for _, device := range snapshot.Devices {
+			if memberActive && device.Active && device.Endpoint.Actor == actor &&
+				string(device.Endpoint.Device) == endpoint.DeviceID && string(device.HomeStation) == endpoint.Home {
+				return commit()
+			}
+		}
+		return fmt.Errorf("group call endpoint is not an active member device")
+	})
+}
+
+// ListGroupMemberPTIDs supplies the Conversation-owned lifecycle recipient
+// projection. Groupcall does not query Conversation's private tables.
+func (s *subServer) ListGroupMemberPTIDs(ctx context.Context, groupID string) ([]string, error) {
+	id, err := valueobject.NewConversationID(groupID)
+	if err != nil {
+		return nil, err
+	}
+	uow, err := s.groupSnapshotUnitOfWork()
+	if err != nil {
+		return nil, err
+	}
+	var recipients []string
+	err = uow.Execute(ctx, func(tx ports.Transaction) error {
+		snapshot, err := tx.Repositories.Authority.Get(ctx, id)
+		if err != nil {
+			return err
+		}
+		if snapshot.Kind != valueobject.ConversationKindGroup ||
+			snapshot.Status != valueobject.ConversationStatusActive {
+			return nil
+		}
+		for _, member := range snapshot.Members {
+			if member.Active() {
+				recipients = append(recipients, string(member.Actor))
+			}
+		}
+		return nil
+	})
+	return recipients, err
+}
 
 // PrepareSnapshot returns the current active Group recipient authority through
 // the Conversation UOW.

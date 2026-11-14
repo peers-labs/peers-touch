@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -10,267 +9,161 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/cli/managed"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 )
 
-func TestFrozenProfileDoesNotAdvertiseExternalAgentRuntimeKinds(t *testing.T) {
-	for _, runtimeKind := range []string{"external_agent", "EXTERNAL_AGENT"} {
-		if runtimeAdvertisedByFrozenProfile(runtimeKind) {
-			t.Fatalf("runtime kind %q must not be advertised", runtimeKind)
+func newControlPlaneHandlers(t *testing.T) (*ProviderHandlers, *service.ProviderManagementService, context.Context) {
+	t.Helper()
+	db := openTurnHandlerTestDB(t, "provider_control_"+t.Name())
+	if err := db.AutoMigrate(&persistence.AgentProvider{}, &persistence.AgentModel{}, &persistence.Credential{},
+		&persistence.ProviderPolicy{}, &persistence.ProviderAccessGrant{}, &persistence.AgentRuntimeDefault{}, &persistence.CLIProfileDefault{}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PT_SECRET_KEK", "handler-provider-test-key-material")
+	t.Setenv("PT_SECRET_KEK_FILE", "")
+	providers, models := service.NewProviderConfigService(), service.NewModelConfigService()
+	runtimeModels := service.NewRuntimeModelCatalog()
+	handlers := NewProviderHandlers(providers, models, service.NewCredentialConfigService(),
+		service.NewRuntimeAdmissionResolver(providers, models), runtimeModels,
+		service.NewProviderModelDiscoveryService(runtimeModels), service.NewRuntimeDefaultService(), managed.NewManager(t.TempDir()))
+	ctx := coreauth.WithSubject(context.Background(), &coreauth.Subject{ID: "ptid:person:consumer"})
+	return handlers, handlers.management, ctx
+}
+
+func findProviderInfo(list *model.ListProvidersResponse, id string) *model.AgentProviderInfo {
+	for _, provider := range list.GetProviders() {
+		if provider.GetId() == id {
+			return provider
 		}
 	}
-	for _, runtimeKind := range []string{"", "http"} {
-		if !runtimeAdvertisedByFrozenProfile(runtimeKind) {
-			t.Fatalf("Direct Model runtime kind %q must remain advertised", runtimeKind)
+	return nil
+}
+
+func TestProviderManagementListsAllCLIAdaptersWithoutAnInstallation(t *testing.T) {
+	t.Setenv("PATH", "")
+	handlers, management, ctx := newControlPlaneHandlers(t)
+	list, err := management.List(ctx, service.StationProviderOwner())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"trae-cli", "codex-cli", "cursor-cli", "claude-cli"} {
+		provider := findProviderInfo(list, id)
+		if provider == nil || provider.GetInstallState() == "" {
+			t.Fatalf("management catalog lost missing CLI adapter %s", id)
+		}
+		if provider.GetOwner().GetScope() != model.ProviderResourceScope_PROVIDER_RESOURCE_SCOPE_STATION {
+			t.Fatal("shared management projection has an actor owner")
 		}
 	}
-}
-
-func TestFrozenProfileAdvertisesBuiltInCLIProvider(t *testing.T) {
-	trae := catalog.Find("trae-cli")
-	if trae == nil {
-		t.Fatal("expected trae-cli catalog registration")
+	manual, err := management.Install(ctx, &model.InstallProviderRequest{ProviderId: "trae-cli"})
+	if err != nil || manual.GetInstallState() != "manual_required" || manual.GetJobId() != "" ||
+		manual.GetManualInstallUrl() == "" {
+		t.Fatalf("TRAE manual install = %+v %v", manual, err)
 	}
-	if !trae.Enabled {
-		t.Fatal("trae-cli registration must be enabled")
-	}
-	if !catalogProviderAdvertisedByFrozenProfile(*trae) {
-		t.Fatal("implemented CLI registration must enter the effective provider projection")
+	consumer, err := handlers.HandleProviderList(ctx, &model.ListProvidersRequest{})
+	if err != nil || len(consumer.GetProviders()) != 0 {
+		t.Fatalf("consumer catalog exposed unconfigured adapters: %+v %v", consumer, err)
 	}
 }
 
-func TestFrozenProfileDoesNotAdvertiseUnimplementedProviderProtocol(t *testing.T) {
-	google := catalog.Find("google")
-	if google == nil {
-		t.Fatal("expected Google catalog registration")
-	}
-	if catalogProviderAdvertisedByFrozenProfile(*google) {
-		t.Fatal("provider without a Station Gemini adapter must not enter the effective projection")
-	}
-}
-
-func TestProviderProjectionDoesNotInferRuntimeCapabilityFromCatalog(t *testing.T) {
-	info := providerToProto(&persistence.AgentProvider{
-		Name:        "trae-cli",
-		DisplayName: "Retained disabled registration",
-		Enabled:     false,
-	})
-
-	if info.Protocol != "cli" ||
-		info.RuntimeKind != "" ||
-		info.CliCommand != "" {
-		t.Fatalf("catalog metadata must not infer an advertised runtime capability: %+v", info)
-	}
-}
-
-func TestModelProjectionReturnsPersistedCapabilityAuthority(t *testing.T) {
-	info, err := modelToProto(&persistence.AgentModel{
-		ModelID:          "custom-model",
-		ContextWindow:    128000,
-		CapabilitiesJSON: json.RawMessage(`{"streaming":true,"native-tools":false}`),
-	})
-	if err != nil {
-		t.Fatalf("project model: %v", err)
-	}
-	if info.GetContextWindow() != 128000 ||
-		!info.GetCapabilities().GetFlags()["streaming"] ||
-		info.GetCapabilities().GetFlags()["native-tools"] {
-		t.Fatalf("model projection dropped capability authority: %+v", info)
-	}
-}
-
-func TestCatalogModelProjectionReturnsDeclaredCapabilities(t *testing.T) {
-	info, err := catalogModelToProto(&catalog.CatalogModel{
-		ID:            "catalog-model",
-		Type:          "chat",
-		ContextWindow: 64000,
-		Capabilities:  []string{"streaming", "native-tools"},
-	})
-	if err != nil {
-		t.Fatalf("project catalog model: %v", err)
-	}
-	if !info.GetCapabilities().GetFlags()["streaming"] ||
-		!info.GetCapabilities().GetFlags()["native-tools"] {
-		t.Fatalf("catalog projection dropped declared capabilities: %+v", info)
-	}
-}
-
-func TestCatalogModelToggleMaterializesAndProjectsOverride(t *testing.T) {
-	showAPIKey := true
+func TestProviderConsumerProjectionRetainsOnlyAuthorizedModels(t *testing.T) {
 	catalog.SetForTesting([]catalog.CatalogProvider{{
-		ID:          "catalog-provider",
-		Name:        "Catalog Provider",
-		Enabled:     true,
-		Protocol:    "openai-compatible",
-		RuntimeKind: "http",
-		ShowAPIKey:  &showAPIKey,
-		Models: []catalog.CatalogModel{{
-			ID:            "catalog-model",
-			DisplayName:   "Catalog Model",
-			Type:          "chat",
-			Enabled:       true,
-			ContextWindow: 128000,
-			Capabilities:  []string{"streaming", "native-tools"},
-		}},
+		ID: "test-shared", Name: "Shared Models", Enabled: true, Protocol: "openai-compatible", RuntimeKind: "http",
+		Models: []catalog.CatalogModel{
+			{ID: "allowed", DisplayName: "Allowed", Enabled: true, Type: "chat", ContextWindow: 64000, Capabilities: []string{"streaming"}},
+			{ID: "denied", DisplayName: "Denied", Enabled: true, Type: "chat", ContextWindow: 64000},
+		},
 	}})
 	defer catalog.RestoreForTesting()
-
-	db := openTurnHandlerTestDB(t, "provider_handler_catalog_model_toggle")
-	if err := db.AutoMigrate(
-		&persistence.AgentProvider{},
-		&persistence.AgentModel{},
-		&persistence.Credential{},
-	); err != nil {
-		t.Fatalf("migrate provider handler database: %v", err)
+	handlers, management, ctx := newControlPlaneHandlers(t)
+	owner := service.StationProviderOwner()
+	if _, err := management.Create(ctx, owner, &model.CreateProviderRequest{ProviderId: "test-shared"}); err != nil {
+		t.Fatal(err)
 	}
-
-	providerConfig := service.NewProviderConfigService()
-	modelConfig := service.NewModelConfigService()
-	runtimeModels := service.NewRuntimeModelCatalog()
-	handlers := NewProviderHandlers(
-		providerConfig,
-		modelConfig,
-		service.NewCredentialConfigService(),
-		service.NewRuntimeAdmissionResolver(providerConfig, modelConfig),
-		runtimeModels,
-		service.NewProviderModelDiscoveryService(runtimeModels),
-		service.NewRuntimeDefaultService(),
-	)
-	ctx := coreauth.WithSubject(
-		context.Background(),
-		&coreauth.Subject{ID: "ptid:person:catalog-model-toggle"},
-	)
-
-	before, err := handlers.HandleModelList(ctx, &model.ListModelsRequest{
-		ProviderId: "catalog-provider",
+	if _, err := management.SetCredential(ctx, owner, &model.SetCredentialRequest{ProviderId: "test-shared", ApiKey: "shared-test-key"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := management.SetAccess(ctx, &model.SetProviderAccessRequest{ProviderId: "test-shared",
+		Grants: []*model.ProviderAccessGrant{{ActorPtid: "ptid:person:consumer", ModelId: "allowed"}}}); err != nil {
+		t.Fatal(err)
+	}
+	list, err := handlers.HandleProviderList(ctx, &model.ListProvidersRequest{})
+	if err != nil || len(list.GetProviders()) != 1 {
+		t.Fatalf("consumer catalog = %+v %v", list, err)
+	}
+	provider := list.GetProviders()[0]
+	if len(provider.GetModels()) != 1 || provider.GetModels()[0].GetId() != "allowed" ||
+		provider.GetCliCommand() != "" || provider.GetBaseUrl() != "" ||
+		provider.GetRuntimeConfig() != nil || provider.GetCredentialStatus() != "" || provider.GetInstallState() != "" ||
+		provider.GetRuntimeKind() != "" || provider.GetVersion() != 0 {
+		t.Fatalf("consumer projection leaked management data: %+v", provider)
+	}
+	otherCtx := coreauth.WithSubject(context.Background(), &coreauth.Subject{ID: "ptid:person:other"})
+	if other, err := handlers.HandleProviderList(otherCtx, &model.ListProvidersRequest{}); err != nil || len(other.GetProviders()) != 0 {
+		t.Fatalf("targeted model grant escaped to another actor: %+v %v", other, err)
+	}
+	if _, err := handlers.HandleProviderUpdate(ctx, &model.UpdateProviderRequest{ProviderId: "test-shared", Version: 2}); err == nil {
+		t.Fatal("consumer actor modified a shared Provider while personal management was disabled")
+	}
+	policy, err := management.SetPolicy(ctx, &model.SetProviderPolicyRequest{
+		AiUserAccess: &model.AIUserAccess{ActorPtids: []string{"ptid:person:other"}},
 	})
-	if err != nil {
-		t.Fatalf("list virtual catalog model: %v", err)
+	if err != nil || policy.GetPolicy().GetAiUserAccess().GetAllActors() {
+		t.Fatalf("global policy was not persisted: %v %v", policy, err)
 	}
-	if len(before.GetModels()) != 1 ||
-		before.GetModels()[0].GetVersion() != 0 ||
-		!before.GetModels()[0].GetEnabled() {
-		t.Fatalf("unexpected virtual catalog model: %+v", before.GetModels())
+	if _, err := handlers.HandleSetRuntimeDefault(ctx, &model.SetRuntimeDefaultRequest{
+		ProviderId: "test-shared", ModelId: "allowed",
+	}); err == nil {
+		t.Fatal("globally denied actor selected a granted model as the default")
 	}
+	if list, err := handlers.HandleProviderList(ctx, &model.ListProvidersRequest{}); err != nil || len(list.GetProviders()) != 0 {
+		t.Fatalf("global denial did not remove consumer models: %v %v", list, err)
+	}
+	if public, err := handlers.HandleProviderPolicy(ctx, &model.GetProviderPolicyRequest{}); err != nil || public.GetPolicy().GetAiUserAccess() != nil {
+		t.Fatalf("actor policy projection exposed administrator user grants: %v %v", public, err)
+	}
+}
 
+func TestCatalogModelTogglePreservesCapabilityAuthority(t *testing.T) {
+	catalog.SetForTesting([]catalog.CatalogProvider{{
+		ID: "catalog-provider", Name: "Catalog Provider", Enabled: true, Protocol: "openai-compatible", RuntimeKind: "http",
+		Models: []catalog.CatalogModel{{ID: "catalog-model", DisplayName: "Catalog Model", Type: "chat",
+			Enabled: true, ContextWindow: 128000, Capabilities: []string{"streaming", "native-tools"}}},
+	}})
+	defer catalog.RestoreForTesting()
+	_, management, ctx := newControlPlaneHandlers(t)
+	owner := service.StationProviderOwner()
+	if _, err := management.Create(ctx, owner, &model.CreateProviderRequest{ProviderId: "catalog-provider"}); err != nil {
+		t.Fatal(err)
+	}
 	disabled := false
-	created, err := handlers.HandleModelUpdate(ctx, &model.UpdateModelRequest{
-		ProviderId: "catalog-provider",
-		ModelId:    "catalog-model",
-		Version:    0,
-		Enabled:    &disabled,
+	created, err := management.UpdateModel(ctx, owner, &model.UpdateModelRequest{
+		ProviderId: "catalog-provider", ModelId: "catalog-model", Enabled: &disabled,
 	})
-	if err != nil {
-		t.Fatalf("materialize disabled catalog override: %v", err)
+	if err != nil || created.GetModel().GetVersion() != 1 || created.GetModel().GetEnabled() {
+		t.Fatalf("catalog override = %+v %v", created, err)
 	}
-	if created.GetModel().GetVersion() != 1 || created.GetModel().GetEnabled() {
-		t.Fatalf("unexpected materialized override: %+v", created.GetModel())
-	}
-
-	provider, err := handlers.HandleProviderGet(ctx, &model.GetProviderRequest{
-		ProviderId: "catalog-provider",
-	})
-	if err != nil {
-		t.Fatalf("get provider after model toggle: %v", err)
-	}
-	if len(provider.GetProvider().GetModels()) != 1 ||
-		provider.GetProvider().GetModels()[0].GetEnabled() {
-		t.Fatalf("provider detail ignored disabled override: %+v", provider.GetProvider())
-	}
-
 	enabled := true
-	updated, err := handlers.HandleModelUpdate(ctx, &model.UpdateModelRequest{
-		ProviderId: "catalog-provider",
-		ModelId:    "catalog-model",
-		Version:    created.GetModel().GetVersion(),
-		Enabled:    &enabled,
-		Capabilities: &model.ModelCapabilityConfig{Flags: map[string]bool{
-			"native-tools": false,
-		}},
+	updated, err := management.UpdateModel(ctx, owner, &model.UpdateModelRequest{
+		ProviderId: "catalog-provider", ModelId: "catalog-model", Version: 1, Enabled: &enabled,
+		Capabilities: &model.ModelCapabilityConfig{Flags: map[string]bool{"native-tools": false}},
 	})
+	if err != nil || updated.GetModel().GetVersion() != 2 {
+		t.Fatalf("updated override = %+v %v", updated, err)
+	}
+	after, err := management.Get(ctx, owner, "catalog-provider")
 	if err != nil {
-		t.Fatalf("update catalog override: %v", err)
+		t.Fatal(err)
 	}
-	if updated.GetModel().GetVersion() != 2 || !updated.GetModel().GetEnabled() {
-		t.Fatalf("unexpected updated override: %+v", updated.GetModel())
-	}
-
-	after, err := handlers.HandleProviderList(ctx, &model.ListProvidersRequest{})
-	if err != nil {
-		t.Fatalf("list providers after model update: %v", err)
-	}
-	projected := after.GetProviders()[0].GetModels()[0]
-	if !projected.GetEnabled() ||
-		!projected.GetCapabilities().GetFlags()["streaming"] ||
+	projected := after.GetProvider().GetModels()[0]
+	if !projected.GetEnabled() || !projected.GetCapabilities().GetFlags()["streaming"] ||
 		projected.GetCapabilities().GetFlags()["native-tools"] {
-		t.Fatalf("provider list did not merge catalog and override: %+v", projected)
+		t.Fatalf("effective model capability authority = %+v", projected)
 	}
-}
-
-func TestCLIProviderModelMutationsAreRejectedBeforePersistence(t *testing.T) {
-	catalog.SetForTesting([]catalog.CatalogProvider{{
-		ID:          "test-cli",
-		Name:        "Test CLI",
-		RuntimeKind: "cli",
-		Protocol:    "cli",
-	}})
-	defer catalog.RestoreForTesting()
-
-	providerConfig := service.NewProviderConfigService()
-	modelConfig := service.NewModelConfigService()
-	runtimeModels := service.NewRuntimeModelCatalog()
-	handlers := NewProviderHandlers(
-		providerConfig,
-		modelConfig,
-		service.NewCredentialConfigService(),
-		service.NewRuntimeAdmissionResolver(providerConfig, modelConfig),
-		runtimeModels,
-		service.NewProviderModelDiscoveryService(runtimeModels),
-		service.NewRuntimeDefaultService(),
-	)
-	ctx := context.Background()
-
-	tests := []struct {
-		name string
-		run  func() error
-	}{
-		{
-			name: "create",
-			run: func() error {
-				_, err := handlers.HandleModelCreate(ctx, &model.CreateModelRequest{
-					ProviderId: "test-cli",
-					ModelId:    "manual-model",
-				})
-				return err
-			},
-		},
-		{
-			name: "update",
-			run: func() error {
-				_, err := handlers.HandleModelUpdate(ctx, &model.UpdateModelRequest{
-					ProviderId: "test-cli",
-					ModelId:    "manual-model",
-				})
-				return err
-			},
-		},
-		{
-			name: "hide",
-			run: func() error {
-				_, err := handlers.HandleModelHide(ctx, &model.HideModelRequest{
-					ProviderId: "test-cli",
-					ModelId:    "manual-model",
-				})
-				return err
-			},
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			err := test.run()
-			if err == nil || !strings.Contains(err.Error(), "read-only") {
-				t.Fatalf("CLI model %s error = %v, want read-only rejection", test.name, err)
-			}
-		})
+	if _, err := management.UpdateModel(ctx, owner, &model.UpdateModelRequest{
+		ProviderId: "catalog-provider", ModelId: "catalog-model", Version: 1, Enabled: &disabled,
+	}); err == nil || !strings.Contains(err.Error(), "conflict") {
+		t.Fatalf("stale model version was accepted: %v", err)
 	}
 }

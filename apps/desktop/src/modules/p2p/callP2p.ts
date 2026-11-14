@@ -6,7 +6,8 @@ import type {
   RealtimeCallSignalPayload,
 } from '../../kernel/events/types';
 import { log } from '../../utils/logger';
-import { createCallId } from '@peers-touch/client-chat-core';
+import { createCallId, readCallMediaStats } from '@peers-touch/client-chat-core';
+import { desktopMediaReservation } from './mediaReservation';
 
 // Historical context (kept verbose deliberately — this module used to
 // be the data-plane and the deletion is non-obvious from `git blame`):
@@ -390,6 +391,7 @@ interface Conn {
 
 class CallP2pManager {
   private conns = new Map<ConnKey, Conn>();
+  private mediaLeases = new Map<string, { release: () => void; pending: number; closing: boolean }>();
   private localActorPtid: string | null = null;
   private localDeviceId = '';
   private onStatus: ((myDid: string, peerPtid: string, status: CallP2pStatus) => void) | null = null;
@@ -1113,13 +1115,15 @@ class CallP2pManager {
         log.warn('p2p', 'CALL_REQUEST missing callId');
         return;
       }
-      if (conn.call.state === 'active' || conn.call.state === 'outgoing' || conn.call.state === 'incoming') {
+      if (conn.call.state === 'active' || conn.call.state === 'outgoing' || conn.call.state === 'incoming'
+        || desktopMediaReservation.isOccupied()) {
         // Decline the colliding attempt without disturbing the
         // existing call. We only echo the rejected callId, never
         // our own current one.
         await this.sendSignal(conn, 'CALL_REJECT', JSON.stringify({ callId, reason: 'busy' }));
         return;
       }
+      this.reserveCallMedia(callId);
       conn.call = { callId, mediaKind, state: 'incoming' };
       this.emitCall(conn);
       // Arm the unanswered-ring timeout so an ignored incoming call
@@ -1307,17 +1311,18 @@ class CallP2pManager {
       throw new Error('startCall: call already in progress');
     }
     const callId = createCallId();
+    this.reserveCallMedia(callId);
     const audioDeviceId = readPreferredDevice(PREFERRED_AUDIO_DEVICE_KEY);
     const videoDeviceId = readPreferredDevice(PREFERRED_VIDEO_DEVICE_KEY);
     conn.call = { callId, mediaKind, state: 'outgoing', audioDeviceId, videoDeviceId };
     this.emitCall(conn);
     let stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia(
+      stream = await this.captureCallMedia(conn, callId,
         buildMediaConstraints(mediaKind === 'video', audioDeviceId, videoDeviceId),
       );
     } catch (error) {
-      this.teardownCallLocal(conn, 'media-failed');
+      if (conn.call.callId === callId) this.teardownCallLocal(conn, 'media-failed');
       throw error;
     }
     for (const track of stream.getTracks()) {
@@ -1346,6 +1351,7 @@ class CallP2pManager {
     if (!conn) throw new Error('acceptCall: no PC');
     if (conn.call.state !== 'incoming') return;
     const { callId, mediaKind } = conn.call;
+    if (!this.mediaLeases.has(callId)) this.reserveCallMedia(callId);
     // The user answered — stop the unanswered-ring countdown before we
     // pay the getUserMedia round-trip.
     this.clearRingTimeout(conn);
@@ -1353,10 +1359,11 @@ class CallP2pManager {
     const videoDeviceId = readPreferredDevice(PREFERRED_VIDEO_DEVICE_KEY);
     let stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia(
+      stream = await this.captureCallMedia(conn, callId,
         buildMediaConstraints(mediaKind === 'video', audioDeviceId, videoDeviceId),
       );
     } catch (error) {
+      if (conn.call.callId !== callId || this.conns.get(`${myDid}::${peerPtid}`) !== conn) throw error;
       // Acquisition failed — politely reject so the caller doesn't
       // wait for a ring-out.
       try {
@@ -1478,6 +1485,15 @@ class CallP2pManager {
     this.enterReconnectingCall(conn);
   }
 
+  async getCallMediaStats(myDid: string, peerPtid: string) {
+    const conn = this.conns.get(`${myDid}::${peerPtid}`);
+    const stats = await readCallMediaStats(conn?.call.callId ?? '', conn?.pc ?? null);
+    if (this.conns.get(`${myDid}::${peerPtid}`) !== conn || (conn && conn.call.callId !== stats.callId)) {
+      throw new DOMException('Call changed', 'AbortError');
+    }
+    return stats;
+  }
+
   /** Enumerate the available microphones and cameras for the device
    *  picker. Labels are only populated once a media permission has been
    *  granted (browser privacy rule), so the UI should be tolerant of
@@ -1553,7 +1569,7 @@ class CallP2pManager {
 
     let captured: MediaStream;
     try {
-      captured = await navigator.mediaDevices.getUserMedia(
+      captured = await this.captureCallMedia(conn, conn.call.callId,
         wantVideo
           ? buildMediaConstraints(true, undefined, deviceId)
           : { audio: deviceId ? { deviceId: { ideal: deviceId } } : true, video: false },
@@ -1611,6 +1627,7 @@ class CallP2pManager {
     winningDeviceId = conn.call.winningDeviceId,
   ): void {
     const { callId, mediaKind } = conn.call;
+    this.releaseCallMedia(callId);
     this.clearRingTimeout(conn);
     this.clearReconnectTimeout(conn);
     if (conn.call.localStream) {
@@ -1680,8 +1697,42 @@ class CallP2pManager {
       try { conn.pc.close(); } catch { /* best-effort */ }
     }
     this.conns.clear();
+    for (const callId of this.mediaLeases.keys()) this.releaseCallMedia(callId);
     // Note: signalSubscription is intentionally NOT torn down here.
     // See `ensureSignalSubscription` for the reasoning.
+  }
+
+  private reserveCallMedia(callId: string): void {
+    this.mediaLeases.set(callId, {
+      release: desktopMediaReservation.acquire('direct', callId), pending: 0, closing: false,
+    });
+  }
+
+  private releaseCallMedia(callId: string): void {
+    const lease = this.mediaLeases.get(callId);
+    if (!lease) return;
+    lease.closing = true;
+    if (lease.pending) return;
+    lease.release();
+    this.mediaLeases.delete(callId);
+  }
+
+  private async captureCallMedia(conn: Conn, callId: string, constraints: MediaStreamConstraints): Promise<MediaStream> {
+    const lease = this.mediaLeases.get(callId);
+    if (!lease || lease.closing) throw new DOMException('Call canceled', 'AbortError');
+    lease.pending += 1;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      if (lease.closing || this.conns.get(`${conn.myDid}::${conn.peerPtid}`) !== conn
+        || conn.call.callId !== callId || conn.call.state === 'ended') {
+        stream.getTracks().forEach((track) => track.stop());
+        throw new DOMException('Call canceled', 'AbortError');
+      }
+      return stream;
+    } finally {
+      lease.pending -= 1;
+      if (lease.closing) this.releaseCallMedia(callId);
+    }
   }
 
   /**

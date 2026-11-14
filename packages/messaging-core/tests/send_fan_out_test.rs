@@ -1,4 +1,4 @@
-use messaging_core::codec::private_content::decode_message_private_content;
+use messaging_core::codec::private_content::{decode_message_private_content, MessageMentions};
 use messaging_core::contracts::CryptoEndpoint;
 use messaging_core::crypto::double_ratchet::{decrypt, init_initiator, init_responder};
 use messaging_core::crypto::identity::X25519KeyPair;
@@ -78,6 +78,7 @@ fn direct_fan_out_encrypts_for_multiple_peers() {
         device_id: "alice-dev".to_string(),
     };
 
+    let mentions = MessageMentions::empty();
     let intent = DirectSendIntent {
         command_id: "cmd-1",
         message_id: "msg-1",
@@ -86,6 +87,7 @@ fn direct_fan_out_encrypts_for_multiple_peers() {
         reply_to_message_id: "",
         thread_root_message_id: "",
         attachments: &[],
+        mentions: &mentions,
         client_timestamp_unix_ms: 200,
     };
 

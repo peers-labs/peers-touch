@@ -47,6 +47,12 @@ export type RealtimeWireEvent = RealtimeWireMetadata & (
   }
   | { kind: 'resync'; newestEventId: string; reason: string }
   | {
+    kind: 'group-call-room';
+    roomKind: 'room_active' | 'room_ended';
+    groupUlid: string;
+    roomName: string;
+  }
+  | {
     kind: 'call-signal';
     sessionUlid: string;
     fromActorPtid: string;
@@ -183,6 +189,14 @@ function decodeRealtimeEvent(bytes: Uint8Array): RealtimeWireEvent {
     };
   }
   if (frame.case === 'signaling') {
+    if (frame.value.kind === CallSignal_Kind.ROOM_ACTIVE || frame.value.kind === CallSignal_Kind.ROOM_ENDED) {
+      if (!frame.value.groupUlid || !frame.value.roomName) return resyncEvent(metadata, 'invalid-group-call-room');
+      return {
+        ...metadata, kind: 'group-call-room',
+        roomKind: frame.value.kind === CallSignal_Kind.ROOM_ACTIVE ? 'room_active' : 'room_ended',
+        groupUlid: frame.value.groupUlid, roomName: frame.value.roomName,
+      };
+    }
     const signalKind = callSignalKindFromEnum(frame.value.kind);
     if (!signalKind) return resyncEvent(metadata, 'invalid-call-signal-kind');
     return {

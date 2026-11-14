@@ -1,4 +1,5 @@
 import { createDesktopStore } from './createDesktopStore';
+import { replaceEqualDeep } from '@tanstack/query-core';
 import { EVENT, eventBus } from '../kernel/events';
 import { log } from '../utils/logger';
 import i18n, { resolveI18nValue } from '../i18n/index';
@@ -370,7 +371,10 @@ export function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMes
     timestamp: new Date(message.createdAt).getTime(),
     model: message.modelName,
     turnId: message.turnId,
-    error: isCancelledAssistant ? undefined : typedError?.locale_key,
+    error: isCancelledAssistant ? undefined : typedError?.locale_key
+      ?? (message.role === 'assistant' && persistedStatus === 'failed'
+        ? 'chat.message.diagnostics.failedTitle'
+        : undefined),
     typedError,
     resolution,
     providerId: typedError?.details.provider_id,
@@ -911,7 +915,9 @@ export function mergeServerMessages(
     merged.push(message);
   }
 
-  return merged;
+  // Repeated authoritative snapshots retain unchanged row identity, including
+  // nested tool/artifact projections and the complete no-change timeline.
+  return replaceEqualDeep(currentMessages, merged);
 }
 
 function isSupersededByServer(
@@ -2053,7 +2059,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       for (const s of sessions) {
         byKey.set(s.key, s);
       }
-      return { sessions: Array.from(byKey.values()) };
+      return { sessions: replaceEqualDeep(state.sessions, Array.from(byKey.values())) };
     });
   },
 
@@ -2149,7 +2155,6 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     const key = get().currentSessionKey;
     log.info('chat', 'Bootstrapping current session history', { key });
     if (isAgentDraftKey(key)) {
-      set({ messages: [] });
       return;
     }
     const liveOp = get().operations[key];

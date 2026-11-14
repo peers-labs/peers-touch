@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from tooling.acceptance.core import ArtifactRef
+from tooling.acceptance.core.proof import assertions_pass
 from tooling.acceptance.gates.mobile.simulator_runtime_binding import (
     MobileSimulatorBindingActivation,
 )
@@ -242,6 +243,74 @@ class SimulatorSettingsGateTests(unittest.TestCase):
         assert artifacts.result is not None
         self.assertEqual(artifacts.result["observedScope"], list(PROVEN_SCOPE))
 
+    @staticmethod
+    def _valid_settings_journey() -> dict[str, object]:
+        return {
+            "scenario": "settings",
+            "actorPtid": "ptid:alice",
+            "profileUpdate": {"profile": {"actorPtid": "ptid:alice"}},
+            "profileReadback": {
+                "actorPtid": "ptid:alice",
+                "displayName": "Acceptance journey",
+            },
+            "notificationUpdate": {
+                "snapshot": {"preferences": [{"category": 1}]}
+            },
+            "notificationReadback": {
+                "preferences": [{"category": 1, "enabled": False}]
+            },
+            "deviceReadback": {
+                "theme": "dark",
+                "fontSize": "large",
+                "compactMode": True,
+                "mediaAutoDownload": False,
+            },
+            "deviceIsolation": True,
+            "sessionReplacementObserved": True,
+            "bindingProofs": {
+                IOS_CLIENT: {"station-primary": _proof(IOS_CLIENT, "sp")},
+                PEER_IOS_CLIENT: {
+                    "station-primary": _proof(PEER_IOS_CLIENT, "sp")
+                },
+            },
+        }
+
+    def test_settings_assertions_satisfy_core_proof_contract(self) -> None:
+        gate = SimulatorSettingsGate(binding_factory=lambda: _Binding())  # type: ignore[arg-type]
+        assertions = gate._assertions_from_settings_evidence(
+            self._valid_settings_journey(), gate._result_base("PASS")
+        )
+
+        self.assertTrue(assertions_pass(assertions))
+        self.assertEqual(
+            len(assertions), len({item["name"] for item in assertions})
+        )
+        names = {item["name"] for item in assertions}
+        self.assertIn(
+            "settings:device-settings-survive-ios-restart", names
+        )
+        self.assertIn(
+            "settings:both-clients-closed-runtime-binding-proofs", names
+        )
+
+    def test_settings_assertions_fail_closed_on_missing_observation(
+        self,
+    ) -> None:
+        gate = SimulatorSettingsGate(binding_factory=lambda: _Binding())  # type: ignore[arg-type]
+        broken = self._valid_settings_journey()
+        broken["deviceIsolation"] = False
+        broken["bindingProofs"] = {IOS_CLIENT: {"station-primary": {}}}
+
+        assertions = gate._assertions_from_settings_evidence(
+            broken, gate._result_base("PASS")
+        )
+        self.assertFalse(assertions_pass(assertions))
+        failed = {item["name"] for item in assertions if not item["passed"]}
+        self.assertIn("settings:device-settings-stay-local-per-client", failed)
+        self.assertIn(
+            "settings:both-clients-closed-runtime-binding-proofs", failed
+        )
+
     def test_closed_write_admission_reconciles_before_settings_write(
         self,
     ) -> None:
@@ -309,6 +378,80 @@ class SimulatorSettingsGateTests(unittest.TestCase):
                 "reconciled": True,
                 "activeRecovery": False,
             },
+        )
+
+    def test_write_admission_re_reconciles_while_fence_stays_closed(
+        self,
+    ) -> None:
+        closed_snapshot = {
+            "hasActiveRecovery": True,
+            "isWriteBlocked": True,
+            "writeAdmission": {
+                "open": False,
+                "reason": "control_event_handler_failed",
+            },
+            "states": [{
+                "kind": "write-revocation",
+                "detail": {
+                    "reason": "control_event_handler_failed",
+                    "handlerError": "MOBILE_MESSAGING_NATIVE_FAILURE",
+                },
+            }],
+        }
+        open_snapshot = {
+            "hasActiveRecovery": False,
+            "isWriteBlocked": False,
+            "writeAdmission": {"open": True, "reason": None},
+            "states": [],
+        }
+
+        class RetryAdmissionBinding(_Binding):
+            def __init__(self) -> None:
+                super().__init__()
+                self.snapshots = [
+                    dict(closed_snapshot),
+                    dict(closed_snapshot),
+                    dict(closed_snapshot),
+                    dict(open_snapshot),
+                ]
+
+            def call_action(
+                self,
+                client_id: str,
+                action: str,
+                payload: object = None,
+            ) -> object:
+                if action == "recovery.snapshot":
+                    self.calls.append((client_id, action, payload))
+                    if len(self.snapshots) > 1:
+                        return self.snapshots.pop(0)
+                    return dict(self.snapshots[0])
+                return super().call_action(client_id, action, payload)
+
+        binding = RetryAdmissionBinding()
+        gate = SimulatorSettingsGate(binding_factory=lambda: binding)  # type: ignore[arg-type]
+
+        snapshot = gate._wait_for_mobile_write_admission(  # type: ignore[arg-type]
+            binding,
+            IOS_CLIENT,
+            timeout_seconds=2,
+            stable_seconds=0,
+            reconcile_retry_seconds=0,
+        )
+
+        self.assertTrue(snapshot["writeAdmission"]["open"])
+        reconcile_calls = [
+            call
+            for call in binding.calls
+            if call[1] == "social.reconcile"
+        ]
+        # One explicit reconcile plus one retry per still-closed poll.
+        self.assertEqual(len(reconcile_calls), 3)
+        self.assertTrue(
+            any(
+                event.get("event") == "write-admission-runtime-diagnostics"
+                for event in gate.events
+            )
         )
 
     def test_authentication_restarts_one_failed_runtime_generation(self) -> None:

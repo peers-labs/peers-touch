@@ -54,7 +54,8 @@ describe('profile card primitive layer', () => {
   });
 
   it('routes success/warning feedback through the desktop feedback channel', () => {
-    expect(actionSource).toContain("from '../../ui/feedback'");
+    expect(actionSource).toContain("from '../../hooks/useAppFeedback'");
+    expect(actionSource).toContain('const feedback = useScopedFeedback()');
     expect(actionSource).not.toContain('message.success');
     expect(actionSource).not.toContain('message.warning');
     expect(actionSource).not.toContain('message.error');

@@ -43,6 +43,25 @@ function stringArray(value) {
     : [];
 }
 
+// Only tools that mutate files or execute commands can perform work in the
+// wrong worktree; pure read tools stay unguarded so diagnosis is never blocked.
+const MUTATING_TOOL_NAME_PATTERN =
+  /(write|edit|delete|shell|bash|terminal|command|create|patch|install|apply)/i;
+
+function collectMutationFilepaths(toolInput) {
+  if (!isObject(toolInput)) return [];
+  const paths = [];
+  for (const key of ['file_path', 'filePath', 'path', 'notebook_path', 'filename']) {
+    if (typeof toolInput[key] === 'string') paths.push(toolInput[key]);
+  }
+  for (const key of ['file_paths', 'filePaths', 'paths']) {
+    if (Array.isArray(toolInput[key])) {
+      paths.push(...toolInput[key].filter((value) => typeof value === 'string'));
+    }
+  }
+  return paths;
+}
+
 function uniqueStrings(values) {
   return [...new Set(values.map((value) => value?.trim()).filter(Boolean))];
 }
@@ -63,6 +82,18 @@ export function normalizeHostPayload(raw, options = {}) {
     payload.hookEventName,
     payload.event,
   );
+  const toolName = firstString(
+    payload.tool_name,
+    payload.toolName,
+    payload.name,
+  );
+  // The kernel must not receive raw tool internals. Expose only the minimum
+  // derived facts the worktree guard needs: whether the tool mutates, its name
+  // for observation, and target paths. Raw tool input stays private.
+  const mutatingTool =
+    typeof toolName === 'string'
+    && MUTATING_TOOL_NAME_PATTERN.test(toolName);
+  const mutationFilepaths = collectMutationFilepaths(toolInput);
   const event = EVENTS.get(hostEvent);
   if (!HOSTS.has(host) || event === undefined) {
     return {
@@ -85,7 +116,6 @@ export function normalizeHostPayload(raw, options = {}) {
   );
   const payloadWorkingDirectory = firstString(payload.cwd);
   const installationRoot = firstString(options.installationRoot);
-  const toolName = firstString(payload.tool_name, payload.toolName, payload.name);
   const explicitToolWorkingDirectory = firstString(
     toolInput.working_directory,
     toolInput.workingDirectory,
@@ -104,6 +134,8 @@ export function normalizeHostPayload(raw, options = {}) {
     host,
     event,
     hostEvent,
+    mutatingTool,
+    mutationFilepaths,
     toolName,
     executionRootHints: uniqueStrings([
       explicitTaskRoot,
@@ -135,6 +167,12 @@ function renderCursorResponse(result, event) {
       ? { additional_context: result.additionalContext }
       : { continue: true, additional_context: result.additionalContext };
   }
+  if (result.action === 'DENY' && event === 'PRE_TOOL_USE') {
+    return {
+      permission: 'deny',
+      reason: result.denyReason,
+    };
+  }
   if (result.action === 'ALLOW' && event === 'PRE_TOOL_USE') {
     return {
       permission: 'allow',
@@ -152,6 +190,18 @@ function renderClaudeCompatibleResponse(result, hostEvent) {
       hookSpecificOutput: {
         hookEventName: hostEvent,
         additionalContext: result.additionalContext,
+      },
+    };
+  }
+  if (
+    result.action === 'DENY' &&
+    hostEvent === 'PreToolUse'
+  ) {
+    return {
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: result.denyReason,
       },
     };
   }

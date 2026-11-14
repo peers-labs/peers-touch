@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -478,7 +479,7 @@ func TestMemberProposalRequiresAuthenticatedStationIdentity(t *testing.T) {
 	}
 }
 
-func TestStationGovernanceRequiresTheInitialOwnerRole(t *testing.T) {
+func TestStationGovernanceUsesItsOwnerSigner(t *testing.T) {
 	db := setupTestDB(t)
 	for _, actor := range []modeldb.Actor{
 		{
@@ -506,31 +507,28 @@ func TestStationGovernanceRequiresTheInitialOwnerRole(t *testing.T) {
 	}
 	repos := infrastructure.NewRepos(db)
 	subserver := &subServer{stationRoleRepo: repos.StationRole}
-	owner, err := subserver.requireStationGovernance(
+	owner, err := subserver.governanceActor(
 		coreauth.WithSubject(
 			context.Background(),
 			&coreauth.Subject{ID: "ptid:test:owner"},
 		),
 	)
-	if err != nil || owner.ID != "ptid:test:owner" {
+	if err != nil || owner != "ptid:test:owner" {
 		t.Fatalf("initial owner authorization subject=%+v err=%v", owner, err)
 	}
-	_, err = subserver.requireStationGovernance(
+	owner, err = subserver.governanceActor(
 		coreauth.WithSubject(
 			context.Background(),
 			&coreauth.Subject{ID: "ptid:test:member"},
 		),
 	)
-	var handlerError *server.HandlerError
-	if !errors.As(err, &handlerError) {
-		t.Fatalf("member authorization error=%v, want HandlerError", err)
+	if err != nil || owner != "ptid:test:owner" {
+		t.Fatalf("request actor selected governance signer: %s %v", owner, err)
 	}
-	if handlerError.Code != http.StatusForbidden {
-		t.Fatalf(
-			"member authorization status=%d want=%d",
-			handlerError.Code,
-			http.StatusForbidden,
-		)
+	for _, route := range subserver.Handlers() {
+		if strings.HasPrefix(route.Path(), "/sub-federation/federations") && route.Method() == server.POST {
+			t.Fatalf("actor governance route remains registered: %s", route.Path())
+		}
 	}
 }
 

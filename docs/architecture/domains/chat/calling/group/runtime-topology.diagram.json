@@ -1,0 +1,32 @@
+{
+  "kind": "peers-touch-architecture-diagram",
+  "schemaVersion": 3,
+  "id": "chat-group-calling.runtime",
+  "module": "chat-group-calling",
+  "viewpoint": "runtime-topology",
+  "layout": "topology",
+  "output": "runtime-topology.svg",
+  "title": "Group calling · Home authorization and SFU media",
+  "canvas": { "width": 1120, "height": 600 },
+  "edgeMeaning": "Arrows represent network calls",
+  "scene": {
+    "zones": [
+      { "id": "client", "title": "CLIENT INSTALLATION", "x": 25, "y": 80, "width": 300, "height": 180, "tone": "secondary" },
+      { "id": "home", "title": "HOME STATION", "x": 400, "y": 80, "width": 300, "height": 180, "tone": "primary" },
+      { "id": "authority", "title": "GROUP AUTHORITY", "x": 770, "y": 80, "width": 320, "height": 180, "tone": "primary" },
+      { "id": "sfu", "title": "MEDIA INFRASTRUCTURE", "x": 770, "y": 290, "width": 320, "height": 200, "tone": "external" }
+    ],
+    "instances": [
+      { "id": "client", "role": "client", "x": 40, "y": 120, "width": 270, "height": 100, "title": "Desktop / Mobile", "caption": "one device media lease", "tone": "secondary" },
+      { "id": "home", "role": "home", "x": 420, "y": 120, "width": 260, "height": 100, "title": "Home Station", "caption": "Session + device authorization", "tone": "primary" },
+      { "id": "authority", "role": "authority", "x": 790, "y": 120, "width": 280, "height": 100, "title": "Authority Station", "caption": "Conversation + endpoint grants", "tone": "primary" },
+      { "id": "sfu", "role": "sfu", "x": 790, "y": 345, "width": 280, "height": 100, "title": "LiveKit SFU", "caption": "trusted media infrastructure", "tone": "external" }
+    ],
+    "relations": [
+      { "from": "client", "to": "home", "fromAnchor": "right", "toAnchor": "left", "label": "join", "style": "primary", "via": [] },
+      { "from": "home", "to": "authority", "fromAnchor": "right", "toAnchor": "left", "label": "Federation", "style": "primary", "via": [] },
+      { "from": "authority", "to": "sfu", "fromAnchor": "bottom", "toAnchor": "top", "label": "grant / eject", "style": "primary", "via": [] },
+      { "from": "client", "to": "sfu", "fromAnchor": "bottom", "toAnchor": "left", "label": "WebRTC media", "style": "secondary", "via": [{ "x": 175, "y": 395 }] }
+    ]
+  }
+}

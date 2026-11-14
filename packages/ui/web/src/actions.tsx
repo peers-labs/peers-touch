@@ -82,9 +82,10 @@ export interface CopyButtonProps extends Omit<ButtonProps, 'onActivate'> {
   text: string;
   copiedLabel: string;
   copiedDurationMs?: number;
+  clipboardPort?: { writeText: (text: string) => Promise<void> };
   onCopyError?: (error: unknown) => void;
 }
-export function CopyButton({ text, copiedLabel, copiedDurationMs = 2500, label, onCopyError, ...props }: CopyButtonProps) {
+export function CopyButton({ text, copiedLabel, copiedDurationMs = 2500, label, onCopyError, clipboardPort, ...props }: CopyButtonProps) {
   const [copied, setCopied] = useState(false);
   // B07: success is a transient confirmation, not a permanent relabel; the
   // timer is owned by the control and cleared on unmount/re-copy.
@@ -95,7 +96,7 @@ export function CopyButton({ text, copiedLabel, copiedDurationMs = 2500, label, 
   }, [copied, copiedDurationMs]);
   return <Button {...props} aria-live="polite" leading={<Icon iconId={copied ? 'check' : 'copy'} />}
     onActivate={async () => {
-      try { await navigator.clipboard.writeText(text); setCopied(true); }
+      try { await (clipboardPort ?? navigator.clipboard).writeText(text); setCopied(true); }
       catch (error) { setCopied(false); onCopyError?.(error); }
     }}>
     <span className="pt-copy-label">

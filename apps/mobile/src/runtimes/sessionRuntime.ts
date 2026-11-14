@@ -2,10 +2,12 @@ import { invoke } from '@tauri-apps/api/core';
 import { useSyncExternalStore } from 'react';
 
 import type {
+  LifecycleEventListener,
   MobileRuntimeContext,
   MobileRuntimeDescriptor,
   RuntimeOperationResult,
 } from '../app/lifecycle/types';
+import { getMobileLifecycleKernel } from '../app/lifecycle/MobileLifecycleKernel';
 import {
   isAccessGranted,
   type AccessDecision,
@@ -18,6 +20,7 @@ import {
 } from '../features/station/stationRegistry';
 import type { OAuthPublicProjection } from '../services/mobileCommands';
 import { createMobileActorStorageRuntime } from '../storage/mobileClientStorage';
+import { readableErrorMessage } from '../utils/errorMessage';
 import {
   readAuthRuntimeSnapshot,
   subscribeAuthRuntimeSnapshot,
@@ -717,9 +720,11 @@ export async function purgeAllNativeSessionState(): Promise<NativeSessionRevocat
 
 export function createSessionRuntimeDescriptor(): MobileRuntimeDescriptor {
   let unsubscribeAuth: (() => void) | null = null;
+  let unsubscribeKernelEvents: (() => void) | null = null;
   let releaseMutationAdmission: (() => void) | null = null;
   let lifecycleEpoch = 0;
   let running = false;
+  let pendingRevalidationEpoch: number | null = null;
 
   const observeOAuth = async () => {
     const observed = lifecycleEpoch;
@@ -749,6 +754,67 @@ export function createSessionRuntimeDescriptor(): MobileRuntimeDescriptor {
       return;
     }
     await sessionRuntime.restore(station, state.accessDecision);
+  };
+
+  // Foreground revalidation after a local-only restore. A same-account
+  // takeover replaces the server session while the cached projection still
+  // looks valid, so resume must probe the Station through the canonical rotate
+  // path instead of waiting for the scheduled refresh window. The controller
+  // retains the cached session on transient errors (offline-first) and only
+  // revokes on a terminal rejection.
+  const revalidateResumedSession = async (observed: number): Promise<void> => {
+    if (!running || observed !== lifecycleEpoch) return;
+    const projected = sessionRuntime.getSnapshot();
+    if (projected.phase !== 'active' || !projected.session) return;
+    try {
+      await sessionRuntime.refresh('scheduled');
+    } catch {
+      // The controller owns the typed outcome: terminal rejection already
+      // revoked and fenced the session, while a transient failure kept the
+      // cached projection and armed a retry.
+    }
+    if (!running || observed !== lifecycleEpoch) return;
+    if (sessionRuntime.getSnapshot().session) return;
+    const kernel = getMobileLifecycleKernel();
+    if (kernel.getState().phase !== 'ACTIVE') return;
+    try {
+      await kernel.reconcileLaunchState('reliability-recovery');
+    } catch {
+      // Reconciliation is advisory: the session-expired recovery flag and the
+      // fenced projection remain authoritative when the kernel cannot converge.
+    }
+  };
+
+  // Fire the probe on the kernel RESUMING -> ACTIVE transition, but only after
+  // this descriptor's own resume() armed a pending revalidation. Gating on the
+  // pending epoch avoids probing during unrelated resumes (for example kernel
+  // resumes inside the OAuth authentication flow), which would destabilize the
+  // runtime readiness gate. The transition itself runs after every descriptor
+  // resume succeeds, so revocation happens in the steady-state regime and
+  // dependent runtimes are not mutated mid-cascade.
+  const handleKernelEvent: LifecycleEventListener = (event) => {
+    if (
+      event.kind !== 'phase-changed'
+      || event.phase !== 'ACTIVE'
+      || event.previousPhase !== 'RESUMING'
+    ) {
+      return;
+    }
+    if (pendingRevalidationEpoch === null) return;
+    const observed = pendingRevalidationEpoch;
+    pendingRevalidationEpoch = null;
+    if (!running || observed !== lifecycleEpoch) return;
+    void revalidateResumedSession(observed);
+  };
+
+  const scheduleResumeRevalidation = (observed: number): void => {
+    pendingRevalidationEpoch = observed;
+    // Safety net for a resume that resolves while the graph is already ACTIVE:
+    // no RESUMING -> ACTIVE event is emitted in that case, so probe once here.
+    if (getMobileLifecycleKernel().getState().phase === 'ACTIVE') {
+      pendingRevalidationEpoch = null;
+      void revalidateResumedSession(observed);
+    }
   };
 
   return {
@@ -781,24 +847,36 @@ export function createSessionRuntimeDescriptor(): MobileRuntimeDescriptor {
       unsubscribeAuth = subscribeAuthRuntimeSnapshot(() => {
         void observeOAuth();
       });
+      unsubscribeKernelEvents = getMobileLifecycleKernel().onEvent(
+        handleKernelEvent,
+      );
     },
 
     async suspend(): Promise<void> {
       running = false;
       lifecycleEpoch += 1;
+      pendingRevalidationEpoch = null;
       sessionRuntime.suspend();
     },
 
     async resume(): Promise<void> {
       running = true;
-      lifecycleEpoch += 1;
+      const observed = ++lifecycleEpoch;
       await restoreOwnedSession();
+      if (!running || observed !== lifecycleEpoch) return;
+      // The Station probe waits for the kernel to reach ACTIVE after the resume
+      // cascade so foreground resume never mutates admission while dependent
+      // runtimes are still resuming, and never blocks on the network.
+      scheduleResumeRevalidation(observed);
     },
 
     async teardown(): Promise<RuntimeOperationResult> {
       const start = performance.now();
       running = false;
       lifecycleEpoch += 1;
+      pendingRevalidationEpoch = null;
+      unsubscribeKernelEvents?.();
+      unsubscribeKernelEvents = null;
       unsubscribeAuth?.();
       unsubscribeAuth = null;
       releaseMutationAdmission?.();
@@ -913,7 +991,7 @@ function assertSessionAdmission(
 }
 
 function isTerminalSessionRefreshError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = readableErrorMessage(error);
   if (
     /oauthTransportUnavailable|oauthResponseRead|sessionCredentialRejected:(408|429|5\d\d)/.test(
       message,
@@ -935,7 +1013,7 @@ function nativeStorageIsEmpty(
 }
 
 function sessionErrorKey(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = readableErrorMessage(error);
   return message.match(/mobile\.auth\.[A-Za-z0-9]+/)?.[0]
     ?? 'mobile.auth.sessionFailed';
 }

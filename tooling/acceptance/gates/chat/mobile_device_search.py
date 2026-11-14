@@ -625,6 +625,7 @@ const domain = action.startsWith('moments.') ? 'moments'
         filename = f"附件计划-{token}-预算与研发进度审查-跨团队评审-{('年度执行计划' * 7)}.txt"
         content = f"real attachment {token}".encode()
         staged = self.mutate_when_admitted(sender_session, "messaging.attachment.stage", {
+            "conversationId": conversation,
             "filename": filename, "mimeType": "text/plain",
             "sha256": hashlib.sha256(content).hexdigest(),
             "bytesBase64": base64.b64encode(content).decode(),

@@ -15,6 +15,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@peers-touch/ui';
+import { useScopedFeedback } from '../../hooks/useAppFeedback';
 import { Check, Globe, MessageCircle, UserPlus, Clock } from 'lucide-react';
 
 import { useSessionStore } from '../../store/session';
@@ -26,7 +27,6 @@ import {
   singleFederationId,
 } from '../../store/friendshipProjection';
 import { EVENT, eventBus } from '../../kernel/events';
-import { notifyError, notifySuccess, notifyWarning } from '../../ui/feedback';
 import { findFriendRequest } from './profileRelationship';
 import { useProfileRelationship } from './useProfileRelationship';
 
@@ -44,6 +44,7 @@ interface ProfilePrimaryActionProps {
 
 export function ProfilePrimaryAction({ actorPtid, onMessage, onAction }: ProfilePrimaryActionProps) {
   const { t } = useTranslation(['chat', 'layout']);
+  const feedback = useScopedFeedback();
   const kind = useProfileRelationship(actorPtid);
 
   const peerProfile = useSocialChatStore((state) => state.peerProfiles[actorPtid]);
@@ -69,9 +70,7 @@ export function ProfilePrimaryAction({ actorPtid, onMessage, onAction }: Profile
       <Button
         actionId="profile.manage-account"
         fullWidth
-        emphasis="secondary"
-        density="compact"
-        leading={<Globe size={15} />}
+        leading={<Globe size={14} />}
         data-chat-profile-manage
         onActivate={() => {
           close();
@@ -84,24 +83,19 @@ export function ProfilePrimaryAction({ actorPtid, onMessage, onAction }: Profile
   }
 
   if (kind === 'requested') {
-    const requestedLabel = t('chat.social.profile.requested');
     return (
-      <Button
-        actionId="profile.requested"
-        fullWidth
-        emphasis="secondary"
-        leading={<Clock size={14} />}
-        availability={{ kind: 'disabled', reason: requestedLabel }}
-        data-chat-profile-requested
-        label={requestedLabel}
-      />
+      <Button actionId="profile.friend-requested" fullWidth
+        availability={{ kind: 'disabled', reason: t('chat.social.profile.requested') }}
+        leading={<Clock size={14} />} data-chat-profile-requested>
+        {t('chat.social.profile.requested')}
+      </Button>
     );
   }
 
   if (kind === 'incoming-request' && friendRequest) {
     return (
       <Button
-        actionId="profile.accept-request"
+        actionId="profile.accept-friend"
         fullWidth
         emphasis="primary"
         leading={<Check size={14} />}
@@ -111,23 +105,24 @@ export function ProfilePrimaryAction({ actorPtid, onMessage, onAction }: Profile
           setBusy('accept');
           try {
             await acceptFriendRequest(friendRequest);
-            notifySuccess(t('chat.social.contacts.accept'));
+            feedback.success(t('chat.social.contacts.accept'));
             close();
           } catch {
-            notifyError(t('chat.social.findPeople.addFailed'));
+            feedback.error(t('chat.social.findPeople.addFailed'));
           } finally {
             setBusy(null);
           }
         }}
-        label={t('chat.social.contacts.accept')}
-      />
+      >
+        {t('chat.social.contacts.accept')}
+      </Button>
     );
   }
 
   if (kind === 'friend') {
     return (
       <Button
-        actionId="profile.send-message"
+        actionId="profile.message"
         fullWidth
         emphasis="primary"
         leading={<MessageCircle size={14} />}
@@ -136,10 +131,10 @@ export function ProfilePrimaryAction({ actorPtid, onMessage, onAction }: Profile
           if (onMessage) {
             onMessage();
           } else {
-            // Read the projected conversations at click time. Selecting
-            // getIMConversations() reactively is unsafe because it builds a
-            // new array on every call, which React reads as an endlessly
-            // changing store snapshot (Maximum update depth exceeded).
+            // Read the derived projection imperatively at click time. Selecting
+            // getIMConversations() reactively would subscribe to a fresh array
+            // (and fresh projection objects) on every store notification,
+            // causing an unbounded re-render loop (React error #185).
             const existing = useSocialChatStore.getState()
               .getIMConversations()
               .find(
@@ -150,23 +145,22 @@ export function ProfilePrimaryAction({ actorPtid, onMessage, onAction }: Profile
           }
           close();
         }}
-        label={t('chat.social.contacts.sendMessage')}
-      />
+      >
+        {t('chat.social.contacts.sendMessage')}
+      </Button>
     );
   }
 
   const addFriend = async () => {
+    const currentConversations = useSocialChatStore.getState().getIMConversations();
     const homeStationPeerId = peerProfile?.home_station_peer_id?.trim()
       || (friendRequest?.senderPtid === actorPtid
         ? friendRequest.senderHomeStationPeerId
         : friendRequest?.receiverHomeStationPeerId)
       || '';
-    const existingConversation = useSocialChatStore.getState()
-      .getIMConversations()
-      .find(
-        (conversation) => conversation.kind === 'friend'
-          && conversation.peerPtid === actorPtid,
-      );
+    const existingConversation = currentConversations.find(
+      (conversation) => conversation.kind === 'friend' && conversation.peerPtid === actorPtid,
+    );
     // Same-Station peers only need a valid local federation context; when the
     // Station participates in several federations there is no single default,
     // so fall back to the first active context instead of blocking the add.
@@ -179,16 +173,16 @@ export function ProfilePrimaryAction({ actorPtid, onMessage, onAction }: Profile
       || singleFederationId(federations)
       || (sameStation ? localFederationFallback(federations) : '');
     if (!homeStationPeerId || !federationId) {
-      notifyWarning(t('chat.social.profile.addIdentityUnavailable'));
+      feedback.warning(t('chat.social.profile.addIdentityUnavailable'));
       return;
     }
     setBusy('add');
     try {
       await sendFriendRequest(actorPtid, homeStationPeerId, federationId, '');
-      notifySuccess(t('chat.social.findPeople.requestSent'));
+      feedback.success(t('chat.social.findPeople.requestSent'));
       close();
     } catch (error) {
-      notifyError(
+      feedback.error(
         (error as { message?: string })?.message
           || t('chat.social.findPeople.addFailed'),
       );
@@ -206,7 +200,8 @@ export function ProfilePrimaryAction({ actorPtid, onMessage, onAction }: Profile
       execution={busy === 'add' ? 'pending' : 'idle'}
       data-chat-profile-add-friend
       onActivate={() => void addFriend()}
-      label={t('chat.social.profile.addFriend')}
-    />
+    >
+      {t('chat.social.profile.addFriend')}
+    </Button>
   );
 }

@@ -1,24 +1,19 @@
-import type { ReactNode } from 'react';
-import { Typography } from 'antd';
 import {
   Check,
   CheckCheck,
   Clock,
   Paperclip,
   Mic,
-  RotateCcw,
-  X,
 } from 'lucide-react';
 
 import { chatMediaKindForAttachment } from '@peers-touch/client-chat-core';
+import { Button, Icon, IconButton, Text } from '@peers-touch/ui';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import { MobileAvatar } from '../../components/MobileAvatar';
 import type { MobileChatAttachmentDraft } from '../../features/chat/chatAttachmentDraftState';
 import type { ChatMessageCommandOutcome } from '../../features/chat/messageCommandState';
 import type { MessageDeliveryDisplayState } from '../../features/chat/messageProjection';
-
-const { Text } = Typography;
 
 export function MessageDeliveryStatus({
   state,
@@ -35,10 +30,10 @@ export function MessageDeliveryStatus({
       <span className="message-delivery-status failed" data-message-delivery="failed">
         <span>{t(canRetry ? 'mobile.chat.commandFailed' : 'mobile.chat.commandFailedNoRetry')}</span>
         {canRetry ? (
-          <button type="button" className="message-retry-button" onClick={onRetry}>
-            <RotateCcw size={12} />
-            <span>{t('mobile.chat.retryCommand')}</span>
-          </button>
+          <Button actionId="chat.message.retry" emphasis="quiet" density="comfortable"
+            leading={<Icon iconId="rotate-ccw" size={12} />} onActivate={onRetry}>
+            {t('mobile.chat.retryCommand')}
+          </Button>
         ) : null}
       </span>
     );
@@ -118,25 +113,6 @@ export function MessageAvatar({
   );
 }
 
-export function ComposerToolButton({
-  icon,
-  label,
-  onClick,
-  disabled,
-}: {
-  readonly icon: ReactNode;
-  readonly label: string;
-  readonly onClick: () => void;
-  readonly disabled?: boolean;
-}) {
-  return (
-    <button className="composer-tool-option" type="button" onClick={onClick} disabled={disabled}>
-      <span className="composer-tool-option-icon">{icon}</span>
-      <span>{label}</span>
-    </button>
-  );
-}
-
 export function AttachmentDraftChip({
   draft,
   disabled,
@@ -150,24 +126,60 @@ export function AttachmentDraftChip({
 }) {
   const { t } = useMobileI18n();
   const kind = chatMediaKindForAttachment(draft);
+  const label = draft.voiceNote
+    ? t('mobile.chat.voicePreview', { seconds: Math.ceil(draft.voiceNote.durationMs / 1000) })
+    : draft.filename;
+  const audioReady = kind === 'audio' && (draft.status === 'ready' || draft.status === 'submitted');
   return (
-    <div className="attachment-draft-chip">
-      {kind === 'image' ? (
-        <img src={draft.previewUrl} alt={draft.filename} />
-      ) : kind === 'audio' ? (
-        <audio src={draft.previewUrl} controls preload="metadata" />
-      ) : (
-        <Paperclip size={15} />
-      )}
-      <span>{draft.filename}</span>
+    <div className="attachment-draft-chip" data-attachment-draft-id={draft.id}
+      data-attachment-draft-state={draft.status} data-attachment-filename={draft.filename}
+      data-voice-draft={draft.voiceNote ? 'preview' : undefined}
+      data-product-surface={draft.voiceNote && draft.status === 'ready' ? 'chat.voice-preview' : undefined}>
+      <div className="attachment-draft-summary">
+        {kind === 'image' ? <img src={draft.previewUrl} alt={draft.filename} /> : <Paperclip size={15} />}
+        <span className="attachment-draft-label">{label}</span>
+      </div>
+      <div className="attachment-draft-actions">
       {draft.status === 'failed' ? (
-        <button type="button" onClick={onRetry} aria-label={t('common.action.retry')} disabled={disabled}>
-          <RotateCcw size={12} />
-        </button>
+        <IconButton actionId={`chat.attachment.retry.${draft.id}`} iconId="rotate-ccw"
+          label={t('common.action.retry')} emphasis="quiet" density="comfortable"
+          availability={disabled ? { kind: 'disabled', reason: t('mobile.chat.waitForAttachments') } : undefined}
+          onActivate={onRetry} />
       ) : null}
-      <button type="button" onClick={onRemove} aria-label={t('common.action.delete')} disabled={disabled}>
-        <X size={12} />
-      </button>
+      <IconButton actionId={`chat.attachment.remove.${draft.id}`} iconId="close"
+        label={t('common.action.delete')} emphasis="quiet" density="comfortable"
+        availability={disabled ? { kind: 'disabled', reason: t('mobile.chat.waitForAttachments') } : undefined}
+        onActivate={onRemove} />
+      </div>
+      {audioReady ? <audio className="attachment-draft-audio" src={draft.previewUrl}
+        controls preload="metadata" aria-label={label} /> : null}
+    </div>
+  );
+}
+
+export function ChatMessageSelectionToolbar({
+  count, busy, onForward, onHide, onCancel,
+}: {
+  readonly count: number;
+  readonly busy: boolean;
+  readonly onForward: () => void;
+  readonly onHide: () => void;
+  readonly onCancel: () => void;
+}) {
+  const { t } = useMobileI18n();
+  const unavailable = busy || count === 0
+    ? { kind: 'disabled' as const, reason: t(busy ? 'mobile.chat.commandPending' : 'mobile.chat.selectBeforeAction') }
+    : undefined;
+  return (
+    <div className="message-selection-toolbar" data-product-surface="chat.message-selection">
+      <Text>{t('mobile.chat.selectionCount', { count })}</Text>
+      <Button actionId="chat.selection.forward" emphasis="quiet" density="comfortable"
+        availability={unavailable} onActivate={onForward}>{t('mobile.chat.forward')}</Button>
+      <Button actionId="chat.selection.hide" emphasis="quiet" tone="danger" density="comfortable"
+        availability={unavailable} onActivate={onHide}>{t('mobile.chat.deleteForMe')}</Button>
+      <Button actionId="chat.selection.cancel" emphasis="quiet" density="comfortable"
+        availability={busy ? { kind: 'disabled', reason: t('mobile.chat.commandPending') } : undefined}
+        onActivate={onCancel}>{t('common.action.cancel')}</Button>
     </div>
   );
 }
@@ -184,9 +196,10 @@ export function EncryptedAttachmentReferenceChip({
     <div className="attachment-draft-chip">
       <Paperclip size={15} />
       <span>{t('mobile.chat.attachmentUnnamed')}</span>
-      <button type="button" onClick={onRemove} aria-label={t('common.action.delete')} disabled={disabled}>
-        <X size={12} />
-      </button>
+      <IconButton actionId="chat.attachment.reference.remove" iconId="close"
+        label={t('common.action.delete')} emphasis="quiet" density="comfortable"
+        availability={disabled ? { kind: 'disabled', reason: t('mobile.chat.waitForAttachments') } : undefined}
+        onActivate={onRemove} />
     </div>
   );
 }

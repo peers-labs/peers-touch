@@ -1,0 +1,148 @@
+/*
+ * Mobile north-star skin.
+ *
+ * Scope rules (docs/knowledge invariant: app layer must not restyle primitives):
+ *  - Only the provider container (.pt-ui.m-northstar) is themed here.
+ *  - Values are exposed as CSS custom properties the primitives already consume;
+ *    there are NO selectors targeting .pt-button/.pt-field-frame/... controls.
+ *  - Mobile-only geometry (which north-star does not publish) lives under the
+ *    mobile-owned --pt-m-* namespace; there is no mobile color palette.
+ */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+/* Primary page composition; controls retain their peers-ui-owned chrome. */
+.mobile-moments-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: var(--pt-space-2, 8px);
+  min-height: var(--pt-m-header-height);
+  padding: 4px 12px;
+  background: var(--pt-canvas);
+}
+.mobile-moments-scopes,
+.mobile-moments-search {
+  flex: 1;
+  min-width: 0;
+}
+.mobile-moments-feed-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 12px;
+}
+.mobile-me-identity {
+  width: 100%;
+}
+.mobile-me-cover {
+  position: relative;
+  height: clamp(144px, 38vw, 210px);
+  overflow: hidden;
+  background: var(--pt-subtle);
+}
+.mobile-me-cover > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.mobile-me-cover-action {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+}
+.mobile-me-identity-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 0 20px 20px;
+}
+.mobile-me-avatar {
+  position: relative;
+  margin-top: -28px;
+  z-index: 1;
+}
+.mobile-me-avatar-action {
+  position: absolute;
+  right: -12px;
+  bottom: -8px;
+}
+.mobile-me-name-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.mobile-me-name {
+  font-size: var(--pt-type-title-size, 24px);
+  overflow-wrap: anywhere;
+}
+.mobile-me-statistics {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.mobile-me-statistics > span {
+  display: inline-flex;
+  gap: 4px;
+}
+.mobile-credential-value {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.mobile-credential-value code {
+  overflow-wrap: anywhere;
+  font: inherit;
+  font-family: var(--pt-font-mono, monospace);
+}
+.mobile-setting-navigation-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+}
+.mobile-setting-navigation-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pt-ui.m-northstar {
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+
+  /* Mobile-only geometry tokens (north-star publishes color/radius/space/motion,
+     not device chrome heights). Consumed by migrated mobile layouts. */
+  --pt-m-header-height: 58px;
+  --pt-m-header-height-compact: 52px;
+  --pt-m-tabbar-height: 56px;
+  --pt-m-safe-area-top: env(safe-area-inset-top, 0px);
+  --pt-m-safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --pt-m-composer-min-height: 56px;
+  --pt-m-scroll-bottom-clearance: 12px;
+
+}
+
+@media (display-mode: standalone) {
+  .pt-ui.m-northstar {
+    --pt-m-header-height-compact: 50px;
+  }
+}

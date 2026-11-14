@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArchiveRestore, Trash2 } from 'lucide-react';
+import { restoreNavigationFocus } from '@peers-touch/ui';
 
 import type { DraftDisposition } from '../../app/lifecycle/types';
 
@@ -37,7 +38,7 @@ export function ScopeExitDraftDecisionOverlay({
     retainRef.current?.focus();
     return () => {
       if (previousFocus instanceof HTMLElement && previousFocus.isConnected) {
-        previousFocus.focus();
+        restoreNavigationFocus(previousFocus);
       }
     };
   }, []);

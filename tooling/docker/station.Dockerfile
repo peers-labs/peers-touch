@@ -98,7 +98,7 @@ RUN sed -i \
       -e 's|http://ports.ubuntu.com|http://mirrors.tuna.tsinghua.edu.cn|g' \
       /etc/apt/sources.list && \
     apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates tzdata wget gettext-base && \
+    apt-get install -y --no-install-recommends ca-certificates tzdata wget curl gettext-base && \
     rm -rf /var/lib/apt/lists/*
 
 RUN case "${TARGETARCH}" in \

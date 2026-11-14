@@ -270,7 +270,7 @@ fn service_plaintext_rejects_human_e2ee_fact() {
 
     let error = processor.consume(&item, 1).unwrap_err();
     assert_eq!(
-        error,
+        error.message(),
         "messaging service-plaintext fact must be SYSTEM/SERVICE_PLAINTEXT"
     );
 }
@@ -282,7 +282,7 @@ fn service_plaintext_rejects_non_system_sender_device() {
 
     let error = processor.consume(&item, 1).unwrap_err();
     assert_eq!(
-        error,
+        error.message(),
         "messaging service-plaintext sender is not the reserved system endpoint"
     );
 }
@@ -300,7 +300,7 @@ fn service_plaintext_decoder_rejects_every_mls_group_delivery_kind() {
 
         let error = processor.consume(&item, 1).unwrap_err();
         assert_eq!(
-            error,
+            error.message(),
             "messaging service-plaintext processor received wrong endpoint payload kind"
         );
         assert!(repo.committed_service.lock().unwrap().is_none());
@@ -317,7 +317,7 @@ fn normal_direct_ciphertext_never_enters_service_plaintext_decoder() {
 
     let error = processor.consume(&item, 1).unwrap_err();
     assert_eq!(
-        error,
+        error.message(),
         "messaging service-plaintext processor received wrong endpoint payload kind"
     );
     assert!(repo.committed_service.lock().unwrap().is_none());

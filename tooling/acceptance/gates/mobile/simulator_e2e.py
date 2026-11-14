@@ -354,6 +354,8 @@ class SimulatorAppiumSession:
         callback_scheme: str,
         ports: Mapping[str, int],
         chromedriver_executable: str = "",
+        ios_launch: Callable[[], None] | None = None,
+        capture_native_output: Callable[[], None] | None = None,
     ) -> None:
         expected_automation = EXPECTED_AUTOMATION_NAMES.get(platform)
         if expected_automation is None:
@@ -394,6 +396,8 @@ class SimulatorAppiumSession:
         self.callback_scheme = callback_scheme
         self.ports = dict(ports)
         self.chromedriver_executable = chromedriver_executable
+        self.ios_launch = ios_launch
+        self.capture_native_output = capture_native_output
         self.session_id = ""
         self.current_context = "NATIVE_APP"
 
@@ -422,6 +426,8 @@ class SimulatorAppiumSession:
                     "appium:includeSafariInWebviews": True,
                 }
             )
+            if self.ios_launch is not None:
+                capabilities["appium:autoLaunch"] = False
             wda_bundle_id = os.environ.get(
                 "PT_MOBILE_IOS_WDA_BUNDLE_ID",
                 "",
@@ -476,6 +482,8 @@ class SimulatorAppiumSession:
         self.session_id = session_id
         self.current_context = "NATIVE_APP"
         if self.platform == "ios":
+            if self.ios_launch is not None:
+                self.ios_launch()
             self._request("POST", self._path("/timeouts"), {"script": 45000})
         return self
 
@@ -492,14 +500,17 @@ class SimulatorAppiumSession:
         return self.start()
 
     def stop(self) -> None:
-        if not self.session_id:
-            return
-        session_id = self.session_id
-        self._request(
-            "DELETE",
-            f"/session/{urllib.parse.quote(session_id, safe='')}",
-        )
-        self.session_id = ""
+        try:
+            if self.capture_native_output is not None:
+                self.capture_native_output()
+        finally:
+            if self.session_id:
+                session_id = self.session_id
+                self._request(
+                    "DELETE",
+                    f"/session/{urllib.parse.quote(session_id, safe='')}",
+                )
+                self.session_id = ""
 
     def wait_for_ready(self, timeout: float = 30.0) -> None:
         deadline = time.monotonic() + _positive_timeout(timeout)
@@ -663,11 +674,21 @@ class SimulatorAppiumSession:
         )
 
     def find_element(self, using: str, value: str) -> str:
-        result = self._request(
-            "POST",
-            self._path("/element"),
-            {"using": using, "value": value},
-        )
+        if using == "css selector" and self.current_context != "NATIVE_APP":
+            result = self.execute_script(
+                "return Array.from(document.querySelectorAll(arguments[0]))"
+                ".find(node=>!node.closest('[hidden]')"
+                "&&getComputedStyle(node).display!=='none'"
+                "&&getComputedStyle(node).visibility!=='hidden'"
+                "&&node.getClientRects().length>0)??null;",
+                value,
+            )
+        else:
+            result = self._request(
+                "POST",
+                self._path("/element"),
+                {"using": using, "value": value},
+            )
         if not isinstance(result, dict):
             raise DriverError("Appium element response is invalid")
         element_ref = result.get(W3C_ELEMENT_KEY) or result.get("ELEMENT")
@@ -1341,12 +1362,61 @@ class SimulatorCallbackRoutingGate(AcceptanceGate):
                 for spec in clients
             }
 
+        assertions = self._assertions_from_clients(client_results)
+        failed = [item["name"] for item in assertions if not item["passed"]]
+        if failed:
+            raise GateError(
+                "Mobile simulator access assertions failed: "
+                + ", ".join(failed)
+            )
+
         return {
             **self._result_base("PASS"),
             "completionStatus": "DONE",
             "proofStatus": "PROVEN",
             "clients": client_results,
+            "assertions": assertions,
         }
+
+    def _assertions_from_clients(
+        self,
+        client_results: Mapping[str, dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Build explicit, evidence-derived assertions for the proof contract.
+
+        Every isolated client must reach all fail-closed stages (warm/cold
+        invalid callback routing plus post-restart reconnection) and end with
+        the OAuth phase unadvanced; no simulator client may claim a physical
+        device role.
+        """
+        required_stages = (
+            "initial",
+            "warm-invalid",
+            "cold-invalid",
+            "restart-reconnected",
+        )
+        # Fail-closed terminals: idle (nothing advanced) or failed (callback
+        # explicitly rejected). An admitted "active_session" phase would mean an
+        # invalid callback was wrongly accepted.
+        fail_closed_phases = {"idle", "failed"}
+        assertions: list[dict[str, Any]] = []
+        for client_id, result in sorted(client_results.items()):
+            stages = result.get("stages", [])
+            assertions.extend([
+                {
+                    "name": f"MS-AG02:{client_id}:all-fail-closed-stages-observed",
+                    "passed": all(stage in stages for stage in required_stages),
+                },
+                {
+                    "name": f"MS-AG02:{client_id}:invalid-callback-leaves-access-unadmitted",
+                    "passed": result.get("finalPhase") in fail_closed_phases,
+                },
+                {
+                    "name": f"MS-AG02:{client_id}:does-not-claim-physical-device",
+                    "passed": result.get("physicalRoleClaimed") is False,
+                },
+            ])
+        return assertions
 
     def _client_specs(
         self,

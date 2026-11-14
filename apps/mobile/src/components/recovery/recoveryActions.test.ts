@@ -141,7 +141,7 @@ describe('Mobile reliability recovery surfaces', () => {
       /\.header-action\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;/s,
     );
     expect(stylesSource).toMatch(
-      /\.chat-search-bar \.ant-input-affix-wrapper\s*\{[^}]*height:\s*44px;/s,
+      /\.chat-search-bar \.chat-search-field\s*\{[^}]*height:\s*44px;/s,
     );
     expect(stylesSource).toMatch(
       /\.mobile-notice-close\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;/s,
@@ -207,5 +207,31 @@ describe('Mobile reliability recovery surfaces', () => {
     expect(stylesSource).not.toContain(
       ".recovery-overlay-host[data-launch-state='shell'] {",
     );
+  });
+
+  it('keeps overlay panels scroll-reachable inside short landscape viewports', () => {
+    // In landscape the three-button scope-exit panel exceeded the viewport and
+    // flex centering clipped Cancel beneath the tab bar. The panel must cap to
+    // the scroll container, scroll its body, and pin the action row.
+    const overlayRule = stylesSource.match(
+      /\.recovery-screen,\s*\.recovery-overlay\s*\{[^}]*\}/,
+    )?.[0] ?? '';
+    expect(overlayRule).toContain('align-items: flex-start');
+
+    const panelRule = stylesSource.match(
+      /\.recovery-panel,\s*\.recovery-overlay__panel\s*\{[^}]*\}/,
+    )?.[0] ?? '';
+    expect(panelRule).toContain('max-height: 100%');
+    expect(panelRule).toContain('margin-block: auto');
+
+    const bodyRule = stylesSource.match(
+      /\.recovery-panel__description,\s*\.recovery-overlay__body\s*\{[^}]*\}/,
+    )?.[0] ?? '';
+    expect(bodyRule).toContain('overflow-y: auto');
+
+    const actionsRule = stylesSource.match(
+      /\.recovery-panel__actions,\s*\.recovery-overlay__actions\s*\{[^}]*\}/,
+    )?.[0] ?? '';
+    expect(actionsRule).toContain('flex: 0 0 auto');
   });
 });

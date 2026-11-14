@@ -53,13 +53,6 @@ export const primaryTabDescriptors: readonly NavigationDescriptor[] = [
     keepAlive: false,
   },
   {
-    routeId: 'tab:contacts',
-    labelKey: 'mobile.tab.contacts',
-    layout: 'primary',
-    ownerRuntimeId: 'social',
-    keepAlive: false,
-  },
-  {
     routeId: 'tab:settings',
     labelKey: 'mobile.tab.settings',
     layout: 'primary',
@@ -95,6 +88,13 @@ export const detailDescriptors: readonly NavigationDescriptor[] = [
   {
     routeId: 'detail:contact-profile',
     labelKey: 'mobile.nav.contactProfile',
+    layout: 'detail',
+    ownerRuntimeId: 'social',
+    keepAlive: false,
+  },
+  {
+    routeId: 'detail:find-people',
+    labelKey: 'mobile.contacts.findPeople',
     layout: 'detail',
     ownerRuntimeId: 'social',
     keepAlive: false,
@@ -154,8 +154,8 @@ export const detailDescriptors: readonly NavigationDescriptor[] = [
 
 export const overlayDescriptors: readonly NavigationDescriptor[] = [
   {
-    routeId: 'overlay:add-friend',
-    labelKey: 'mobile.nav.addFriend',
+    routeId: 'overlay:notifications',
+    labelKey: 'mobile.notifications.title',
     layout: 'overlay',
     ownerRuntimeId: 'social',
     keepAlive: false,

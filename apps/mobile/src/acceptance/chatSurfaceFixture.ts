@@ -17,6 +17,9 @@ export const CHAT_SURFACE_FIXTURE_IDS = [
   'chat.thread-search-empty',
   'chat.thread-search-error',
   'chat.composer-keyboard',
+  'chat.composer-expanded',
+  'chat.voice-preview',
+  'chat.message-selection',
   'chat.attachment-ready',
   'chat.attachment-uploading',
   'chat.attachment-failed',
@@ -36,6 +39,13 @@ export const CHAT_SURFACE_FIXTURE_IDS = [
   'chat.forward-failed',
   'chat.group-management',
   'chat.group-role-denied',
+  'chat.group-call-invitation',
+  'chat.group-call-connecting',
+  'chat.group-call-audio',
+  'chat.group-call-video',
+  'chat.group-call-reconnecting',
+  'chat.group-call-failed',
+  'chat.group-call-leaving',
 ] as const;
 
 export type ChatSurfaceFixtureId = typeof CHAT_SURFACE_FIXTURE_IDS[number];
@@ -82,6 +92,7 @@ export function chatSurfaceFixtureRouteKind(
     surfaceId === 'chat.group-thread'
     || surfaceId === 'chat.group-management'
     || surfaceId === 'chat.group-role-denied'
+    || surfaceId.startsWith('chat.group-call-')
   ) {
     return 'group';
   }

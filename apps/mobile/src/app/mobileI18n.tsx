@@ -100,3 +100,6 @@ function interpolate(value: string, params?: TranslationParams): string {
     value,
   );
 }
+
+export { mobileErrorKey, translateMobileError } from './mobileError';
+export type { MobileTranslationFn } from './mobileError';

@@ -303,7 +303,11 @@ class StorageGovernanceContractTest(unittest.TestCase):
         self.assertIn("chat_storage_acceptance_seed_retention", mobile_registry)
         self.assertIn("data-chat-storage-retention-option", desktop_ui)
         self.assertIn("data-chat-storage-retention-option", mobile_ui)
-        self.assertIn("MESSAGING_RECOVERY_FORMAT_VERSION: u32 = 4", recovery_types)
+        # #171 discriminated Local/Federation Direct scope and bumped the
+        # recovery archive format to v5; the scope_kind discriminator is the
+        # shared-scope fence this contract must keep native-visible.
+        self.assertIn("MESSAGING_RECOVERY_FORMAT_VERSION: u32 = 5", recovery_types)
+        self.assertIn("pub scope_kind: i32", recovery_types)
         self.assertIn("pub retention_floors: Vec<RecoveryRetentionFloor>", recovery_types)
         self.assertIn("MESSAGING_RECOVERY_FORMAT_VERSION", recovery)
         self.assertIn("messaging_core::recovery", recovery)

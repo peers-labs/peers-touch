@@ -59,7 +59,8 @@ const (
 	// RealtimeCallResolutionRoute reads call truth from the callee Home Station.
 	RealtimeCallResolutionRoute = "/federation/realtime/call-resolution"
 	// GroupCallAuthorityJoinRoute requests a LiveKit grant from Conversation Authority.
-	GroupCallAuthorityJoinRoute = "/federation/realtime/group-call/join"
+	GroupCallAuthorityJoinRoute   = "/federation/realtime/group-call/join"
+	GroupCallEndpointControlRoute = "/federation/realtime/group-call/endpoint-control"
 	// SocialPrivateObjectReadRoute streams one bounded Social ciphertext range.
 	SocialPrivateObjectReadRoute = "/federation/social/private/objects/:object_id/read"
 	SocialPublicFeedReadRoute    = "/federation/social/feed/read"
@@ -90,6 +91,7 @@ const (
 	PeerRouteRealtimeCallResolution           PeerRoute = "realtime-call-resolution"
 	PeerRouteRealtimeSignal                   PeerRoute = "realtime-signal"
 	PeerRouteGroupCallAuthorityJoin           PeerRoute = "group-call-authority-join"
+	PeerRouteGroupCallEndpointControl         PeerRoute = "group-call-endpoint-control"
 	PeerRouteSocialPrivateObjectRead          PeerRoute = "social-private-object-read"
 	PeerRouteSocialPublicFeedRead             PeerRoute = "social-public-feed-read"
 )
@@ -145,6 +147,7 @@ var peerRouteSpecs = []peerRouteSpec{
 	{PeerRouteRealtimeSignal, "federation-realtime-signal", RealtimeSignalRoute, server.POST, RealtimeSignalScope},
 	{PeerRouteRealtimeCallResolution, "federation-realtime-call-resolution", RealtimeCallResolutionRoute, server.POST, RealtimeCallResolutionScope},
 	{PeerRouteGroupCallAuthorityJoin, "federation-group-call-authority-join", GroupCallAuthorityJoinRoute, server.POST, GroupCallAuthorityJoinScope},
+	{PeerRouteGroupCallEndpointControl, "federation-group-call-endpoint-control", GroupCallEndpointControlRoute, server.POST, GroupCallEndpointControlScope},
 	{PeerRouteSocialPrivateObjectRead, "federation-social-private-object-read", SocialPrivateObjectReadRoute, server.POST, SocialPrivateObjectReadScope},
 	{PeerRouteSocialPublicFeedRead, "federation-social-public-feed-read", SocialPublicFeedReadRoute, server.POST, SocialPublicFeedReadScope},
 }
@@ -370,6 +373,13 @@ func (f *PeerRouteFactory) Handlers() []server.Handler {
 			server.POST,
 			f.dispatchRoute(PeerRouteGroupCallAuthorityJoin),
 			f.wrappers[PeerRouteGroupCallAuthorityJoin],
+		),
+		server.NewSimpleHandler(
+			"federation-group-call-endpoint-control",
+			GroupCallEndpointControlRoute,
+			server.POST,
+			f.dispatchRoute(PeerRouteGroupCallEndpointControl),
+			f.wrappers[PeerRouteGroupCallEndpointControl],
 		),
 		server.NewSimpleHandler(
 			"federation-social-private-object-read",

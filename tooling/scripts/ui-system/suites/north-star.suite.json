@@ -7876,6 +7876,26 @@
       "finalizers": []
     },
     {
+      "id": "ui.prototype.north-star.moments-compose-inline-attach",
+      "title": "发动态 Dialog 的图片附件内联在输入框左下底栏（与字数同一轨道），不存在独立工具栏行",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-rail-target='moments']" },
+        { "op": "click", "target": ".sk-compose-open" },
+        { "op": "wait", "ms": 250 }
+      ],
+      "oracles": [
+        { "id": "attach-inside-field-foot", "type": "exists", "scope": "global", "target": ".sk-compose .pt-textarea-foot .pt-file-picker" },
+        { "id": "attach-is-image-input", "type": "exists", "scope": "global", "target": ".sk-compose .pt-textarea-accessory input[accept='image/*']" },
+        { "id": "counter-shares-foot", "type": "exists", "scope": "global", "target": ".sk-compose .pt-textarea-foot .pt-character-count" },
+        { "id": "standalone-toolbar-gone", "type": "missing", "scope": "global", "target": ".sk-compose .sk-compose-toolbar, .sk-compose > .pt-file-picker" }
+      ],
+      "finalizers": [
+        { "op": "clickGlobal", "target": ".pt-dialog-footer [data-action-id='compose.cancel']" },
+        { "op": "wait", "ms": 200 }
+      ]
+    },
+    {
       "id": "ui.prototype.north-star.moments-feed-order-view",
       "title": "信息流视角：默认最新首条为林晚；主动切热门后全流按反应总数降序、首条为阿砚（121），切回最新复原——热门是读者自选视角，不是默认排序",
       "level": "L3_DYNAMIC",

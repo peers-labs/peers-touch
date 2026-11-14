@@ -744,6 +744,37 @@ describe('Agent turn event identity projection', () => {
     });
   });
 
+  it('keeps a persisted generic failure visible without exposing its diagnostic text', () => {
+    const projected = cachedMessageToChatMessage({
+      messageId: 'message-failed',
+      conversationId: 'conversation-1',
+      turnId: 'turn-failed',
+      role: 'assistant',
+      status: 'failed',
+      content: '',
+      seq: 2,
+      errorJson: JSON.stringify({
+        error: 'provider call exhausted 2 retries; private diagnostic',
+        error_type: 'AGENT_5001',
+        locale_key: '',
+        retryable: false,
+        terminal: false,
+        details: {},
+      }),
+      createdAt: '2026-09-11T00:00:00.000Z',
+      updatedAt: '2026-09-11T00:00:00.000Z',
+    });
+
+    expect(projected).toMatchObject({
+      error: 'chat.message.diagnostics.failedTitle',
+      terminalStatus: 'failed',
+      loading: false,
+    });
+    expect(projected.typedError).toBeUndefined();
+    expect(projected.resolution).toBeUndefined();
+    expect(JSON.stringify(projected)).not.toContain('private diagnostic');
+  });
+
   it('restores follow-up suggestions from authoritative message metadata', () => {
     const projected = cachedMessageToChatMessage({
       messageId: 'message-1',

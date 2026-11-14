@@ -5,7 +5,9 @@
   "owners": [
     "model/domain/federation/**",
     "apps/station/app/subserver/federation/**",
-    "apps/desktop/src/components/settings/FederationTab.tsx",
+    "apps/station/app/subserver/dashboard/handler_federation.go",
+    "apps/station/app/subserver/dashboard/web/src/pages/FederationPage.tsx",
+    "apps/desktop/src/components/chat/FindPeopleModal.tsx",
     "apps/desktop/src/store/federation.ts",
     "apps/desktop/src/runtimes/federationRuntime.ts",
     "apps/desktop/src/acceptance/moments/harness.ts",
@@ -42,11 +44,12 @@
     "the sequencer genesis Station signing key matches the challenge-signed Station identity statement",
     "the suite does not rotate the Station Federation signing key",
     "the initial Station owner fixture is bound independently to station-four and station-five-arm",
-    "the reusable Suite Runtime owns both Native Desktop clients and the reset fixture"
+    "the reusable Suite Runtime owns both Native Desktop clients and the reset fixture",
+    "fixture mutations authenticate with independent live Dashboard administrator sessions"
   ],
   "acceptance": {
     "create-and-validate": [
-      "the owner creates one single_admin Federation through the Station governance API",
+      "the Station administrator creates one single_admin Federation through the Dashboard management port",
       "the resulting owner projection is active and exposes can_archive",
       "invalid Federation identity and endpoint inputs fail with a typed result"
     ],
@@ -58,7 +61,7 @@
     "member-and-role-projection": [
       "both Stations converge the active station-four and station-five-arm member set",
       "the owner and member projections preserve their distinct roles and capabilities",
-      "both Native Desktop clients render the same active Federation context"
+      "both Native Desktop clients render the same active Federation context in Find People"
     ],
     "non-owner-leave": [
       "a non-owner Station submits leave through the sequencer governance path",

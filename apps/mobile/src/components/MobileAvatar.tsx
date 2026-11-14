@@ -1,22 +1,12 @@
-import { useEffect, useState, type CSSProperties } from 'react';
-import { Avatar, type AvatarProps } from 'antd';
+import { Avatar, type AvatarProps } from '@peers-touch/ui';
 
 import { useAvatarAsset } from '../runtimes/avatarAssetRuntime';
 
-interface MobileAvatarStyle extends CSSProperties {
-  '--mobile-user-avatar-radius': string;
-}
-
-type MobileAvatarProps = Omit<
-  AvatarProps,
-  'children' | 'onError' | 'shape' | 'src'
-> & {
-  children?: AvatarProps['children'];
+type MobileAvatarProps = Omit<AvatarProps, 'source' | 'onImageFailure'> & {
   identityKey?: string;
   name?: string;
   src?: string | null;
 };
-
 const MOBILE_AVATAR_COLORS = [
   '#4ecdc4',
   '#6c63ce',
@@ -25,10 +15,6 @@ const MOBILE_AVATAR_COLORS = [
   '#7a8ce0',
   '#47c98b',
 ] as const;
-
-export function mobileUserAvatarRadius(size: AvatarProps['size']): number {
-  return typeof size === 'number' ? Math.max(8, Math.floor(size * 0.25)) : 8;
-}
 
 export function mobileUserAvatarFallbackColor(identityKey: string): string {
   let hash = 0;
@@ -43,45 +29,31 @@ function avatarInitial(name: string): string {
 }
 
 export function MobileAvatar({
-  children,
   className,
   identityKey = '',
   name = '',
   size = 32,
   src,
   style,
+  children,
   ...props
 }: MobileAvatarProps) {
   const avatar = useAvatarAsset(src);
-  const [failedUrl, setFailedUrl] = useState<string>('');
-
-  useEffect(() => {
-    setFailedUrl('');
-  }, [avatar.source]);
-
-  const avatarSrc =
-    avatar.src && failedUrl !== avatar.source ? avatar.src : undefined;
   const fallbackKey = identityKey.trim() || name.trim();
-  const avatarStyle: MobileAvatarStyle = {
-    '--mobile-user-avatar-radius': `${mobileUserAvatarRadius(size)}px`,
-    ...(fallbackKey && !style?.background
-      ? { background: mobileUserAvatarFallbackColor(fallbackKey) }
-      : {}),
-    ...style,
-  };
 
   return (
     <Avatar
       {...props}
       className={['mobile-user-avatar', className].filter(Boolean).join(' ')}
-      shape="square"
       size={size}
-      src={avatarSrc}
-      style={avatarStyle}
-      onError={() => {
-        if (avatar.source) setFailedUrl(avatar.source);
-        return false;
-      }}
+      source={avatar.source ?? undefined}
+      name={name}
+      background={
+        fallbackKey && !style?.background
+          ? mobileUserAvatarFallbackColor(fallbackKey)
+          : undefined
+      }
+      style={style}
     >
       {children ?? avatarInitial(name)}
     </Avatar>

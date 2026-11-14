@@ -4,13 +4,20 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
+	"github.com/peers-labs/peers-touch/station/frame/core/facility/mediaaccess"
 	federationruntime "github.com/peers-labs/peers-touch/station/frame/core/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 const (
@@ -45,6 +52,9 @@ type groupCallTestFederation struct {
 	localStation string
 	call         *federationruntime.PeerCall
 	decision     realtime.GroupCallAuthorityJoinDecision
+	allowed      bool
+	ejected      bool
+	err          error
 }
 
 func (f *groupCallTestFederation) LocalStationPeerID() string {
@@ -56,6 +66,14 @@ func (f *groupCallTestFederation) CallPeer(
 	call federationruntime.PeerCall,
 ) error {
 	f.call = &call
+	if f.err != nil {
+		return f.err
+	}
+	if response, ok := call.Response.(*realtime.GroupCallEndpointControlResponse); ok {
+		response.Allowed = f.allowed
+		response.Ejected = f.ejected
+		return nil
+	}
 	response := call.Response.(*realtime.GroupCallAuthorityJoinResponse)
 	response.Decision = f.decision
 	if f.decision ==
@@ -63,13 +81,21 @@ func (f *groupCallTestFederation) CallPeer(
 		response.Url = "ws://livekit.example.test"
 		response.Token = "authority-token"
 		response.RoomName = "gc-" + testGroupCallID
+		grant := call.Request.(*realtime.GroupCallAuthorityJoinRequest).GetEndpointGrant()
+		response.GrantId = grant.GetGrantId()
+		response.ParticipantIdentity = "gce-" + grant.GetGrantId()
 	}
 	return nil
 }
 
 type groupCallTestRoomProvider struct {
-	createdFor string
-	tokenFor   string
+	createdFor  string
+	tokenFor    string
+	admittedSID string
+	admitErr    error
+	removeErr   error
+	removed     []string
+	roomStatus  RoomStatus
 }
 
 func (p *groupCallTestRoomProvider) CreateRoom(
@@ -89,12 +115,23 @@ func (p *groupCallTestRoomProvider) GenerateToken(
 	return "ws://livekit.example.test", "local-token", nil
 }
 
-func (*groupCallTestRoomProvider) RemoveParticipant(
-	context.Context,
-	string,
-	string,
+func (p *groupCallTestRoomProvider) AdmitParticipant(_ context.Context, _, _, sid, _ string) error {
+	p.admittedSID = sid
+	return p.admitErr
+}
+
+func (p *groupCallTestRoomProvider) ReadRoom(context.Context, string) (*RoomStatus, error) {
+	status := p.roomStatus
+	return &status, nil
+}
+
+func (p *groupCallTestRoomProvider) RemoveParticipant(
+	_ context.Context,
+	_ string,
+	identity string,
 ) error {
-	return nil
+	p.removed = append(p.removed, identity)
+	return p.removeErr
 }
 
 func (*groupCallTestRoomProvider) CloseRoom(context.Context, string) error {
@@ -108,39 +145,26 @@ func (*groupCallTestRoomProvider) HandleWebhook(
 	return nil
 }
 
-func TestHandleJoinMintsLocallyOnlyAtConversationAuthority(t *testing.T) {
-	roomProvider := &groupCallTestRoomProvider{}
-	federation := &groupCallTestFederation{
-		localStation: testGroupCallAuthority,
-	}
-	subserver := &subServer{
-		provider: roomProvider,
-		authority: groupCallTestAuthority{
-			authority:  testGroupCallAuthority,
-			memberHome: testGroupCallAuthority,
-			member:     true,
-		},
-		federation: federation,
-	}
+func TestIssueAtAuthorityMintsLocallyOnlyAtConversationAuthority(t *testing.T) {
+	subserver, roomProvider, federation := newGroupCallFixture(t)
+	grant := testEndpointGrant()
 
-	response, err := subserver.handleJoin(
-		groupCallActorContext(),
-		&JoinRequest{GroupULID: testGroupCallID},
-	)
+	response, err := subserver.issueAtAuthority(context.Background(), grant)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if response.Token != "local-token" ||
 		roomProvider.createdFor != testGroupCallID ||
-		roomProvider.tokenFor != testGroupCallActor {
+		roomProvider.tokenFor != grant.identity() ||
+		response.ParticipantIdentity != grant.identity() {
 		t.Fatalf("local authority grant = %+v", response)
 	}
-	if federation.call != nil {
-		t.Fatal("local authority unexpectedly forwarded the join")
+	if federation.call == nil || federation.call.Route != federationruntime.PeerRouteGroupCallEndpointControl {
+		t.Fatal("local authority did not recheck the endpoint's remote Home")
 	}
 }
 
-func TestHandleJoinForwardsRemoteMemberToConversationAuthority(t *testing.T) {
+func TestIssueAtAuthorityForwardsRemoteMemberToConversationAuthority(t *testing.T) {
 	roomProvider := &groupCallTestRoomProvider{}
 	federation := &groupCallTestFederation{
 		localStation: testGroupCallHome,
@@ -157,10 +181,8 @@ func TestHandleJoinForwardsRemoteMemberToConversationAuthority(t *testing.T) {
 		federation: federation,
 	}
 
-	response, err := subserver.handleJoin(
-		groupCallActorContext(),
-		&JoinRequest{GroupULID: testGroupCallID},
-	)
+	grant := testEndpointGrant()
+	response, err := subserver.issueAtAuthority(context.Background(), grant)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +203,9 @@ func TestHandleJoinForwardsRemoteMemberToConversationAuthority(t *testing.T) {
 		input.GetActorPtid() != testGroupCallActor ||
 		input.GetSourceHomeStationPeerId() != testGroupCallHome ||
 		input.GetFederationId() != testGroupCallFederation ||
-		input.GetAuthorityEpoch() != testGroupCallEpoch {
+		input.GetAuthorityEpoch() != testGroupCallEpoch ||
+		input.GetEndpointGrant().GetSessionId() != grant.SessionID ||
+		federation.call.Claims[federationruntime.ClaimCanonicalRequestSHA256] != groupRequestDigest(input) {
 		t.Fatalf("authority request = %+v", input)
 	}
 }
@@ -220,6 +244,7 @@ func TestFederatedAuthorityRevalidatesMembershipBeforeMinting(t *testing.T) {
 		SourceHomeStationPeerId: testGroupCallHome,
 		FederationId:            testGroupCallFederation,
 		AuthorityEpoch:          testGroupCallEpoch,
+		EndpointGrant:           testEndpointGrant().wire(),
 	}
 	for _, testCase := range []struct {
 		name         string
@@ -242,17 +267,11 @@ func TestFederatedAuthorityRevalidatesMembershipBeforeMinting(t *testing.T) {
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			roomProvider := &groupCallTestRoomProvider{}
-			subserver := &subServer{
-				provider: roomProvider,
-				authority: groupCallTestAuthority{
-					authority:  testGroupCallAuthority,
-					memberHome: testGroupCallHome,
-					member:     testCase.member,
-				},
-				federation: &groupCallTestFederation{
-					localStation: testGroupCallAuthority,
-				},
+			subserver, roomProvider, _ := newGroupCallFixture(t)
+			subserver.authority = groupCallTestAuthority{
+				authority:  testGroupCallAuthority,
+				memberHome: testGroupCallHome,
+				member:     testCase.member,
 			}
 
 			response, err := subserver.joinForFederatedAuthority(
@@ -279,18 +298,20 @@ func TestValidateAuthorityJoinClaimsBindsAuthorityScope(t *testing.T) {
 		SourceHomeStationPeerId: testGroupCallHome,
 		FederationId:            testGroupCallFederation,
 		AuthorityEpoch:          testGroupCallEpoch,
+		EndpointGrant:           testEndpointGrant().wire(),
 	}
 	claims := &authfed.VerifiedClaims{
 		Issuer:   testGroupCallHome,
 		Audience: testGroupCallAuthority,
 		Subject:  testGroupCallActor,
 		Custom: map[string]string{
-			federationruntime.ClaimFederationID:        testGroupCallFederation,
-			federationruntime.ClaimConversationID:      testGroupCallID,
-			federationruntime.ClaimActorPTID:           testGroupCallActor,
-			federationruntime.ClaimAuthorityEpoch:      "7",
-			federationruntime.ClaimSourceStationPeerID: testGroupCallHome,
-			federationruntime.ClaimTargetStationPeerID: testGroupCallAuthority,
+			federationruntime.ClaimFederationID:           testGroupCallFederation,
+			federationruntime.ClaimConversationID:         testGroupCallID,
+			federationruntime.ClaimActorPTID:              testGroupCallActor,
+			federationruntime.ClaimAuthorityEpoch:         "7",
+			federationruntime.ClaimSourceStationPeerID:    testGroupCallHome,
+			federationruntime.ClaimTargetStationPeerID:    testGroupCallAuthority,
+			federationruntime.ClaimCanonicalRequestSHA256: groupRequestDigest(input),
 		},
 	}
 	if err := validateAuthorityJoinClaims(
@@ -309,11 +330,66 @@ func TestValidateAuthorityJoinClaimsBindsAuthorityScope(t *testing.T) {
 	); err == nil {
 		t.Fatal("mismatched authority epoch was accepted")
 	}
+	claims.Custom[federationruntime.ClaimAuthorityEpoch] = "7"
+	input.EndpointGrant.ActorDeviceId = "another-device"
+	if err := validateAuthorityJoinClaims(claims, input, testGroupCallAuthority); err == nil {
+		t.Fatal("changed endpoint with old signed digest was accepted")
+	}
 }
 
 func groupCallActorContext() context.Context {
 	return coreauth.WithSubject(
 		context.Background(),
-		&coreauth.Subject{ID: testGroupCallActor},
+		&coreauth.Subject{ID: testGroupCallActor, SessionID: "session-alice"},
 	)
+}
+
+type groupCallTestFence struct{}
+
+func (groupCallTestFence) WithGroupCallFence(_ context.Context, _ string,
+	_ mediaaccess.Endpoint, _ string, _ uint64, action func() error) error {
+	return action()
+}
+
+func testEndpointGrant() endpointGrant {
+	return endpointGrant{
+		GrantID: strings.Repeat("a", 64), Side: grantAuthority,
+		ConversationID: testGroupCallID, ActorPTID: testGroupCallActor,
+		DeviceID: "device-alice", SessionID: "session-alice",
+		Home: testGroupCallHome, Authority: testGroupCallAuthority,
+		FederationID: testGroupCallFederation, AuthorityEpoch: testGroupCallEpoch,
+		ExpiresAt: time.Now().Add(time.Hour).UTC().Truncate(time.Millisecond),
+		Status:    grantIssued,
+	}
+}
+
+func newGroupCallFixture(t *testing.T) (*subServer, *groupCallTestRoomProvider, *groupCallTestFederation) {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "grants.db")),
+		&gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&endpointGrant{}, &invitationDecision{}); err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	provider := &groupCallTestRoomProvider{}
+	federation := &groupCallTestFederation{localStation: testGroupCallAuthority, allowed: true, ejected: true}
+	s := &subServer{
+		db: db, provider: provider, federation: federation, authorityFence: groupCallTestFence{},
+		authority: groupCallTestAuthority{authority: testGroupCallAuthority, memberHome: testGroupCallHome, member: true},
+		members:   groupCallTestMembers{testGroupCallActor},
+	}
+	return s, provider, federation
+}
+
+type groupCallTestMembers []string
+
+func (m groupCallTestMembers) ListGroupMemberPTIDs(context.Context, string) ([]string, error) {
+	return m, nil
 }

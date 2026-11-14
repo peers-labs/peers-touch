@@ -15,10 +15,44 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/persistence"
 	conversationhttp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/interface/http"
+	"github.com/peers-labs/peers-touch/station/frame/core/facility/mediaaccess"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
+
+func TestSubServerGroupCallFenceChecksEveryEndpointBoundary(t *testing.T) {
+	for _, item := range []struct {
+		name                           string
+		actor, device, home, authority string
+		epoch                          uint64
+		valid                          bool
+	}{
+		{"active", "ptid:author", "author-device", "station-a", "station-a", 1, true},
+		{"wrong actor", "ptid:outsider", "author-device", "station-a", "station-a", 1, false},
+		{"wrong device", "ptid:author", "other-device", "station-a", "station-a", 1, false},
+		{"wrong Home", "ptid:author", "author-device", "station-b", "station-a", 1, false},
+		{"wrong Authority", "ptid:author", "author-device", "station-a", "station-b", 1, false},
+		{"stale epoch", "ptid:author", "author-device", "station-a", "station-a", 2, false},
+	} {
+		t.Run(item.name, func(t *testing.T) {
+			f := newGroupSnapshotCapabilityFixture(t)
+			called := false
+			err := f.server.WithGroupCallFence(context.Background(), string(f.snapshot.ID),
+				mediaaccess.Endpoint{ActorPTID: item.actor, DeviceID: item.device, Home: item.home},
+				item.authority, item.epoch, func() error {
+					called = true
+					if f.adapters.transaction == nil {
+						t.Fatal("grant was not fenced by Conversation UOW")
+					}
+					return nil
+				})
+			if (err == nil) != item.valid || called != item.valid {
+				t.Fatalf("endpoint fence: called=%v error=%v", called, err)
+			}
+		})
+	}
+}
 
 func TestSubServerPrepareGroupRecipientSnapshot(t *testing.T) {
 	fixture := newGroupSnapshotCapabilityFixture(t)

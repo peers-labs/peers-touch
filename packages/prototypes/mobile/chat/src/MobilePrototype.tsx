@@ -1,403 +1,94 @@
 /**
- * Mobile Prototype — pine-glass mobile grammar.
+ * MobilePrototype — evidence host for the ONE mobile product surface.
  *
- * Entry state machine: station-selection → access-gate-chain → shell.
- * Shell tabs: Chats / Moments / Contacts / Me.
- * The UIProvider carries the same north-star candidate theme as the desktop
- * prototype; evidence controls live outside the device.
+ * There is no second phone UI here: this host only mounts the real product
+ * (`MobileApp`) inside a device frame and injects a scenario as its initial
+ * AppState. Controlled evidence is a matter of STATE, never a parallel skin
+ * (the historical antd-era MobileShell / pages / English demo seeds are
+ * deleted). Scenario controls live outside the device.
+ *
+ * URL contract is preserved: `?scenario=<id>` deep-links a scenario for the
+ * acceptance scripts.
  */
-
-import { useMemo, useReducer, useState } from 'react';
-import { northStarVariables, Segmented, Select, UIProvider } from '@peers-touch/ui';
-import type { LaunchState, MobileUiEvidence, StationEntry } from './types';
-import { demoStations } from './data';
-import {
-  BlockingRecoveryScreen,
-  type BlockingEvidenceScenario,
-  type ShellEvidenceScenario,
-} from './components/ExperienceRecovery';
-import { LaunchScreen } from './pages/LaunchScreen';
-import { AuthGateScreen } from './pages/AuthGateScreen';
-import { MobileShell } from './MobileShell';
-import {
-  createSocialDemo,
-  socialDemoReducer,
-  socialEvidenceScenarios,
-  type SocialEvidenceScenario,
-} from './socialDemo';
-import { SocialEvidenceControls } from './components/SocialEvidenceControls';
-import { SearchEvidenceControls } from './components/SearchEvidenceControls';
-import { emptySearchDemo, searchDemoReducer } from './searchDemo';
-import type { MomentsEvidenceScenario } from './pages/MomentsPage';
-import {
-  callEvidenceScenarioOptions,
-  isPrototypeCallScenario,
-  type PrototypeCallScenario,
-} from './callPrototype';
+import { useEffect, useState } from 'react';
+import { northStarVariables, Select, UIProvider } from '@peers-touch/ui';
+import { MobileApp } from './MobileApp';
+import type { ProductScenario } from './app/model';
 import './mobilePrototype.css';
 
-type EvidenceScenario =
-  | 'journey'
-  | 'chat-delivery-recovery'
-  | 'station-removal'
-  | 'station-offline'
-  | 'session-revoked'
-  | 'long-lists'
-  | 'search-controlled'
-  | BlockingEvidenceScenario
-  | ShellEvidenceScenario
-  | SocialEvidenceScenario
-  | MomentsEvidenceScenario
-  | PrototypeCallScenario
-  | MobileUiScenario;
+interface ScenarioOption { value: ProductScenario; label: string; scene: string }
 
-type MobileUiScenario =
-  | 'chat-default'
-  | 'chat-list-loading'
-  | 'chat-list-refreshing'
-  | 'chat-list-empty'
-  | 'chat-list-error'
-  | 'chat-thread-loading'
-  | 'chat-history-loading'
-  | 'chat-thread-error'
-  | 'chat-unknown-outcome'
-  | 'avatar-loading'
-  | 'avatar-fallback'
-  | 'long-content';
-
-const evidenceScenarioOptions: Array<{ label: string; value: EvidenceScenario }> = [
-  { label: 'Default journey', value: 'journey' },
-  { label: 'Chat / delivery recovery', value: 'chat-delivery-recovery' },
-  { label: 'Station removal confirmation', value: 'station-removal' },
-  { label: 'Station selection / offline', value: 'station-offline' },
-  { label: 'Station identity mismatch', value: 'station-identity-mismatch' },
-  { label: 'OAuth expired', value: 'oauth-expired' },
-  { label: 'Session revoked', value: 'session-revoked' },
-  { label: 'Unknown write outcome', value: 'unknown-write' },
-  { label: 'Command ledger full', value: 'ledger-full' },
-  { label: 'Draft restored', value: 'draft-restored' },
-  { label: 'Social unavailable / lifecycle retry', value: 'social-unavailable' },
-  { label: 'Conversation unavailable / lifecycle retry', value: 'social-detail-unavailable' },
-  { label: 'Find People / no Federation membership', value: 'find-people-no-membership' },
-  { label: 'Find People / active Federation', value: 'find-people-member' },
-  { label: 'Accepted contact / Direct opening', value: 'contact-direct' },
-  { label: 'Friend request / unknown outcome', value: 'request-unknown' },
-  { label: 'Social parity / complete navigation', value: 'social-parity' },
-  { label: 'Social parity / content types', value: 'social-content-types' },
-  { label: 'Social private / remote delivery pending', value: 'social-private-pending' },
-  { label: 'Social private / recovery required', value: 'social-recovery-required' },
-  { label: 'Social private / source unavailable', value: 'social-source-unavailable' },
-  { label: 'Social private / deleted or revoked', value: 'social-revoked' },
-  { label: 'Long lists / sample data only', value: 'long-lists' },
-  { label: 'Search / controlled outcomes', value: 'search-controlled' },
-  { label: 'UI / clean default shell', value: 'chat-default' },
-  { label: 'UI / conversation first load', value: 'chat-list-loading' },
-  { label: 'UI / cached conversation refresh', value: 'chat-list-refreshing' },
-  { label: 'UI / empty conversation list', value: 'chat-list-empty' },
-  { label: 'UI / cached conversation error', value: 'chat-list-error' },
-  { label: 'UI / thread first load', value: 'chat-thread-loading' },
-  { label: 'UI / older history loading', value: 'chat-history-loading' },
-  { label: 'UI / thread route unavailable', value: 'chat-thread-error' },
-  { label: 'UI / unknown delivery outcome', value: 'chat-unknown-outcome' },
-  { label: 'UI / avatar loading', value: 'avatar-loading' },
-  { label: 'UI / avatar fallback', value: 'avatar-fallback' },
-  { label: 'UI / long localized content', value: 'long-content' },
-  ...callEvidenceScenarioOptions,
+const SCENARIOS: ScenarioOption[] = [
+  { value: 'default', label: '产品默认（消息）', scene: 'Shell / Chats' },
+  { value: 'journey', label: '首启 · 站点选择 / 门禁登录', scene: 'Launch' },
+  { value: 'station-offline', label: '首启 · 站点离线', scene: 'Launch / Offline' },
+  { value: 'gate-login', label: '门禁 · 邮箱+OAuth 登录', scene: 'Gate / Login' },
+  { value: 'gate-login-email', label: '门禁 · 仅邮箱登录', scene: 'Gate / Email' },
+  { value: 'gate-login-oauth', label: '门禁 · 仅 OAuth 登录', scene: 'Gate / OAuth' },
+  { value: 'gate-invite', label: '门禁 · 邀请码 → 登录链', scene: 'Gate / Invite' },
+  { value: 'gate-terms', label: '门禁 · 条款确认表单', scene: 'Gate / Schema' },
+  { value: 'gate-custom', label: '门禁 · 自定义 Station 表单', scene: 'Gate / Custom' },
+  { value: 'gate-unavailable', label: '门禁 · 不支持的设备审批', scene: 'Gate / Unavailable' },
+  { value: 'gate-blocked', label: '门禁 · 禁止进入', scene: 'Gate / Blocked' },
+  { value: 'gate-failed', label: '门禁 · 门禁失败', scene: 'Gate / Failed' },
+  { value: 'gate-pending', label: '门禁 · 评估中', scene: 'Gate / Pending' },
+  { value: 'gate-session-expired', label: '门禁 · 会话过期重登', scene: 'Gate / Re-auth' },
+  { value: 'gate-login-failed', label: '门禁 · 登录错误态', scene: 'Gate / Login error' },
+  { value: 'gate-oauth-progress', label: '门禁 · OAuth 进行中', scene: 'Gate / OAuth progress' },
+  { value: 'gate-oauth-failed', label: '门禁 · OAuth 失败恢复', scene: 'Gate / OAuth failed' },
+  { value: 'long-content', label: '长消息 · 标题省略 / 不溢出', scene: 'Shell / Thread' },
+  { value: 'long-lists', label: '长列表 · 240 会话/联系人 · 480 消息', scene: 'Shell / Long lists' },
 ];
 
-const blockingScenarios: BlockingEvidenceScenario[] = [
-  'station-identity-mismatch',
-  'oauth-expired',
-];
-
-const shellScenarios: ShellEvidenceScenario[] = [
-  'unknown-write',
-  'ledger-full',
-  'draft-restored',
-];
-
-const mobileUiScenarios: MobileUiScenario[] = [
-  'chat-default',
-  'chat-list-loading',
-  'chat-list-refreshing',
-  'chat-list-empty',
-  'chat-list-error',
-  'chat-thread-loading',
-  'chat-history-loading',
-  'chat-thread-error',
-  'chat-unknown-outcome',
-  'avatar-loading',
-  'avatar-fallback',
-  'long-content',
-];
-
-function resolveMobileUiEvidence(scenario: EvidenceScenario): MobileUiEvidence {
-  return {
-    avatarState: scenario === 'avatar-loading'
-      ? 'loading'
-      : scenario === 'avatar-fallback'
-        ? 'failed'
-        : 'ready',
-    chatListState: scenario === 'chat-list-loading'
-      ? 'initial-loading'
-      : scenario === 'chat-list-refreshing'
-        ? 'refreshing'
-        : scenario === 'chat-list-empty'
-          ? 'empty'
-          : scenario === 'chat-list-error'
-            ? 'cached-error'
-            : 'ready',
-    chatThreadState: scenario === 'chat-thread-loading'
-      ? 'initial-loading'
-      : scenario === 'chat-history-loading'
-        ? 'history-loading'
-        : scenario === 'chat-thread-error'
-          ? 'route-error'
-          : scenario === 'chat-unknown-outcome'
-            ? 'unknown-outcome'
-            : 'ready',
-    longContent: scenario === 'long-content',
+function resolveScenario(): ProductScenario {
+  const requested = new URLSearchParams(window.location.search).get('scenario');
+  // Legacy harness scenario ids map onto product state scenarios; unknown
+  // ids fall back to the normal product surface rather than a second skin.
+  const legacy: Record<string, ProductScenario> = {
+    journey: 'journey',
+    'station-removal': 'journey',
+    'session-revoked': 'journey',
+    'station-offline': 'station-offline',
+    'long-lists': 'long-lists',
+    'search-controlled': 'long-lists',
+    'long-content': 'long-content',
   };
-}
-
-function getInitialEvidenceScenario(): EvidenceScenario {
-  const scenario = new URLSearchParams(window.location.search).get('scenario');
-  return evidenceScenarioOptions.some((option) => option.value === scenario)
-    ? scenario as EvidenceScenario
-    : 'journey';
+  const known = SCENARIOS.some(s => s.value === requested);
+  if (known) return requested as ProductScenario;
+  if (requested && legacy[requested]) return legacy[requested];
+  return 'default';
 }
 
 export function MobilePrototype() {
-  const [launchState, setLaunchState] = useState<LaunchState>('station-selection');
-  const [stations, setStations] = useState<StationEntry[]>(demoStations);
-  const [activeUrl, setActiveUrl] = useState('http://localhost:9000');
-  const [scenes, setScenes] = useState<string[]>(['Launch']);
-  const [evidenceScenario, setEvidenceScenario] = useState<EvidenceScenario>(
-    getInitialEvidenceScenario,
-  );
-  const [themeMode, setThemeMode] = useState<'light' | 'dark'>('light');
-  const [socialDemo, dispatchSocialDemo] = useReducer(socialDemoReducer, evidenceScenario, createSocialDemo);
-  const [searchState, dispatchSearch] = useReducer(searchDemoReducer, emptySearchDemo);
-  const socialScenario = socialEvidenceScenarios.find((scenario) => scenario === evidenceScenario);
-  const momentsScenario = evidenceScenario.startsWith('social-')
-    && !socialScenario
-    ? evidenceScenario as MomentsEvidenceScenario
-    : undefined;
-  const callScenario = isPrototypeCallScenario(evidenceScenario)
-    ? evidenceScenario
-    : undefined;
-  const longLists = evidenceScenario === 'long-lists' || evidenceScenario === 'search-controlled';
-  const mobileUiEvidence = useMemo(
-    () => resolveMobileUiEvidence(evidenceScenario),
-    [evidenceScenario],
-  );
-  const isMobileUiScenario = mobileUiScenarios.includes(evidenceScenario as MobileUiScenario);
+  const [scenario, setScenario] = useState<ProductScenario>(resolveScenario);
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('scenario', scenario);
+    window.history.replaceState(null, '', url);
+  }, [scenario]);
 
-  const activeStation = useMemo(
-    () => stations.find((s) => s.url === activeUrl),
-    [stations, activeUrl],
-  );
-
-  function handleContinue() {
-    setLaunchState('access-gate-chain');
-    setScenes(['Launch', 'Auth Gate']);
-  }
-
-  function handleLogin() {
-    setLaunchState('shell');
-    setScenes(['Launch', 'Auth Gate', 'Shell']);
-  }
-
-  function handleBackToLaunch() {
-    selectEvidenceScenario('journey');
-    setLaunchState('station-selection');
-    setScenes(['Launch']);
-  }
-
-  function selectEvidenceScenario(scenario: EvidenceScenario) {
-    setEvidenceScenario(scenario);
-    dispatchSocialDemo({ type: 'reset', scenario });
-    dispatchSearch({ type: 'reset' });
-    if (scenario === 'station-removal' || scenario === 'station-offline') {
-      setLaunchState('station-selection');
-      setScenes(['Launch']);
-    }
-  }
-
-  function handleSelectStation(url: string) {
-    setActiveUrl(url);
-  }
-
-  function handleRemoveStation(url: string) {
-    setStations((prev) => {
-      const remaining = prev.filter((s) => s.url !== url);
-      if (activeUrl === url) setActiveUrl(remaining.length > 0 ? remaining[0]!.url : '');
-      return remaining;
-    });
-  }
-
-  function handleAddStation(newUrl: string) {
-    if (!stations.find((station) => station.url === newUrl)) {
-      setStations((prev) => [...prev, { url: newUrl, label: 'New Station', online: true }]);
-    }
-    setActiveUrl(newUrl);
-  }
-
-  function returnToJourney(nextState: LaunchState) {
-    setEvidenceScenario('journey');
-    setLaunchState(nextState);
-    setScenes(
-      nextState === 'station-selection'
-        ? ['Launch']
-        : nextState === 'shell'
-          ? ['Launch', 'Auth Gate', 'Shell']
-          : ['Launch', 'Auth Gate'],
-    );
-  }
-
-  function renderSurface() {
-    if (evidenceScenario === 'session-revoked' && activeStation) {
-      return (
-        <AuthGateScreen
-          stationLabel={activeStation.label}
-          expiredSession={{
-            displayName: 'Alice Chen',
-            email: 'alice@peers.social',
-          }}
-          onBack={handleBackToLaunch}
-          onLogin={() => returnToJourney('shell')}
-        />
-      );
-    }
-
-    if (blockingScenarios.includes(evidenceScenario as BlockingEvidenceScenario)) {
-      return (
-        <BlockingRecoveryScreen
-          scenario={evidenceScenario as BlockingEvidenceScenario}
-          onPrimary={() => returnToJourney(
-            evidenceScenario === 'station-identity-mismatch' ? 'station-selection' : 'access-gate-chain',
-          )}
-          onSecondary={() => returnToJourney(
-            evidenceScenario === 'oauth-expired' ? 'access-gate-chain' : 'station-selection',
-          )}
-        />
-      );
-    }
-
-    const shellRecovery = shellScenarios.find((scenario) => scenario === evidenceScenario);
-    if ((socialScenario || momentsScenario || shellRecovery || callScenario || longLists || isMobileUiScenario || evidenceScenario === 'chat-delivery-recovery' || launchState === 'shell') && activeStation) {
-      return (
-        <MobileShell
-          key={longLists || callScenario || isMobileUiScenario || evidenceScenario === 'chat-delivery-recovery'
-            ? evidenceScenario
-            : momentsScenario ?? socialScenario ?? 'shell'}
-          stationLabel={activeStation.label}
-          onChangeStation={handleBackToLaunch}
-          recoveryScenario={shellRecovery}
-          longLists={longLists}
-          focusChatJourney={evidenceScenario === 'chat-delivery-recovery'}
-          uiEvidence={mobileUiEvidence}
-          deliveryRecovery={evidenceScenario === 'chat-delivery-recovery'}
-          callScenario={callScenario}
-          searchDemo={evidenceScenario === 'search-controlled'
-            ? { state: searchState, dispatch: dispatchSearch }
-            : undefined}
-          socialScenario={socialScenario}
-          momentsScenario={momentsScenario}
-          socialDemo={socialDemo}
-          dispatchSocialDemo={dispatchSocialDemo}
-          onRecoveryClose={() => {
-            setLaunchState('shell');
-            setScenes(['Launch', 'Auth Gate', 'Shell']);
-            setEvidenceScenario('journey');
-          }}
-        />
-      );
-    }
-
-    if (launchState === 'station-selection') {
-      return (
-        <LaunchScreen
-          stations={stations}
-          activeUrl={activeUrl}
-          onSelectStation={handleSelectStation}
-          onRemoveStation={handleRemoveStation}
-          onAddStation={handleAddStation}
-          onContinue={handleContinue}
-          showRemovalConfirmation={evidenceScenario === 'station-removal'}
-          offline={evidenceScenario === 'station-offline'}
-        />
-      );
-    }
-
-    if (launchState === 'access-gate-chain' && activeStation) {
-      return (
-        <AuthGateScreen
-          stationLabel={activeStation.label}
-          onBack={handleBackToLaunch}
-          onLogin={handleLogin}
-        />
-      );
-    }
-
-    return null;
-  }
+  const meta = SCENARIOS.find(s => s.value === scenario) ?? SCENARIOS[0];
 
   return (
-    <UIProvider
-      theme={themeMode}
-      className="mobile-prototype-scope"
-      style={northStarVariables(themeMode)}
-    >
+    <UIProvider theme="light" style={northStarVariables('light')}>
       <div className="mp-workbench">
         <div className="mp-evidence-toolbar">
           <span>Scenario</span>
           <Select
             aria-label="Evidence scenario"
-            label="Evidence scenario"
-            value={evidenceScenario}
-            options={evidenceScenarioOptions}
-            onValueChange={(value) => selectEvidenceScenario(value as EvidenceScenario)}
-          />
-          <Segmented
-            aria-label="Preview theme"
-            label="Preview theme"
-            value={themeMode}
-            options={[
-              { label: 'Light', value: 'light' },
-              { label: 'Dark', value: 'dark' },
-            ]}
-            onValueChange={(value) => setThemeMode(value as 'light' | 'dark')}
+            value={scenario}
+            options={SCENARIOS.map(s => ({ value: s.value, label: s.label }))}
+            onValueChange={value => setScenario((Array.isArray(value) ? value[0] : value) as ProductScenario)}
           />
         </div>
-        {longLists && (
-          <div className="mp-evidence-controls" role="note">
-            Sample only: 240 conversations / 240 contacts / 240 pending requests / 240 members / 480 messages. No backend or native proof.
-          </div>
-        )}
-        {evidenceScenario === 'search-controlled' && (
-          <SearchEvidenceControls state={searchState} dispatch={dispatchSearch} />
-        )}
-        {!longLists && (socialScenario || launchState === 'shell') && (
-          <SocialEvidenceControls state={socialDemo} dispatch={dispatchSocialDemo} />
-        )}
         <div className="mp-scene-label">
-          {(evidenceScenario === 'journey' ? scenes : ['Evidence', evidenceScenario]).map(
-            (scene, index) => (<span key={scene}>{index + 1}. {scene}</span>),
-          )}
+          <span>1. {meta.scene}</span>
         </div>
 
         <div className="mp-device" role="region" aria-label="Mobile device preview">
-          <div className="mp-status-bar">
-            <span>9:41</span>
-            <span className="mp-status-right">
-              <span className="mp-status-text">5G</span>
-              <span className="mp-status-text">100%</span>
-            </span>
-          </div>
-
-          <div className="mp-app-shell">
-            {renderSurface()}
+          <div className="mp-device-screen">
+            {/* key remounts the product per scenario so injected state resets. */}
+            <MobileApp key={scenario} scenario={scenario} />
           </div>
         </div>
       </div>

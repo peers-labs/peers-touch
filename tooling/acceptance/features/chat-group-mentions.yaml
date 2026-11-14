@@ -1,0 +1,52 @@
+{
+  "id": "chat-group-mentions",
+  "status": "active",
+  "product_area": "chat",
+  "owners": [
+    "model/domain/chat/attachment.proto",
+    "packages/messaging-core/src/codec/private_content.rs",
+    "packages/messaging-core/src/store/schema.rs",
+    "apps/desktop/src-tauri/src/messaging/store.rs",
+    "apps/desktop/src/components/chat/composer/chatMentions.ts",
+    "apps/desktop/src/components/chat/message/ChatMentionText.tsx",
+    "apps/desktop/src/services/messagingProjection.ts",
+    "apps/desktop/src/store/navigationBadges.ts",
+    "apps/desktop/src/acceptance/chat/**"
+  ],
+  "truth_sources": [
+    "mention targets encrypted inside MessagePrivateContent with UTF-16 offsets",
+    "local group member snapshot for @all owner/admin authority",
+    "actor-scoped chat.message-flag unread mention projection"
+  ],
+  "visible_surfaces": [
+    {"type": "desktop-native", "client": "alice"},
+    {"type": "desktop-native", "client": "bob"},
+    {"type": "desktop-dom", "selector": "[data-chat-mention]"}
+  ],
+  "required_gates": [
+    "station-messaging-unit",
+    "messaging-platform-contract",
+    "desktop-check",
+    "chat-native-visible-static",
+    "chat-native-mentions-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "named mentions and @all are sealed in the E2EE private body and never readable by the Station",
+      "the shared codec rejects overlapping, out-of-bounds or duplicated mention ranges",
+      "recipients honor @all only from owner/admin senders in their local member snapshot"
+    ],
+    "visible": [
+      "the acceptance harness sends bounded mention tokens through the store path; the peers-ui social composer no longer exposes an @ picker after the northstar-parity redesign",
+      "decrypted bubbles render mention chips, highlighted when they target the current actor",
+      "an incoming @mention while a group is muted still flips the actor-scoped mention flag (navigationBadges.hasMention) even though no rail marker is rendered",
+      "opening the conversation clears the unread mention flag"
+    ]
+  },
+  "negative": [
+    "@mentions are group-only and never sent on Direct conversations",
+    "non-admin @all must not notify recipients or mark unread mentions",
+    "malformed mention projection rows must render as ordinary text, not fail the message list",
+    "fixed sleeps must not replace observed projection and mention-flag transitions"
+  ]
+}

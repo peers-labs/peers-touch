@@ -8,22 +8,28 @@ import (
 
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
+	"github.com/peers-labs/peers-touch/station/frame/core/facility/mediaaccess"
 	federationruntime "github.com/peers-labs/peers-touch/station/frame/core/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
+	"gorm.io/gorm"
 )
 
 type subServer struct {
-	status     server.Status
-	addrs      []string
-	jwtWrapper server.Wrapper
-	provider   RoomProvider
-	members    GroupMemberLister
-	authority  ConversationAuthorityResolver
-	federation FederationPeerCaller
+	status            server.Status
+	addrs             []string
+	jwtWrapper        server.Wrapper
+	provider          RoomProvider
+	members           GroupMemberLister
+	authority         ConversationAuthorityResolver
+	federation        FederationPeerCaller
+	authorityFence    GroupCallAuthorityFence
+	db                *gorm.DB
+	maintenanceCancel context.CancelFunc
+	maintenanceDone   chan struct{}
 }
 
 type federationRuntimeProvider interface {
@@ -62,10 +68,12 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	if err != nil {
 		return err
 	}
-	memberLister := NewGormMemberLister(rds)
-	s.members = memberLister
-
 	conversationInstance := server.GetOptions().SubserverInstances["conversation"]
+	memberLister, ok := conversationInstance.(GroupMemberLister)
+	if !ok || memberLister == nil {
+		return fmt.Errorf("initialize groupcall: Conversation member projection is unavailable")
+	}
+	s.members = memberLister
 	authority, ok := conversationInstance.(ConversationAuthorityResolver)
 	if !ok || authority == nil {
 		return fmt.Errorf("initialize groupcall: Conversation authority resolver is unavailable")
@@ -78,19 +86,59 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	}
 	s.authority = authority
 	s.federation = federationProvider.FederationDeliveryRuntime()
+	fence, ok := conversationInstance.(GroupCallAuthorityFence)
+	if !ok || fence == nil {
+		return fmt.Errorf("initialize groupcall: Conversation media fence is unavailable")
+	}
+	s.authorityFence = fence
+	s.db = rds
+	if err := rds.AutoMigrate(&endpointGrant{}, &invitationDecision{}); err != nil {
+		return fmt.Errorf("initialize groupcall grant persistence: %w", err)
+	}
 
 	// Wire up the LiveKit adapter as the RoomProvider.
-	s.provider = NewLiveKitAdapter(cfg, memberLister)
+	adapter := NewLiveKitAdapter(cfg, memberLister)
+	adapter.admit = s.admit
+	s.provider = adapter
+	mediaaccess.Register(s)
 
 	return nil
 }
 
-func (s *subServer) Start(_ context.Context, _ ...option.Option) error {
+func (s *subServer) Start(ctx context.Context, _ ...option.Option) error {
+	// A Station restart cannot preserve an earlier admitted connection without
+	// revalidating its permission owners. Retire all grants from that instance.
+	if err := s.revokeHome(ctx, s.db.Where("side = ? AND ejected = false", grantHome)); err != nil {
+		return err
+	}
+	var grants []endpointGrant
+	if err := s.db.WithContext(ctx).Where("side = ? AND ejected = false", grantAuthority).
+		Find(&grants).Error; err != nil {
+		return err
+	}
+	for _, grant := range grants {
+		if err := s.revokeAuthority(ctx, grant); err != nil {
+			return err
+		}
+	}
 	s.status = server.StatusRunning
+	maintenanceCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	s.maintenanceCancel = cancel
+	s.maintenanceDone = make(chan struct{})
+	go s.runGrantMaintenance(maintenanceCtx)
 	return nil
 }
 
-func (s *subServer) Stop(_ context.Context) error {
+func (s *subServer) Stop(ctx context.Context) error {
+	if s.maintenanceCancel != nil {
+		s.maintenanceCancel()
+		select {
+		case <-s.maintenanceDone:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		s.maintenanceCancel = nil
+	}
 	s.status = server.StatusStopped
 	return nil
 }

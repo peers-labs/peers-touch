@@ -7,6 +7,7 @@ import {
   chatMessageTimelineContainerStyle,
   chatMessageTailScrollOptions,
   isChatMessageTailPinned,
+  reconcileTailScrollOnResize,
   shouldAdjustChatMessageScrollPosition,
   shouldVirtualizeChatMessageTimeline,
 } from './chatMessageTimelinePolicy';
@@ -167,6 +168,23 @@ describe('ChatMessageTimeline layout', () => {
     expect(shouldAdjustChatMessageScrollPosition(400, 600, 24)).toBe(true);
     expect(shouldAdjustChatMessageScrollPosition(700, 600, 24)).toBe(false);
     expect(shouldAdjustChatMessageScrollPosition(400, 600, 0)).toBe(false);
+  });
+
+  it('re-pins the tail when async content grows after the initial pin', () => {
+    // Pin landed at the pre-image tail; an async preview/load grows the
+    // timeline (scrollHeight) while scrollTop is unchanged.
+    const grown = { clientHeight: 600, scrollHeight: 1_400, scrollTop: 560 };
+    expect(reconcileTailScrollOnResize(grown, true)).toBe(800);
+  });
+
+  it('never moves the scroll position while the user has scrolled up', () => {
+    const grown = { clientHeight: 600, scrollHeight: 1_400, scrollTop: 120 };
+    expect(reconcileTailScrollOnResize(grown, false)).toBeNull();
+  });
+
+  it('ignores sub-pixel/no-op resizes while tail-pinned', () => {
+    const settled = { clientHeight: 600, scrollHeight: 1_201, scrollTop: 600.4 };
+    expect(reconcileTailScrollOnResize(settled, true)).toBeNull();
   });
 
   it('uses natural document flow for short conversations', () => {

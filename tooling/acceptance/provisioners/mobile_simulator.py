@@ -22,8 +22,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -51,6 +52,7 @@ from tooling.acceptance.core import (
     source_identity,
 )
 from tooling.acceptance.core._paths import ENVIRONMENTS_DIR, REPO_ROOT
+from tooling.acceptance.core.evidence_store import write_current_artifact
 from tooling.acceptance.core.attestation import (
     commits_match,
     produce_service_attestation,
@@ -90,6 +92,7 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     prepare_local_friend_request_lifecycle,
     reset_fixture_follow_edges,
 )
+from tooling.acceptance.fixtures.chat_reset_targets import bound_reset_profiles
 from tooling.acceptance.gates.mobile.simulator_harness_contract import (
     CHAT_MIXED_NATIVE_CHILD_HARNESS_ACTIONS,
     CHAT_MIXED_NATIVE_GATE_IDS,
@@ -542,6 +545,13 @@ IOS_WEB_ASSETS_RELATIVE_PATH = Path(
     "apps/mobile/src-tauri/gen/apple/assets"
 )
 MOBILE_WEB_DIST_RELATIVE_PATH = Path("apps/mobile/dist")
+# Run-owned immutable copy of the harness web build. The Xcode resource copy
+# and the Rust asset embedding both consume this snapshot so a concurrent
+# worktree web build can never split the native binary from the bundle.
+IOS_WEB_DIST_SNAPSHOT_DIRNAME = "ios-web-dist"
+IOS_TAURI_FRONTEND_CONFIG_FILENAME = "tauri-ios-frontend-config.json"
+IOS_TAURI_FRONTEND_CONFIG_ENV = "MOBILE_TAURI_DEV_CONFIG"
+IOS_EMBEDDED_WEB_ASSETS_RESOURCE = "mobile-simulator:ios-embedded-web-assets"
 ANDROID_DEEP_LINK_MARKER = (
     "<!-- DEEP LINK PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->"
 )
@@ -2153,7 +2163,7 @@ def load_mobile_station_lifecycle_simulator_spec(
         f"{STATION_LIFECYCLE_ENVIRONMENT_ID}:proof-scope",
     )
     required_proven = {
-        "AS-04 simulator valid-session restore and same-account revocation",
+        "AS-04 simulator valid-session restore and same-account multi-device coexistence",
         (
             "AS-10 simulator Station switching, generation fencing, "
             "old-scope absence, and logout"
@@ -2200,6 +2210,145 @@ def _with_simulator_resources(
     return MobileSimulatorRuntimeManifest(
         **values,
         simulator_resources=resources,
+    )
+
+
+def _snapshot_ios_web_dist(repo_root: Path, runtime_root: Path) -> Path:
+    """Freeze the harness web build into a run-owned immutable directory."""
+    source = repo_root / MOBILE_WEB_DIST_RELATIVE_PATH
+    if (
+        source.is_symlink()
+        or not source.is_dir()
+        or not (source / "index.html").is_file()
+    ):
+        raise BlockedError(
+            reason="Mobile web build output is unavailable before iOS staging",
+            resource=IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
+        )
+    _GeneratedAppleAssetsGuard._reject_symlinks(
+        source, "Mobile web build output"
+    )
+    snapshot = runtime_root / IOS_WEB_DIST_SNAPSHOT_DIRNAME
+    if snapshot.is_symlink() or snapshot.is_file():
+        snapshot.unlink()
+    elif snapshot.exists():
+        shutil.rmtree(snapshot)
+    shutil.copytree(source, snapshot)
+    return snapshot
+
+
+def _write_ios_tauri_frontend_config(
+    runtime_root: Path,
+    dist_snapshot: Path,
+) -> Path:
+    """Bind tauri-build's frontendDist to the immutable snapshot.
+
+    The generated iOS Rust build script already exports TAURI_CONFIG from
+    MOBILE_TAURI_DEV_CONFIG, so the override needs no new build-script path.
+    """
+    config_path = runtime_root / IOS_TAURI_FRONTEND_CONFIG_FILENAME
+    config_path.write_text(
+        json.dumps(
+            {"build": {"frontendDist": str(dist_snapshot)}},
+            separators=(",", ":"),
+        ),
+        encoding="utf-8",
+    )
+    return config_path
+
+
+def _ios_native_binary_asset_tokens(application: Path) -> set[bytes]:
+    """Collect embedded /assets/* index tokens from top-level native binaries."""
+    tokens: set[bytes] = set()
+    for child in application.iterdir():
+        if child.is_symlink() or not child.is_file():
+            continue
+        if child.name != "Peers" and child.suffix not in {".dylib", ".so"}:
+            continue
+        tokens.update(
+            set(re.findall(rb"/assets/[A-Za-z0-9._-]+", child.read_bytes()))
+        )
+    return tokens
+
+
+def _assert_ios_embedded_web_assets(
+    application: Path,
+    dist_snapshot: Path,
+    *,
+    harness_enabled: bool,
+) -> None:
+    """Fail closed when the embedded web assets diverge from the staged dist.
+
+    Tauri embeds frontendDist into the native binary at cargo build time. A
+    concurrent non-harness web build can otherwise leave the bundle resources
+    and the embedded asset index out of sync, which only surfaces much later as
+    a missing Acceptance harness during the simulator Gate.
+    """
+    index_path = dist_snapshot / "index.html"
+    if not index_path.is_file():
+        raise BlockedError(
+            reason="Staged iOS web dist snapshot has no index.html",
+            resource=IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
+        )
+    index_html = index_path.read_text(encoding="utf-8")
+    expected_tokens = {
+        f"/assets/{name}"
+        for name in re.findall(r"/assets/([^\s\"'<>]+)", index_html)
+    }
+    if not expected_tokens:
+        raise BlockedError(
+            reason="Staged iOS web dist references no bundled assets",
+            resource=IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
+        )
+    if harness_enabled:
+        registry_chunks = sorted(
+            (dist_snapshot / "assets").glob("registry-*.js")
+        )
+        if len(registry_chunks) != 1:
+            raise BlockedError(
+                reason=(
+                    "Staged iOS harness web dist must contain exactly one "
+                    f"registry chunk, found {len(registry_chunks)}"
+                ),
+                resource=IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
+            )
+        expected_tokens.add(f"/assets/{registry_chunks[0].name}")
+    if not application.is_dir():
+        raise BlockedError(
+            reason=(
+                "iOS application artifact is missing after the native build: "
+                f"{application.name}"
+            ),
+            resource=IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
+        )
+    embedded_tokens = _ios_native_binary_asset_tokens(application)
+    if not embedded_tokens:
+        raise BlockedError(
+            reason="iOS native binaries expose no embedded web asset index",
+            resource=IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
+        )
+    missing = sorted(
+        token
+        for token in expected_tokens
+        if token.encode("utf-8") not in embedded_tokens
+    )
+    if not missing:
+        return
+    embedded_entries = sorted(
+        token.decode("utf-8", errors="replace")
+        for token in embedded_tokens
+        if re.fullmatch(rb"/assets/index-[A-Za-z0-9_-]+\.js", token)
+        and token.decode("utf-8") not in expected_tokens
+    )
+    detail = ", ".join(missing)
+    if embedded_entries:
+        detail += f"; stale embedded entries: {', '.join(embedded_entries)}"
+    raise BlockedError(
+        reason=(
+            "iOS native binary embedded web assets diverge from the staged "
+            f"harness dist; missing: {detail}"
+        ),
+        resource=IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
     )
 
 
@@ -3313,6 +3462,8 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
             _artifact, cached_build_identity = cached
             return cached_build_identity
 
+        ios_build_env = dict(env)
+        dist_snapshot: Path | None = None
         for name in ("web", "ios"):
             build_root = ios_build_root if name == "ios" else runtime_root
             if name in spec.artifact_patterns and name != "ios":
@@ -3343,14 +3494,46 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
             )
             self._run_checked(
                 command,
-                env=env,
+                env=ios_build_env if name == "ios" else env,
                 timeout=1800,
                 resource=f"mobile-simulator:build:{name}",
             )
             if name == "web":
-                apple_assets_guard.stage(
-                    self.repo_root / MOBILE_WEB_DIST_RELATIVE_PATH
+                # Freeze the harness web build before the native compile. Both
+                # the Xcode resource copy and Rust asset embedding read this
+                # run-owned snapshot, so concurrent worktree builds cannot
+                # split the native binary from the bundle resources.
+                dist_snapshot = _snapshot_ios_web_dist(
+                    self.repo_root, runtime_root
                 )
+                apple_assets_guard.stage(dist_snapshot)
+                ios_build_env[IOS_TAURI_FRONTEND_CONFIG_ENV] = str(
+                    _write_ios_tauri_frontend_config(
+                        runtime_root, dist_snapshot
+                    )
+                )
+        if dist_snapshot is None:
+            raise BlockedError(
+                reason="iOS build skipped the immutable web dist snapshot",
+                resource=IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
+            )
+        applications = self._artifact_matches(
+            spec, "ios", ios_build_root
+        )
+        if len(applications) != 1:
+            raise BlockedError(
+                reason=(
+                    "iOS build produced "
+                    f"{len(applications)} application artifacts; exactly one "
+                    "is required for embedded asset verification"
+                ),
+                resource=IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
+            )
+        _assert_ios_embedded_web_assets(
+            applications[0],
+            dist_snapshot,
+            harness_enabled=env.get("VITE_ACCEPTANCE_HARNESS") == "1",
+        )
         self._record_ios_build_cache(
             spec,
             ios_build_root,
@@ -3784,6 +3967,7 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
             port = reservation.port
             reservation.release()
             server_url = f"http://{spec.appium_host}:{port}"
+            log_path = runtime_root / "logs" / "appium.log"
             process = self.executor.start(
                 (
                     spec.appium_executable,
@@ -3797,8 +3981,27 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
                 ),
                 cwd=self.repo_root,
                 env=env,
-                log_path=runtime_root / "logs" / "appium.log",
+                log_path=log_path,
             )
+
+            def retain_appium_log() -> None:
+                if not env.get("PT_ACCEPTANCE_RUN_ID") or not log_path.is_file():
+                    return
+                with log_path.open("rb") as source:
+                    source.seek(max(0, log_path.stat().st_size - 8 * 1024 * 1024))
+                    value = source.read().decode("utf-8", errors="replace")
+                write_current_artifact(
+                    "runtime/mobile-simulator/appium.log",
+                    redact_text(
+                        value.replace(ACTOR_PASSWORD, "[REDACTED]")
+                    ).encode("utf-8"),
+                    repo_root=self.repo_root,
+                    environment=env,
+                )
+
+            # Reverse cleanup stops the server before capturing its final output,
+            # then releases installations and deletes the temporary runtime.
+            self.register_cleanup("appium-log", retain_appium_log)
             self.register_cleanup("appium-process", process.stop)
             owned = True
         else:
@@ -4118,6 +4321,7 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
                 "ios_udid": str(first_ios),
                 "runtime_root": str(runtime_root),
             }
+            ios_dist_snapshot: Path | None = None
             for platform in platforms:
                 platform_env = {
                     **command_env,
@@ -4162,9 +4366,19 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
                             resource=f"mobile-simulator:build:{name}",
                         )
                         if name == "web" and platform == "ios":
-                            apple_assets_guard.stage(
-                                self.repo_root
-                                / MOBILE_WEB_DIST_RELATIVE_PATH
+                            # Freeze the harness web build so the native
+                            # compile and the bundle copy share one immutable
+                            # source instead of the mutable worktree dist.
+                            ios_dist_snapshot = _snapshot_ios_web_dist(
+                                self.repo_root, runtime_root
+                            )
+                            apple_assets_guard.stage(ios_dist_snapshot)
+                            platform_env[
+                                IOS_TAURI_FRONTEND_CONFIG_ENV
+                            ] = str(
+                                _write_ios_tauri_frontend_config(
+                                    runtime_root, ios_dist_snapshot
+                                )
                             )
                     finally:
                         if (
@@ -4173,6 +4387,34 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
                         ):
                             android_manifest_guard.restore()
 
+            if "ios" in platforms:
+                if ios_dist_snapshot is None:
+                    raise BlockedError(
+                        reason=(
+                            "iOS build skipped the immutable web dist snapshot"
+                        ),
+                        resource=IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
+                    )
+                ios_applications = self._artifact_matches(
+                    spec, "ios", runtime_root
+                )
+                if len(ios_applications) != 1:
+                    raise BlockedError(
+                        reason=(
+                            "iOS build produced "
+                            f"{len(ios_applications)} application artifacts; "
+                            "exactly one is required for embedded asset "
+                            "verification"
+                        ),
+                        resource=IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
+                    )
+                _assert_ios_embedded_web_assets(
+                    ios_applications[0],
+                    ios_dist_snapshot,
+                    harness_enabled=(
+                        command_env.get("VITE_ACCEPTANCE_HARNESS") == "1"
+                    ),
+                )
             self._validate_runtime_source(manifest)
             for platform, identity in build_identities.items():
                 if self._build_inputs_digest(platform) != identity["buildInputsDigest"]:
@@ -4750,6 +4992,8 @@ class MobileIOSLayoutSimulatorProvisioner(MobileSimulatorProvisioner):
                 "ios_udid": str(first_device["udid"]),
                 "runtime_root": str(runtime_root),
             }
+            ios_build_env = dict(command_env)
+            ios_dist_snapshot: Path | None = None
             for name in ("web", "ios"):
                 if name in base.artifact_patterns:
                     self._remove_artifact_matches(
@@ -4777,15 +5021,48 @@ class MobileIOSLayoutSimulatorProvisioner(MobileSimulatorProvisioner):
                 )
                 self._run_checked(
                     command,
-                    env=command_env,
+                    env=ios_build_env if name == "ios" else command_env,
                     timeout=1800,
                     resource=f"{self.environment_id}:build:{name}",
                 )
                 if name == "web":
-                    apple_assets_guard.stage(
-                        self.repo_root / MOBILE_WEB_DIST_RELATIVE_PATH
+                    # Freeze the harness web build so the native compile and
+                    # the bundle copy share one immutable source.
+                    ios_dist_snapshot = _snapshot_ios_web_dist(
+                        self.repo_root, runtime_root
+                    )
+                    apple_assets_guard.stage(ios_dist_snapshot)
+                    ios_build_env[IOS_TAURI_FRONTEND_CONFIG_ENV] = str(
+                        _write_ios_tauri_frontend_config(
+                            runtime_root, ios_dist_snapshot
+                        )
                     )
 
+            if ios_dist_snapshot is None:
+                raise BlockedError(
+                    reason="iOS build skipped the immutable web dist snapshot",
+                    resource=IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
+                )
+            ios_applications = self._artifact_matches(
+                base, "ios", runtime_root
+            )
+            if len(ios_applications) != 1:
+                raise BlockedError(
+                    reason=(
+                        "iOS build produced "
+                        f"{len(ios_applications)} application artifacts; "
+                        "exactly one is required for embedded asset "
+                        "verification"
+                    ),
+                    resource=IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
+                )
+            _assert_ios_embedded_web_assets(
+                ios_applications[0],
+                ios_dist_snapshot,
+                harness_enabled=(
+                    command_env.get("VITE_ACCEPTANCE_HARNESS") == "1"
+                ),
+            )
             application = self._stage_application(
                 base,
                 "ios",
@@ -7226,6 +7503,16 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
             profile_env=profile_env,
         )
 
+    @contextmanager
+    def _bound_reset_profiles(self) -> Iterator[None]:
+        # One live station.reset lease plus one registry-validated reviewed
+        # binding per distinct Station. The context revalidates the lease on
+        # entry and removes the binding on exit, so neither provision-time nor
+        # cleanup-time resets inherit a single active Profile that cannot
+        # authorize the secondary Station.
+        with bound_reset_profiles(self._required_station_profiles().values()):
+            yield
+
     def provision(self, gate_id: str) -> RuntimeManifest:
         self._manifest = self._new_base_manifest(gate_id)
         try:
@@ -7266,12 +7553,13 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
                     deployment_environment,
                     owner,
                 )
-            for service_id in STATION_LIFECYCLE_SERVICES:
-                binding = service_bindings[service_id]
-                verify_reset_target(
-                    binding.endpoint,
-                    binding.deployment_environment,
-                )
+            with self._bound_reset_profiles():
+                for service_id in STATION_LIFECYCLE_SERVICES:
+                    binding = service_bindings[service_id]
+                    verify_reset_target(
+                        binding.endpoint,
+                        binding.deployment_environment,
+                    )
             services = self._attest_services(
                 manifest.run_id,
                 service_bindings,
@@ -7538,42 +7826,43 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
         reset_scope = "mobile-station-lifecycle-alice"
         require_station_reset_authority(reset_scope)
         stations: dict[str, Any] = {}
-        for service_id in STATION_LIFECYCLE_SERVICES:
-            binding = service_bindings[service_id]
-            verify_reset_target(
-                binding.endpoint,
-                binding.deployment_environment,
-            )
-            reset_fixture(
-                binding.deployment_environment,
-                ("alice",),
-                reset_authorized=True,
-            )
-            self.register_cleanup(
-                f"actor-fixture:{service_id}",
-                partial(
-                    self._reset_actor_fixture_target,
+        with self._bound_reset_profiles():
+            for service_id in STATION_LIFECYCLE_SERVICES:
+                binding = service_bindings[service_id]
+                verify_reset_target(
                     binding.endpoint,
                     binding.deployment_environment,
-                    reset_scope,
-                ),
-            )
-            actor = resolve_actor_identity(
-                binding.endpoint,
-                binding.deployment_environment,
-                "alice",
-            )
-            stations[service_id] = {
-                "targetVerified": True,
-                "actors": [
-                    {
-                        "role": actor.role,
-                        "accountRef": actor.account_ref,
-                        "ptid": actor.ptid,
-                        "devicePolicy": actor.device_policy,
-                    }
-                ],
-            }
+                )
+                reset_fixture(
+                    binding.deployment_environment,
+                    ("alice",),
+                    reset_authorized=True,
+                )
+                self.register_cleanup(
+                    f"actor-fixture:{service_id}",
+                    partial(
+                        self._reset_actor_fixture_target,
+                        binding.endpoint,
+                        binding.deployment_environment,
+                        reset_scope,
+                    ),
+                )
+                actor = resolve_actor_identity(
+                    binding.endpoint,
+                    binding.deployment_environment,
+                    "alice",
+                )
+                stations[service_id] = {
+                    "targetVerified": True,
+                    "actors": [
+                        {
+                            "role": actor.role,
+                            "accountRef": actor.account_ref,
+                            "ptid": actor.ptid,
+                            "devicePolicy": actor.device_policy,
+                        }
+                    ],
+                }
         payload = {
             "artifactKind": (
                 "mobile-station-lifecycle-simulator-actor-manifest"
@@ -7611,19 +7900,20 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
             payload,
         ).to_dict()
 
-    @staticmethod
     def _reset_actor_fixture_target(
+        self,
         station_url: str,
         deployment_environment: str,
         reset_scope: str,
     ) -> None:
-        require_station_reset_authority(reset_scope)
-        verify_reset_target(station_url, deployment_environment)
-        reset_fixture(
-            deployment_environment,
-            ("alice",),
-            reset_authorized=True,
-        )
+        with self._bound_reset_profiles():
+            require_station_reset_authority(reset_scope)
+            verify_reset_target(station_url, deployment_environment)
+            reset_fixture(
+                deployment_environment,
+                ("alice",),
+                reset_authorized=True,
+            )
 
     @staticmethod
     def _public_simulator_resources(
@@ -7920,6 +8210,17 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
             )
             if isinstance(value, str):
                 chromedriver_executable = value
+        ios_launch = None
+        capture_native_output = None
+        if platform_name == "ios":
+            from tooling.acceptance.gates.mobile.simulator_native_output import ios_native_output_callbacks
+
+            ios_launch, capture_native_output = ios_native_output_callbacks(
+                directory=Path(_required_text(client, "storageRoot", "native-output:storage")) / "native-output",
+                client_id=client_id, device=_required_text(client, "device", "native-output:device"),
+                application_id=_required_text(application, "id", "native-output:application"),
+                writer=self.evidence_run, sensitive_values=self._raw_authority_values(),
+            )
         return SimulatorAppiumSession(
             UrllibAppiumTransport(
                 _required_text(
@@ -7990,6 +8291,8 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
                 ).items()
             },
             chromedriver_executable=chromedriver_executable,
+            ios_launch=ios_launch,
+            capture_native_output=capture_native_output,
         )
 
 
@@ -8010,6 +8313,21 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
     actor_manifest_path = ""
     additional_fixture_roles_by_gate: Mapping[str, tuple[str, ...]] = {}
     allowed_desktop_client_sets: tuple[frozenset[str], ...] = ()
+    # Same path-segment boundary as Rust active_profile::MAX_PROFILE_LEN.
+    DESKTOP_PROFILE_ID_MAX_LEN = 64
+
+    @classmethod
+    def _desktop_profile_id(
+        cls, environment_id: str, run_id: str, client_id: str
+    ) -> str:
+        suffix = f"-{run_id}-{client_id}"
+        prefix_budget = cls.DESKTOP_PROFILE_ID_MAX_LEN - len(suffix)
+        if prefix_budget <= 0:
+            raise ValueError(
+                "Desktop profile suffix alone exceeds the native "
+                f"{cls.DESKTOP_PROFILE_ID_MAX_LEN}-character limit: {suffix!r}"
+            )
+        return f"{environment_id[:prefix_budget]}{suffix}"
 
     def __init__(
         self,
@@ -8081,7 +8399,9 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                 gateway_port=available_port(),
                 renderer_port=available_port(),
                 webdriver_port=available_port(),
-                profile=f"{self.environment_id}-{run_id}-{client.id}",
+                profile=self._desktop_profile_id(
+                    self.environment_id, run_id, client.id
+                ),
                 storage_root=str(runtime_root / client.id),
                 required_service_roles=client.required_service_roles,
                 service_bindings=client.service_bindings,
@@ -8206,14 +8526,15 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                     deployment_environment,
                     owner,
                 )
-            for binding in service_bindings.values():
-                if binding.kind != "station":
-                    continue
-                if self.requires_actor_reset:
-                    verify_reset_target(
-                        binding.endpoint,
-                        binding.deployment_environment,
-                    )
+            with self._bound_reset_profiles():
+                for binding in service_bindings.values():
+                    if binding.kind != "station":
+                        continue
+                    if self.requires_actor_reset:
+                        verify_reset_target(
+                            binding.endpoint,
+                            binding.deployment_environment,
+                        )
             services = self._attest_services(
                 manifest.run_id,
                 service_bindings,
@@ -8656,6 +8977,20 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
             require_distinct=self.require_distinct_station_profiles,
         )
 
+    @contextmanager
+    def _bound_reset_profiles(self) -> Iterator[None]:
+        # Bind one registry-validated reviewed Profile per distinct Station for
+        # the duration of fixture mutation, mirroring the Station lifecycle
+        # provisioner. Without this, two-Station resets fall back to the single
+        # active/lease Profile and the fail-closed target guard rejects the
+        # secondary Station. Non-reset provisioners never touch Station data, so
+        # they keep their existing authority and skip the lease requirement.
+        if not self.requires_actor_reset:
+            yield
+            return
+        with bound_reset_profiles(self._required_station_profiles().values()):
+            yield
+
     def _required_service_profiles(self) -> dict[str, str]:
         self._service_profiles = resolve_service_profiles(
             self.contract, self._service_profiles,
@@ -8839,6 +9174,27 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
         *,
         clients: Sequence[EnvironmentClient] | None = None,
     ) -> dict[str, Any]:
+        # Every fixture operation that resolves a Station target (reset,
+        # canonical PTID resolution, friendship and Federation preparation)
+        # must run with one reviewed Profile binding per Station, otherwise a
+        # two-Station Suite falls back to the single active Profile and the
+        # fail-closed target guard rejects the secondary Station.
+        with self._bound_reset_profiles():
+            return self._prepare_actor_fixture_impl(
+                gate_id,
+                service_bindings,
+                overlay,
+                clients=clients,
+            )
+
+    def _prepare_actor_fixture_impl(
+        self,
+        gate_id: str,
+        service_bindings: Mapping[str, MobileServiceBinding],
+        overlay: Mapping[str, Any],
+        *,
+        clients: Sequence[EnvironmentClient] | None = None,
+    ) -> dict[str, Any]:
         environment_clients = tuple(clients or self.contract.clients)
         if self.requires_actor_reset:
             reset_scope = self._reset_scope()
@@ -8966,7 +9322,7 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                 self.register_cleanup(
                     f"social-follow-fixture:{service_id}",
                     partial(
-                        reset_fixture_follow_edges,
+                        self._reset_follow_edges_target,
                         binding.endpoint,
                         binding.deployment_environment,
                         actor_ptids,
@@ -9105,20 +9461,34 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
             payload,
         ).to_dict()
 
-    @staticmethod
     def _reset_actor_fixture_target(
+        self,
         station_url: str,
         deployment_environment: str,
         roles: tuple[str, ...],
         reset_scope: str,
     ) -> None:
-        require_station_reset_authority(reset_scope)
-        verify_reset_target(station_url, deployment_environment)
-        reset_fixture(
-            deployment_environment,
-            roles,
-            reset_authorized=True,
-        )
+        with self._bound_reset_profiles():
+            require_station_reset_authority(reset_scope)
+            verify_reset_target(station_url, deployment_environment)
+            reset_fixture(
+                deployment_environment,
+                roles,
+                reset_authorized=True,
+            )
+
+    def _reset_follow_edges_target(
+        self,
+        station_url: str,
+        deployment_environment: str,
+        actor_ptids: tuple[str, ...],
+    ) -> None:
+        with self._bound_reset_profiles():
+            reset_fixture_follow_edges(
+                station_url,
+                deployment_environment,
+                actor_ptids,
+            )
 
     def _reset_scope(self) -> str:
         if len(self.contract.fixtures) != 1:

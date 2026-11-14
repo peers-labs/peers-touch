@@ -52,7 +52,7 @@ export function RadioGroup<T extends string | number>({ options, value, onValueC
   const name = useId();
   return <div className={`pt-choice-group ${className}`} role="radiogroup" aria-label={label} style={style}>
     {options.map(entry => { const option = typeof entry === 'object' ? entry : {value:entry,label:String(entry)};
-      return <Radio key={option.value} name={name} label={<>{option.leading}{option.label}</>} checked={value === option.value}
+      return <Radio key={option.value} name={name} value={String(option.value)} label={<>{option.leading}{option.label}</>} checked={value === option.value}
       disabled={disabled || option.availability?.kind === 'disabled'} onChange={() => onValueChange?.(option.value)} />; })}
   </div>;
 }
@@ -74,7 +74,9 @@ export function Switch({ checked: controlled, defaultChecked = false, onCheckedC
   const track = <button {...props} className={`pt-switch ${className}`} type="button" role="switch" aria-checked={checked}
     aria-label={accessibleName} disabled={isDisabled}
     onClick={event => { props.onClick?.(event); if (!event.defaultPrevented) { setLocal(!checked); onCheckedChange?.(!checked); } }}>
-    <span className="pt-switch-thumb" />
+    <span className="pt-switch-track">
+      <span className="pt-switch-thumb" />
+    </span>
   </button>;
   if (!text) return track;
   return <span className="pt-switch-row">

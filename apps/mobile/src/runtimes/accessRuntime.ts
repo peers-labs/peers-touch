@@ -165,6 +165,41 @@ export async function cancelAccessAttemptForActiveStation(): Promise<void> {
   }
 }
 
+// Local-first abandon used when the user leaves the gate to pick another
+// Station. Navigation must never wait on, or be blocked by, the remote
+// cancel RPC: the attempt is Station-scoped and expires on its own. Remote
+// cancellation is best effort and its result is never surfaced.
+export async function abandonAccessAttemptBestEffort(): Promise<void> {
+  const state = useAuthStore.getState();
+  state.setLoading(false);
+  state.setError(null);
+  publishFromStore();
+  state.setAccessDecision(null);
+  publishFromStore();
+
+  try {
+    const station = activeStationEntry(await readStationRegistryProjection());
+    if (!station) return;
+    const attemptId = state.accessDecision?.attemptId.trim() ?? '';
+    const oauth = readAuthRuntimeSnapshot();
+    if (oauth.phase !== 'idle' && oauth.phase !== 'cancelled') {
+      cancelOAuthForScope({
+        stationOrigin: station.url,
+        stationPeerId: station.stationPeerId,
+      }).catch(() => undefined);
+    }
+    if (attemptId) {
+      cancelStationAccessAttempt({
+        stationPeerId: station.stationPeerId,
+        stationUrl: station.url,
+        attemptId,
+      }).catch(() => undefined);
+    }
+  } catch {
+    // Local navigation already happened; remote cleanup remains advisory.
+  }
+}
+
 export async function startStationAccessAttemptWithRecovery(
   stationPeerId: string,
   stationUrl: string,

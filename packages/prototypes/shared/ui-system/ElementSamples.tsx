@@ -21,11 +21,11 @@
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Accordion, ActionGroup, AgentAvatar, Alert, AudioPlayer, Autocomplete, Avatar, AvatarGroup,
-  Badge, Block, BrandMark, Breadcrumb, Button, CalendarView, Card, Carousel, Center, Checkbox,
+  Badge, Block, BrandMark, Breadcrumb, Button, CalendarView, CallControl, Card, Carousel, Center, Checkbox,
   CheckboxGroup, CodeBlock, CodeDiff, CodeEditor, CodeSnippet, Collapsible, ColorPicker,
   ColorSwatches, CommandPalette, CommandPicker, ConfirmAction, ContextMenu, CopyButton, DataTable,
   DateField, DateRangeField, DateTimeField, DateTimeRangeField, Descriptions, DiagramPreview,
-  Dialog, Divider, DownloadButton, Drawer, EmojiArtwork, EmojiPicker, Empty, FeedbackHost, Field,
+  Dialog, Divider, DownloadButton, Drawer, EmojiArtwork, EmojiPicker, Empty, FeedbackHost, Field, FieldFrame,
   FileDropzone, FilePicker, FileTypeGlyph, Flex, FloatingPanel, Form, FormField, FormFooter,
   FormGroup, Grid, GroupAvatar, GuideStep, Heading, HighlightText, HtmlPreview, Icon, IconButton,
   Image, ImageChoice, ImageGrid, IdentityCard, IdentityTrigger, FollowButton, InlineEdit, Layout, Link, List, ListItem, ListItemMeta, ListRow, ListSection,
@@ -113,11 +113,28 @@ function InputStage({ c, id }: StageProps) {
   const [rate, setRate] = useState(4);
   const [query, setQuery] = useState('');
   const [shortcut, setShortcut] = useState('Ctrl+K');
+  const [composerExpanded, setComposerExpanded] = useState(false);
   switch (id) {
-    case 'TextField': return <TextField value={text} onValueChange={setText} disabled={c.disabled} clearable onClear={() => setText('')}
-      leading={<Icon iconId="users" size={15} />} placeholder={c.L('显示名称', '请输入在联邦目录中展示的公开显示名称')} />;
-    case 'TextArea': return <TextArea value={c.L('周末把薄荷分了三盆。', '长文案条件下换成一段明显更宽的多行占位，检验自适应高度与字数。')}
-      onChange={() => undefined} disabled={c.disabled} characterCount maxLength={120} minimumRows={3} aria-label="动态正文" />;
+    case 'TextField': return <>
+      <TextField value={text} onValueChange={setText} disabled={c.disabled} clearable onClear={() => setText('')}
+        leading={<Icon iconId="users" size={15} />} placeholder={c.L('显示名称', '请输入在联邦目录中展示的公开显示名称')} />
+      <TextField appearance="search" reveal density="comfortable" value={query} onValueChange={setQuery}
+        disabled={c.disabled} aria-label="局部搜索" leading={<Icon iconId="search" size={18} />}
+        placeholder={c.L('搜索联系人', '按姓名搜索已添加的联系人')} />
+    </>;
+    case 'TextArea': return <>
+      <TextArea value={c.L('周末把薄荷分了三盆。', '长文案条件下换成一段明显更宽的多行占位，检验自适应高度与字数。')}
+        onChange={() => undefined} disabled={c.disabled} characterCount maxLength={120} minimumRows={3} aria-label="动态正文" />
+      <FieldFrame appearance="composer">
+        <IconButton actionId="el.composer.attach" iconId="folder-open" label="添加附件" emphasis="quiet" availability={c.unavailable} />
+        <TextArea value={text} onValueChange={setText} disabled={c.disabled} framing="embedded" density="comfortable"
+          autoGrow minimumRows={composerExpanded ? 4 : 1} maximumRows={composerExpanded ? 10 : 4} aria-label="消息草稿" />
+        <IconButton actionId="el.composer.expand" iconId={composerExpanded ? 'minimize-2' : 'maximize-2'}
+          label={composerExpanded ? '收起输入' : '展开输入'} emphasis="quiet" aria-pressed={composerExpanded}
+          onActivate={() => setComposerExpanded(value => !value)} />
+        <IconButton actionId="el.composer.send" iconId="send" label="发送" emphasis="primary" availability={c.unavailable} />
+      </FieldFrame>
+    </>;
     case 'PasswordField': return <PasswordField value={pwd} onValueChange={setPwd} disabled={c.disabled} placeholder="口令" />;
     case 'NumberField': return <NumberField value={num} onValueChange={setNum} disabled={c.disabled} />;
     case 'OTPField': return <OTPField label="六位验证码" value={otp} onValueChange={setOtp} disabled={c.disabled} />;
@@ -620,6 +637,10 @@ const IDENTITY: Record<string, Renderer> = {
   QrCode: () => <QrCode value="peers://approve/device/4f2a" size={120} label="设备关联二维码" />,
   VideoPlayer: () => <VideoPlayer resource={{ resourceId: 'av1', name: '晚风.mp4', state: 'failed', failureReason: '源不可用' }} />,
   AudioPlayer: () => <AudioPlayer resource={{ resourceId: 'au1', name: '晚风.m4a', state: 'failed', failureReason: '源不可用' }} />,
+  CallControl: () => <div style={{ display: 'flex', gap: 24, padding: 16, background: 'var(--pt-mediaStage)' }}>
+    <CallControl actionId="sample.call.mic" iconId="mic-off" label="取消静音" selected />
+    <CallControl actionId="sample.call.leave" iconId="phone-off" label="离开通话" tone="danger" />
+  </div>,
   Carousel: () => <Carousel label="图片轮播" items={[
     { id: '1', label: '第一张', content: <Box tone="primary">第一张</Box> },
     { id: '2', label: '第二张', content: <Box>第二张</Box> }]} />,

@@ -1,0 +1,391 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "UI/UX Element & Component Acceptance Pipeline",
+    "subtitle": "Judgement has four layers: physics, role and runtime are machine-decidable; craft and signature require an independent human verdict. Any failure returns to its authoring layer — never fixed by weakening a gate or self-scoring.",
+    "output": "ui-ux-system.en.html",
+    "locale": "en",
+    "visual_preset": "editorial",
+    "quality_profile": "showcase",
+    "animation": "none"
+  },
+  "lanes": [
+    {
+      "id": "northstar",
+      "label": "North star (fixed)"
+    },
+    {
+      "id": "author",
+      "label": "Author / Agent"
+    },
+    {
+      "id": "machine",
+      "label": "Machine gates"
+    },
+    {
+      "id": "reviewer",
+      "label": "Human review"
+    },
+    {
+      "id": "evidence",
+      "label": "Evidence / status"
+    },
+    {
+      "id": "rework",
+      "label": "Rework (failing layer)",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "p_src",
+      "label": "North star",
+      "fromCol": 0,
+      "toCol": 0,
+      "variant": "emphasis"
+    },
+    {
+      "id": "p_build",
+      "label": "Author output",
+      "fromCol": 1,
+      "toCol": 1
+    },
+    {
+      "id": "p_gate",
+      "label": "Gates ①②③ machine → ④ human",
+      "fromCol": 2,
+      "toCol": 4,
+      "variant": "emphasis"
+    },
+    {
+      "id": "p_state",
+      "label": "Evidence / status",
+      "fromCol": 5,
+      "toCol": 5
+    }
+  ],
+  "groups": [
+    {
+      "id": "g_build",
+      "label": "Tokens → component → specimen",
+      "lane": "author",
+      "fromCol": 1,
+      "toCol": 1
+    },
+    {
+      "id": "g_auto",
+      "label": "Deterministic gates: computable, rerunnable, digest-bound",
+      "lane": "machine",
+      "fromCol": 2,
+      "toCol": 4,
+      "variant": "emphasis"
+    },
+    {
+      "id": "g_human",
+      "label": "Craft verdict: a script never self-passes aesthetics",
+      "lane": "reviewer",
+      "fromCol": 4,
+      "toCol": 4
+    },
+    {
+      "id": "g_state",
+      "label": "Verdict and evidence boundary",
+      "lane": "evidence",
+      "fromCol": 5,
+      "toCol": 5
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n_phil",
+      "lane": "northstar",
+      "col": 0,
+      "type": "security",
+      "label": "Design north star",
+      "sublabel": "Expressive minimalism · 4 layers"
+    },
+    {
+      "id": "a_sem",
+      "lane": "author",
+      "col": 1,
+      "type": "frontend",
+      "yOffset": -96,
+      "label": "Semantic tokens",
+      "sublabel": "roles · states · combos"
+    },
+    {
+      "id": "a_comp",
+      "lane": "author",
+      "col": 1,
+      "type": "frontend",
+      "yOffset": 0,
+      "label": "Shared component",
+      "sublabel": "token-role driven"
+    },
+    {
+      "id": "a_spec",
+      "lane": "author",
+      "col": 1,
+      "type": "frontend",
+      "yOffset": 96,
+      "label": "Contract specimen",
+      "sublabel": "all states × narrow"
+    },
+    {
+      "id": "m_phys",
+      "lane": "machine",
+      "col": 2,
+      "type": "backend",
+      "label": "Gate ① Physics",
+      "tag": "deterministic",
+      "sublabel": "WCAG · accent"
+    },
+    {
+      "id": "m_role",
+      "lane": "machine",
+      "col": 3,
+      "type": "backend",
+      "label": "Gate ② Role fit",
+      "tag": "deterministic",
+      "sublabel": "role fit · coverage"
+    },
+    {
+      "id": "m_run",
+      "lane": "machine",
+      "col": 4,
+      "type": "backend",
+      "label": "Gate ③ Runtime",
+      "tag": "deterministic",
+      "sublabel": "geometry/focus/recovery"
+    },
+    {
+      "id": "r_gate",
+      "lane": "reviewer",
+      "col": 4,
+      "type": "external",
+      "label": "Gate ④ Craft",
+      "tag": "human",
+      "sublabel": "10 dims · logo test"
+    },
+    {
+      "id": "e_pending",
+      "lane": "evidence",
+      "col": 5,
+      "type": "database",
+      "yOffset": -96,
+      "label": "pending-review",
+      "sublabel": "L1 + L2 + L3"
+    },
+    {
+      "id": "e_confirmed",
+      "lane": "evidence",
+      "col": 5,
+      "type": "database",
+      "yOffset": 0,
+      "label": "confirmed",
+      "sublabel": "owner OK"
+    },
+    {
+      "id": "e_unproven",
+      "lane": "evidence",
+      "col": 5,
+      "type": "database",
+      "yOffset": 96,
+      "label": "Journey: UNPROVEN",
+      "sublabel": "mock ≠ production"
+    },
+    {
+      "id": "w_rework",
+      "lane": "rework",
+      "col": 3,
+      "type": "frontend",
+      "label": "Redo at failing layer",
+      "sublabel": "redo at owning layer"
+    }
+  ],
+  "edges": [
+    {
+      "from": "n_phil",
+      "to": "a_sem",
+      "label": "constrains",
+      "role": "main"
+    },
+    {
+      "from": "a_sem",
+      "to": "a_comp",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "role": "main"
+    },
+    {
+      "from": "a_comp",
+      "to": "a_spec",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "role": "main"
+    },
+    {
+      "from": "a_spec",
+      "to": "m_phys",
+      "label": "submit",
+      "role": "main"
+    },
+    {
+      "from": "m_phys",
+      "to": "m_role",
+      "label": "pass",
+      "role": "main"
+    },
+    {
+      "from": "m_role",
+      "to": "m_run",
+      "label": "pass",
+      "role": "main"
+    },
+    {
+      "from": "m_run",
+      "to": "r_gate",
+      "label": "all machine gates green",
+      "role": "main"
+    },
+    {
+      "from": "r_gate",
+      "to": "e_pending",
+      "label": "pass",
+      "role": "main"
+    },
+    {
+      "from": "e_pending",
+      "to": "e_confirmed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "label": "owner confirms",
+      "role": "main"
+    },
+    {
+      "from": "e_confirmed",
+      "to": "e_unproven",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "label": "parallel, never upgraded",
+      "role": "branch",
+      "variant": "dashed"
+    },
+    {
+      "from": "m_phys",
+      "to": "w_rework",
+      "label": "contrast/hue",
+      "role": "error"
+    },
+    {
+      "from": "m_role",
+      "to": "w_rework",
+      "label": "role/semantic",
+      "role": "error"
+    },
+    {
+      "from": "m_run",
+      "to": "w_rework",
+      "label": "geometry/recovery",
+      "role": "error"
+    },
+    {
+      "from": "r_gate",
+      "to": "w_rework",
+      "label": "craft/signature",
+      "role": "error"
+    },
+    {
+      "from": "w_rework",
+      "to": "a_sem",
+      "label": "redo and rerun every gate",
+      "role": "return"
+    }
+  ],
+  "semanticChecks": {
+    "allowedRoots": [
+      "n_phil"
+    ],
+    "allowedTerminals": [
+      "e_unproven"
+    ],
+    "requiredEdges": [
+      {
+        "from": "m_phys",
+        "to": "m_role"
+      },
+      {
+        "from": "m_role",
+        "to": "m_run"
+      },
+      {
+        "from": "m_run",
+        "to": "r_gate"
+      },
+      {
+        "from": "r_gate",
+        "to": "e_pending"
+      },
+      {
+        "from": "e_confirmed",
+        "to": "e_unproven"
+      }
+    ],
+    "requiredPaths": [
+      {
+        "from": "n_phil",
+        "to": "e_confirmed"
+      },
+      {
+        "from": "n_phil",
+        "to": "e_unproven"
+      }
+    ]
+  },
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Gate ① physics · automated",
+      "items": [
+        "WCAG 2.2 AA: 4.5 body, 3.0 large/boundary; onPrimary-on-fill and focus-ring contrast",
+        "Single-accent discipline: one action.primary per page; status hues must not compete",
+        "Computable, bound to the token-source digest; a failure is red"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Gates ②③ role & runtime · automated",
+      "items": [
+        "Gate ② asks whether a value fits the role it claims: generic SaaS purple, unreadable amber, missing trust.*/type.* are all rejected",
+        "Gate ③ runs real actions plus geometry/focus/recovery; “painted value == token value” proves consistency only, not fitness",
+        "Fresh page per scenario, finalizers always run, evidence binds commit + input digests, gates set a non-zero exit"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Gate ④ craft & signature · human, not automatable",
+      "items": [
+        "Verdict each item on the ten craft-quality dimensions plus positive/negative calibration: passed / changes-required / unproven",
+        "Logo-removal test: recognizably Peers without the mark, not an admin dashboard or benchmark imitation",
+        "An independent reviewer (different from the author) decides; tooling may require the verdict but never self-passes it"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Rejection loop",
+      "items": [
+        "Failure at physics/role/runtime/craft returns to the semantic, component or design layer that owns it",
+        "Never go green by weakening a gate, self-scoring, or copying an external reference"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Evidence boundary",
+      "items": [
+        "confirmed covers the current-source design and specimen only; the product journey stays UNPROVEN in parallel",
+        "Local owner mocks project state; they do not prove real send, authorization, deletion or receiver-visible outcomes"
+      ]
+    }
+  ]
+}

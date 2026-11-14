@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { CORE_PAGE_LIST } from '../types/navigation';
+import { CORE_PAGE_LIST, isDesktopAppletAvailable, resolveAvailablePage } from '../types/navigation';
 
 const SELECTED_ONLY_MODULES = ['channels', 'cron', 'oss', 'command-menu'] as const;
 const AI_SETTINGS_MODULES = ['discover', 'memory'] as const;
@@ -81,6 +81,15 @@ describe('Desktop navigation ownership', () => {
     expect(profile).not.toContain("navigateTo('applet:peers.atelier'");
   });
 
+  it('returns restored Atelier and orchestration routes to Agent Chat', () => {
+    expect(resolveAvailablePage('applet:peers.atelier')).toBe('agent');
+    expect(resolveAvailablePage('agent-orchestration')).toBe('agent');
+    expect(isDesktopAppletAvailable('peers.atelier')).toBe(false);
+    expect(isDesktopAppletAvailable('peers.note')).toBe(true);
+    expect(resolveAvailablePage('applet:peers.note')).toBe('applet:peers.note');
+    expect(resolveAvailablePage('settings')).toBe('settings');
+  });
+
   it('keeps hidden capabilities routable without standalone Marketplace or Memory pages', () => {
     expect(CORE_PAGE_LIST).not.toContain('notes');
     expect(CORE_PAGE_LIST).not.toContain('marketplace');
@@ -92,11 +101,10 @@ describe('Desktop navigation ownership', () => {
   it('groups all migrated utilities under their Settings owners', () => {
     const source = desktopSource('pages/SettingsPage.tsx');
 
-    // North-star five-group IA: cron folds into AI; tools/command-menu join
-    // the advanced group with storage/logs/applets/help.
-    expect(source).toContain("sectionKeys: ['providers', 'models', 'discover', 'memory', 'skills', 'mcp', 'voice', 'cron']");
+    expect(source).toContain("sectionKeys: ['cron', 'command-menu', 'tools']");
     expect(source).toContain("sectionKeys: ['channels', 'connections', 'bots']");
-    expect(source).toContain("sectionKeys: ['storage', 'oss', 'logs', 'tools', 'command-menu', 'applets', 'help']");
+    expect(source).toContain("sectionKeys: ['storage', 'oss', 'logs']");
+    expect(source).toContain("'models', 'discover', 'memory'");
   });
 
   it('routes owned resources into Settings and rejects removed module routes', () => {

@@ -1,7 +1,7 @@
 use crate::contracts::{
     CommandResultDisposition, CommandResultReceiveCommit, CryptoEndpoint, ReceiveCommitResult,
 };
-use crate::inbox::ClaimedItemConsumer;
+use crate::inbox::{ClaimedItemConsumer, ConsumeError};
 use crate::proto::actor_device_ptid;
 use crate::proto::chat::{
     chat_command, ChatCommand, ConversationCommandRejectCode, ConversationCommandResultDelivery,
@@ -257,8 +257,12 @@ impl<R: CommandResultRepository, L: CommandResultLifecycle> CommandResultProcess
 impl<R: CommandResultRepository, L: CommandResultLifecycle> ClaimedItemConsumer
     for CommandResultProcessor<R, L>
 {
-    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
-        self.process(item, consumer_epoch)
+    fn consume(
+        &self,
+        item: &DurableDeviceInboxItem,
+        consumer_epoch: u64,
+    ) -> Result<(), ConsumeError> {
+        self.process(item, consumer_epoch).map_err(ConsumeError::from)
     }
 }
 
@@ -641,8 +645,8 @@ mod tests {
         item.item_id = "alternate-item-id".to_string();
 
         assert_eq!(
-            processor.consume(&item, 5),
-            Err("messaging command result item identity is invalid".to_string())
+            processor.consume(&item, 5).unwrap_err().message(),
+            "messaging command result item identity is invalid"
         );
         assert!(repository.commits.lock().unwrap().is_empty());
     }

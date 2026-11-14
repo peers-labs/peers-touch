@@ -920,6 +920,40 @@ def collect_panel_paths(predicate, depth_limit=14):
     return found
 
 
+def commit_search_field(search_element):
+    # Preferred path: the Search field's own AXConfirm action commits the
+    # query without synthesizing global input. Some AppKit/remote-desktop
+    # configurations do not expose AXConfirm on the field and fail it with
+    # kAXErrorCannotComplete (-25204); in that case post the equivalent
+    # Return key to the still-focused Search field. Exact single-row
+    # matching downstream still guards against selecting the wrong file.
+    try:
+        perform_action(search_element, "AXConfirm")
+        return
+    except RuntimeError as error:
+        if "AX error -25204" not in str(error):
+            raise
+    graphics = ctypes.CDLL(
+        "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
+    )
+    graphics.CGEventCreateKeyboardEvent.argtypes = [
+        CFRef, ctypes.c_uint16, ctypes.c_bool,
+    ]
+    graphics.CGEventCreateKeyboardEvent.restype = CFRef
+    graphics.CGEventPost.argtypes = [ctypes.c_uint32, CFRef]
+    graphics.CGEventPost.restype = None
+    # kVK_Return; kCGHIDEventTap == 0
+    key_code = 0x24
+    for pressed in (True, False):
+        event = graphics.CGEventCreateKeyboardEvent(None, key_code, pressed)
+        if not event:
+            raise RuntimeError("CoreGraphics failed to create Return key event")
+        try:
+            graphics.CGEventPost(0, event)
+        finally:
+            core_foundation.CFRelease(event)
+
+
 def select_file_via_search(filename):
     # macOS Search results expose an AXOutline ("ListView") whose
     # AXSelectedRows mutation is accepted, unlike the XPC-hosted column
@@ -938,7 +972,7 @@ def select_file_via_search(filename):
         )
         try:
             reads.set_attribute(search[-1], "AXValue", value)
-            perform_action(search[-1], "AXConfirm")
+            commit_search_field(search[-1])
         finally:
             core_foundation.CFRelease(value)
     finally:

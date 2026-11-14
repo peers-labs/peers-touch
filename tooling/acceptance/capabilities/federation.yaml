@@ -31,7 +31,8 @@
       "required_gates": ["station-federation-unit"],
       "synthetic_paths": [
         "apps/station/app/subserver/federation/handler.go",
-        "apps/desktop/src/components/settings/FederationTab.tsx"
+        "apps/station/app/subserver/dashboard/handler_federation.go",
+        "apps/station/app/subserver/dashboard/web/src/pages/FederationPage.tsx"
       ],
       "evidence": {
         "truth_sources": ["federation_ledger_proposals", "federation_ledger_events"],
@@ -90,7 +91,9 @@
         "apps/station/app/subserver/federation/remote_fetcher.go",
         "apps/station/app/subserver/federation/subserver.go",
         "apps/station/app/subserver/federation/sync_manager.go",
-        "apps/desktop/src/components/settings/FederationTab.tsx",
+        "apps/station/app/subserver/dashboard/handler_federation.go",
+        "apps/station/app/subserver/dashboard/web/src/pages/FederationPage.tsx",
+        "apps/desktop/src/components/chat/FindPeopleModal.tsx",
         "apps/desktop/src/runtimes/federationRuntime.ts",
         "tooling/acceptance/gates/federation/two_station_lifecycle_e2e.py"
       ],
@@ -102,9 +105,9 @@
           "station_role_assignment"
         ],
         "surfaces": [
-          "station-four governance API",
-          "station-five-arm governance API",
-          "macOS Native Federation context"
+          "station-four Dashboard-authenticated Federation management",
+          "station-five-arm Dashboard-authenticated Federation management",
+          "macOS Native Find People Federation context"
         ],
         "proven_by": [
           "station-federation-unit",
@@ -144,7 +147,7 @@
       ],
       "evidence": {
         "truth_sources": ["StationRegistry", "Federation Plaza projection", "Federation catalog projection"],
-        "surfaces": ["desktop station picker", "desktop federation page", "find people modal"],
+        "surfaces": ["desktop station picker", "find people modal"],
         "proven_by": [
           "desktop-check",
           "station-access-federation-boundary-e2e"

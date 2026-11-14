@@ -18,6 +18,9 @@ export interface ChatComposerDraft {
   readonly text: string;
   readonly replyToMessageId: string;
   readonly encryptedAttachmentRefs: readonly string[];
+  readonly stagedAttachmentIds?: readonly string[];
+  readonly threadRootMessageId?: string;
+  readonly pendingMessageId?: string;
 }
 
 export interface RestoredChatComposerDraft extends ChatComposerDraft {
@@ -42,6 +45,9 @@ export function buildChatDraftEnvelope(
       value: create(ChatDraftPayloadSchema, {
         text: draft.text,
         replyToMessageId: draft.replyToMessageId,
+        stagedAttachmentIds: normalizeEncryptedAttachmentRefs(draft.stagedAttachmentIds ?? []),
+        threadRootMessageId: draft.threadRootMessageId ?? '',
+        pendingMessageId: draft.pendingMessageId ?? '',
         attachmentRefs: normalizeEncryptedAttachmentRefs(
           draft.encryptedAttachmentRefs,
         ).map((blobId) => create(EncryptedBlobReferenceSchema, { blobId })),
@@ -57,6 +63,9 @@ export function readChatDraftEnvelope(
   return {
     text: envelope.payload.value.text,
     replyToMessageId: envelope.payload.value.replyToMessageId,
+    stagedAttachmentIds: normalizeEncryptedAttachmentRefs(envelope.payload.value.stagedAttachmentIds),
+    threadRootMessageId: envelope.payload.value.threadRootMessageId,
+    pendingMessageId: envelope.payload.value.pendingMessageId,
     encryptedAttachmentRefs: normalizeEncryptedAttachmentRefs(
       envelope.payload.value.attachmentRefs.map((reference) => reference.blobId),
     ),
@@ -67,7 +76,9 @@ export function readChatDraftEnvelope(
 export function isChatComposerDraftEmpty(draft: ChatComposerDraft): boolean {
   return !draft.text
     && !draft.replyToMessageId
-    && draft.encryptedAttachmentRefs.length === 0;
+    && draft.encryptedAttachmentRefs.length === 0
+    && (draft.stagedAttachmentIds?.length ?? 0) === 0
+    && !draft.pendingMessageId;
 }
 
 export function normalizeEncryptedAttachmentRefs(

@@ -60,7 +60,7 @@ describe('AccessGateHost schema gate surface', () => {
     expect(source).toContain('onSchemaSubmit(schemaValues)');
     expect(source).toContain('<Checkbox');
     expect(source).toContain('<Select');
-    expect(source).toContain('<InputNumber');
+    expect(source).toContain('<NumberField');
   });
 
   it('keeps the Station-authored Continue action primary', () => {
@@ -69,7 +69,8 @@ describe('AccessGateHost schema gate surface', () => {
     });
 
     expect(markup).toContain('mobile.launch.continue');
-    expect(markup).toContain('ant-btn-primary');
+    expect(markup).toContain('data-emphasis="primary"');
+    expect(markup).toContain('access-gate-schema-submit');
     expect(markup).not.toContain('auth-actions single');
   });
 });
@@ -88,6 +89,22 @@ describe('AccessGateHost advertised credential gating', () => {
     expect(oauthMarkup).toContain('mobile.auth.oauthGithub');
     expect(oauthMarkup).toContain('mobile.auth.oauthGoogle');
     expect(oauthMarkup).not.toContain('mobile.auth.emailAddress');
+  });
+
+  it('hides the Quick tab and lands on email when the Station advertises no OAuth providers', () => {
+    // The gate advertises OAuth, but the provider directory loads empty.
+    const markup = renderGate([
+      action('auth.password', 'ACCESS_GATE_TYPE_AUTH_LOGIN', 'submit_login'),
+      action('auth.oauth', 'ACCESS_GATE_TYPE_AUTH_OAUTH', 'start_oauth'),
+    ], {
+      oauthOverride: { availableProviders: [] },
+    });
+
+    // Email fields render immediately ...
+    expect(markup).toContain('mobile.auth.emailAddress');
+    // ... the empty Quick tab row and provider buttons do not.
+    expect(markup).not.toContain('auth-tab-row');
+    expect(markup).not.toContain('mobile.auth.oauthGithub');
   });
 
   it('renders no credential control when no supported action is advertised', () => {
@@ -109,12 +126,23 @@ describe('AccessGateHost advertised credential gating', () => {
     expect(source).toContain(
       'const showOAuthLogin = credentialGateActive && credentialChoices.oauth;',
     );
-    expect(source).toContain('{showEmailLogin && showOAuthLogin ? (');
-    expect(source).toContain('{showOAuthLogin ? (');
+    expect(source).toContain('{showEmailLogin && showOAuthLogin && oauthAvailable ? (');
+    expect(source).toContain('{showOAuthLogin && oauthAvailable ? (');
     expect(source).toContain('{showEmailLogin ? (');
     expect(source).toContain("gateId: currentGate?.gateId || 'auth.login'");
     expect(source).not.toContain('auth-oauth-wechat');
     expect(source).not.toContain('isLoginGate(currentGate) || !currentGate');
+  });
+
+  it('keeps the embedded gate brand on a single full-width column', () => {
+    // The embedded brand renders no logo cell. Without overriding the shared
+    // 44px grid, the copy collapses one character per line.
+    expect(styles).toMatch(
+      /\.auth-gate-embedded \.auth-gate-brand-embedded\s*\{[^}]*display:\s*flex/,
+    );
+    expect(styles).toMatch(
+      /\.auth-gate-embedded \.auth-gate-brand-embedded\s*\{[^}]*width:\s*100%/,
+    );
   });
 
   it('fails closed to the unavailable gate surface without a supported action', () => {
@@ -147,14 +175,13 @@ describe('AccessGateHost attempt recovery', () => {
   it('delegates retry and Station change to async recovery owners', () => {
     expect(source).toContain('onRefresh: () => Promise<void>');
     expect(source).toContain('onBack: () => Promise<void>');
-    expect(source).toContain('onClick={() => void onRefresh()}');
-    expect(source).toContain('onClick={() => void onBack()}');
+    expect(source).toContain('onActivate={() => void onRefresh()}');
+    expect(source).toContain('onActivate={() => void onBack()}');
   });
 
   it('keeps the single Station-change action at the mobile touch minimum', () => {
-    expect(styles).toMatch(
-      /\.auth-actions\.single \.ant-btn\s*\{[^}]*height:\s*44px;/s,
-    );
+    expect(source).toMatch(/actionId="access-gate-change-station"\s*emphasis="secondary"\s*density="comfortable"/);
+    expect(styles).not.toMatch(/\.auth-actions\.single button\s*\{/);
   });
 });
 
@@ -222,9 +249,11 @@ describe('AccessGateHost shared Auth identity', () => {
     expect(markup).toContain('common.stationPicker.fallbackLabel');
     expect(markup).not.toContain('PEERS TOUCH MOBILE');
     expect(markup).not.toContain('192.0.2.30');
-    expect(source.indexOf('<Card className="auth-gate-card"')).toBeLessThan(
-      source.indexOf('<section className="auth-gate-brand">'),
-    );
+    // Brand lives in the composed gate body; the standalone card wraps it.
+    expect(source).toContain('const gateBody = (');
+    expect(source).toContain('<section className="auth-gate-brand"');
+    expect(source).toContain('<div className="auth-gate-card">');
+    expect(source).toContain('{gateBody}');
     expect(source).toContain('className="auth-gate-brand-copy"');
   });
 

@@ -7,7 +7,8 @@ export { northStarTheme, northStarVariables } from './north-star-theme';
 export const geometry = {
   radius: { xs: 4, sm: 8, md: 10, lg: 14, xl: 18, '2xl': 22, full: 999 },
   space: { xxs: 4, xs: 8, sm: 12, md: 16, lg: 20, xl: 24, xxl: 32 },
-  control: { compact: 28, row: 30, menu: 30, normal: 36, comfortable: 44 },
+  control: { compact: 28, searchCompact: 34, row: 30, menu: 30, normal: 36, comfortable: 44 },
+  composer: { radius: 12, inset: 6, collapsedRows: 1, expandedRows: 4, maximumRows: 10 },
   icon: { compact: 16, normal: 18, comfortable: 20 },
   font: {
     sans: "Manrope, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', 'PingFang SC', sans-serif",
@@ -17,7 +18,8 @@ export const geometry = {
   layer: { popup: 1000 },
   social: { feedTopThreshold: 4, feedPillInset: 4, authorAvatar: 48, profileAvatar: 72 },
   motion: {
-    instant: 0, fast: 100, surface: 140, normal: 200, slow: 300,
+    instant: 0, fast: 100, surface: 140, searchReveal: 160, normal: 200, slow: 300,
+    searchFocus: 'cubic-bezier(.22,1,.36,1)',
     standard: 'cubic-bezier(0.645, 0.045, 0.355, 1)',
     out: 'cubic-bezier(0.215, 0.61, 0.355, 1)',
     emphasized: 'cubic-bezier(0.78, 0.14, 0.15, 0.86)',
@@ -117,6 +119,8 @@ export function tokenVariables(mode: 'light' | 'dark'): Record<string, string> {
   for (const [key, value] of Object.entries(geometry.radius)) out[`--pt-radius-${key}`] = `${value}px`;
   for (const [key, value] of Object.entries(geometry.space)) out[`--pt-space-${key}`] = `${value}px`;
   for (const [key, value] of Object.entries(geometry.control)) out[`--pt-control-${key}`] = `${value}px`;
+  out['--pt-composer-radius'] = `${geometry.composer.radius}px`;
+  out['--pt-composer-inset'] = `${geometry.composer.inset}px`;
   for (const [key, value] of Object.entries(geometry.motion)) out[`--pt-motion-${key}`] = typeof value === 'number' ? `${value}ms` : value;
   out['--pt-font'] = geometry.font.sans;
   out['--pt-mono'] = geometry.font.mono;

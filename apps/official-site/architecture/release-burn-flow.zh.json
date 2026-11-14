@@ -1,0 +1,264 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "目录发布与打包烧录流程",
+    "subtitle": "先签名发布渠道目录；make package 拉取并验签同一信封，把寻址类 meta 烧进二进制，新鲜度闸门不过绝不发包。内嵌 meta 完成首跑引导，线上目录始终是运行时权威。",
+    "output": "release-burn-flow.zh.html",
+    "locale": "zh",
+    "visual_preset": "editorial",
+    "quality_profile": "showcase",
+    "animation": "none"
+  },
+  "lanes": [
+    {
+      "id": "pipeline",
+      "label": "发布与打包"
+    },
+    {
+      "id": "artifact",
+      "label": "出厂安装包"
+    },
+    {
+      "id": "client",
+      "label": "伙伴客户端"
+    },
+    {
+      "id": "gate",
+      "label": "失败即中止",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "p_publish",
+      "label": "签名目录",
+      "fromCol": 0,
+      "toCol": 0
+    },
+    {
+      "id": "p_build",
+      "label": "打包入口",
+      "fromCol": 1,
+      "toCol": 1
+    },
+    {
+      "id": "p_verify",
+      "label": "拉取验签",
+      "fromCol": 2,
+      "toCol": 2,
+      "variant": "emphasis"
+    },
+    {
+      "id": "p_burn",
+      "label": "烧录与分发",
+      "fromCol": 3,
+      "toCol": 3
+    },
+    {
+      "id": "p_firstrun",
+      "label": "零配置首跑",
+      "fromCol": 4,
+      "toCol": 4,
+      "variant": "emphasis"
+    },
+    {
+      "id": "p_runtime",
+      "label": "运行时权威",
+      "fromCol": 5,
+      "toCol": 5
+    }
+  ],
+  "groups": [
+    {
+      "id": "g_pipeline",
+      "label": "L0/L1/L2 按 flavor 注册表烘焙（D05/D06）",
+      "lane": "pipeline",
+      "fromCol": 1,
+      "toCol": 3
+    },
+    {
+      "id": "g_artifact",
+      "label": "只有寻址信息 · 无密钥",
+      "lane": "artifact",
+      "fromCol": 3,
+      "toCol": 3
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n_publish",
+      "lane": "pipeline",
+      "col": 0,
+      "type": "security",
+      "label": "签名发布目录",
+      "tag": "operator",
+      "sublabel": "Station 种子 · seq"
+    },
+    {
+      "id": "n_entry",
+      "lane": "pipeline",
+      "col": 1,
+      "type": "backend",
+      "label": "make package",
+      "sublabel": "flavor 与 channel"
+    },
+    {
+      "id": "n_fetch",
+      "lane": "pipeline",
+      "col": 2,
+      "type": "cloud",
+      "label": "拉取快照",
+      "sublabel": "源顺序转移"
+    },
+    {
+      "id": "n_verify",
+      "lane": "pipeline",
+      "col": 2,
+      "type": "security",
+      "yOffset": 96,
+      "label": "信封验签",
+      "sublabel": "公钥环 · 水位"
+    },
+    {
+      "id": "n_gate",
+      "lane": "gate",
+      "col": 2,
+      "type": "external",
+      "label": "构建中止",
+      "sublabel": "错签 · 过期"
+    },
+    {
+      "id": "n_derive",
+      "lane": "pipeline",
+      "col": 3,
+      "type": "backend",
+      "label": "派生 L4 指针",
+      "sublabel": "信封中的 origin"
+    },
+    {
+      "id": "n_burn",
+      "lane": "pipeline",
+      "col": 3,
+      "type": "backend",
+      "yOffset": 96,
+      "label": "烧录 L3 + L4",
+      "sublabel": "经 build.rs"
+    },
+    {
+      "id": "n_dmg",
+      "lane": "artifact",
+      "col": 3,
+      "type": "database",
+      "label": "安装包",
+      "sublabel": "无需环境变量"
+    },
+    {
+      "id": "n_embedded",
+      "lane": "client",
+      "col": 4,
+      "type": "frontend",
+      "label": "内嵌可读",
+      "sublabel": "离线可见"
+    },
+    {
+      "id": "n_discover",
+      "lane": "client",
+      "col": 4,
+      "type": "frontend",
+      "yOffset": 96,
+      "label": "发现并登录",
+      "sublabel": "现场证明"
+    },
+    {
+      "id": "n_refresh",
+      "lane": "client",
+      "col": 5,
+      "type": "cloud",
+      "label": "签名刷新",
+      "sublabel": "current 生效"
+    },
+    {
+      "id": "n_authority",
+      "lane": "client",
+      "col": 5,
+      "type": "security",
+      "yOffset": 96,
+      "label": "目录为权威",
+      "sublabel": "不改设备态"
+    }
+  ],
+  "edges": [
+    {
+      "from": "n_publish",
+      "to": "n_entry",
+      "label": "渠道就绪",
+      "role": "main"
+    },
+    {
+      "from": "n_entry",
+      "to": "n_fetch",
+      "role": "main"
+    },
+    {
+      "from": "n_fetch",
+      "to": "n_verify",
+      "label": "精确字节",
+      "role": "main"
+    },
+    {
+      "from": "n_verify",
+      "to": "n_derive",
+      "label": "新鲜",
+      "role": "main"
+    },
+    {
+      "from": "n_derive",
+      "to": "n_burn",
+      "role": "main"
+    },
+    {
+      "from": "n_burn",
+      "to": "n_dmg",
+      "label": "编译进包",
+      "role": "main"
+    },
+    {
+      "from": "n_dmg",
+      "to": "n_embedded",
+      "label": "安装",
+      "role": "main"
+    },
+    {
+      "from": "n_embedded",
+      "to": "n_discover",
+      "label": "自动",
+      "role": "main"
+    },
+    {
+      "from": "n_discover",
+      "to": "n_refresh",
+      "label": "启动后",
+      "role": "branch",
+      "variant": "dashed"
+    },
+    {
+      "from": "n_refresh",
+      "to": "n_authority",
+      "role": "branch",
+      "variant": "dashed"
+    },
+    {
+      "from": "n_verify",
+      "to": "n_gate",
+      "label": "检查失败",
+      "role": "error"
+    },
+    {
+      "from": "n_gate",
+      "to": "n_publish",
+      "label": "重签后重新打包",
+      "role": "error"
+    }
+  ]
+}

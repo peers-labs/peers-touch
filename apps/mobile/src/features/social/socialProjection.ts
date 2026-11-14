@@ -39,7 +39,7 @@ export interface SocialContact {
 
 export function actorDisplayName(
   displayName: string | undefined,
-  _actorPtid: string,
+  actorPtid: string,
 ): string {
   const candidate = displayName?.trim() ?? '';
   if (candidate
@@ -48,7 +48,29 @@ export function actorDisplayName(
     && !/^@?\S+@\S+$/.test(candidate)
   ) return candidate;
 
-  return '';
+  // Callers without a PTID context (e.g. comment transport identities) must
+  // wait for the canonical profile instead of displaying a derived locator.
+  if (!actorPtid) return '';
+
+  // Derive a readable handle from the PTID path. Structured actor PTIDs
+  // (ptid:v1:actor:...:<handle>:<hash>) expose the handle second-to-last;
+  // simple two-segment PTIDs use their last segment. Pure hash segments are
+  // not human-readable and fall through to the raw locator fallback.
+  const parts = actorPtid.split(':').filter(Boolean);
+  const handle = parts[0] === 'ptid' && parts[2] === 'actor'
+    ? parts.at(-2) ?? ''
+    : parts.length === 2 && parts[0] === 'ptid'
+      ? parts[1]
+      : '';
+  if (handle && !/^[a-f0-9]{32,}$/i.test(handle)) {
+    return `${handle.slice(0, 1).toUpperCase()}${handle.slice(1)}`;
+  }
+
+  const fallback = actorPtid.trim();
+  if (!fallback) return '';
+  return fallback.length > 22
+    ? `${fallback.slice(0, 10)}...${fallback.slice(-6)}`
+    : fallback;
 }
 
 export function projectAcceptedContacts(

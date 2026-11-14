@@ -2,12 +2,9 @@
  * SettingsPage.tsx — Pure renderer for the Settings / "Me" tab.
  *
  * Visual hierarchy aligned with the prototype ProfilePage:
- * - Header: "Me" title + Settings gear button
- * - Profile header card: Avatar 64px + name + PTID + chevron,
- *   stats row (Friends / Groups / Moments)
- * - Setting groups: Account, Chat, Network, About
- *   Each row: colored icon in tinted bg + label + optional value + chevron
- * - Sign Out button at bottom
+ * - Cover and overlapping avatar with native image edits and real statistics
+ * - Public account credentials only on a pushed detail
+ * - Real preferences, existing settings and sign out
  *
  * This page is a pure renderer. All data comes from:
  *   - useSettingsController (dirty/save/discard/conflict lifecycle)
@@ -18,22 +15,10 @@
  * The page never fetches or persists data directly.
  */
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Avatar, Button, Card, Empty, Modal, Spin, Typography } from 'antd';
-import type { LucideIcon } from 'lucide-react';
-import {
-  ArrowLeft,
-  Ban,
-  Bell,
-  ChevronRight,
-  Globe,
-  MessageCircle,
-  Server,
-  Shield,
-  ShieldCheck,
-  User,
-} from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Button, Dialog, Empty, Icon, IconButton, ListSection, Spin, Text, type IconId } from '@peers-touch/ui';
 
+import { confirmDestructive, notifyError, notifySuccess } from '../app/feedback/mobileFeedback';
 import { useMobileI18n } from '../app/mobileI18n';
 import {
   registerSettingsExitGuard,
@@ -42,7 +27,6 @@ import {
 } from '../app/navigation';
 import type { MobileAuthSession } from '../features/auth/authSession';
 import { requestSocialCurrentUserProfile } from '../features/social/socialRuntime';
-import { projectAcceptedContacts } from '../features/social/socialProjection';
 import { useSocialStore } from '../features/social/socialStore';
 import {
   activeStationRoute,
@@ -52,6 +36,13 @@ import {
   type StoredStationRegistry,
 } from '../features/station/stationRegistry';
 import { stationDisplayName } from '../features/station/stationDisplayName';
+import { MobileNotice } from '../components/MobileNotice';
+import { mobileClipboard } from '../services/platform/mobileClipboard';
+import { mobileProfileImages, useProfileImage } from '../runtimes/profileImageRuntime';
+import { MeIdentityHeader } from './settings/MeIdentityHeader';
+import { AccountCredentialsSection } from './settings/AccountCredentialsSection';
+import { MePreferencesSection } from './settings/MePreferencesSection';
+import { SettingsNavigationRow } from './settings/SettingsNavigationRow';
 import { useSettingsSurfaceFixture } from '../acceptance/settingsSurfaceFixture';
 import {
   useBlockedUsersController,
@@ -72,16 +63,16 @@ import {
   StorageSection,
 } from './settings/SettingsSections';
 
-const { Text } = Typography;
-
-// ---------------------------------------------------------------------------
-// Setting group types (prototype-aligned)
-// ---------------------------------------------------------------------------
+const tintAccent = 'var(--pt-accent)';
+const tintWarning = 'var(--pt-warning)';
+const tintSuccess = 'var(--pt-success)';
+const tintDanger = 'var(--pt-danger)';
+const tintInfo = 'var(--pt-info)';
 
 interface SettingEntry {
   id: MobileSettingDetailId;
   labelKey: string;
-  icon: LucideIcon;
+  icon: IconId;
   tint: string;
   valueKey?: string | undefined;
   valueOverride?: string | undefined;
@@ -102,13 +93,13 @@ interface SettingsPageProps {
   readonly activeSettingId: MobileSettingDetailId | null;
   readonly onOpenSetting: (settingId: MobileSettingDetailId) => void;
   readonly onBack: () => void;
-  readonly searchEntry?: ReactNode;
   readonly onChangeStation: () => Promise<void>;
   readonly onChangeStationRoute: (
     stationPeerId: string,
     route: MobileStationRouteCandidate,
   ) => Promise<void>;
   readonly onLogout: () => Promise<void>;
+  readonly onOpenNotifications: () => void;
 }
 
 function ProfileUnavailable({
@@ -120,19 +111,24 @@ function ProfileUnavailable({
 }) {
   const { t } = useMobileI18n();
   return (
-    <Card
+    <section
       className="settings-section"
-      variant="borderless"
       role="alert"
       data-product-surface="settings.detail-unavailable"
     >
-      <Text type="secondary">
-        {t(reason ?? 'mobile.settings.profileUnavailable')}
-      </Text>
-      <Button block onClick={() => void onRetry()}>
-        {t('common.action.retry')}
-      </Button>
-    </Card>
+      <div className="settings-section-body">
+        <Text tone="secondary">
+          {t(reason ?? 'mobile.settings.profileUnavailable')}
+        </Text>
+        <Button
+          actionId="settings-detail-retry"
+          fullWidth
+          onActivate={() => void onRetry()}
+        >
+          {t('common.action.retry')}
+        </Button>
+      </div>
+    </section>
   );
 }
 
@@ -173,18 +169,19 @@ function SettingsPageContent({
   activeSettingId,
   onOpenSetting,
   onBack,
-  searchEntry,
   onChangeStation,
   onChangeStationRoute,
   onLogout,
+  onOpenNotifications,
 }: SettingsPageProps) {
   const { t, language } = useMobileI18n();
   const [loggingOut, setLoggingOut] = useState(false);
-  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [pendingExit, setPendingExit] = useState<{
     readonly action: SettingsExitAction;
   } | null>(null);
   const [exitSaving, setExitSaving] = useState(false);
+  const [copyingField, setCopyingField] = useState<'username' | 'ptid' | null>(null);
+  const image = useProfileImage();
 
   const activeStation = activeStationEntry(stationRegistry);
   const unavailableLabel = t('mobile.launch.unavailable');
@@ -205,26 +202,6 @@ function SettingsPageContent({
   );
   const blockedUsersCount = useSocialStore((state) => state.blockedUsers.length);
   const currentUserPtid = useSocialStore((state) => state.currentUserPtid);
-  const friendRequests = useSocialStore((state) => state.friendRequests);
-  const peerOnline = useSocialStore((state) => state.peerOnline);
-  const peerProfiles = useSocialStore((state) => state.peerProfiles);
-  const groupCount = useSocialStore((state) => state.messagingConversations.reduce(
-    (count, conversation) => count + Number(
-      conversation.active && conversation.kind === 2,
-    ),
-    0,
-  ));
-
-  const friendCount = useMemo(
-    () => projectAcceptedContacts(
-      friendRequests,
-      currentUserPtid,
-      peerOnline,
-      peerProfiles,
-    ).length,
-    [currentUserPtid, friendRequests, peerOnline, peerProfiles],
-  );
-
   // Settings controller — owns dirty/save/discard/conflict lifecycle
   const controller = useSettingsController(
     authSession,
@@ -234,11 +211,15 @@ function SettingsPageContent({
   );
   const visibleProfile = controller.profileAvailable ? currentUserProfile : null;
   const displayName = visibleProfile?.displayName || authSession?.actorRef.acct;
-  const momentsCount = visibleProfile?.statusesCount ?? unavailableLabel;
   const notificationController = useNotificationPreferencesController();
   const notificationPermission = controller.permissions.find(
     (permission) => permission.kind === 'notifications',
   );
+  useEffect(() => {
+    if (activeSettingId === null && notificationController.dirty && notificationController.saveStatus === 'idle') {
+      void notificationController.save();
+    }
+  }, [activeSettingId, notificationController]);
   const selectedOwner = (() => {
     switch (activeSettingId) {
       case 'account-info':
@@ -265,10 +246,10 @@ function SettingsPageContent({
           reload: controller.reloadDevicePreferences,
         };
       default:
-        return null;
+        return activeSettingId === null ? notificationController : null;
     }
   })();
-  const settingsDirty = selectedOwner?.dirty ?? false;
+  const settingsDirty = Boolean(selectedOwner?.dirty || image.draft);
   const settingsConflict = selectedOwner?.conflict ?? false;
   const settingsSaveStatus = selectedOwner?.saveStatus ?? 'idle';
   const settingsSaveError = selectedOwner?.saveError ?? null;
@@ -294,30 +275,28 @@ function SettingsPageContent({
 
   const saveAndExit = useCallback(async () => {
     setExitSaving(true);
-    const saved = selectedOwner ? await selectedOwner.save() : true;
+    const savedImage = !image.draft || await mobileProfileImages.retry();
+    const saved = savedImage && (selectedOwner ? await selectedOwner.save() : true);
     setExitSaving(false);
     if (saved) {
       await finishPendingExit();
     }
-  }, [finishPendingExit, selectedOwner]);
+  }, [finishPendingExit, image.draft, selectedOwner]);
 
   const discardAndExit = useCallback(async () => {
     selectedOwner?.discard();
+    mobileProfileImages.discard();
     await finishPendingExit();
   }, [finishPendingExit, selectedOwner]);
-
-  const requestLogout = useCallback(() => {
-    requestExit(() => setLogoutConfirmOpen(true));
-  }, [requestExit]);
 
   // --- Setting groups (prototype-aligned) ---
   const settingGroups: SettingGroup[] = useMemo(() => [
     {
       titleKey: 'mobile.settings.group.account',
       items: [
-        { id: 'account-info', labelKey: 'mobile.settings.accountInfo', icon: User, tint: '#6366f1' },
-        { id: 'notifications', labelKey: 'mobile.settings.section.notifications', valueOverride: notificationController.unavailable ? unavailableLabel : undefined, icon: Bell, tint: '#f59e0b' },
-        { id: 'privacy-security', labelKey: 'mobile.settings.privacySecurity', icon: Shield, tint: '#22c55e' },
+        { id: 'account-info', labelKey: 'mobile.settings.accountInfo', icon: 'user', tint: tintAccent },
+        { id: 'notifications', labelKey: 'mobile.settings.section.notifications', valueOverride: notificationController.unavailable ? unavailableLabel : undefined, icon: 'bell', tint: tintWarning },
+        { id: 'privacy-security', labelKey: 'mobile.settings.privacySecurity', icon: 'shield', tint: tintSuccess },
         {
           id: 'blocked-users',
           labelKey: 'mobile.settings.blockedUsers',
@@ -326,28 +305,28 @@ function SettingsPageContent({
             : blockedUsersProjectionReady
               ? String(blockedUsersCount)
               : undefined,
-          icon: Ban,
-          tint: '#ef4444',
+          icon: 'ban',
+          tint: tintDanger,
         },
       ],
     },
     {
       titleKey: 'mobile.settings.group.chat',
       items: [
-        { id: 'chat-settings', labelKey: 'mobile.settings.chatSettings', icon: MessageCircle, tint: '#6366f1' },
+        { id: 'chat-settings', labelKey: 'mobile.settings.chatSettings', icon: 'message-circle', tint: tintAccent },
       ],
     },
     {
       titleKey: 'mobile.settings.group.network',
       items: [
-        { id: 'station-connection', labelKey: 'mobile.settings.stationConnection', valueOverride: activeStation ? activeStationLabel : t('mobile.settings.stationNotSelected'), icon: Server, tint: '#22c55e' },
-        { id: 'language', labelKey: 'mobile.settings.section.language', valueOverride: language === 'zh-CN' ? '简体中文' : 'English', icon: Globe, tint: '#0ea5e9' },
+        { id: 'station-connection', labelKey: 'mobile.settings.stationConnection', valueOverride: activeStation ? activeStationLabel : t('mobile.settings.stationNotSelected'), icon: 'server', tint: tintSuccess },
+        { id: 'language', labelKey: 'mobile.settings.section.language', valueOverride: language === 'zh-CN' ? '简体中文' : 'English', icon: 'globe', tint: tintInfo },
       ],
     },
     {
       titleKey: 'mobile.settings.group.about',
       items: [
-        { id: 'about', labelKey: 'mobile.settings.aboutApp', valueOverride: controller.appVersion ?? unavailableLabel, icon: ShieldCheck, tint: '#f59e0b' },
+        { id: 'about', labelKey: 'mobile.settings.aboutApp', valueOverride: controller.appVersion ?? unavailableLabel, icon: 'shield-check', tint: tintWarning },
       ],
     },
   ], [
@@ -368,13 +347,27 @@ function SettingsPageContent({
     ) ?? null,
     [activeSettingId, settingGroups],
   );
-  const ActiveSettingIcon = activeSetting?.icon;
+  const activeSettingIconId = activeSetting?.icon ?? null;
 
-  const profileSubtitle = t('mobile.settings.connected');
+  const credentialUsername = visibleProfile?.username || authSession?.actorRef.acct || '';
+  const copyCredential = async (field: 'username' | 'ptid', value: string) => {
+    if (copyingField || !value) return;
+    const session = authSession;
+    setCopyingField(field);
+    try {
+      await mobileClipboard.writeText(value);
+      if (useSocialStore.getState().authSession?.sessionId === session?.sessionId) {
+        notifySuccess(t('mobile.settings.credentials.copied'));
+      }
+    } catch {
+      notifyError(t('mobile.settings.credentials.copyFailed'));
+    } finally {
+      setCopyingField(null);
+    }
+  };
 
   // --- Logout flow ---
   const handleLogoutConfirm = useCallback(async () => {
-    setLogoutConfirmOpen(false);
     setLoggingOut(true);
     try {
       await onLogout();
@@ -383,8 +376,30 @@ function SettingsPageContent({
     }
   }, [onLogout]);
 
+  const confirmLogout = useCallback(() => {
+    void confirmDestructive({
+      title: t('mobile.settings.station.logoutConfirmTitle'),
+      description: t('mobile.settings.station.logoutConfirmBody'),
+      confirmLabel: t('mobile.settings.logout'),
+      cancelLabel: t('common.action.cancel'),
+      onConfirm: () => void handleLogoutConfirm(),
+    });
+  }, [handleLogoutConfirm, t]);
+
+  const requestLogout = useCallback(() => {
+    requestExit(confirmLogout);
+  }, [confirmLogout, requestExit]);
+
   const detailContent = (() => {
     switch (activeSettingId) {
+      case 'credentials':
+        return <AccountCredentialsSection
+          username={credentialUsername}
+          actorPtid={authSession?.actorRef.ptid || ''}
+          stationName={activeStationLabel}
+          copyingField={copyingField}
+          onCopy={(field, value) => void copyCredential(field, value)}
+        />;
       case 'account-info':
         return controller.profileAvailable ? (
           <ProfileSection
@@ -473,26 +488,25 @@ function SettingsPageContent({
       case 'encryption':
       case 'about':
         return (
-          <Card className="settings-section" variant="borderless">
-            <div className="settings-section-header">
-              {ActiveSettingIcon ? <ActiveSettingIcon size={16} /> : null}
-              <Text strong>{activeSetting ? t(activeSetting.labelKey) : t('mobile.settings.title')}</Text>
-            </div>
-            {activeSetting?.valueOverride ? (
-              <div className="settings-row">
-                <Text>{t(activeSetting.labelKey)}</Text>
-                <Text type="secondary">{activeSetting.valueOverride}</Text>
+          <section className="settings-section">
+            <div className="settings-section-body">
+              <div className="settings-section-header">
+                {activeSettingIconId ? <Icon iconId={activeSettingIconId} size={16} /> : null}
+                <Text strong>{activeSetting ? t(activeSetting.labelKey) : t('mobile.settings.title')}</Text>
               </div>
-            ) : null}
-          </Card>
+              {activeSetting?.valueOverride ? (
+                <div className="settings-row">
+                  <Text>{t(activeSetting.labelKey)}</Text>
+                  <Text tone="secondary">{activeSetting.valueOverride}</Text>
+                </div>
+              ) : null}
+            </div>
+          </section>
         );
       case 'safety-number':
       case 'chat-background':
         return (
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={t('mobile.launch.unavailable')}
-          />
+          <Empty description={t('mobile.launch.unavailable')} />
         );
       default:
         return null;
@@ -500,34 +514,17 @@ function SettingsPageContent({
   })();
 
   // --- Render ---
-  if (controller.loading) {
-    return (
-      <div
-        className="page-container settings-loading"
-        data-product-surface="settings.summary-loading"
-      >
-        <h1 className="sr-only">{t('mobile.settings.title')}</h1>
-        <Spin />
-      </div>
-    );
-  }
-
   const content = activeSettingId ? (
     <div
       className="page-container settings-page mobile-detail-page"
       data-product-surface={`settings.${activeSettingId}`}
     >
       <header className="page-header">
-        <button
-          type="button"
-          className="header-action"
-          aria-label={t('common.action.back')}
-          onClick={() => requestExit(onBack)}
-        >
-          <ArrowLeft size={20} />
-        </button>
+        <IconButton actionId="settings.back" iconId="arrow-left" density="comfortable" emphasis="quiet"
+          label={t('common.action.back')} onActivate={() => requestExit(onBack)} />
         <h1 className="header-title compact">
-          {activeSetting ? t(activeSetting.labelKey) : t('mobile.settings.title')}
+          {activeSettingId === 'credentials' ? t('mobile.settings.credentials.title')
+            : activeSetting ? t(activeSetting.labelKey) : t('mobile.settings.title')}
         </h1>
       </header>
       <div className="settings-detail-body">
@@ -550,113 +547,70 @@ function SettingsPageContent({
       className="page-container settings-page"
       data-product-surface="settings.summary"
     >
-      {/* The page is already Settings; profile details remain the first row. */}
-      <header className="page-header">
-        <h1 className="header-title">{t('mobile.settings.title')}</h1>
-        {searchEntry}
-      </header>
-
+      <h1 className="visually-hidden">{t('mobile.settings.title')}</h1>
+      <MeIdentityHeader model={{
+        actorPtid: currentUserPtid || authSession?.actorRef.ptid || '',
+        displayName: displayName || t('mobile.settings.notLoggedIn'),
+        handle: visibleProfile?.federatedHandle || credentialUsername,
+        avatar: image.draft?.field === 'avatar' && (image.status !== 'failed' || image.draft.committed)
+          ? image.draft.assetUrl : visibleProfile?.avatar || '',
+        header: image.draft?.field === 'header' && (image.status !== 'failed' || image.draft.committed)
+          ? image.draft.assetUrl : visibleProfile?.header || '',
+        tags: visibleProfile?.tags || [],
+        posts: visibleProfile?.statusesCount ?? null,
+        following: visibleProfile?.followingCount ?? null,
+        followers: visibleProfile?.followersCount ?? null,
+        joined: visibleProfile?.createdAt || '',
+      }}
+        editingImage={['picking', 'uploading', 'saving'].includes(image.status) ? image.field : null}
+        imageEditUnavailableReason={!controller.profileAvailable ? t('mobile.settings.profileUnavailable') : undefined}
+        onPickImage={field => void mobileProfileImages.pick(field)}
+      />
       <div className="settings-body">
-        {/* Profile header card — Avatar 64px + friendly identity + chevron + stats */}
-        <button
-          type="button"
-          className="settings-profile-trigger"
-          onClick={() => onOpenSetting('account-info')}
-        >
-          <Card className="settings-profile-header-card" variant="borderless">
-            <div className="settings-profile-header">
-              <Avatar
-                size={64}
-                src={visibleProfile?.avatar || undefined}
-                style={{
-                  background: 'linear-gradient(135deg, #667eea, #764ba2)',
-                  borderRadius: 16,
-                }}
-              >
-                {displayName ? displayName.slice(0, 2).toUpperCase() : '?'}
-              </Avatar>
-              <div className="settings-profile-info">
-                <Text strong className="settings-profile-name">
-                  {displayName || t('mobile.settings.notLoggedIn')}
-                </Text>
-                <Text type="secondary" className="settings-profile-subtitle">
-                  {profileSubtitle}
-                </Text>
-              </div>
-              <ChevronRight size={20} color="#9ca0ab" />
-            </div>
-            <div className="settings-profile-stats">
-              <div className="settings-stat">
-                <Text strong className="settings-stat-value">{friendCount}</Text>
-                <Text type="secondary" className="settings-stat-label">
-                  {t('mobile.settings.stats.friends')}
-                </Text>
-              </div>
-              <div className="settings-stat-divider" />
-              <div className="settings-stat">
-                <Text strong className="settings-stat-value">{groupCount}</Text>
-                <Text type="secondary" className="settings-stat-label">
-                  {t('mobile.settings.stats.groups')}
-                </Text>
-              </div>
-              <div className="settings-stat-divider" />
-              <div className="settings-stat">
-                <Text strong className="settings-stat-value">{momentsCount}</Text>
-                <Text type="secondary" className="settings-stat-label">
-                  {t('mobile.settings.stats.moments')}
-                </Text>
-              </div>
-            </div>
-          </Card>
-        </button>
+        {image.errorKey ? <MobileNotice tone="error">
+          {t(image.errorKey)}
+          {image.draft ? <Button actionId="settings.image.retry" density="comfortable"
+            onActivate={() => void mobileProfileImages.retry()}>{t('common.action.retry')}</Button> : null}
+          <Button actionId="settings.image.discard" density="comfortable" emphasis="quiet"
+            onActivate={mobileProfileImages.discard}>{t('common.action.cancel')}</Button>
+        </MobileNotice> : null}
+        <ListSection inset aria-label={t('mobile.settings.credentials.title')}>
+          <SettingsNavigationRow actionId="me.credentials" settingId="credentials" label={t('mobile.settings.credentials.title')}
+            description={[credentialUsername, activeStationLabel].filter(Boolean).join(' · ')}
+            onActivate={() => onOpenSetting('credentials')} />
+        </ListSection>
+        <MePreferencesSection controller={notificationController} />
+        {notificationController.saveStatus === 'error' ? <DirtyBar
+          dirty={notificationController.dirty} conflict={notificationController.conflict}
+          saveStatus={notificationController.saveStatus} saveError={notificationController.saveError}
+          onSave={() => void notificationController.save()} onDiscard={notificationController.discard}
+          onReload={() => void notificationController.reload()} /> : null}
 
         {/* Setting groups (prototype-aligned) */}
         {settingGroups.map((group) => (
-          <div key={group.titleKey} className="settings-group-block">
-            <div className="settings-group-block-title">{t(group.titleKey)}</div>
-            <Card className="settings-group-card" variant="borderless">
-              {group.items.map((item, idx) => {
-                const Icon = item.icon;
+          <ListSection key={group.titleKey} inset title={t(group.titleKey)}>
+              {group.items.map((item) => {
                 const displayValue = item.valueOverride ?? (item.valueKey ? t(item.valueKey) : undefined);
                 return (
-                  <button
-                    type="button"
+                  <SettingsNavigationRow actionId={`me.setting.${item.id}`} settingId={item.id}
                     key={item.labelKey}
-                    className={`setting-row ${idx > 0 ? 'setting-row--border' : ''}`}
-                    onClick={() => onOpenSetting(item.id)}
-                  >
-                    <span
-                      className="setting-row-icon"
-                      style={{
-                        backgroundColor: `${item.tint}14`,
-                        color: item.tint,
-                      }}
-                    >
-                      <Icon size={17} />
-                    </span>
-                    <Text className="setting-row-label">{t(item.labelKey)}</Text>
-                    {displayValue && (
-                      <Text type="secondary" className="setting-row-value">
-                        {displayValue}
-                      </Text>
-                    )}
-                    <ChevronRight size={17} color="#c1c4cc" />
-                  </button>
+                    label={t(item.labelKey)} description={displayValue}
+                    onActivate={() => onOpenSetting(item.id)}
+                  />
                 );
               })}
-            </Card>
-          </div>
+          </ListSection>
         ))}
+        <ListSection inset>
+          <SettingsNavigationRow actionId="me.notifications" label={t('mobile.notifications.title')} onActivate={onOpenNotifications} />
+        </ListSection>
 
         {/* Sign Out button */}
-        <button
-          type="button"
-          className="settings-sign-out"
-          onClick={requestLogout}
-          disabled={loggingOut}
-        >
+        <Button actionId="me.signout" fullWidth density="comfortable" emphasis="quiet" tone="danger"
+          leading={<Icon iconId="log-out" size={16} />} onActivate={requestLogout}
+          execution={loggingOut ? 'pending' : 'idle'}>
           {loggingOut ? t('mobile.settings.station.loggingOut') : t('mobile.settings.signOut')}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -664,38 +618,44 @@ function SettingsPageContent({
   return (
     <>
       {content}
-      <Modal
+      <Dialog
         title={t('mobile.settings.exit.title')}
         open={pendingExit !== null}
-        closable={!exitSaving}
-        maskClosable={false}
-        onCancel={() => setPendingExit(null)}
-        footer={[
-          <Button
-            key="stay"
-            disabled={exitSaving}
-            onClick={() => setPendingExit(null)}
-          >
-            {t('mobile.settings.exit.stay')}
-          </Button>,
-          <Button
-            key="discard"
-            danger
-            disabled={exitSaving}
-            onClick={() => void discardAndExit()}
-          >
-            {t('mobile.settings.exit.discard')}
-          </Button>,
-          <Button
-            key="save"
-            type="primary"
-            loading={exitSaving}
-            onClick={() => void saveAndExit()}
-          >
-            {t('mobile.settings.exit.save')}
-          </Button>,
-        ]}
-        destroyOnClose
+        closeLabel={t('common.action.close')}
+        dismissOutside={false}
+        onDismiss={() => setPendingExit(null)}
+        footer={
+          <div className="settings-exit-actions">
+            <Button
+              actionId="settings-exit-stay"
+              emphasis="secondary"
+              availability={exitSaving
+                ? { kind: 'disabled', reason: t('mobile.settings.exit.stay') }
+                : undefined}
+              onActivate={() => setPendingExit(null)}
+            >
+              {t('mobile.settings.exit.stay')}
+            </Button>
+            <Button
+              actionId="settings-exit-discard"
+              tone="danger"
+              availability={exitSaving
+                ? { kind: 'disabled', reason: t('mobile.settings.exit.discard') }
+                : undefined}
+              onActivate={() => void discardAndExit()}
+            >
+              {t('mobile.settings.exit.discard')}
+            </Button>
+            <Button
+              actionId="settings-exit-save"
+              emphasis="primary"
+              execution={exitSaving ? 'pending' : 'idle'}
+              onActivate={() => void saveAndExit()}
+            >
+              {t('mobile.settings.exit.save')}
+            </Button>
+          </div>
+        }
       >
         <div
           data-acceptance-id="settings-unsaved-exit"
@@ -703,22 +663,7 @@ function SettingsPageContent({
         >
           {t('mobile.settings.exit.body')}
         </div>
-      </Modal>
-      {/* Logout confirmation modal */}
-      <Modal
-        title={t('mobile.settings.station.logoutConfirmTitle')}
-        open={logoutConfirmOpen}
-        okText={t('mobile.settings.logout')}
-        okButtonProps={{ danger: true }}
-        cancelText={t('common.action.cancel')}
-        onOk={() => void handleLogoutConfirm()}
-        onCancel={() => setLogoutConfirmOpen(false)}
-        destroyOnClose
-      >
-        <div data-product-surface="settings.logout-confirm">
-          {t('mobile.settings.station.logoutConfirmBody')}
-        </div>
-      </Modal>
+      </Dialog>
     </>
   );
 }

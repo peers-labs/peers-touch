@@ -66,7 +66,7 @@
         "proven_scope": [
           "Static lifecycle ownership",
           "Simulator runtime-graph suspend, resume, restart, generation, and descriptor-owned navigation state transitions when the simulator Gate passes",
-          "Station-bound simulator expired-route same-session resume and secondary Station selection, session restore, takeover revocation, Station switch, logout, and old-scope isolation"
+          "Station-bound simulator expired-route same-session resume and secondary Station selection, session restore, same-account multi-device coexistence and device-scoped revocation, Station switch, logout, and old-scope isolation"
         ],
         "unproven_scope": [
           "Optional physical background/foreground and secure-hardware behavior"

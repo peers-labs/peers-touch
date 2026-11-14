@@ -11,6 +11,7 @@ const messageSectionSource = source('./ChatMessageSectionBoundary.tsx');
 const messagePresentationSource = source('./ChatMessagePresentation.tsx');
 const overlayHostSource = source('./ChatOverlayHost.tsx');
 const bottomOcclusionSource = source('./chatBottomOcclusion.ts');
+const composerSource = source('./MobileChatComposer.tsx');
 const stylesSource = source('../../styles.css');
 const extractedSources = [
   pageContentSource,
@@ -18,6 +19,7 @@ const extractedSources = [
   messagePresentationSource,
   overlayHostSource,
   bottomOcclusionSource,
+  composerSource,
 ].join('\n');
 
 describe('Chat component ownership boundaries', () => {
@@ -30,7 +32,7 @@ describe('Chat component ownership boundaries', () => {
     expect(pageSource).toContain('AttachmentDetailHost');
     expect(pageSource).not.toContain('messagingOpenAttachment');
     expect(source('../../runtimes/attachmentAccess.ts')).toContain('ChatAttachmentAccessController');
-    expect(pageSource).toContain('saveRouteQuery');
+    expect(pageSource).toContain("setMessageQuery('chats', nextQuery)");
 
     expect(extractedSources).not.toMatch(/\buse(?:Auth|Social|Group)Store\b/);
     expect(extractedSources).not.toMatch(/\bdispatch[A-Z]\w+/);
@@ -60,7 +62,7 @@ describe('Chat component ownership boundaries', () => {
     expect(stylesSource).toMatch(/\.message-list\s*\{[\s\S]*?overflow-y:\s*auto/);
     expect(overlayHostSource).toContain('if (!open) return null');
     expect(overlayHostSource).toContain('if (!message) return null');
-    expect(overlayHostSource).toContain('group-management-sheet');
+    expect(overlayHostSource).toContain('group-management-content');
   });
 
   it('composes measured bottom layers and keeps sender typing best-effort', () => {
@@ -94,11 +96,11 @@ describe('Chat component ownership boundaries', () => {
     ]) {
       expect(productionSources).toContain(selector);
     }
-    expect(overlayHostSource).toContain('role="dialog"');
-    expect(overlayHostSource).toContain('aria-modal="true"');
+    expect(overlayHostSource).toContain('BottomSheet');
+    expect(overlayHostSource).toContain('title={t(');
     expect(pageSource).toContain("aria-label={t('mobile.chat.startAudioCall')}");
     expect(pageSource).toContain("aria-label={t('mobile.chat.startVideoCall')}");
-    expect(pageSource).toContain("aria-label={t('common.action.send')}");
+    expect(productionSources).toContain("aria-label={t('common.action.send')}");
     expect(pageSource).toContain("t('mobile.chat.encrypted')");
     expect(stylesSource).toMatch(/\.chat-header-actions\s*\{[\s\S]*?display:\s*flex/);
   });

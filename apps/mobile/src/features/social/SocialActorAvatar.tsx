@@ -1,13 +1,13 @@
-import type { AvatarProps } from 'antd';
-
 import { MobileAvatar } from '../../components/MobileAvatar';
 import {
   useSocialActorIdentity,
   type SocialActorIdentityFallback,
 } from './useSocialActorIdentity';
 
-type SocialActorAvatarProps = SocialActorIdentityFallback &
-  Pick<AvatarProps, 'className' | 'size'>;
+type SocialActorAvatarProps = SocialActorIdentityFallback & {
+  className?: string;
+  size?: number;
+};
 
 export function SocialActorAvatar({
   actorPtid,

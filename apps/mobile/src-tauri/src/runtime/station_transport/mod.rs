@@ -260,6 +260,16 @@ enum StationOperation {
         call_id: String,
         peer_actor_ptid: String,
     },
+    GroupCallJoin {
+        group_ulid: String,
+    },
+    GroupCallStatus {
+        group_ulid: String,
+    },
+    GroupCallDecline {
+        group_ulid: String,
+        room_sid: String,
+    },
     TurnIceServers {},
 }
 
@@ -307,6 +317,9 @@ impl StationOperation {
             Self::PresenceOffline { .. } => "presence_offline",
             Self::RealtimeSignalSend { .. } => "realtime_signal_send",
             Self::RealtimeCallResolutionGet { .. } => "realtime_call_resolution_get",
+            Self::GroupCallJoin { .. } => "group_call_join",
+            Self::GroupCallStatus { .. } => "group_call_status",
+            Self::GroupCallDecline { .. } => "group_call_decline",
             Self::TurnIceServers {} => "turn_ice_servers",
         }
     }
@@ -323,6 +336,7 @@ pub struct StationTransportResponse {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NativeFileUpload {
     pub reference: String,
+    pub url: String,
     pub size: u64,
 }
 
@@ -602,6 +616,7 @@ pub(crate) async fn upload_native_file(
     operation_id: &'static str,
     path: &Path,
     filename: &str,
+    mime_type: &str,
     bucket: &'static str,
     visibility: &'static str,
     expected_size: u64,
@@ -620,7 +635,7 @@ pub(crate) async fn upload_native_file(
         .await
         .map_err(|_| transport_error(operation_id, "file_open"))?
         .file_name(filename)
-        .mime_str("application/octet-stream")
+        .mime_str(mime_type)
         .map_err(|_| transport_error(operation_id, "file_mime"))?;
     let form = Form::new()
         .text("bucket", bucket)
@@ -669,6 +684,7 @@ pub(crate) async fn upload_native_file(
     }
     Ok(NativeFileUpload {
         reference,
+        url: uploaded.url.trim().to_string(),
         size: uploaded.size,
     })
 }
@@ -1271,6 +1287,39 @@ fn build_request(
                 );
             authenticated_request(client, session, Method::GET, url)
         }
+        StationOperation::GroupCallJoin { group_ulid } => json_request(
+            client,
+            session,
+            Method::POST,
+            "/group-call/join",
+            typed_json_body(
+                &json!({ "group_ulid": clean_id(group_ulid, "group_ulid")? }),
+                "group_call_join",
+            )?,
+        )?,
+        StationOperation::GroupCallStatus { group_ulid } => json_request(
+            client,
+            session,
+            Method::POST,
+            "/group-call/status",
+            typed_json_body(
+                &json!({ "group_ulid": clean_id(group_ulid, "group_ulid")? }),
+                "group_call_status",
+            )?,
+        )?,
+        StationOperation::GroupCallDecline { group_ulid, room_sid } => json_request(
+            client,
+            session,
+            Method::POST,
+            "/group-call/decline",
+            typed_json_body(
+                &json!({
+                    "group_ulid": clean_id(group_ulid, "group_ulid")?,
+                    "room_sid": clean_id(room_sid, "room_sid")?,
+                }),
+                "group_call_decline",
+            )?,
+        )?,
         StationOperation::TurnIceServers {} => authenticated_request(
             client,
             session,

@@ -1,5 +1,4 @@
-import { Dropdown } from 'antd';
-import { Globe } from 'lucide-react';
+import { Button, Icon, Menu } from '@peers-touch/ui';
 
 import { useMobileI18n } from '../app/mobileI18n';
 
@@ -8,22 +7,25 @@ export function LanguageSwitcher() {
   const current = languages.find((option) => option.code === language) ?? languages[0];
 
   return (
-    <Dropdown
-      menu={{
-        items: languages.map((option) => ({
-          key: option.code,
-          label: option.nativeName,
-        })),
-        selectedKeys: [language],
-        onClick: ({ key }) => setLanguage(key as typeof language),
-      }}
-      placement="bottomRight"
-      trigger={['click']}
+    <Menu
+      label={current.nativeName}
+      placement="bottom"
+      actions={languages.map((option) => ({
+        id: `language-${option.code}`,
+        label: option.nativeName,
+        iconId: option.code === language ? 'check' : undefined,
+        onActivate: () => setLanguage(option.code),
+      }))}
     >
-      <button type="button" className="mobile-language-switcher" aria-label={current.nativeName}>
-        <Globe size={15} />
-        <span>{current.shortName}</span>
-      </button>
-    </Dropdown>
+      <Button
+        actionId="entry.language"
+        emphasis="quiet"
+        density="compact"
+        leading={<Icon iconId="globe" size={15} />}
+        aria-label={current.nativeName}
+      >
+        {current.shortName}
+      </Button>
+    </Menu>
   );
 }

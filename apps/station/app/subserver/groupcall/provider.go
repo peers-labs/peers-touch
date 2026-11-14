@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/peers-labs/peers-touch/station/frame/core/facility/mediaaccess"
 	federationruntime "github.com/peers-labs/peers-touch/station/frame/core/federation"
 )
 
@@ -17,7 +18,12 @@ type RoomProvider interface {
 
 	// GenerateToken mints a short-lived participant token for actorPTID
 	// to join roomName. Returns the SFU WebSocket URL and the JWT token.
-	GenerateToken(ctx context.Context, roomName, actorPTID string) (url, token string, err error)
+	GenerateToken(ctx context.Context, roomName, participantIdentity string) (url, token string, err error)
+
+	// AdmitParticipant must atomically check SID before enabling media and fence
+	// replacement/replay. An identity-only permission update is insufficient.
+	AdmitParticipant(ctx context.Context, roomName, participantIdentity, participantSID, actorPTID string) error
+	ReadRoom(ctx context.Context, groupULID string) (*RoomStatus, error)
 
 	// RemoveParticipant forcibly removes a participant from the room.
 	RemoveParticipant(ctx context.Context, roomName, actorPTID string) error
@@ -27,6 +33,10 @@ type RoomProvider interface {
 
 	// HandleWebhook verifies and dispatches an SFU webhook callback.
 	HandleWebhook(ctx context.Context, r *http.Request) error
+}
+
+type GroupCallAuthorityFence interface {
+	WithGroupCallFence(context.Context, string, mediaaccess.Endpoint, string, uint64, func() error) error
 }
 
 // GroupMemberLister resolves the PTID set of a group so that call
@@ -66,7 +76,21 @@ type JoinRequest struct {
 
 // JoinResponse is the HTTP response body for POST /group-call/join.
 type JoinResponse struct {
-	URL      string `json:"url"`
-	Token    string `json:"token"`
-	RoomName string `json:"room_name"`
+	URL                 string `json:"url"`
+	Token               string `json:"token"`
+	RoomName            string `json:"room_name"`
+	GrantID             string `json:"grant_id"`
+	ParticipantIdentity string `json:"participant_identity"`
+}
+
+type RoomStatus struct {
+	Active             bool     `json:"active"`
+	RoomName           string   `json:"room_name"`
+	RoomSID            string   `json:"room_sid"`
+	DeclinedActorPTIDs []string `json:"declined_actor_ptids"`
+}
+
+type DeclineInvitationRequest struct {
+	GroupULID string `json:"group_ulid"`
+	RoomSID   string `json:"room_sid"`
 }
