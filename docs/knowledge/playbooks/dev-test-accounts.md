@@ -98,9 +98,11 @@ social graph 边，使 unified Conversation 的 relationship gate 认可该好�
 
 ### 2.6 快速登录指南
 
-登录前先在登录页 Station 选择器里选中目标 Station：`make desktop` 会把当前
-Profile 的 Station 作为 `environment` 候选置顶，首次点击才会走签名发现并落库，
-之后重启自动恢复，无需重选。三档来源（Profile / 注入 / 云端）与排障见
+登录前确认 Station 已就绪：`make desktop` 会把当前 Profile 的 Station 作为
+`environment` 候选，并在登录页自动完成签名发现与激活（无需手动点选），激活后
+重启走 `already-active` 短路径自动恢复。若自动激活失败（如 Station 不可达），
+可在登录页 Station 选择器手动点候选触发同样的签名发现。三档来源
+（Profile / 注入 / 云端）与排障见
 `desktop-debug-runtime-with-qualified-chooser.md` 的 "Station Candidate Catalog"。
 
 ```

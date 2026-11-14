@@ -78,7 +78,7 @@ apps/desktop/src-tauri/src/
         └── transport/mod.rs             # owner/handle plus Direct/Circuit execution
 
 apps/desktop/src/services/
-└── stationCandidates.ts                 # single catalog merge/dedup/order owner
+└── stationCandidates.ts                 # catalog merge/dedup/order + route pick + dev auto-activation
 ```
 
 ## 2. Target Responsibilities

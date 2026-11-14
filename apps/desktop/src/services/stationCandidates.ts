@@ -2,9 +2,11 @@ import {
   api,
   type LocalStationCandidate,
   type StationEntry,
+  type StationRouteCandidate,
   type XConfigSuggestion,
 } from './desktop_api';
 import { getXConfigProjection } from './xConfig';
+import { log } from '../utils/logger';
 
 // Single aggregation owner for the Station candidate catalog (NCP-D22).
 // Rust owns local env parsing and the verified registry; this module is the
@@ -131,4 +133,84 @@ export async function loadStationCandidateCatalog(): Promise<StationCandidateCat
     localCandidates: local.candidates ?? [],
     xconfigSuggestions: projection.suggestions ?? [],
   });
+}
+
+/**
+ * Pick the route to activate for a verified entry. Direct routes win over
+ * relay/circuit; healthy routes win over degraded ones. Relative order within
+ * the same tier is preserved. Returns null only when the entry has no route.
+ */
+export function pickActivationRoute(entry: StationEntry): StationRouteCandidate | null {
+  const healthy = entry.routes.filter((route) => route.health === 'available');
+  const pool = healthy.length > 0 ? healthy : entry.routes;
+  const direct = pool.filter((route) => route.route_type === 'direct');
+  if (direct.length > 0) return direct[0] ?? null;
+  const relay = pool.filter((route) => route.route_type === 'relay');
+  return relay[0] ?? null;
+}
+
+function findEntryByOrigin(entries: StationEntry[], origin: string): StationEntry | undefined {
+  return entries.find((entry) =>
+    entry.routes.some((route) => normalizeOrigin(route.endpoint_origin) === origin),
+  );
+}
+
+export type DevStationActivationOutcome =
+  | 'already-active'
+  | 'activated'
+  | 'skipped'
+  | 'failed';
+
+let devActivationInFlight: Promise<DevStationActivationOutcome> | null = null;
+
+/**
+ * Dev-only convenience: when the local development controller injects a
+ * Profile Station (`environment` tier, absent from packaged builds), verify
+ * and activate it automatically so test accounts can sign in without a manual
+ * pick. Signed discovery still runs and only verified routes are activated;
+ * injected/xconfig tiers and production builds are never auto-selected
+ * (NCP-D24). Idempotent and non-blocking: failures are logged, not thrown.
+ */
+export function ensureDevStationActive(): Promise<DevStationActivationOutcome> {
+  if (!devActivationInFlight) {
+    devActivationInFlight = runEnsureDevStationActive().finally(() => {
+      devActivationInFlight = null;
+    });
+  }
+  return devActivationInFlight;
+}
+
+async function runEnsureDevStationActive(): Promise<DevStationActivationOutcome> {
+  // The Profile channel only exists in development; the DEV guard also makes
+  // the production bundle eliminate this path.
+  if (!import.meta.env.DEV) return 'skipped';
+  try {
+    const registry = await api.stationList();
+    if (registry.active_station_peer_id?.trim()) return 'already-active';
+
+    const local = await api.stationLocalCandidates();
+    const profileCandidate = (local.candidates ?? []).find(
+      (candidate: LocalStationCandidate) => candidate.source === 'environment',
+    );
+    if (!profileCandidate) return 'skipped';
+    const targetOrigin = normalizeOrigin(profileCandidate.canonical_origin);
+
+    // Always re-run signed discovery instead of reusing a persisted entry:
+    // a stored route can carry an expired attestation, which stationSetActive
+    // rejects. stationAdd is an idempotent verify-and-store that refreshes
+    // route health and attestation against the live Station.
+    const discovered = await api.stationAdd(targetOrigin);
+    const entry = findEntryByOrigin(discovered.entries ?? [], targetOrigin)
+      ?? discovered.entries?.[0];
+    if (!entry) return 'failed';
+
+    const route = pickActivationRoute(entry);
+    if (!route) return 'failed';
+
+    await api.stationSetActive(entry.station_peer_id, route.route_id);
+    return 'activated';
+  } catch (error) {
+    log.warn('stationCandidates', 'dev station auto-activation failed', { error });
+    return 'failed';
+  }
 }

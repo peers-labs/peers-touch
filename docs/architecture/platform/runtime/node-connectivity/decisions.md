@@ -676,12 +676,21 @@ caller; only the explicit-choice marker is wired into the Station switcher.
 
 - With no verified active Station and no recorded explicit choice, the picker
   renders the ordered NCP-D22 catalog and selects nothing.
+- The sole automatic exception is the development `environment` tier
+  (`PEERS_PROFILE_STATION_URL`, populated only by the local dev controller and
+  absent from packaged builds). On the login surface the renderer runs the same
+  signed discovery and activation sequence a manual click would, so test
+  accounts can sign in without a manual pick. This is dev-only convenience, not
+  a trust bypass: discovery still verifies the Station, only verified routes are
+  activated, and the `injected`/`xconfig` tiers are never auto-selected. The
+  path is eliminated from production bundles by the `import.meta.env.DEV` guard.
 - An explicit selection (or manual add) runs signed discovery, persists the
   verified entry and the active Station id in `stations.json`, and records the
   explicit-choice marker. On every later launch the `StationRuntime` restores
   that active Station from the registry; the catalog highlights it.
 - Removing the active Station clears the active id and returns the user to the
-  unpicked catalog. No candidate — local or cloud — is silently promoted.
+  unpicked catalog. No candidate — local or cloud — is silently promoted outside
+  the dev `environment` tier above.
 - X Config refreshes never mutate the active Station; cloud changes affect only
   the suggestion section.
 

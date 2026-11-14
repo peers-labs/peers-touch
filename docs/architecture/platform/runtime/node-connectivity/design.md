@@ -316,6 +316,18 @@ discarded during normalization. A failed discovery leaves the suggestion in
 place, surfaces an inline error, and persists nothing. Removing the active
 Station clears the active id without promoting any candidate.
 
+Dev auto-activation (NCP-D24 exception). Only the development `environment`
+tier (`PEERS_PROFILE_STATION_URL`, absent from packaged builds) is activated
+without a manual click. The login surface calls an idempotent
+`ensureDevStationActive` that, when no Station is active, re-runs signed
+discovery (`station_add`) against the Profile origin, picks the freshest
+healthy direct route (falling back to relay), and activates it
+(`station_set_active`). Discovery is always re-run rather than reusing a
+persisted entry, because a stored route can carry an expired attestation that
+activation rejects. The path is guarded by `import.meta.env.DEV`, never
+selects the `injected`/`xconfig` tiers, and reports `failed` without throwing
+so the login card still renders.
+
 ## 6. Relay Control And Admission
 
 Relay role exposes health, signed discovery, operator enrollment, route/grant

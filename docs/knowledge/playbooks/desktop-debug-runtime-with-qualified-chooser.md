@@ -76,15 +76,25 @@ registry entries never reappear as suggestions.
 
 Operational rules:
 
-- No candidate is preselected. On a clean Profile storage the picker shows the
-  Profile Station as the first suggestion and waits for a click.
-- Selecting any candidate runs signed discovery (`station_add` for local tiers,
-  `x_config_discover_suggestion` for cloud). Only verified routes enter
-  `stations.json`; an environment variable can never bypass discovery or extend
-  auth identity-migration origins (NCP-D23).
-- After the first explicit selection the active Station id persists in
-  `stations.json` and is restored automatically on later launches; no second
-  click is needed. Removing the active Station returns to the unpicked catalog.
+- Packaged builds and the `injected`/`xconfig` tiers never auto-select. On a
+  clean Profile storage the picker shows the ordered catalog and waits for a
+  click.
+- Development convenience: the `environment` tier (`PEERS_PROFILE_STATION_URL`,
+  present only under `make desktop`) is activated automatically on the login
+  surface by `ensureDevStationActive` (guarded by `import.meta.env.DEV`). With no
+  active Station it re-runs signed discovery `station_add` to refresh route
+  attestations, picks the freshest healthy direct route (falls back to relay),
+  then `station_set_active`. Re-discovery is mandatory because a persisted route
+  with an expired attestation is rejected by activation. It is idempotent, never
+  touches the other two tiers, and logs `failed` instead of blocking the card.
+- Selecting any candidate manually runs the same signed discovery
+  (`station_add` for local tiers, `x_config_discover_suggestion` for cloud).
+  Only verified routes enter `stations.json`; an environment variable can never
+  bypass discovery or extend auth identity-migration origins (NCP-D23).
+- After activation the active Station id persists in `stations.json` and is
+  restored automatically on later launches (`already-active` short-circuit); no
+  second click is needed. Removing the active Station returns to the unpicked
+  catalog.
 - X Config being unavailable never blocks the local catalog; cloud rows simply
   stay absent or nonactionable.
 

@@ -9,7 +9,9 @@ import type {
 } from '../../services/desktop_api';
 import {
   type StationCandidate,
+  ensureDevStationActive,
   loadStationCandidateCatalog,
+  pickActivationRoute,
 } from '../../services/stationCandidates';
 import { markStationUserChoice } from '../../services/stationDefault';
 import { log } from '../../utils/logger';
@@ -63,6 +65,22 @@ export function StationSwitcher() {
   useEffect(() => {
     void loadStations();
     void loadCatalog();
+  }, [loadStations, loadCatalog]);
+
+  // Dev-only: auto-verify and activate the Profile-injected Station so test
+  // accounts can sign in without a manual pick. No-op in packaged builds and
+  // when no environment-tier candidate exists. Idempotent across remounts.
+  useEffect(() => {
+    let cancelled = false;
+    void ensureDevStationActive().then(() => {
+      if (!cancelled) {
+        void loadStations();
+        void loadCatalog();
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [loadStations, loadCatalog]);
 
   useEffect(() => {
@@ -127,15 +145,11 @@ export function StationSwitcher() {
       setInputValue('');
       await loadStations();
       await loadCatalog();
-      if (
-        discovered.entries.length === 1 &&
-        discovered.entries[0]?.routes.length === 1
-      ) {
-        const entry = discovered.entries[0];
-        const route = entry.routes[0];
-        if (entry && route) {
-          await selectRoute(entry, route);
-        }
+      const discoveredRoute = discoveredEntry
+        ? pickActivationRoute(discoveredEntry)
+        : null;
+      if (discoveredEntry && discoveredRoute) {
+        await selectRoute(discoveredEntry, discoveredRoute);
       }
       setFeedback({
         tone: 'success',
@@ -168,15 +182,12 @@ export function StationSwitcher() {
         markStationUserChoice();
         await loadStations();
         await loadCatalog();
-        if (
-          discovered.entries.length === 1 &&
-          discovered.entries[0]?.routes.length === 1
-        ) {
-          const entry = discovered.entries[0];
-          const route = entry.routes[0];
-          if (entry && route) {
-            await selectRoute(entry, route);
-          }
+        const suggestedEntry = discovered.entries[0];
+        const suggestedRoute = suggestedEntry
+          ? pickActivationRoute(suggestedEntry)
+          : null;
+        if (suggestedEntry && suggestedRoute) {
+          await selectRoute(suggestedEntry, suggestedRoute);
         }
       } catch (error) {
         const detail = error instanceof Error ? error.message : '';
