@@ -42,7 +42,9 @@
   gap: 8px;
   height: 48px;
   box-sizing: border-box;
-  padding: 6px 16px;
+  /* Shares the overlay title band: on macOS the left inset clears the
+     traffic-light cluster so the segmented island never tucks under it. */
+  padding: 6px 16px 6px max(16px, var(--pt-stage-traffic-inset));
   flex-shrink: 0;
   overflow: hidden;
 }

@@ -530,6 +530,32 @@ describe('native auth/ready window surface', () => {
     expect(chatStyles).not.toMatch(/\.sc-rail-header\s*\{[^}]*min-height: 40px/);
   });
 
+  it('reserves a horizontal stage inset so top headers clear the traffic lights', () => {
+    const northstar = readFileSync(
+      new URL('../../ui/northstar.css', import.meta.url),
+      'utf8',
+    );
+    // Off macOS the token collapses to zero so native-title-bar platforms keep
+    // their original padding; macOS pins stage headers 28px from the stage edge.
+    expect(northstar).toMatch(/--pt-stage-traffic-inset:\s*0px/);
+    expect(northstar).toContain('--pt-stage-traffic-inset: 28px');
+
+    // The settings tab row consumes the token via max() so its gear/tabs never
+    // park under the green light while non-macOS keeps the 14px base padding.
+    expect(northstar).toContain(
+      'padding: 8px 14px 10px max(14px, var(--pt-stage-traffic-inset))',
+    );
+
+    // The chat session-rail header shares the same title-band avoidance.
+    const chatStyles = readFileSync(
+      new URL('../../ui/chat.css', import.meta.url),
+      'utf8',
+    );
+    expect(chatStyles).toContain(
+      'padding: 6px 16px 6px max(16px, var(--pt-stage-traffic-inset))',
+    );
+  });
+
   it('defines the auth and ready geometry constants and ready fallback', () => {
     expect(windowSizingRs).toContain('AUTH_WINDOW_WIDTH: f64 = 360.0');
     expect(windowSizingRs).toContain('AUTH_WINDOW_HEIGHT: f64 = 640.0');

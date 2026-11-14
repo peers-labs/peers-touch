@@ -40,6 +40,10 @@
      the traffic lights — kept slim so content rises into the title-bar band
      like WeChat instead of leaving an empty strip. */
   --pt-titlebar-inset: 0px;
+  /* Horizontal clearance a stage-column TOP header must reserve so its first
+     control never sits under the floating traffic-light cluster. Zero off
+     macOS where a native title bar owns the strip. */
+  --pt-stage-traffic-inset: 0px;
   /* The icon rail is the only column under the lights. WeChat-style zoning
      splits it into a header band (traffic lights only) and a content band
      below; the self avatar anchors the content band top, never the seam. */
@@ -52,6 +56,12 @@
 }
 :root[data-platform='macos'] {
   --pt-titlebar-inset: 8px;
+  /* The native light cluster ends ~72px from the window edge (20px left inset
+     + three 12px lights + two 8px gaps). The 60px icon rail covers most of it;
+     stage headers start at x=60, so they inset the 12px overhang plus a 16px
+     breathing gap = 28px, pinning the first control clear of the green light.
+     Consumed only by top title-band headers, never by body content. */
+  --pt-stage-traffic-inset: 28px;
   /* Slim header band: the traffic lights keep their native top position
      (~24px tall), so 40px gives a small breathing gap before the self avatar
      instead of wasting a full 48px strip that pushed the avatar down. */
@@ -429,7 +439,10 @@
   min-width: 0;
   display: flex;
   align-items: center;
-  padding: 8px 14px 10px;
+  /* The tab row shares the overlay title band: on macOS its left inset must
+     clear the floating traffic lights instead of parking the gear/tabs under
+     the green light. max() keeps the platform-native padding off macOS. */
+  padding: 8px 14px 10px max(14px, var(--pt-stage-traffic-inset));
 }
 /* shrink allowed (0 1 auto) so the island yields to the subbar budget; the
    Segmented itself swaps labels for icons before any clipping can occur. */
