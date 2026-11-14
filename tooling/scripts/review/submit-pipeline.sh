@@ -14,7 +14,9 @@ fi
 
 usage() {
   cat <<'USAGE'
-Usage: submit-pipeline.sh [--base <base-ref>] [--range <git-range>] [--skip-ci-gates]
+Usage: submit-pipeline.sh [--base <base-ref>] [--range <git-range>]
+  --integration-plan <external-json> --integration-results <external-json>
+  --integration-review <external-json> [--skip-ci-gates]
 
 Runs the submit-time review pipeline before creating or updating a PR/MR.
 Default base: origin/master when available, otherwise master.
@@ -24,6 +26,9 @@ USAGE
 base_ref=""
 diff_range=""
 skip_ci_gates=0
+integration_plan=""
+integration_results=""
+integration_review=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -39,6 +44,14 @@ while [[ $# -gt 0 ]]; do
       skip_ci_gates=1
       shift
       ;;
+    --integration-plan|--integration-results|--integration-review)
+      case "$1" in
+        --integration-plan) integration_plan="${2:?missing evidence path}" ;;
+        --integration-results) integration_results="${2:?missing evidence path}" ;;
+        --integration-review) integration_review="${2:?missing evidence path}" ;;
+      esac
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -53,6 +66,25 @@ done
 
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
+if [[ "$skip_ci_gates" -eq 1 ]]; then
+  echo "submit-pipeline: BLOCKED: --skip-ci-gates cannot produce submit approval" >&2
+  exit 1
+fi
+if [[ -z "$integration_plan" || -z "$integration_results" || -z "$integration_review" ]]; then
+  echo "submit-pipeline: BLOCKED: source-bound integration plan/results/review required" >&2
+  exit 1
+fi
+if [[ -z "$base_ref" ]]; then
+  if git rev-parse --verify --quiet origin/master >/dev/null; then
+    base_ref="origin/master"
+  else
+    base_ref="master"
+  fi
+fi
+
+python3 "$repo_root/tooling/scripts/review/integration_review.py" verify \
+  --repo-root "$repo_root" --ours HEAD --theirs "$base_ref" --candidate auto \
+  --plan "$integration_plan" --results "$integration_results" --review "$integration_review"
 
 if [[ -z "$diff_range" ]]; then
   if [[ -z "$base_ref" ]]; then
@@ -146,16 +178,10 @@ else
     --range "$diff_range"
 fi
 
-if [[ "$skip_ci_gates" -eq 1 ]]; then
-  echo
-  echo "== Acceptance CI gates =="
-  echo "[SKIP] --skip-ci-gates was provided"
-else
-  echo
-  echo "== Acceptance CI gates =="
-  make acceptance-run-ci PLAN="$scope_plan"
-  make acceptance-report
-fi
+echo
+echo "== Acceptance CI gates =="
+make acceptance-run-ci PLAN="$scope_plan"
+make acceptance-report
 
 echo
 echo "== Acceptance gap detector =="
@@ -165,12 +191,14 @@ python3 tooling/scripts/acceptance-gap-detect.py \
   --plan "$scope_plan"
 
 echo
+echo "== Current integration admission =="
+python3 "$repo_root/tooling/scripts/review/integration_review.py" verify \
+  --repo-root "$repo_root" --ours HEAD --theirs "$base_ref" --candidate auto \
+  --plan "$integration_plan" --results "$integration_results" --review "$integration_review"
+
+echo
 echo "submit-pipeline: pass"
 echo "quality evidence: gate=quality-evidence role=quality-markdown"
 echo "quality evidence inspect: python3 tooling/scripts/acceptance-artifact.py cat --gate quality-evidence --role quality-markdown"
-if [[ "$skip_ci_gates" -eq 1 ]]; then
-  echo "acceptance report: NOT RUN/UNPROVEN (--skip-ci-gates; no artifact from this invocation)"
-else
-  echo "acceptance report: gate=acceptance-report role=report"
-  echo "acceptance report inspect: python3 tooling/scripts/acceptance-artifact.py cat --gate acceptance-report --role report"
-fi
+echo "acceptance report: gate=acceptance-report role=report"
+echo "acceptance report inspect: python3 tooling/scripts/acceptance-artifact.py cat --gate acceptance-report --role report"

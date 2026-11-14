@@ -17,6 +17,10 @@
 
 Before creating or updating a PR:
 
+Prepare, execute and independently review the final integration under
+[`integration-review.md`](./integration-review.md). Export its three external
+input paths as `INTEGRATION_PLAN`, `INTEGRATION_RESULTS`, `INTEGRATION_REVIEW`.
+
 ```bash
 git fetch origin
 make review-submit REVIEW_BASE=origin/master

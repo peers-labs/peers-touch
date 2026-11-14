@@ -106,11 +106,15 @@ the PR is created. The agent must run the submit-time pipeline against the targe
 base branch:
 
 ```bash
-make review-submit REVIEW_BASE=origin/master
+make review-submit REVIEW_BASE=origin/master \
+  INTEGRATION_PLAN=<external-plan> INTEGRATION_RESULTS=<external-results> \
+  INTEGRATION_REVIEW=<external-independent-review>
 ```
 
 The pipeline performs:
 
+0. source-bound final integration verification with external
+   `INTEGRATION_PLAN`, `INTEGRATION_RESULTS`, `INTEGRATION_REVIEW`;
 1. quality evidence generation;
 2. strict review framework checks;
 3. acceptance domain validation and coverage report;
@@ -268,6 +272,7 @@ This directory is the source of truth for the quality framework:
 | [agent-operation.md](./agent-operation.md) | concrete operating procedure for agents executing the framework |
 | [proof-model.md](./proof-model.md) | what is machine-proven, what is review-proven, and what is not claimed |
 | [maintenance.md](./maintenance.md) | how to evolve routes, gates, skills, fixtures, and knowledge safely |
+| [integration-review.md](./integration-review.md) | shared source-bound integration admission, release entrypoints and behavioral regressions |
 | [blind-validation/](./blind-validation/README.md) | isolated UI/UX Agent calibration cases, runner rubric, and reviewer-only answer key |
 
 Agents should read `agent-operation.md` when asked to submit an MR/PR or perform

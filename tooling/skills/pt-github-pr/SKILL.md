@@ -65,7 +65,9 @@ base branch.
 ```bash
 git fetch origin
 
-make review-submit REVIEW_BASE=origin/master
+make review-submit REVIEW_BASE=origin/master \
+  INTEGRATION_PLAN=<external-plan> INTEGRATION_RESULTS=<external-results> \
+  INTEGRATION_REVIEW=<external-independent-review>
 ```
 
 This pipeline generates quality evidence, runs strict review framework checks,
@@ -265,15 +267,20 @@ gh pr diff <pr-number>
 ### Merge PR
 
 ```bash
-# Squash merge (preferred for feature branches)
-gh pr merge <pr-number> --squash --delete-branch
-
-# Merge commit (for long-lived branches)
-gh pr merge <pr-number> --merge --delete-branch
-
-# Rebase merge
-gh pr merge <pr-number> --rebase --delete-branch
+# Verify final source and live server policy; execute only with merge authorization.
+python3 tooling/scripts/review/integration_gate.py github-merge \
+  --repository peers-labs/peers-touch --pr <pr-number> \
+  --ours <current-pr-head> --theirs <current-base-head> --candidate auto \
+  --plan <external-plan> --results <external-results> \
+  --review <external-independent-review> --execute
 ```
+
+Use a clean materialized candidate and the accepted target branch's verifier.
+The wrapper requires current PR approval, the shared source-bound evidence
+and active GitHub strict required-check policy. Do not use raw `gh pr merge`,
+`--admin`, stale checks, or `--skip-ci-gates` as an alternate release path.
+For external evidence publication and check reruns, follow
+`docs/architecture/engineering/quality/integration-review.md`.
 
 ### List PRs
 

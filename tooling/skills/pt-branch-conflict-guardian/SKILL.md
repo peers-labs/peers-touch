@@ -40,7 +40,7 @@ Before changing files, collect the topology and scope:
 - current branch and target branch;
 - merge base;
 - commits, PR numbers, titles, and summaries on both sides;
-- overlapping files grouped by domain;
+- all changed files on both sides, including non-overlapping and automatic merges;
 - source files vs generated files;
 - relevant plan, architecture, runtime, or knowledge documents.
 
@@ -56,6 +56,13 @@ git diff --name-status HEAD..<target>
 git merge-tree $(git merge-base HEAD <target>) HEAD <target>
 ```
 
+Prepare the executable inventory with
+`tooling/scripts/review/integration_review.py prepare`. Keep its external
+manifest bound to both HEADs, merge base and resolved candidate tree. Do not
+narrow scope to Git's conflict list. Group the complete inventory by owning
+contract, including callers, consumers, registrations, protocol, persistence
+and runtime. Inspect previous merge commits for propagated regressions.
+
 ### 2. Classify Each Conflict
 
 Classify each conflict before editing:
@@ -69,7 +76,7 @@ Classify each conflict before editing:
 | `test-intent` | Both sides changed tests or fixtures to encode different behavior. | Identify the real requirement before changing tests. |
 | `unknown` | The agent cannot explain either side's intent. | Stop and ask. |
 
-For every non-mechanical conflict, maintain a conflict ledger:
+For every affected contract and path, including automatic merges, maintain a ledger:
 
 - `File`
 - `Our Side`: what current branch introduced and why
@@ -78,6 +85,8 @@ For every non-mechanical conflict, maintain a conflict ledger:
 - `Shared Intent`: the behavior both sides appear to preserve
 - `Divergence`: the incompatible behavior or ownership choice
 - `Decision`: auto-resolved / resolved from source of truth / escalated
+- `Outcome`: preserved / accepted complete replacement / unproven
+- `Required proof`: build, behavior, original assertions and actual UI interaction
 
 The ledger can be local notes, but final reports must summarize semantic
 decisions and all escalations.
@@ -145,14 +154,29 @@ Before claiming the merge/rebase is ready:
 - `git status --short --branch` shows no unresolved conflicts.
 - Conflict ledger has no `blocked` entries.
 - Source files, not generated artifacts alone, explain generated changes.
-- Relevant tests or gates for each affected domain have run or are explicitly
-  listed as not run.
+- Required checks were classified before execution and passed on the resolved
+  candidate. Missing, failed, skipped or zero-case checks remain blocking.
+- Every existing outcome has preservation evidence or an accepted complete
+  replacement; prior merged regressions are not treated as new authority.
+- Tests/Gates were not removed or weakened to obtain green checks; equivalent
+  rewrites execute original assertions against the candidate.
+- A separate reviewer read the full scope and original output and recorded
+  source-bound counterexamples. A reviewer name alone is insufficient.
 - If a developer answered an escalation, the final report cites the decision.
 - The final diff does not contain compatibility shims, silent fallbacks, or
   duplicated implementations introduced only to avoid choosing a contract.
 
 For PR readiness, also run the normal review or submit pipeline for the target
 scope, such as `make review-submit REVIEW_BASE=<base>`.
+
+Before the divergent merge commit, use `integration_gate.py commit` with
+external `--plan`, `--results`, `--review`, `--ours HEAD`,
+`--theirs MERGE_HEAD`, `--candidate index` and `--message-file`.
+The default is verification only; `--execute` requires existing commit
+authorization. Do not replace it with a raw Git commit. Reverse-sync and
+GitHub merge use the same owner's `fanout` and `github-merge` actions.
+The exact schema and commands belong to
+`docs/architecture/engineering/quality/integration-review.md`.
 
 ## Output
 

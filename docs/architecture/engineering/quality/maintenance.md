@@ -149,6 +149,12 @@ make review-submit REVIEW_BASE=origin/master
 tooling/scripts/review/skill-check.sh
 ```
 
+Submit requires the external integration inputs defined in
+[`integration-review.md`](./integration-review.md), with current candidate
+proof. For gate implementation maintenance, use real topology and release
+entrypoint regressions rather than manufacturing a passing review manifest
+for an unreviewed source tree.
+
 ## 8. Updating Freshness Hash
 
 `tooling/scripts/review/skill-check.sh` recomputes the upstream docs hash from

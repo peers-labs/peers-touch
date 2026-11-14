@@ -4,6 +4,9 @@
 
 REVIEW_RANGE ?= HEAD
 REVIEW_BASE ?= origin/master
+INTEGRATION_OURS ?= HEAD
+INTEGRATION_THEIRS ?= $(REVIEW_BASE)
+INTEGRATION_CANDIDATE ?= auto
 
 review:
 	tooling/scripts/review/run.sh --range "$(REVIEW_RANGE)"
@@ -30,7 +33,20 @@ quality-evidence:
 	python3 tooling/scripts/quality-evidence.py --range "$(REVIEW_RANGE)"
 
 review-submit:
-	tooling/scripts/review/submit-pipeline.sh --base "$(REVIEW_BASE)"
+	tooling/scripts/review/submit-pipeline.sh --base "$(REVIEW_BASE)" \
+		--integration-plan "$(INTEGRATION_PLAN)" \
+		--integration-results "$(INTEGRATION_RESULTS)" \
+		--integration-review "$(INTEGRATION_REVIEW)"
+
+.PHONY: review-integration-regressions review-integration-verify
+review-integration-regressions:
+	python3 tooling/scripts/review/integration_review_test.py
+
+review-integration-verify:
+	python3 tooling/scripts/review/integration_review.py verify \
+		--ours "$(INTEGRATION_OURS)" --theirs "$(INTEGRATION_THEIRS)" \
+		--candidate "$(INTEGRATION_CANDIDATE)" --plan "$(INTEGRATION_PLAN)" \
+		--results "$(INTEGRATION_RESULTS)" --review "$(INTEGRATION_REVIEW)"
 
 acceptance-evidence-export:
 	python3 tooling/scripts/acceptance-evidence.py export

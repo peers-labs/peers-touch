@@ -326,6 +326,7 @@ Search 当前真源：[封闭域 Search](./architecture/domains/search/README.md
   产品旅程/状态/验收，以及 Station 单一真源下跨 Desktop/未来 Mobile 的运行时契约）
 - Actor 隔离环境平面：`architecture/platform/station/actor-isolation.md`
 - 质量保证闭环：`architecture/engineering/quality/README.md`
+- 合码放行与行为回归：[`integration-review`](architecture/engineering/quality/integration-review.md)
 - 产品验收框架：`architecture/engineering/acceptance/README.md`
 - Human 联邦社交活动层：`architecture/domains/social/federation/README.md`
  - 跨 Station 私密 Social：`architecture/domains/social/cross-station/README.md`

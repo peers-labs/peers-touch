@@ -1,0 +1,65 @@
+name: Integration Evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Current PR number
+        required: true
+        type: string
+      bundle:
+        description: Compressed external plan, original results and independent review
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+
+jobs:
+  publish-evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve live PR parents
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr }}
+        run: |
+          [[ "$PR_NUMBER" =~ ^[0-9]+$ ]] || exit 1
+          gh pr view "$PR_NUMBER" --json headRefOid,baseRefOid --jq \
+            '"head=" + .headRefOid + "\nbase=" + .baseRefOid' >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.target.outputs.head }}
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.target.outputs.base }}
+          path: integration-policy
+          fetch-depth: 1
+      - name: Verify using the accepted target policy
+        env:
+          BASE_SHA: ${{ steps.target.outputs.base }}
+          HEAD_SHA: ${{ steps.target.outputs.head }}
+          INTEGRATION_EVIDENCE_BUNDLE: ${{ inputs.bundle }}
+        run: |
+          mv integration-policy "$RUNNER_TEMP/integration-policy"
+          mkdir "$RUNNER_TEMP/integration-evidence"
+          python3 "$RUNNER_TEMP/integration-policy/tooling/scripts/review/integration_evidence.py" \
+            unpack --output "$RUNNER_TEMP/integration-evidence"
+          git -c user.name=Integration -c user.email=integration@example.invalid \
+            merge --no-commit --no-ff "$BASE_SHA"
+          python3 "$RUNNER_TEMP/integration-policy/tooling/scripts/review/integration_review.py" verify \
+            --repo-root "$GITHUB_WORKSPACE" --ours "$HEAD_SHA" --theirs "$BASE_SHA" \
+            --candidate index --plan "$RUNNER_TEMP/integration-evidence/plan.json" \
+            --results "$RUNNER_TEMP/integration-evidence/results.json" \
+            --review "$RUNNER_TEMP/integration-evidence/review.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: integration-review-${{ steps.target.outputs.head }}-${{ steps.target.outputs.base }}
+          path: ${{ runner.temp }}/integration-evidence/bundle.json
+          if-no-files-found: error
+          retention-days: 14

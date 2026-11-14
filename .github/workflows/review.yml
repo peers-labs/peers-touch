@@ -7,8 +7,73 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  actions: read
 
 jobs:
+  integration-policy-state:
+    runs-on: ubuntu-latest
+    outputs:
+      installed: ${{ steps.policy.outputs.installed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Resolve accepted base policy
+        id: policy
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          policy_path=tooling/scripts/review/integration_review.py
+          if git cat-file -e "$BASE_SHA:$policy_path" 2>/dev/null; then
+            echo "installed=true" >> "$GITHUB_OUTPUT"
+          elif [[ -n "$(git log --format=%H "$BASE_SHA" -- "$policy_path")" ]]; then
+            echo "Accepted integration policy was removed; installation fallback is forbidden." >&2
+            exit 1
+          else
+            echo "installed=false" >> "$GITHUB_OUTPUT"
+          fi
+  integration-verification:
+    needs: integration-policy-state
+    name: ${{ needs.integration-policy-state.outputs.installed == 'true' && 'integration-admission' || 'integration-installation-review' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        if: needs.integration-policy-state.outputs.installed == 'true'
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: integration-policy
+          fetch-depth: 1
+      - name: Verify final merge source and external original evidence
+        if: needs.integration-policy-state.outputs.installed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          mv integration-policy "$RUNNER_TEMP/integration-policy"
+          mkdir "$RUNNER_TEMP/integration-evidence"
+          python3 "$RUNNER_TEMP/integration-policy/tooling/scripts/review/integration_evidence.py" \
+            download --repository "$GH_REPO" --head "$HEAD_SHA" --base "$BASE_SHA" \
+            --output "$RUNNER_TEMP/integration-evidence"
+          python3 "$RUNNER_TEMP/integration-policy/tooling/scripts/review/integration_review.py" verify \
+            --repo-root "$GITHUB_WORKSPACE" --ours "$HEAD_SHA" --theirs "$BASE_SHA" \
+            --candidate auto --plan "$RUNNER_TEMP/integration-evidence/plan.json" \
+            --results "$RUNNER_TEMP/integration-evidence/results.json" \
+            --review "$RUNNER_TEMP/integration-evidence/review.json"
+      - name: Verify first installation regressions
+        if: needs.integration-policy-state.outputs.installed == 'false'
+        run: |
+          python3 tooling/scripts/review/integration_review_test.py
+          {
+            echo "## Integration policy installation"
+            echo "The accepted base has never contained the integration verifier."
+            echo "This check proves installation regressions, not integration admission."
+            echo "Independent installation review remains required before the owner lands."
+          } >> "$GITHUB_STEP_SUMMARY"
   review-framework:
     runs-on: ubuntu-latest
     env:
@@ -60,6 +125,7 @@ jobs:
 
       - name: Validate Acceptance workflow contracts
         run: |
+          python3 tooling/scripts/review/integration_review_test.py
           python3 tooling/scripts/review/pr-plan-input-test.py
           python3 -m unittest tooling.acceptance.tests.test_execution_plan
           python3 tooling/scripts/acceptance-plan-test.py
