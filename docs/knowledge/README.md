@@ -192,6 +192,7 @@ Pick one based on intent:
 
 ### Pitfalls
 
+- [`pitfalls/private-audience-fixture-must-exclude-author.md`](pitfalls/private-audience-fixture-must-exclude-author.md) — explicit recipient fixtures exclude the author while retaining its original implicit-grant readback.
 - [`pitfalls/private-followers-remote-subscription.md`](pitfalls/private-followers-remote-subscription.md) — private follower preparation and current reads consume the authenticated remote subscription with Home and revision fences.
 - [`pitfalls/comment-revalidation-must-preserve-ui-intent.md`](pitfalls/comment-revalidation-must-preserve-ui-intent.md) — acquired empty threads, collapse choices and confirmed comment mutations survive background reads and return to an alive page.
 - [`pitfalls/desktop-header-drag-regions-fragmented.md`](pitfalls/desktop-header-drag-regions-fragmented.md) — Desktop pane headers consume one shell drag adapter; custom controls and forwarded composite roots require real hit testing.

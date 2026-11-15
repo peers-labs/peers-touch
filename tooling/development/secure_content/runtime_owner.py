@@ -7794,9 +7794,9 @@ class W7RuntimeOwner:
                 ("FOLLOWERS", {}),
                 ("CIRCLE", {"circleId": circle_id}),
                 ("GROUP", {"groupConversationId": group_id}),
-                ("CUSTOM_ALLOW", {"actorPtids": [
-                    fixture_identity["alicePtid"], fixture_identity["bobPtid"],
-                ]}),
+                # The author reads through its original implicit author grant;
+                # CUSTOM_ALLOW lists only other recipients.
+                ("CUSTOM_ALLOW", {"actorPtids": [fixture_identity["bobPtid"]]}),
                 ("CUSTOM_DENY", {"baseKind": "FOLLOWERS", "actorPtids": [eve_ptid]}),
             ):
                 text = f"css09-cross-station-mixed-{kind.lower()}"
