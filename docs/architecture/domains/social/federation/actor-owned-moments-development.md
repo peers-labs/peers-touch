@@ -120,6 +120,11 @@ Station 本地 object ID 与作者分配的 portable ID 分开。签名 payload 
 接收站、Actor、源站和最小 head，最长 90 秒。控制只在实际 Actor Home 检查之后、
 原 dirty 标记之前丢弃一次真实提示，记录原 Frame canonical SHA-256。
 原有 32 项/1 MiB 拉取、验签、导入、线程和周期调度保持原 Owner。
+原观察器同时接收订阅 worker 与 `ReadForViewer` 的真实验证导入。
+Native Runtime 的周期读取可能先于订阅 worker 导入缺失 head；只观察后者会
+漏记已经发生的修复。foreground 观察位于原拉取、边界核对、验签、head 核对
+和线程导入之后，读取本地实际已验证序号；零事件、已见 head、拒绝或离线拉取
+不能补写 causal repair。原暴露时 block/moderation 检查和 Native 绘制断言保留。
 
 只有本次丢失的 head 尚未见过、随后真实有界拉取成功验证并导入到该 head，才能
 记录 causal repair。Native 场景从作者当前已验证序号推导下一 head，并在一个

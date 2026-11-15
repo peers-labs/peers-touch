@@ -87,6 +87,14 @@ func (s *FeedLogService) ReadForViewer(ctx context.Context, viewer string,
 		if err := s.importThread(ctx, request.ActorPtid, home, cursor, pulled, nil); err != nil {
 			return nil, err
 		}
+		if s.federationObservation != nil {
+			// Native Runtime reads can import the missed head before the
+			// subscription worker. Observe that same verified import path.
+			verifiedHead, verifyErr := s.store.LocalSequence(ctx, request.ActorPtid)
+			s.federationObservation.ObserveRepair(request.ActorPtid, home,
+				sequence, verifiedHead, len(pulled.Bundle.Events),
+				len(pulled.ThreadEntries), proto.Size(pulled), verifyErr == nil, s.now())
+		}
 	}
 	// Block/moderation can change during the remote leg. It must also hold
 	// at exposure; offline errors cannot be downgraded to stale success.
