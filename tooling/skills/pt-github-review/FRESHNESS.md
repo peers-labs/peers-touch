@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-11-15
-covered_docs_hash: 64e86db8c307296560181ec91220a2a40dfd02b13b75a2b4217190494d0c1480
+covered_docs_hash: 9be18ae469fac5c6c67a66faa1c6ef98821ed78a6a540746283a81236da09423
 
 covered_docs:
   - AGENTS.md
@@ -1999,3 +1999,15 @@ adding a second rule source. The existing ownership and source-bound review
 rules cover both documents, so no `SKILL.md` rule or generic review fixture
 change is needed. This freshness review does not supply Native, PostgreSQL,
 cross-platform or release proof; those results remain separately classified.
+
+## 2026-11-15 Social Coverage and Native Observer Review
+
+Reviewed the four covered-source changes: the generated coverage report adds
+the registered Public Feed Feature without claiming proof; the knowledge
+index links existing Social regression owners; D-22 and its integration
+describe direct NSWorkspace lookup in the original shared observer.
+The original one-second startup/focus deadline, fresh CFEqual observations,
+immutable baseline, exact-PID chooser and complete scoped cleanup remain
+required. Existing source-bound review and evidence-honesty rules cover these
+changes; no review rule or generic fixture is replaced. Driver regression and
+Cell qualification do not establish the still-failing AS17 product Journey.

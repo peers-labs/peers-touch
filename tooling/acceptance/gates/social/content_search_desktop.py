@@ -54,8 +54,8 @@ class SocialContentSearchDesktopGate(DeviceSearchGate):
     phase = "Social content Search Desktop"
     bom = ("SOCIAL-CONTENT-FIND-OPEN",)
     spec = ("social-content-search",)
-    # This Suite proves mixed-source retrieval; the Chat history Gate retains
-    # its 55-message fixture and its original-window assertions.
+    # The session fence replays a real cursor from the inherited Search owner.
+    # Its 20-row page needs 21 committed rows; no Chat pagination Gate is run.
     history_count = 21
 
     def surface(self) -> dict[str, Any]:

@@ -1,5 +1,6 @@
 import { type ComponentType, lazy, Suspense } from 'react';
-import { FeedbackHost } from '@peers-touch/ui';
+import { createPortal } from 'react-dom';
+import { FeedbackHost, useOverlayHost } from '@peers-touch/ui';
 import { useAppLifecycle } from './hooks/useAppLifecycle';
 import { useAppRuntime } from './hooks/useAppRuntime';
 import { useWindowSurface } from './hooks/useWindowSurface';
@@ -27,6 +28,7 @@ const APP_VIEWS: Record<AppState, ComponentType<ViewProps>> = {
 
 function App() {
   const feedback = useAppFeedback();
+  const overlayHost = useOverlayHost();
   const lifecycle = useAppLifecycle();
   const criticalRuntimeReady = useAppRuntime(lifecycle);
 
@@ -57,8 +59,11 @@ function App() {
         visible={surfaceTransition.veilVisible}
         leaving={surfaceTransition.veilLeaving}
       />
-      {/* Scoped, session-bound feedback channel for product surfaces. */}
-      <FeedbackHost channel={feedback} />
+      {/* Keep session-bound feedback outside the modal's inert background. */}
+      {overlayHost.element && createPortal(
+        <FeedbackHost channel={feedback} />,
+        overlayHost.element,
+      )}
       {DevOverlayProvider && <Suspense fallback={null}><DevOverlayProvider /></Suspense>}
     </AppFeedbackContext.Provider>
   );

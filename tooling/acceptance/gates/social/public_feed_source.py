@@ -40,7 +40,8 @@ COMMANDS = (
     SourceCommand(
         name="public-feed-native-entry",
         argv=("python3", "-m", "unittest",
-              "tooling.acceptance.gates.social.test_public_feed_native"),
+              "tooling.acceptance.gates.social.test_public_feed_native",
+              "tooling.development.secure_content.test_social_feed_ui"),
     ),
     SourceCommand(
         name="public-feed-desktop-types",
@@ -57,7 +58,14 @@ COMMANDS = (
               "src/services/socialRealtime.test.ts", "src/services/socialRelationshipTransport.test.ts",
               "src/store/momentsCircles.test.ts", "src/store/momentsReactions.test.ts",
               "src/store/privateComments.test.ts", "src/services/eventStream.test.ts",
-              "src/store/momentsPolls.test.ts"),
+              "src/store/momentsPolls.test.ts", "src/test/moments-store.test.ts",
+              "src/components/moments/CommentList.test.tsx",
+              "src/components/moments/MomentCard.test.tsx",
+              "src/components/moments/MomentCommentsSection.test.tsx",
+              "src/acceptance/moments/feedObservation.test.ts",
+              "src/test/searchFrames.test.ts",
+              "src/runtimes/searchInvalidations.test.ts",
+              "src/acceptance/moments/commentReadFault.test.ts"),
         cwd="apps/desktop",
     ),
     SourceCommand(

@@ -24,7 +24,57 @@ import time
 MAX_BYTES = 16 << 20
 MAX_SECONDS = 240
 FILES = {"worker.py", "binding.json", "owner.json", "capture.json", "done.json",
-         "capture.pcap", "tcpdump.log", "control.lock"}
+         "capture.pcap", "tcpdump.log", "control.lock", "failure.json"}
+
+
+def failure_details(error: Exception) -> dict:
+    """Project fixed failure categories, never command input or packet bytes."""
+    messages = {
+        "invalid capture root or authority": "authority",
+        "capture file ownership differs": "ownership",
+        "capture descriptor exceeds its bound": "ownership",
+        "invalid capture binding": "binding",
+        "invalid capture leg": "binding",
+        "invalid capture leg address/port": "binding",
+        "capture requires bounded distinct legs": "binding",
+        "capture worker source differs": "source",
+        "capture owner differs": "owner",
+        "cannot bind capture to its owner": "owner",
+        "capture namespace or source differs": "namespace",
+        "process is a zombie": "namespace",
+        "capture did not become ready": "startup",
+    }
+    code = messages.get(str(error), "operation")
+    if isinstance(error, FileNotFoundError):
+        code = "tool-missing"
+    elif isinstance(error, PermissionError):
+        code = "permission"
+    kind = type(error).__name__
+    if kind not in {"ValueError", "OSError", "FileNotFoundError", "PermissionError",
+                    "ProcessLookupError", "SubprocessError", "TimeoutExpired"}:
+        kind = "ValueError"
+    return {"code": code, "errorType": kind}
+
+
+class CaptureStartupError(ValueError):
+    def __init__(self, observation: dict) -> None:
+        super().__init__("capture did not become ready")
+        self.observation = observation
+
+
+def startup_failure(root: Path) -> dict:
+    failure = root / "failure.json"
+    if failure.exists():
+        return read(failure)
+    log = root / "tcpdump.log"
+    if log.exists():
+        owned(log)
+        text = log.read_bytes()[:4096].lower()
+        if b"permission denied" in text or b"operation not permitted" in text:
+            return {"code": "permission", "errorType": "PermissionError"}
+        if text and b"listening on " not in text:
+            return {"code": "tcpdump", "errorType": "OSError"}
+    return {"code": "startup", "errorType": "ValueError"}
 
 
 def process_identity(pid: int) -> dict[str, object]:
@@ -70,8 +120,8 @@ def validate(binding: dict) -> str:
     if not alive(binding["namespace"]) or not re.fullmatch(r"[0-9a-f]{64}", binding["sourceDigest"]):
         raise ValueError("capture namespace or source differs")
     legs = binding["legs"]
-    if len(legs) != 2 or legs[0] == legs[1]:
-        raise ValueError("capture requires two distinct legs")
+    if not 2 <= len(legs) <= 8 or any(leg in legs[:index] for index, leg in enumerate(legs)):
+        raise ValueError("capture requires bounded distinct legs")
     terms = []
     for leg in legs:
         if set(leg) != {"relayAddress", "relayPort", "stationAddress", "stationPort"}:
@@ -187,7 +237,11 @@ def main(operation: str, root: Path) -> dict:
         raise ValueError("invalid capture root or authority")
     if operation == "worker":
         owned(root, directory=True)
-        worker(root)
+        try:
+            worker(root)
+        except Exception as error:
+            write(root / "failure.json", failure_details(error))
+            raise
         return {}
     if operation == "clear" and not root.exists():
         if root.is_symlink():
@@ -229,7 +283,7 @@ def main(operation: str, root: Path) -> dict:
                 if process.poll() is not None:
                     break
                 time.sleep(0.02)
-            raise ValueError("capture did not become ready")
+            raise CaptureStartupError(startup_failure(root))
         if operation in {"finish", "clear"}:
             result = stop_owner(root)
             if operation == "finish":
@@ -259,7 +313,9 @@ if __name__ == "__main__":
     try:
         value = main(sys.argv[1], Path(sys.argv[2]))
         print(json.dumps(value, separators=(",", ":"), sort_keys=True))
-    except Exception:
+    except Exception as error:
         # Never emit packet bytes, input or exception details.
-        print("owned capture operation failed", file=sys.stderr)
+        observation = (error.observation if isinstance(error, CaptureStartupError)
+                       else failure_details(error))
+        print(json.dumps({"error": observation}, separators=(",", ":"), sort_keys=True))
         sys.exit(2)

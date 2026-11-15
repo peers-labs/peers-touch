@@ -306,6 +306,8 @@ macOS 的 operator-only/operator+panel 在一次 observation scope 中复用原 
 phase、distinct target PID 和 sticky mismatch；没有第二个 oracle 或 Runner。
 scope deadline 固定且不超过 owning operation/Cell lease；focus 截止时间包含
 首次子进程初始化，保留原1s稳定、2s control、3s observation 和面板等待窗口。
+frontmost PID 在原共享观测器中直接加载 AppKit framework，并经 Objective-C
+bridge 查询 NSWorkspace；不初始化整套 AppKit Python wrapper，也不缓存 PID。
 parent 明确绑定独立 focus/observation deadline；面板使用原 AX read cap 与
 剩余 observation 时间，不能续期 focus 或 scope。
 一次 qualification 从 prelaunch 持有到 owned-stop，一次 picker 从 staging

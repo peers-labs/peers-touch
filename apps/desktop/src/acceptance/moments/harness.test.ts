@@ -25,6 +25,10 @@ const registered: Record<string, Record<string, (...args: unknown[]) => Promise<
 vi.mock('./feedObservation', () => ({
   feedSearchIdentities: vi.fn(),
   reconcileFeedProjection: vi.fn(),
+  beginCommentReadReconcile: vi.fn(),
+  commentReadReconcileStatus: vi.fn(),
+  releaseCommentReadReconcile: vi.fn(),
+  clearCommentReadReconcile: vi.fn(),
 }));
 
 const momentsState = {
@@ -805,6 +809,30 @@ describe('Moments acceptance harness', () => {
     expect(momentsState.composerDraft).not.toBeNull();
   });
 
+  it('admits the retained text draft with the original Native owner before an outage', async () => {
+    const admit = vi.spyOn(privateMomentsNative, 'admit').mockResolvedValue({
+      state: 'READY_PRIVATE', draftId: 'durable-outage',
+    });
+    const staged = await harness().stagePrivateDraft({
+      draftId: 'durable-outage', revision: 2, text: 'source remains durable',
+      audienceKind: 'CUSTOM_ALLOW', actorPtids: ['ptid:test:bob'], momentKind: 'TEXT',
+    });
+    expect(await harness().admitPrivateTextDraft()).toEqual({
+      state: 'READY_PRIVATE', draft: staged,
+    });
+    expect(admit).toHaveBeenCalledWith({
+      actorPtid: 'ptid:test:alice', rendererGeneration: 9,
+      draftId: 'durable-outage', draftRevision: 2, text: 'source remains durable',
+      audience: { kind: 'CUSTOM_ALLOW', actorPtids: ['ptid:test:bob'] },
+      momentKind: 'TEXT', mentions: [], files: [],
+    });
+    expect(momentsState.createPost).not.toHaveBeenCalled();
+    expect(momentsState.composerDraft).toMatchObject({ draftId: 'durable-outage', revision: 2 });
+    admit.mockRejectedValueOnce(new Error('original prepare failure'));
+    await expect(harness().admitPrivateTextDraft()).rejects.toThrow('original prepare failure');
+    expect(momentsState.composerDraft).toMatchObject({ draftId: 'durable-outage', revision: 2 });
+  });
+
   it('returns Native pre-prepare rejection and local cleanup counters', async () => {
     await harness().stagePrivateDraft({
       draftId: 'draft-remote',
@@ -1363,6 +1391,7 @@ describe('Moments acceptance harness', () => {
         authorPtid: 'ptid:test:alice',
         audienceKind: 'FRIENDS',
         state: 'CONTENT_READY',
+        remoteDeliveryState: 'DELIVERED',
         content: {
           kind,
           text: 'private image text',
@@ -1389,6 +1418,7 @@ describe('Moments acceptance harness', () => {
     expect(result).toMatchObject({
       platform: 'native',
       state: 'CONTENT_READY',
+      remoteDeliveryState: 'DELIVERED',
       contentKind: kind,
       textByteLength: 18,
       media: [{

@@ -2,7 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ThemeProvider, ToastHost } from '@lobehub/ui';
 import { I18nextProvider } from 'react-i18next';
-import { FeedbackHost, UIProvider } from '@peers-touch/ui';
+import { UIProvider } from '@peers-touch/ui';
 import { feedbackChannel } from './ui/feedback';
 import './ui/northstar.css';
 import './ui/chat.css';
@@ -159,9 +159,8 @@ async function bootstrap() {
               },
             }}
           >
-            <UIProvider theme="light" className="ds-theme">
+            <UIProvider theme="light" className="ds-theme" feedback={feedbackChannel}>
               {shareMatch ? <SharePage token={shareMatch[1]} /> : <App />}
-              <FeedbackHost channel={feedbackChannel} />
             </UIProvider>
             <ToastHost />
           </ThemeProvider>

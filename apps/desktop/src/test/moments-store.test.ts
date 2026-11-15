@@ -189,7 +189,7 @@ afterEach(() => {
 });
 
 describe('Desktop Search no-store page continuity', () => {
-  function searchFixture() {
+  function searchFixture(remoteOwner = false) {
     useSessionStore.setState({
       authenticated: true, currentUser: { actorPtid: 'alice' } as never, sessionEpoch: 1,
     });
@@ -231,14 +231,15 @@ describe('Desktop Search no-store page continuity', () => {
             authorityNamespace: 'social-private:alice', kind: 'social-comment', id,
             contentRevision: String(traversal), anchor: { kind: 'comment', id },
           },
-          readValidity: { readScope: 'alice', policyRevision: readRevision },
+          readValidity: { readScope: 'alice', policyRevision: readRevision, ownerCheckRequired: remoteOwner },
         })),
       });
     });
     invokeMock.mockImplementation(async (cmd, args) => {
       if (cmd === 'frontend_log' || cmd === 'search_cancel') return undefined;
       if (cmd === 'search_read_state') {
-        return bytesOk(SearchReadStateSchema, { partition: 'alice', sources: sourcesView() });
+        return bytesOk(SearchReadStateSchema, { partition: 'alice', sources: sourcesView().map(source =>
+          remoteOwner ? { ...source, sourceRevision: '', policyRevision: '' } : source) });
       }
       if (cmd === 'search_submit') {
         return submit(fromBinary(SubmitRequestSchema, Uint8Array.from(
@@ -266,6 +267,31 @@ describe('Desktop Search no-store page continuity', () => {
   async function settle() {
     await vi.waitFor(() => expect(useSearchStore.getState().status).toBe('ready'));
   }
+
+  it('reacquires an invalidated remote no-store result even without an owner revision change', async () => {
+    const { submit, changePages } = searchFixture(true);
+    changePages([['public-original']]);
+    await runSearchQuery('en');
+    await settle();
+    await reconcileSearchQuery('en');
+    expect(submit).toHaveBeenCalledTimes(1);
+    changePages([[]]);
+    expect(invalidateSearchSources(['social-public'])).toBe(true);
+    useSearchStore.setState({ status: 'idle' });
+    expect(resultIds()).toEqual([]);
+    await reconcileSearchQuery('en');
+    await settle();
+    expect(submit).toHaveBeenCalledTimes(2);
+    expect(useSearchStore.getState()).toMatchObject({
+      status: 'ready', displayedQuery: 'history',
+      response: { items: [], coverage: [
+        { sourceId: 'social-private', state: SourceState.READY },
+        { sourceId: 'social-public', state: SourceState.READY },
+      ] },
+    });
+    await reconcileSearchQuery('en');
+    expect(submit).toHaveBeenCalledTimes(2);
+  });
 
   it('installs a fresh payload and issued cursor when unchanged row keys are refreshed', async () => {
     const { submit } = searchFixture();

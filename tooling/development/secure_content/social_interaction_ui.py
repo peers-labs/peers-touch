@@ -65,6 +65,11 @@ class SocialCommentUI:
         self.evidence_root.mkdir(parents=True, exist_ok=True)
         self.artifacts: list[Path] = []
 
+    @property
+    def reaction_assertions(self) -> list[dict[str, Any]]:
+        """Only original painted LIKE controls belong to the reaction trace."""
+        return [row for row in self.assertions if "count" in row and "liked" in row]
+
     def save_dom(self, path: Path) -> None:
         """Redact the Native snapshot before its single immutable write."""
         repo_root = self.client.spec.worktree
@@ -392,6 +397,7 @@ class SocialCommentUI:
                     const emoji = content?.querySelector('.sk-comment-reaction-emoji');
                     const counter = content?.querySelector('.sk-comment-reaction-count');
                     const style = getComputedStyle(button);
+                    const compactHeight = Number.parseFloat(style.getPropertyValue('--pt-control-compact'));
                     const row = button.closest('[data-comment-id]');
                     const time = row?.querySelector(':scope > .sk-comment-body > .sk-comment-meta time');
                     const timestamp = time ? new Date(time.dateTime) : null;
@@ -400,7 +406,9 @@ class SocialCommentUI:
                     return emoji?.textContent === '👍'
                       && (count > 0 ? counter?.textContent.trim() === String(count) : !counter)
                       && !/Like|赞/.test(content?.textContent || '')
-                      && button.getBoundingClientRect().height === 22
+                      && button.getAttribute('data-density') === 'compact'
+                      && Number.isFinite(compactHeight) && compactHeight > 0
+                      && button.getBoundingClientRect().height === compactHeight
                       && style.padding === '0px' && style.borderWidth === '0px'
                       && ['transparent', 'rgba(0, 0, 0, 0)'].includes(style.backgroundColor)
                       && timestamp && Number.isFinite(timestamp.getTime())
@@ -445,6 +453,7 @@ class SocialCommentUI:
                     const emoji = content?.querySelector('.sk-comment-reaction-emoji');
                     const counter = content?.querySelector('.sk-comment-reaction-count');
                     const style = getComputedStyle(button), rect = button.getBoundingClientRect();
+                    const compactHeight = Number.parseFloat(style.getPropertyValue('--pt-control-compact'));
                     const row = button.closest('[data-comment-id]');
                     const time = row?.querySelector(':scope > .sk-comment-body > .sk-comment-meta time');
                     const timestamp = time ? new Date(time.dateTime) : null;
@@ -460,7 +469,9 @@ class SocialCommentUI:
                         emoji: emoji?.textContent === '👍',
                         counter: count > 0 ? counter?.textContent.trim() === String(count) : !counter,
                         emojiOnly: !/Like|赞/.test(content?.textContent || ''),
-                        height: rect.height === 22,
+                        density: button.getAttribute('data-density') === 'compact',
+                        height: Number.isFinite(compactHeight) && compactHeight > 0
+                          && rect.height === compactHeight,
                         padding: style.padding === '0px',
                         border: style.borderWidth === '0px',
                         background: ['transparent', 'rgba(0, 0, 0, 0)'].includes(style.backgroundColor),
@@ -477,7 +488,8 @@ class SocialCommentUI:
                       rect: {x: rect.x, y: rect.y, width: rect.width, height: rect.height},
                       style: {padding: style.padding, borderWidth: style.borderWidth,
                         backgroundColor: style.backgroundColor, display: style.display,
-                        visibility: style.visibility, opacity: style.opacity},
+                        visibility: style.visibility, opacity: style.opacity,
+                        compactHeight: Number.isFinite(compactHeight) ? compactHeight : null},
                       viewport: {width: innerWidth, height: innerHeight},
                       visibilityState: document.visibilityState,
                     };
@@ -825,6 +837,10 @@ def exercise_comment_likes(
     identity_searches = [
         assert_identity_search(client, post_id) for client in (sender, receiver)
     ]
+    reconciles = [
+        assert_stable_reconcile(client, post_id, phase="acquired-empty", rows=0)
+        for client in (sender, receiver)
+    ]
     root_id = sender.submit(post_id, root_text)
     receiver.open_thread(post_id)
     receiver.assert_like(
@@ -849,9 +865,12 @@ def exercise_comment_likes(
         receiver.toggle_like(post_id, text, depth, 0, False, f"alice-{label}-retain")
         receiver.assert_like(post_id, text, depth, 1, True, f"alice-{label}-retain")
         sender.assert_like(post_id, text, depth, 1, False, f"alice-{label}-retain")
-    reconciles = [
-        assert_stable_reconcile(client, post_id) for client in (sender, receiver)
-    ]
+    for client in (sender, receiver):
+        reconciles.extend((
+            assert_stable_reconcile(client, post_id),
+            assert_stable_reconcile(client, post_id, phase="collapsed", expanded=False),
+            assert_stable_reconcile(client, post_id, phase="alive-return", expanded=False, alive=True),
+        ))
     return {
         "postId": post_id,
         "rootId": root_id,

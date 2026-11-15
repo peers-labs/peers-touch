@@ -161,6 +161,12 @@ describe('progressive presentation decision', () => {
     });
     expect(ready.showEmpty).toBe(true);
     expect(ready.isProgressive).toBe(false);
+    for (const status of ['idle', 'error'] as const) {
+      expect(searchPresentation({
+        ...base, status, response: finalResponse, displayedQuery: 'camino',
+        progressive: null, progressiveRequestId: null,
+      }).showEmpty).toBe(false);
+    }
 
     // Same final frame shape but still loading (e.g. late publication): no empty.
     const loading = searchPresentation({

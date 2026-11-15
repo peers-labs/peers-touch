@@ -588,6 +588,11 @@ export async function socialGetComments(
       content.value.mentions = verified[index].typedMentions;
     }
   }
+  // Acceptance delays only the completed, verified read; it supplies no data.
+  if (import.meta.env.VITE_ACCEPTANCE_HARNESS === '1') {
+    const { holdVerifiedCommentRead } = await import('../acceptance/moments/commentReadFault');
+    await holdVerifiedCommentRead(postId);
+  }
   return response;
 }
 

@@ -4,6 +4,12 @@ Search is one Shell overlay. It inherits shared UI Identity; no separate
 Search module skin is defined. Its main subject is the readable result list,
 with the input as the action rail and the field as the loading-feedback owner.
 
+The opacity-only entrance runs once when the overlay mounts in a visible
+document, unless reduced motion is requested. Its component-local marker
+retires on animation completion or when the document becomes hidden. Mounting
+in the background and returning to the foreground show the settled panel;
+a suspended WebView animation must not retain an invisible Search surface.
+
 ## Input and display
 
 - The input reflects every keystroke immediately. IME composition does not

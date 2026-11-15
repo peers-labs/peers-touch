@@ -40,7 +40,10 @@ import { useSessionStore } from '../../store/session';
 import { useFederationStore } from '../../store/federation';
 import { federationRuntime } from '../../runtimes/federationRuntime';
 import { registerAcceptanceHarness } from '../registry';
-import { feedSearchIdentities, reconcileFeedProjection } from './feedObservation';
+import {
+  beginCommentReadReconcile, clearCommentReadReconcile, commentReadReconcileStatus,
+  feedSearchIdentities, reconcileFeedProjection, releaseCommentReadReconcile,
+} from './feedObservation';
 
 declare const __PT_SOURCE_COMMIT__: string;
 
@@ -488,6 +491,7 @@ async function privateProjectionEvidence(
     platform: usePrivateMomentsStore.getState().platform,
     state: projection.state,
     errorCode: projection.errorCode,
+    remoteDeliveryState: projection.remoteDeliveryState,
     postIdSha256: await sha256(projection.postId),
     contentIdSha256: await sha256(projection.contentId),
     authorPtidSha256: projection.authorPtid
@@ -664,6 +668,35 @@ async function publishPrivateDraft() {
   };
 }
 
+async function admitPrivateTextDraft() {
+  const draft = useMomentsStore.getState().composerDraft;
+  const { platform, scope } = usePrivateMomentsStore.getState();
+  if (!draft || draft.files.length || draft.poll || draft.mentions.length) {
+    throw new Error('moments.acceptance.textAdmissionDraftMissing');
+  }
+  if (platform !== 'native' || !scope.actorPtid || scope.rendererGeneration < 1) {
+    throw new Error('moments.acceptance.nativeScopeMissing');
+  }
+  const audience = draft.audience.kind === Audience_Kind.FRIENDS
+    ? { kind: 'FRIENDS' as const }
+    : draft.audience.kind === Audience_Kind.CUSTOM_ALLOW
+      ? { kind: 'CUSTOM_ALLOW' as const, actorPtids: [...draft.audience.actorPtids] }
+      : undefined;
+  if (!audience) throw new Error('moments.acceptance.textAdmissionAudienceUnsupported');
+  const result = await privateMomentsNative.admit({
+    actorPtid: scope.actorPtid,
+    rendererGeneration: scope.rendererGeneration,
+    draftId: draft.draftId,
+    draftRevision: draft.revision,
+    audience,
+    momentKind: 'TEXT',
+    text: draft.text,
+    mentions: [],
+    files: [],
+  });
+  return { state: result.state, draft: await draftEvidence(draft) };
+}
+
 async function publishUnsupportedCustomDenyPublic(
   input: StagePrivateDraftInput,
 ) {
@@ -831,6 +864,10 @@ export function installAcceptanceHarness(): void {
   registerAcceptanceHarness('moments', {
     feedSearchIdentities,
     reconcileFeedProjection,
+    beginCommentReadReconcile,
+    commentReadReconcileStatus,
+    releaseCommentReadReconcile,
+    clearCommentReadReconcile,
     async snapshot() {
       const privateState = usePrivateMomentsStore.getState();
       const sessionIdentity = await activeSessionIdentity();
@@ -852,6 +889,10 @@ export function installAcceptanceHarness(): void {
 
     async stagePrivateDraft(input: StagePrivateDraftInput) {
       return stagePrivateDraft(input);
+    },
+
+    async admitPrivateTextDraft() {
+      return admitPrivateTextDraft();
     },
 
     async acceptanceActorIdentity() {

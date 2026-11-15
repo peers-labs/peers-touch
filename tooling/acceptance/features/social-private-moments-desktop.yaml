@@ -35,17 +35,13 @@
   "acceptance": {
     "runtime": [
       "one source-bound Suite Runtime provisions and logs in once, then runs every Scenario attach-only",
-      "Alice, Bob and Eve exercise friend, follower-only non-friend, unrelated and blocked authorization states",
-      "Bob restart and replacement-device recovery preserve authorized history without creating another account",
-      "anonymous and malformed or expired authentication requests reveal no private body, object bytes, recipient PTIDs, device IDs or encrypted keys",
-      "CUSTOM_DENY(PUBLIC) and oversized audiences fail before durable admission or Content PreKey consumption"
+      "the original cross-Station producer owns its AS17-AS24 and same-station-regression outcomes; this consumer validates AS20, AS23 and same-station-regression comment evidence",
+      "AS23 replacement-device recovery retains the same comment identities and reaction states without creating another account",
+      "source checks cover the named viewer-envelope and distinct-PreKey cases; they do not establish a live authorization corpus"
     ],
     "visible": [
-      "Alice publishes private text and media from the Native Desktop Moment composer",
-      "Bob reads authorized plaintext and media in Native Desktop HOME and detail surfaces before and after restart",
-      "Eve cannot render private parent, comment or media while unauthorized",
-      "public Moment continuity is proven by Native publish plus anonymous HTTP read",
       "AS20 activates the actual root-comment and reply LIKE controls on Alice and Bob, then checks both Native painted counters and viewer states",
+      "AS20 observes acquired-empty, unchanged expanded and collapsed reconciliation plus return to the alive Moments page on both existing clients, retaining parent/thread/editor identity, draft selection and explicit collapse",
       "AS23 reads the same comment identities and retained LIKE counts after replacement-device recovery",
       "same-station-regression activates Alice's private root/reply LIKE and unlike controls through her original Home Station",
       "committed Native comment commands are retried with their original durable command identity; two retries leave the confirmed counter and revision stable"
@@ -53,9 +49,10 @@
   },
   "negative": [
     "Mobile parity is not claimed",
+    "SOC-SEC-AS01-AS16 are not proved by this consumer; the full audience expansion, bounds, process restart and live parent/comment/object authorization corpus require their original scenario evidence",
     "development FUNCTIONAL_PASS artifacts are not treated as formal Acceptance proof",
     "no Scenario may rebuild, redeploy, register an account, or create a fresh Suite Runtime after the one Suite provisioning pass",
-    "the Suite may keep at most three Native Desktop clients active concurrently",
+    "the Suite may keep at most two Native Desktop clients active concurrently",
     "private cross-Station media and recovery coverage remains with the dedicated feature; this Gate consumes AS20/AS23 specifically for comment interaction continuity",
     "a scenario PASS, an API response or a Harness-only action cannot replace comment-button activation, unobscured Native frame capture and bilateral readback",
     "committed command retry proves durable local replay; lost-ACK server redelivery requires separate real fault evidence"

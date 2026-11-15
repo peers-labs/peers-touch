@@ -116,6 +116,17 @@ class RelayAttachmentFixture:
 
     def __init__(self, *, register_cleanup: Callable[[str, Callable[[], None]], None]) -> None:
         self._register_cleanup = register_cleanup
+        self._pending_retirements: set[tuple[str, str, str]] = set()
+
+    def assert_attachments_retired(self, station_url: str | None = None) -> None:
+        pending = [
+            identity for identity in self._pending_retirements
+            if station_url is None or identity[0] == station_url.rstrip("/")
+        ]
+        if pending:
+            raise RuntimeError(
+                f"Relay attachment retirement is incomplete for {len(pending)} owned attachment(s)"
+            )
 
     @staticmethod
     def wait_runtime(config: PosixServiceRuntimeConfig, *, timeout_seconds: float = 120) -> dict[str, Any]:
@@ -150,6 +161,7 @@ class RelayAttachmentFixture:
                                resource="relay-attachment-fixture")
 
         def remove() -> None:
+            self.assert_attachments_retired(config.public_base_url)
             # Cleanup needs the exact original Compose container, not health.
             # Removal and restart also retire the process's cached system trust.
             config.transport().run_argv(
@@ -332,11 +344,18 @@ class RelayAttachmentFixture:
                 or invitation.get("label") != label or not invitation.get("invite_token")):
             raise BlockedError(reason="Relay invitation fixture identity is invalid",
                                resource="relay-attachment-fixture")
+        retirement = (station_url.rstrip("/"), relay_peer_id, label)
+
+        def detach() -> None:
+            self._detach(station_url, relay_peer_id, label=label,
+                         control_origin=origin, station_peer_id=station_peer_id)
+            self._pending_retirements.discard(retirement)
+
         self._register_cleanup(
             f"relay-attachment:{station_peer_id}:{relay_peer_id}",
-            lambda: self._detach(station_url, relay_peer_id, label=label,
-                                 control_origin=origin, station_peer_id=station_peer_id),
+            detach,
         )
+        self._pending_retirements.add(retirement)
         status, _ = relay_json_request(
             station_url.rstrip("/") + "/dashboard/api/relay/attachments",
             method="POST", body=dict(invitation), token=dashboard_token,

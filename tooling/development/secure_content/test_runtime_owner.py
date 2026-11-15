@@ -168,6 +168,85 @@ def fixture_payload() -> dict[str, object]:
 
 
 class RuntimeOwnerTest(unittest.TestCase):
+    def test_receiver_station_restart_requires_original_container_source_and_new_process(self):
+        commit = "a" * 40
+        stopped = {
+            "stopped": True, "deploymentEnvironment": "synthetic-receiver",
+            "containerId": "original-container", "runtimeOwner": "original-owner",
+            "beforeProcessIds": [11], "sourceCommit": commit, "buildCommit": commit,
+        }
+        restored = {
+            **{key: value for key, value in stopped.items() if key != "stopped"},
+            "restored": True, "afterProcessIds": [22],
+        }
+        for drift in (None, "containerId", "runtimeOwner", "sourceCommit",
+                      "buildCommit", "deploymentEnvironment", "beforeProcessIds",
+                      "afterProcessIds", "restored"):
+            with self.subTest(drift=drift):
+                changed = dict(restored)
+                if drift in ("beforeProcessIds", "afterProcessIds"):
+                    changed[drift] = [33] if drift == "beforeProcessIds" else [11]
+                elif drift == "restored":
+                    changed[drift] = False
+                elif drift:
+                    changed[drift] = "foreign"
+                capability = MagicMock()
+                capability.invoke.side_effect = [dict(stopped), changed]
+                if drift:
+                    with self.assertRaises(RuntimeOwnerBlocked):
+                        runtime_owner_module.restart_social_receiver_station(
+                            capability, deployment_environment="synthetic-receiver",
+                            source_commit=commit,
+                        )
+                else:
+                    self.assertEqual(
+                        runtime_owner_module.restart_social_receiver_station(
+                            capability, deployment_environment="synthetic-receiver",
+                            source_commit=commit,
+                        ),
+                        {"stop": stopped, "start": restored},
+                    )
+                self.assertEqual(
+                    capability.invoke.call_args_list,
+                    [call("mobile.station-outage", operation, {}, timeout_seconds=720.0)
+                     for operation in ("stop", "start")],
+                )
+
+    def test_receiver_station_restart_preserves_original_restoration_failure(self):
+        capability = MagicMock()
+        failure = RuntimeError("original restoration failure")
+        capability.invoke.side_effect = [{"stopped": True}, failure]
+        with self.assertRaises(RuntimeError) as raised:
+            runtime_owner_module.restart_social_receiver_station(
+                capability, deployment_environment="synthetic-receiver",
+                source_commit="a" * 40,
+            )
+        self.assertIs(raised.exception, failure)
+        self.assertEqual([item.args[1] for item in capability.invoke.call_args_list],
+                         ["stop", "start"])
+
+    def test_receiver_outage_restores_after_publication_failure_and_retains_primary_error(self):
+        for restoration_fails in (False, True):
+            with self.subTest(restoration_fails=restoration_fails):
+                capability = MagicMock()
+                primary = RuntimeError("original publication failure")
+                secondary = RuntimeError("original restoration failure")
+                capability.invoke.side_effect = [
+                    {"stopped": True}, secondary if restoration_fails else {"restored": True},
+                ]
+                action = MagicMock(side_effect=primary)
+                with self.assertRaises(RuntimeError) as raised:
+                    runtime_owner_module.restart_social_receiver_station(
+                        capability, deployment_environment="synthetic-receiver",
+                        source_commit="a" * 40, during_outage=action,
+                    )
+                self.assertIs(raised.exception, primary)
+                action.assert_called_once_with({"stopped": True})
+                self.assertEqual([item.args[1] for item in capability.invoke.call_args_list],
+                                 ["stop", "start"])
+                if restoration_fails:
+                    self.assertTrue(primary.secondary_cleanup_failures)
+
     def test_native_invoke_reports_privacy_safe_app_error(self) -> None:
         client = MagicMock()
         client.driver.execute_async_script.return_value = {
@@ -2996,6 +3075,9 @@ class RuntimeOwnerTest(unittest.TestCase):
                     "station-five-arm-peer",
                 ]
             },
+            {"blockedByViewer": True, "revision": 7},
+            {"state": "UNBLOCKED"},
+            {"blockedByViewer": False, "revision": 8},
             {"requestId": "friend-request-1"},
             {"accepted": True},
         )
@@ -3014,6 +3096,9 @@ class RuntimeOwnerTest(unittest.TestCase):
                     "station-five-arm-peer",
                 ]
             },
+            {"blockedByViewer": True, "revision": 13},
+            {"state": "UNBLOCKED"},
+            {"blockedByViewer": False, "revision": 14},
             {"accepted": True, "requestId": "friend-request-1"},
             {"accepted": True},
         )
@@ -3062,6 +3147,23 @@ class RuntimeOwnerTest(unittest.TestCase):
             ),
             alice.harness.call_args_list,
         )
+        for client, target, station, revision in (
+            (alice, "ptid:bob", "station-five-arm-peer", 7),
+            (bob, "ptid:alice", "station-four-peer", 13),
+        ):
+            unblock = call("unblockActor", {
+                "actorPtid": target,
+                "homeStationPeerId": station,
+                "observedRevision": revision,
+            }, timeout=120)
+            self.assertIn(unblock, client.harness.call_args_list)
+            self.assertLess(
+                client.harness.call_args_list.index(unblock),
+                next(
+                    index for index, invocation in enumerate(client.harness.call_args_list)
+                    if invocation.args[0] in {"sendFriendRequest", "acceptFriendRequest"}
+                ),
+            )
         self.assertFalse(
             any(
                 invocation.args[0] in {
@@ -3070,6 +3172,106 @@ class RuntimeOwnerTest(unittest.TestCase):
                 for client in (alice, bob)
                 for invocation in client.harness.call_args_list
             )
+        )
+
+    def test_social_unblocked_baseline_rejects_invalid_or_unconverged_status(self) -> None:
+        for statuses in (
+            ({"blockedByViewer": "false", "revision": 1},),
+            ({"blockedByViewer": False, "revision": True},),
+            ({"blockedByViewer": False, "revision": -1},),
+            ({"blockedByViewer": False, "revision": 2**53},),
+            (
+                {"blockedByViewer": True, "revision": 4},
+                {"state": "UNBLOCKED"},
+                {"blockedByViewer": True, "revision": 5},
+            ),
+        ):
+            with self.subTest(statuses=statuses):
+                client = MagicMock(harness_namespace="moments")
+                client.harness.side_effect = statuses
+                with self.assertRaises(RuntimeOwnerBlocked) as raised:
+                    runtime_owner_module._ensure_social_actor_unblocked(
+                        client, actor_ptid="ptid:bob",
+                        home_station_peer_id="station-bob",
+                    )
+                self.assertEqual("FIXTURE_OWNER_UNAVAILABLE", raised.exception.code)
+                self.assertEqual("fixture:cross-station-social-block", raised.exception.resource)
+
+    def test_social_unblocked_baseline_does_not_mutate_ready_relationship(self) -> None:
+        client = MagicMock(harness_namespace="moments")
+        client.harness.return_value = {"blockedByViewer": False, "revision": 3}
+        runtime_owner_module._ensure_social_actor_unblocked(
+            client, actor_ptid="ptid:bob", home_station_peer_id="station-bob",
+        )
+        client.harness.assert_called_once_with(
+            "relationshipStatus", {"actorPtid": "ptid:bob"}, timeout=120,
+        )
+
+    def test_temporary_social_block_restores_before_logout_on_every_exit(self) -> None:
+        for failure_stage in (None, "block", "assertion"):
+            with self.subTest(failure_stage=failure_stage):
+                client = MagicMock(harness_namespace="moments")
+                state = {"blockedByViewer": False, "revision": 3}
+                events = []
+
+                def harness(action, payload, **_kwargs):
+                    events.append(action)
+                    if action == "relationshipStatus":
+                        return dict(state)
+                    if action == "blockActor":
+                        state.update(blockedByViewer=True, revision=4)
+                        if failure_stage == "block":
+                            raise RunnerError("lost block response")
+                        return {"state": "BLOCKED"}
+                    if action == "unblockActor":
+                        self.assertEqual(4, payload["observedRevision"])
+                        state.update(blockedByViewer=False, revision=5)
+                        return {"state": "UNBLOCKED"}
+                    if action == "clearLocalState":
+                        self.assertFalse(state["blockedByViewer"])
+                        return {}
+                    self.fail(f"unexpected action {action}")
+
+                client.harness.side_effect = harness
+
+                def run():
+                    with _runtime_cleanup_scope(ExitStack()) as cleanup:
+                        cleanup.callback(client.harness, "clearLocalState", {})
+                        with runtime_owner_module._temporary_social_actor_block(
+                            client, actor_ptid="ptid:bob",
+                            home_station_peer_id="station-bob",
+                        ):
+                            self.assertTrue(state["blockedByViewer"])
+                            if failure_stage == "assertion":
+                                raise RunnerError("receiver denial failed")
+
+                if failure_stage:
+                    with self.assertRaises(
+                        RuntimeOwnerBlocked if failure_stage == "block" else RunnerError,
+                    ):
+                        run()
+                else:
+                    run()
+                self.assertFalse(state["blockedByViewer"])
+                self.assertLess(events.index("unblockActor"), events.index("clearLocalState"))
+                self.assertEqual(1, events.count("unblockActor"))
+
+    def test_social_block_cleanup_failure_keeps_original_assertion_failure(self) -> None:
+        client = MagicMock(harness_namespace="moments")
+        client.harness.side_effect = (
+            {"blockedByViewer": False, "revision": 3},
+            {"state": "BLOCKED"},
+            {"blockedByViewer": True, "revision": 4},
+            RunnerError("unblock transport failed"),
+        )
+        with self.assertRaisesRegex(RunnerError, "receiver denial failed") as raised:
+            with runtime_owner_module._temporary_social_actor_block(
+                client, actor_ptid="ptid:bob", home_station_peer_id="station-bob",
+            ):
+                raise RunnerError("receiver denial failed")
+        self.assertIn(
+            "unblock transport failed",
+            _error_message_with_cleanup(raised.exception),
         )
 
     def test_social_suite_archives_owner_federation_when_join_fails(self) -> None:

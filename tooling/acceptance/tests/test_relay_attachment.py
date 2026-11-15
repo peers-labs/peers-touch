@@ -38,6 +38,7 @@ class RelayAttachmentTests(unittest.TestCase):
             self.assertEqual(current, self.owner.ensure_attachment(**self.arguments))
         self.assertEqual([], self.callbacks)
         request.assert_not_called()
+        self.owner.assert_attachments_retired()
 
     def test_preexisting_nonactive_or_foreign_origin_remains_untouched(self):
         for state, origin in (("recovering", "https://relay.invalid"),
@@ -115,7 +116,8 @@ class RelayAttachmentTests(unittest.TestCase):
             subprocess.CompletedProcess([], 0, "", ""),
         ]
         config = types.SimpleNamespace(environment_name="station-dev", transport=lambda: transport,
-                                       compose_project="station-dev", compose_service="station")
+                                       compose_project="station-dev", compose_service="station",
+                                       public_base_url="http://station.invalid")
         with patch.object(self.owner, "wait_runtime", return_value={"containerId": "original"}):
             with self.assertRaises(subprocess.TimeoutExpired) as caught:
                 self.owner.install_station_ca(config, b"certificate", run_id="run-1")
@@ -131,7 +133,8 @@ class RelayAttachmentTests(unittest.TestCase):
         transport = Mock()
         transport.run_argv.return_value = subprocess.CompletedProcess([], 0, "", "")
         config = types.SimpleNamespace(environment_name="station-dev", transport=lambda: transport,
-                                       compose_project="station-dev", compose_service="station")
+                                       compose_project="station-dev", compose_service="station",
+                                       public_base_url="http://station.invalid")
         events = []
 
         def ready(config):
@@ -148,6 +151,66 @@ class RelayAttachmentTests(unittest.TestCase):
         self.assertEqual([
             ("sh", "-ceu", owner_module._BOUND_CA_CLEANUP), "healthy-read",
         ], events)
+
+    def test_failed_retirement_preserves_trust_until_original_callback_confirms_absence(self):
+        transport = Mock()
+        transport.run_argv.return_value = subprocess.CompletedProcess([], 0, "", "")
+        config = types.SimpleNamespace(
+            environment_name="station-dev", public_base_url="http://station.invalid/",
+            transport=lambda: transport, compose_project="station-dev", compose_service="station",
+        )
+        active = {}
+        failure = RuntimeError("unknown import outcome")
+
+        def request(url, **arguments):
+            if url.endswith("/relay/invite"):
+                active.update(
+                    relay_peer_id="relay-peer", control_origin="https://relay.invalid",
+                    label=arguments["body"]["label"], state="active", enabled=True,
+                )
+                return 200, {"invitation": {
+                    **active, "intended_station_peer_id": "station-peer", "invite_token": "private",
+                }}
+            if arguments["method"] == "POST" and url.endswith("/attachments"):
+                raise failure
+            if arguments["method"] == "DELETE":
+                return 200, {"cleanup_pending": True}
+            if url.endswith("/retry"):
+                return 200, {}
+            self.fail("unexpected API request")
+
+        with patch.object(self.owner, "wait_runtime", return_value={"containerId": "original"}), patch.object(
+            self.owner, "dashboard_token", return_value="token",
+        ), patch.object(
+            self.owner, "attachment_items", side_effect=lambda *_: [active] if active else [],
+        ), patch.object(
+            owner_module, "read_service_runtime_identity", return_value="station-peer",
+        ), patch.object(
+            owner_module, "mint_posix_relay_operator_token", return_value="token",
+        ), patch.object(owner_module, "relay_json_request", side_effect=request) as api:
+            self.owner.install_station_ca(config, b"certificate", run_id="run-1")
+            with self.assertRaises(RuntimeError) as caught:
+                self.owner.ensure_attachment(**self.arguments)
+            self.assertIs(failure, caught.exception)
+            remove = self.callbacks[0][1]
+            detach = self.callbacks[2][1]
+            transport.reset_mock()
+            with patch.object(self.owner, "wait_attachment", side_effect=RuntimeError("retire timeout")):
+                with self.assertRaisesRegex(RuntimeError, "retire timeout"):
+                    detach()
+            self.assertEqual(["DELETE", "POST"], [
+                call.kwargs["method"] for call in api.call_args_list[-2:]
+            ])
+            with self.assertRaisesRegex(RuntimeError, "retirement is incomplete"):
+                remove()
+            transport.run_argv.assert_not_called()
+            # Trust cleanup on another Station is independent of this failure.
+            self.owner.assert_attachments_retired("http://other.invalid/")
+            active.clear()
+            detach()
+            self.owner.assert_attachments_retired()
+            remove()
+            self.assertEqual(owner_module._BOUND_CA_CLEANUP, transport.run_argv.call_args.args[0][2])
 
     def test_actual_cleanup_refuses_replacement_before_trust_mutation(self):
         script = r"""

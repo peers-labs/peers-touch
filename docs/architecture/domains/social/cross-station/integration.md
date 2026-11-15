@@ -223,12 +223,70 @@ live schema and Station identity, then inventories unchanged schema/reset/journa
 bytes with the explicit logical role-to-physical Profile mapping. Preparation
 epoch and Evidence Run ID are distinct identities and are bound independently.
 
+The private and public Native Suites both compose the declared shared Relay
+through `SocialRelayFixture`. Relay equipment precedes retained service/source
+leases; both Stations join through `RelayAttachmentFixture` after private schema
+verification. The parent inventories the attested Relay, both unchanged Station
+identities and active route generations before actor resolution or client launch.
+DHT locator publication alone does not establish this profile/content route.
+The private Suite does not acquire the public opaque-capture capability. New
+attachments, invitations and CA additions retain the original owner's cleanup;
+existing active operator attachments are reused without replacement.
+
 `PreparedSocialNativeRuntime` delegates binary, ports, Station discovery, storage
 and process ownership to the prepared Native binding. Authentication uses the
 original Foundation Harness; logout and stop use `NativeClientLifecycleLedger`.
 Alice and Bob launch once, Eve is fixture-only, and fresh-storage Bob2 replaces
 Bob. The Suite retains one preparation, three launches and at most two Native
 windows; no scenario rebuilds or redeploys.
+
+AS18 uses the original follow, Circle and Conversation owners to publish the
+`FOLLOWERS`, `CIRCLE`, `GROUP`, `CUSTOM_ALLOW` and `CUSTOM_DENY(FOLLOWERS)` matrix.
+Each resource is read through Alice's local author path and Bob's remote receiver
+path; Conversation membership is observed before publication. The Native
+unsupported-PUBLIC-base probe retains the existing prepare and local-durable-row
+rejection counters. These actions do not by themselves prove the separate
+cross-Federation, unresolved-recipient or per-slot deduplication obligations.
+
+AS21 admits the exact retained text draft through the existing Native `admit`
+owner while the receiver is online. The parent then stops that same receiver
+container. Two original publication attempts must report remote pending/retrying
+with the same committed Post ID. After fail-safe restoration, the original
+durable command must settle to that same Post before receiver readback and the
+existing renderer-reload checks. This is a real receiver outage around source
+commit, not a source process restart or a new preparation. A failed publication
+still restores the receiver and retains its original failure.
+
+The Suite-owned `social-private-delivery` capability installs a digest-bound
+probe once in each existing PostgreSQL container. AS21 observes one original
+outbox frame during both pending attempts, then the same delivered frame and
+one actual receiver resource row. The probe reads credentials and the existing
+Station key inside the container; it cannot create, rotate or export keys.
+
+AS24 sends the original duplicate plus signed late, expired, hash-conflicted,
+untrusted-source, wrong-Station and wrong-actor frames through the original
+Federation HTTP transport and `/federation/delivery`. Each exact typed result
+is compared with before/after hashes and counts of the addressed resource,
+envelope and tombstone rows. A late original delivery after the genuine AS22
+deletion must remain denied; valid target content is reacquired and observed
+on Bob2. These observations remain unproven until the source-bound Suite passes.
+
+AS23 restarts the receiver Station before replacing Bob. The prepared parent
+binds the existing `mobile.station-outage` capability to Bob's exact
+source-attested deployment; the shared handler retains Profile authorization,
+container identity, stop/start and fail-safe restoration. This does not allocate
+a Mobile runtime. The original producer requires unchanged source and container
+with different process IDs, then records both operations in AS23 evidence
+before the empty-device recovery and painted comment readback. A failed restart
+or restoration prevents Suite publication. AS21 outbox and AS24 frame
+observations use the same prepared parent and require its successful cleanup.
+
+Before friendship preparation, the original Suite Fixture owner verifies that
+Alice and Bob do not directionally block each other, restoring retained test
+blocks through the existing revision-bound Social command and reading back both
+projections. The poll-denial scenario restores its block before authenticated
+client cleanup on every exit. A failed restore prevents successful publication
+of the Suite result and preserves any primary scenario failure.
 
 `social-private-desktop-e2e` and `social-cross-station-desktop-functional` declare
 the producer dependency in the execution graph. Consumers require the original

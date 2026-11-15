@@ -144,6 +144,16 @@ one-shot mutations use their original operation deadline rather than inheriting
 the short read cap. No budget, cache, exception text or private title is added
 to manufacture a successful sample.
 
+A later real prelaunch request expired before its first focus-control read.
+The original shared frontmost PID helper initialized the full AppKit Python
+wrapper inside that startup budget. A controlled real-observer comparison
+reduced the initial sample from 0.493 to 0.283 seconds by loading the framework
+and resolving NSWorkspace directly through objc. The helper now uses that
+same system class and queries the application on every call. Regression
+checks reject a full wrapper import, observe changing PIDs and absent apps,
+and preserve native lookup failure. This removes measured startup overhead;
+it does not establish a unique historical cause or qualify a product Journey.
+
 The scoped observer starts a panel read observation after focus stabilizes:
 focus attribute reads narrow the shared AX session deadline, which must not
 leak into the separately bounded panel phase. Regression must use the actual

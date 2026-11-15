@@ -10,7 +10,7 @@ export { foundationCandidates, foundationCandidateVariables } from '@peers-touch
 export type { FoundationCandidate } from '@peers-touch/ui-tokens';
 export { expressionCandidate, expressionCandidateVariables } from '@peers-touch/ui-tokens';
 export { northStarTheme, northStarVariables } from '@peers-touch/ui-tokens';
-export { UIProvider, useUITokens } from './provider';
+export { UIProvider, useUITokens, useOverlayHost } from './provider';
 export { isEditableFocusTarget, restoreNavigationFocus, useInputFocusPolicy } from './focus';
 export type { InputFocusPolicy } from './focus';
 export type { UIProviderProps } from './provider';
