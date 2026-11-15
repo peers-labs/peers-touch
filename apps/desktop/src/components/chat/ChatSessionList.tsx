@@ -248,6 +248,10 @@ export function ChatSessionList({
     setSearchOpen(false);
     setSearchText('');
   };
+  const openSearch = () => {
+    if (compact) onExpandRail?.();
+    setSearchOpen(true);
+  };
   const clearChatUnread = useNavigationBadgeStore((state) => state.clearChatUnread);
   const stationNamesByPeerId = useMemo(() => Object.fromEntries(
     Object.values(actorStationEntries)
@@ -438,6 +442,27 @@ export function ChatSessionList({
       onActivate: () => setShowCreateGroup(true),
     },
   ];
+  const compactMenuItems: MenuAction[] = [
+    {
+      id: 'chat.rail-tab.chats',
+      iconId: 'message-circle',
+      label: t('chat.social.subNav.chats'),
+      onActivate: () => switchTab('chats'),
+    },
+    {
+      id: 'chat.rail-tab.contacts',
+      iconId: 'users',
+      label: t('chat.social.subNav.contacts'),
+      onActivate: () => switchTab('contacts'),
+    },
+    {
+      id: 'chat.rail-search',
+      iconId: 'search',
+      label: t('chat.social.sessionList.searchPlaceholder'),
+      onActivate: openSearch,
+    },
+    ...plusMenuItems,
+  ];
 
   const handleSelect = (c: DesktopIMConversationProjection) => {
     onConversationSelected();
@@ -533,7 +558,7 @@ export function ChatSessionList({
         data-rail-compact={compact ? 'true' : 'false'}
         data-rail-search={visibleSearch ? 'active' : 'idle'}
       >
-        {/* Rail header — one fixed 52px band. The search tile expands and
+        {/* Rail header — one fixed-height band. The search tile expands and
             TAKES OVER the band (prototype sk-rail-header parity): while open
             the segmented island and chrome tiles unmount, leaving the field
             plus one close tile on the same row so the list never jumps. */}
@@ -572,20 +597,22 @@ export function ChatSessionList({
                 onClick={closeSearch}
               />
             </>
+          ) : compact ? (
+            <Menu actions={compactMenuItems} placement="bottom"
+              label={t('chat.social.sessionList.newMenu')}>
+              <IconButton
+                actionId="chat.rail-current-tab"
+                data-rail-current-tab={tab}
+                iconId={tab === 'chats' ? 'message-circle' : 'users'}
+                iconSize={16}
+                label={t(tab === 'chats' ? 'chat.social.subNav.chats' : 'chat.social.subNav.contacts')}
+                density="compact"
+                emphasis="quiet"
+              />
+            </Menu>
           ) : (
             <>
-              {compact ? (
-                <div className="sc-rail-compact-tabs">
-                  <IconButton actionId="chat.rail-tab.chats" iconId="message-circle"
-                    label={t('chat.social.subNav.chats')} density="compact"
-                    emphasis={tab === 'chats' ? 'secondary' : 'quiet'}
-                    aria-pressed={tab === 'chats'} onActivate={() => switchTab('chats')} />
-                  <IconButton actionId="chat.rail-tab.contacts" iconId="users"
-                    label={t('chat.social.subNav.contacts')} density="compact"
-                    emphasis={tab === 'contacts' ? 'secondary' : 'quiet'}
-                    aria-pressed={tab === 'contacts'} onActivate={() => switchTab('contacts')} />
-                </div>
-              ) : <Segmented<ChatRailTab>
+              <Segmented<ChatRailTab>
                 className="sc-rail-subnav"
                 density="compact"
                 fullWidth
@@ -596,7 +623,7 @@ export function ChatSessionList({
                   { value: 'chats', label: t('chat.social.subNav.chats'), leading: <Icon iconId="message-circle" size={13} /> },
                   { value: 'contacts', label: t('chat.social.subNav.contacts'), leading: <Icon iconId="users" size={13} /> },
                 ]}
-              />}
+              />
               <IconButton
                 actionId="chat.rail-search"
                 className="sc-rail-icon"
@@ -607,7 +634,7 @@ export function ChatSessionList({
                 density="compact"
                 label={t('chat.social.sessionList.searchPlaceholder')}
                 aria-expanded={visibleSearch}
-                onClick={() => { if (compact) onExpandRail?.(); setSearchOpen(true); }}
+                onClick={openSearch}
               />
               <Menu actions={plusMenuItems} placement="bottom">
                 <IconButton

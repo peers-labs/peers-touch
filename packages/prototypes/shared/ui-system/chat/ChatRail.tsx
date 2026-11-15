@@ -267,9 +267,11 @@ function ContactSection({ sectionKey, label, collapsed, onToggle, compact, onExp
             : sectionKey === 'history' ? 'history' : sectionKey === 'incoming' ? 'user-plus' : 'undo-2'}
           label={label} onActivate={onExpand} />
       ) : <Button actionId={`contacts.section.${sectionKey}`} emphasis="quiet" density="compact"
-        fullWidth className="sk-section-toggle" label={label} aria-expanded={!collapsed}
+        fullWidth className="sk-section-toggle" title={label} aria-expanded={!collapsed}
         leading={<ChevronDown size={12} className="sk-section-chevron" aria-hidden />}
-        onActivate={onToggle} />}
+        onActivate={onToggle}>
+        <span className="sk-section-label">{label}</span>
+      </Button>}
       <div className="sk-section-body">{children}</div>
     </section>
   );
@@ -518,6 +520,7 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, people, onSel
   const visibleSearch = searchOpen && !compact;
   const [query, setQuery] = useState('');
   const closeSearch = () => { setSearchOpen(false); setQuery(''); };
+  const openSearch = () => { if (compact) onExpandRail(); setSearchOpen(true); };
 
   // The rail is always pinned-first, latest-first. Search is a local filter;
   // global finding/navigation belongs to the outer rail ⌘K overlay.
@@ -555,18 +558,24 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, people, onSel
               className="sk-rail-new" label={t('rail.cancelSearch')} emphasis="quiet"
               onActivate={closeSearch} />
           </>
+        ) : compact ? (
+          <Menu placement="bottom" label={t('rail.new')} actions={[
+            { id: 'sk.rail-tab.chats', label: t('tab.chats'), leading: <MessageCircle size={14} />,
+              onActivate: () => onTabChange('chats') },
+            { id: 'sk.rail-tab.contacts', label: t('tab.contacts'), leading: <Users size={14} />,
+              onActivate: () => onTabChange('contacts') },
+            { id: 'sk.rail-search', label: t('rail.search'), leading: <Search size={14} />,
+              onActivate: openSearch },
+            { id: 'sk.new-person', label: t('rail.new.person'), leading: <UserPlus size={14} />, onActivate: onFindPeople },
+            { id: 'sk.new-group', label: t('rail.new.group'), leading: <Users size={14} />, onActivate: onCreateGroup },
+          ]}>
+            <IconButton actionId="sk.rail-current-tab" data-rail-current-tab={tab}
+              iconId={tab === 'chats' ? 'message-circle' : 'users'} iconSize={16} density="compact"
+              label={t(tab === 'chats' ? 'tab.chats' : 'tab.contacts')} emphasis="quiet" />
+          </Menu>
         ) : (
           <>
-            {compact ? (
-              <div className="sk-rail-compact-tabs">
-                <IconButton actionId="sk.rail-tab.chats" iconId="message-circle" density="compact"
-                  label={t('tab.chats')} emphasis={tab === 'chats' ? 'secondary' : 'quiet'}
-                  aria-pressed={tab === 'chats'} onActivate={() => onTabChange('chats')} />
-                <IconButton actionId="sk.rail-tab.contacts" iconId="users" density="compact"
-                  label={t('tab.contacts')} emphasis={tab === 'contacts' ? 'secondary' : 'quiet'}
-                  aria-pressed={tab === 'contacts'} onActivate={() => onTabChange('contacts')} />
-              </div>
-            ) : <div className="sk-rail-tabs">
+            <div className="sk-rail-tabs">
               <Segmented<'chats' | 'contacts'> className="sk-chat-subnav" aria-label="chat-subnav"
                 density="compact" fullWidth
                 options={[
@@ -574,11 +583,11 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, people, onSel
                   { value: 'contacts', label: <span className="sk-subnav-label"><Users size={13} />{t('tab.contacts')}</span> },
                 ]}
                 value={tab} onValueChange={value => onTabChange(value ?? 'chats')} />
-            </div>}
+            </div>
 
             <IconButton actionId="sk.rail-search" iconId="search" iconSize={15} density="compact"
               className="sk-rail-new" label={t('rail.search')} emphasis="quiet"
-              onActivate={() => { if (compact) onExpandRail(); setSearchOpen(true); }} />
+              onActivate={openSearch} />
             <Menu placement="bottom" actions={[
               { id: 'sk.new-person', label: t('rail.new.person'), leading: <UserPlus size={14} />, onActivate: onFindPeople },
               { id: 'sk.new-group', label: t('rail.new.group'), leading: <Users size={14} />, onActivate: onCreateGroup },

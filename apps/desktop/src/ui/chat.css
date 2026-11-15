@@ -160,17 +160,13 @@
   border-right: 0;
 }
 
-/* Avatar-only catalog: two icon tabs, then search/new; no text competes
-   with the 40px avatars. The narrow single-pane view never enables this. */
+/* Avatar-only catalog: one current-tab menu in the same header band.
+   Tab switching/search/new live in its menu, leaving the avatars room.
+   The narrow single-pane view never enables this. */
 .sc-sessions[data-rail-compact='true'] .sc-rail-header {
-  display: grid;
-  grid-template-columns: 28px 28px;
   justify-content: center;
-  gap: 4px;
-  height: 72px;
   padding: 6px 2px;
 }
-.sc-rail-compact-tabs { grid-column: 1 / -1; display: flex; gap: 4px; }
 .sc-sessions[data-rail-compact='true'] .sc-rail-title,
 .sc-sessions[data-rail-compact='true'] .sc-session-row__body,
 .sc-sessions[data-rail-compact='true'] .sc-session-row__actions { display: none; }
@@ -3044,6 +3040,17 @@ body[data-chat-rail-resizing='true'] {
 .sc-contact-row .sc-identity-row__metadata span {
   font-size: 11.5px;
   color: var(--pt-muted);
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sc-contact-section__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .sc-contact-row__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .sc-contacts[data-contact-compact='true'] .sc-contacts__scroll { padding: 8px 2px; }

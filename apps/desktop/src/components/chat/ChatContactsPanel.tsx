@@ -661,7 +661,7 @@ export function ChatContactsPanel({
         density="compact"
         fullWidth
         aria-expanded={!collapsed.includes(key)}
-        label={label}
+        title={label}
         leading={(
           <Icon
             iconId="chevron-down"
@@ -670,7 +670,9 @@ export function ChatContactsPanel({
           />
         )}
         onActivate={() => toggleSection(key)}
-      />}
+      >
+        <span className="sc-contact-section__label">{label}</span>
+      </Button>}
       <div className="sc-contact-section__body">{children}</div>
     </section>
   );

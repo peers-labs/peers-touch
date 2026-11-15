@@ -40,10 +40,8 @@
 @media (min-width: 721px) {
   .sk-conv-rail[data-rail-compact='true'] { padding: 0 2px 8px; }
   .sk-conv-rail[data-rail-compact='true'] .sk-rail-header {
-    display: grid; grid-template-columns: 28px 28px; gap: 4px;
-    justify-content: center; height: 72px; padding: 6px 0;
+    justify-content: center; padding: 12px 0 4px;
   }
-  .sk-rail-compact-tabs { grid-column: 1 / -1; display: flex; gap: 4px; }
   .sk-conv-rail[data-rail-compact='true'] .sk-conv-title,
   .sk-conv-rail[data-rail-compact='true'] .sk-conv-meta,
   .sk-conv-rail[data-rail-compact='true'] .sk-conv-actions,
@@ -68,6 +66,7 @@
    conversation title. */
 .sk-rail-header {
   display: flex; align-items: center; gap: 8px;
+  flex-shrink: 0;
   height: 52px; box-sizing: border-box; padding: 12px 2px 4px;
 }
 .sk-rail-tabs { flex: 1 1 auto; min-width: 0; }
@@ -196,6 +195,7 @@
 .sk-contact-self .sk-conv-row { border-radius: var(--sk-radius-control); }
 
 .sk-contact-section { display: flex; flex-direction: column; }
+.sk-section-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sk-section-toggle.pt-button {
   margin: 6px 2px 2px; justify-content: flex-start;
   color: var(--sk-text-2);
