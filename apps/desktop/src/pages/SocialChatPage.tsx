@@ -5,6 +5,7 @@ import { ChatMessageArea } from '../components/chat/ChatMessageArea';
 import { ChatRailResizer } from '../components/chat/ChatRailResizer';
 import {
   CHAT_RAIL_DEFAULT_WIDTH,
+  CHAT_RAIL_COMPACT_WIDTH,
   clampChatRailWidth,
   persistChatRailWidth,
   readStoredChatRailWidth,
@@ -150,6 +151,7 @@ export function SocialChatPage() {
       persistChatRailWidth(CHAT_RAIL_DEFAULT_WIDTH, window.localStorage),
     );
   }, []);
+  const compactRail = !isNarrow && railWidth < CHAT_RAIL_COMPACT_WIDTH;
 
   const openDirectConversation = useCallback((contact: FriendContactSelection) => {
     const requestGeneration = ++directOpenGenerationRef.current;
@@ -304,6 +306,8 @@ export function SocialChatPage() {
           ChatSessionList; contacts render in the same rail and open
           conversations directly. */}
       <ChatSessionList
+        compact={compactRail}
+        onExpandRail={resetRailWidth}
         onConversationSelected={cancelDirectOpenIntent}
         onOpenDirect={openDirectConversation}
         tab={subPage}
@@ -314,6 +318,8 @@ export function SocialChatPage() {
         renderContacts={(query) => (contactsMounted || subPage === 'contacts') ? (
           <ChatContactsPanel
             embedded
+            compact={compactRail}
+            onExpandRail={resetRailWidth}
             query={query}
             selectedContact={selectedContact}
             onSelectContact={(contact) => {

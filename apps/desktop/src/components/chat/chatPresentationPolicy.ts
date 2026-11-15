@@ -64,10 +64,8 @@ const DESKTOP_CHAT_LAYOUT_MAIN: DesktopChatVisualLayout = {
   mediaBubblePadding: '0',
   hoverActionBridgeHeight: 18,
   hoverActionBridgeInsetX: 180,
-  // The composer zone shares the message stream's horizontal column inset so
-  // the shell edges line up with the bubbles. WeChat keeps this tight (~12px);
-  // vertical insets stay slim (4px top, 10px bottom) so the shell hugs content.
-  composerOuterPadding: '4px 12px 10px',
+  // The dock hugs the parent pane; writing padding belongs inside the shell.
+  composerOuterPadding: `${geometry.composer.outerInset}px`,
   // A restrained writing dock; the shared token also owns prototype geometry.
   composerShellRadius: geometry.composer.radius,
   composerShellShadow: 'none',

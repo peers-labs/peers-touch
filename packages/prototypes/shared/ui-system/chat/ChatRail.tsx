@@ -84,6 +84,8 @@ function SessionRows({ sessions, selectedId, onSelect, onTogglePin, onToggleMute
               setOpenMenu({ id: c.id, point: { x: event.clientX, y: event.clientY } });
             }}>
             <button type="button"
+              aria-label={c.selfDirect ? t('contacts.savedMessages') : c.name}
+              title={c.selfDirect ? t('contacts.savedMessages') : c.name}
               className={`sk-conv-row${selectedId === c.id ? ' is-selected' : ''}${c.pinned ? ' is-pinned-row' : ''}`}
               aria-current={selectedId === c.id ? 'true' : undefined}
               onClick={() => onSelect(c.id)}>
@@ -246,26 +248,34 @@ function RequestCard({ request, failed, onAccept, onReject, onCancel, onDeleteRe
   );
 }
 
-function ContactSection({ sectionKey, label, collapsed, onToggle, children }: {
+function ContactSection({ sectionKey, label, collapsed, onToggle, compact, onExpand, children }: {
   sectionKey: ContactSectionKey;
   label: string;
   collapsed: boolean;
   onToggle: () => void;
+  compact: boolean;
+  onExpand: () => void;
   children: ReactNode;
 }) {
   return (
     <section className="sk-contact-section" data-contact-section={sectionKey}
       data-collapsed={collapsed ? 'true' : 'false'}>
-      <Button actionId={`contacts.section.${sectionKey}`} emphasis="quiet" density="compact"
+      {compact ? (
+        <IconButton actionId={`contacts.section.${sectionKey}`} emphasis="quiet" density="compact"
+          className="sk-section-compact"
+          iconId={sectionKey === 'groups' ? 'users-round' : sectionKey === 'friends' ? 'users'
+            : sectionKey === 'history' ? 'history' : sectionKey === 'incoming' ? 'user-plus' : 'undo-2'}
+          label={label} onActivate={onExpand} />
+      ) : <Button actionId={`contacts.section.${sectionKey}`} emphasis="quiet" density="compact"
         fullWidth className="sk-section-toggle" label={label} aria-expanded={!collapsed}
         leading={<ChevronDown size={12} className="sk-section-chevron" aria-hidden />}
-        onActivate={onToggle} />
+        onActivate={onToggle} />}
       <div className="sk-section-body">{children}</div>
     </section>
   );
 }
 
-export function ContactsPane({ requests, friends, groups, selectedContactId, failedIds, query,
+export function ContactsPane({ requests, friends, groups, selectedContactId, failedIds, query, compact, onExpandRail,
   onAccept, onReject, onCancelRequest, onDeleteRecord, onRemoveContact, onSelectContact, onOpenGroup,
   onOpenSelf, selfSelectedId }: {
   requests: FriendRequest[];
@@ -274,6 +284,8 @@ export function ContactsPane({ requests, friends, groups, selectedContactId, fai
   selectedContactId: string | null;
   failedIds: Set<string>;
   query: string;
+  compact: boolean;
+  onExpandRail: () => void;
   onAccept: (id: string) => void;
   onReject: (id: string) => void;
   onCancelRequest: (id: string) => void;
@@ -291,6 +303,10 @@ export function ContactsPane({ requests, friends, groups, selectedContactId, fai
   const [removeTarget, setRemoveTarget] = useState<Person | null>(null);
   const toggle = (key: ContactSectionKey) =>
     setCollapsed(prev => ({ ...prev, [key]: !prev[key] }));
+  const expand = (key: ContactSectionKey) => {
+    onExpandRail();
+    setCollapsed(prev => ({ ...prev, [key]: false }));
+  };
 
   const incoming = requests.filter(request => request.state === 'pending' && request.direction !== 'out');
   const outgoing = requests.filter(request => request.state === 'pending' && request.direction === 'out');
@@ -309,6 +325,7 @@ export function ContactsPane({ requests, friends, groups, selectedContactId, fai
   const renderGroup = (group: Conversation) => (
     <li key={group.id} className="sk-conv-item sk-contact-group" data-contact-group-id={group.id}>
       <Button actionId={`contact.open-group.${group.id}`} emphasis="quiet" density="normal"
+        aria-label={group.name} title={group.name}
         className={`sk-conv-row${selectedContactId === group.id ? ' is-selected' : ''}`}
         onActivate={() => onOpenGroup(group.id)}>
         <GroupAvatarComposite members={(group.members ?? []).map(m => ({ name: m.name, tone: m.tone }))}
@@ -331,6 +348,7 @@ export function ContactsPane({ requests, friends, groups, selectedContactId, fai
   const renderFriend = (person: Person) => (
     <li key={person.id} className="sk-conv-item sk-contact-friend" data-contact-id={person.id}>
       <button type="button"
+        aria-label={person.name} title={person.name}
         className={`sk-conv-row${selectedContactId === person.id ? ' is-selected' : ''}`}
         onClick={() => onSelectContact(person)}>
         <Avatar name={person.name} background={person.tone} size={38}
@@ -364,6 +382,7 @@ export function ContactsPane({ requests, friends, groups, selectedContactId, fai
     <ul className="sk-conv-list sk-contact-self" data-self-direct-entry>
       <li className="sk-conv-item">
         <Button actionId="contact.open-self" emphasis="quiet" density="normal"
+          aria-label={t('contacts.savedMessages')} title={t('contacts.savedMessages')}
           className={`sk-conv-row${selfSelectedId ? ' is-selected' : ''}`}
           onActivate={onOpenSelf}>
           <Avatar name={VIEWER_NAME} background={VIEWER_TONE} size={38}
@@ -397,6 +416,7 @@ export function ContactsPane({ requests, friends, groups, selectedContactId, fai
         <>
           {incoming.length > 0 && (
             <ContactSection sectionKey="incoming"
+              compact={compact} onExpand={() => expand('incoming')}
               label={t('contacts.incoming', { n: incoming.length })}
               collapsed={collapsed.incoming} onToggle={() => toggle('incoming')}>
               {incoming.map(renderCard)}
@@ -404,6 +424,7 @@ export function ContactsPane({ requests, friends, groups, selectedContactId, fai
           )}
           {outgoing.length > 0 && (
             <ContactSection sectionKey="outgoing"
+              compact={compact} onExpand={() => expand('outgoing')}
               label={t('contacts.outgoing', { n: outgoing.length })}
               collapsed={collapsed.outgoing} onToggle={() => toggle('outgoing')}>
               {outgoing.map(renderCard)}
@@ -411,24 +432,27 @@ export function ContactsPane({ requests, friends, groups, selectedContactId, fai
           )}
           {history.length > 0 && (
             <ContactSection sectionKey="history"
+              compact={compact} onExpand={() => expand('history')}
               label={t('contacts.history', { n: history.length })}
               collapsed={collapsed.history} onToggle={() => toggle('history')}>
               {history.map(renderCard)}
             </ContactSection>
           )}
           <ContactSection sectionKey="groups"
+            compact={compact} onExpand={() => expand('groups')}
             label={t('contacts.savedGroups', { n: groups.length })}
             collapsed={collapsed.groups} onToggle={() => toggle('groups')}>
             {groups.length > 0
               ? <ul className="sk-conv-list">{groups.map(renderGroup)}</ul>
-              : <Empty description={t('contacts.noGroups')} />}
+              : <Empty className="sk-contact-empty" description={t('contacts.noGroups')} />}
           </ContactSection>
           <ContactSection sectionKey="friends"
+            compact={compact} onExpand={() => expand('friends')}
             label={t('contacts.friends', { n: friends.length })}
             collapsed={collapsed.friends} onToggle={() => toggle('friends')}>
             {friends.length > 0
               ? <ul className="sk-conv-list">{friends.map(renderFriend)}</ul>
-              : <Empty description={t('contacts.emptyFriends')} />}
+              : <Empty className="sk-contact-empty" description={t('contacts.emptyFriends')} />}
           </ContactSection>
         </>
       )}
@@ -453,13 +477,15 @@ export function ContactsPane({ requests, friends, groups, selectedContactId, fai
 
 /* ── Rail shell ────────────────────────────────────────── */
 
-export function ChatRail({ tab, onTabChange, sessions, selectedId, people, onSelect, onTogglePin, onToggleMute,
+export function ChatRail({ tab, onTabChange, sessions, selectedId, people, onSelect, onTogglePin, onToggleMute, compact, onExpandRail,
   onMarkRead, onHide, onDelete,
   requests, friends, groups, selectedContactId, failedRequestIds, onAccept, onReject, onCancelRequest,
   onDeleteRequestRecord, onRemoveContact, onSelectContact, onOpenGroup,
   onFindPeople, onCreateGroup, onOpenSelf }: {
   tab: 'chats' | 'contacts';
   onTabChange: (tab: 'chats' | 'contacts') => void;
+  compact: boolean;
+  onExpandRail: () => void;
   sessions: Conversation[];
   selectedId: string | null;
   /** Known-people pool (contacts + recent chats) for search-as-create. */
@@ -489,6 +515,7 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, people, onSel
 }) {
   const { t } = useT();
   const [searchOpen, setSearchOpen] = useState(false);
+  const visibleSearch = searchOpen && !compact;
   const [query, setQuery] = useState('');
   const closeSearch = () => { setSearchOpen(false); setQuery(''); };
 
@@ -512,9 +539,10 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, people, onSel
     : [];
 
   return (
-    <aside className="sk-conv-rail" aria-label={t('rail.aria')}>
-      <header className="sk-rail-header" data-rail-search={searchOpen ? 'active' : 'idle'}>
-        {searchOpen ? (
+    <aside className="sk-conv-rail" aria-label={t('rail.aria')}
+      data-rail-compact={compact ? 'true' : 'false'}>
+      <header className="sk-rail-header" data-rail-search={visibleSearch ? 'active' : 'idle'}>
+        {visibleSearch ? (
           <>
             <span className="sk-rail-search">
               <TextField density="compact" leading={<Search size={14} />} clearable
@@ -529,7 +557,16 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, people, onSel
           </>
         ) : (
           <>
-            <div className="sk-rail-tabs">
+            {compact ? (
+              <div className="sk-rail-compact-tabs">
+                <IconButton actionId="sk.rail-tab.chats" iconId="message-circle" density="compact"
+                  label={t('tab.chats')} emphasis={tab === 'chats' ? 'secondary' : 'quiet'}
+                  aria-pressed={tab === 'chats'} onActivate={() => onTabChange('chats')} />
+                <IconButton actionId="sk.rail-tab.contacts" iconId="users" density="compact"
+                  label={t('tab.contacts')} emphasis={tab === 'contacts' ? 'secondary' : 'quiet'}
+                  aria-pressed={tab === 'contacts'} onActivate={() => onTabChange('contacts')} />
+              </div>
+            ) : <div className="sk-rail-tabs">
               <Segmented<'chats' | 'contacts'> className="sk-chat-subnav" aria-label="chat-subnav"
                 density="compact" fullWidth
                 options={[
@@ -537,11 +574,11 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, people, onSel
                   { value: 'contacts', label: <span className="sk-subnav-label"><Users size={13} />{t('tab.contacts')}</span> },
                 ]}
                 value={tab} onValueChange={value => onTabChange(value ?? 'chats')} />
-            </div>
+            </div>}
 
             <IconButton actionId="sk.rail-search" iconId="search" iconSize={15} density="compact"
               className="sk-rail-new" label={t('rail.search')} emphasis="quiet"
-              onActivate={() => setSearchOpen(true)} />
+              onActivate={() => { if (compact) onExpandRail(); setSearchOpen(true); }} />
             <Menu placement="bottom" actions={[
               { id: 'sk.new-person', label: t('rail.new.person'), leading: <UserPlus size={14} />, onActivate: onFindPeople },
               { id: 'sk.new-group', label: t('rail.new.group'), leading: <Users size={14} />, onActivate: onCreateGroup },
@@ -589,6 +626,7 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, people, onSel
         </>
       ) : (
         <ContactsPane requests={requests} friends={friends} groups={groups} selectedContactId={selectedContactId}
+          compact={compact} onExpandRail={onExpandRail}
           failedIds={failedRequestIds} query={query}
           onAccept={onAccept} onReject={onReject} onCancelRequest={onCancelRequest}
           onDeleteRecord={onDeleteRequestRecord} onRemoveContact={onRemoveContact}

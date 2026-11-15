@@ -44,9 +44,11 @@ function reportDirectOpenDebug(detail: Record<string, unknown>): void {
 
 function ConversationListError({
   compact = false,
+  avatarOnly = false,
   onRetry,
 }: {
   compact?: boolean;
+  avatarOnly?: boolean;
   onRetry: () => Promise<void>;
 }) {
   const { t } = useTranslation(['chat', 'common']);
@@ -62,6 +64,20 @@ function ConversationListError({
     }
   };
 
+  if (avatarOnly) {
+    return (
+      <IconButton
+        actionId="chat.session-list.retry"
+        data-chat-session-list-retry
+        iconId="warning"
+        density="compact"
+        emphasis="quiet"
+        execution={retrying ? 'pending' : 'idle'}
+        label={`${t('chat.social.sessionList.loadFailed')} · ${t('common.action.retry', { ns: 'common' })}`}
+        onActivate={handleRetry}
+      />
+    );
+  }
   return (
     <div
       className={`sc-list-error${compact ? '' : ' sc-list-error--block'}`}
@@ -134,6 +150,8 @@ function conversationWithActorIdentity(
 export type ChatRailTab = 'chats' | 'contacts';
 
 interface ChatSessionListProps {
+  compact?: boolean;
+  onExpandRail?: () => void;
   onConversationSelected: () => void;
   onOpenDirect: (contact: FriendContactSelection) => void;
   /** Active rail tab (消息 / 联系人). Contacts renders the renderContacts slot. */
@@ -144,6 +162,8 @@ interface ChatSessionListProps {
 }
 
 export function ChatSessionList({
+  compact = false,
+  onExpandRail,
   onConversationSelected,
   onOpenDirect,
   tab,
@@ -213,6 +233,7 @@ export function ChatSessionList({
   // Inline rail search stays collapsed until the magnifier is tapped
   // (prototype sk-rail-search parity).
   const [searchOpen, setSearchOpen] = useState(false);
+  const visibleSearch = searchOpen && !compact;
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [showFindPeople, setShowFindPeople] = useState(false);
 
@@ -509,7 +530,8 @@ export function ChatSessionList({
         className="sc-sessions"
         data-chat-conversation-pane
         data-rail-tab={tab}
-        data-rail-search={searchOpen ? 'active' : 'idle'}
+        data-rail-compact={compact ? 'true' : 'false'}
+        data-rail-search={visibleSearch ? 'active' : 'idle'}
       >
         {/* Rail header — one fixed 52px band. The search tile expands and
             TAKES OVER the band (prototype sk-rail-header parity): while open
@@ -517,9 +539,9 @@ export function ChatSessionList({
             plus one close tile on the same row so the list never jumps. */}
         <WindowDragRegion><div
           className="sc-rail-header"
-          data-rail-search={searchOpen ? 'active' : 'idle'}
+          data-rail-search={visibleSearch ? 'active' : 'idle'}
         >
-          {searchOpen ? (
+          {visibleSearch ? (
             <>
               <WindowDragRegion mode="none"><span className="sc-rail-search">
                 <TextField
@@ -552,7 +574,18 @@ export function ChatSessionList({
             </>
           ) : (
             <>
-              <Segmented<ChatRailTab>
+              {compact ? (
+                <div className="sc-rail-compact-tabs">
+                  <IconButton actionId="chat.rail-tab.chats" iconId="message-circle"
+                    label={t('chat.social.subNav.chats')} density="compact"
+                    emphasis={tab === 'chats' ? 'secondary' : 'quiet'}
+                    aria-pressed={tab === 'chats'} onActivate={() => switchTab('chats')} />
+                  <IconButton actionId="chat.rail-tab.contacts" iconId="users"
+                    label={t('chat.social.subNav.contacts')} density="compact"
+                    emphasis={tab === 'contacts' ? 'secondary' : 'quiet'}
+                    aria-pressed={tab === 'contacts'} onActivate={() => switchTab('contacts')} />
+                </div>
+              ) : <Segmented<ChatRailTab>
                 className="sc-rail-subnav"
                 density="compact"
                 fullWidth
@@ -563,7 +596,7 @@ export function ChatSessionList({
                   { value: 'chats', label: t('chat.social.subNav.chats'), leading: <Icon iconId="message-circle" size={13} /> },
                   { value: 'contacts', label: t('chat.social.subNav.contacts'), leading: <Icon iconId="users" size={13} /> },
                 ]}
-              />
+              />}
               <IconButton
                 actionId="chat.rail-search"
                 className="sc-rail-icon"
@@ -573,8 +606,8 @@ export function ChatSessionList({
                 emphasis="quiet"
                 density="compact"
                 label={t('chat.social.sessionList.searchPlaceholder')}
-                aria-expanded={searchOpen}
-                onClick={() => setSearchOpen(true)}
+                aria-expanded={visibleSearch}
+                onClick={() => { if (compact) onExpandRail?.(); setSearchOpen(true); }}
               />
               <Menu actions={plusMenuItems} placement="bottom">
                 <IconButton
@@ -598,7 +631,7 @@ export function ChatSessionList({
           <>
 
         {loadError && visibleConversations.length > 0 && (
-          <ConversationListError compact onRetry={handleRetry} />
+          <ConversationListError compact avatarOnly={compact} onRetry={handleRetry} />
         )}
 
         {/* The Recent label stays mounted while searching (prototype
@@ -608,7 +641,7 @@ export function ChatSessionList({
 
         <div className="sc-sessions__scroll">
           {loadError && visibleConversations.length === 0 ? (
-            <ConversationListError onRetry={handleRetry} />
+            <ConversationListError avatarOnly={compact} onRetry={handleRetry} />
           ) : visibleConversations.length === 0 ? (
             <div className="sc-sessions__empty">
               <Empty description={t('chat.social.sessionList.noConversations')} />
@@ -697,6 +730,11 @@ export function ChatSessionList({
                   }}
                 >
                   <div
+                    role="button"
+                    tabIndex={0}
+                    aria-label={name}
+                    aria-current={isActive ? 'true' : undefined}
+                    title={compact ? name : undefined}
                     className={`sc-session-row${isActive ? ' is-active' : ''}${localState?.sticky ? ' is-pinned-row' : ''}`}
                     data-pt-conversation-item={c.id}
                     data-chat-conversation-kind={c.kind}
@@ -717,6 +755,13 @@ export function ChatSessionList({
                       });
                     }}
                     onClick={() => handleSelect(c)}
+                    onKeyDown={(event) => {
+                      if (event.target !== event.currentTarget) return;
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        handleSelect(c);
+                      }
+                    }}
                     style={{ height: CHAT_SESSION_ROW_HEIGHT, minHeight: CHAT_SESSION_ROW_HEIGHT }}
                   >
                     <OverlayCommitProfiler owner={contextMenuTarget} surface="chat-conversation-context-menu">
@@ -845,7 +890,7 @@ export function ChatSessionList({
         </div>
 
         <ChatSearchDropdown
-          searchText={searchText}
+          searchText={compact ? '' : searchText}
           results={searchResults}
           onSelect={handleSearchSelect}
           onDismiss={() => setSearchText('')}

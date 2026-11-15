@@ -4,13 +4,16 @@
 // `--pt-chat-rail-width`); this module only owns the numeric clamp and the
 // localStorage round-trip so both stay unit-testable without a DOM.
 
-export const CHAT_RAIL_DEFAULT_WIDTH = 300;
-export const CHAT_RAIL_MIN_WIDTH = 240;
-export const CHAT_RAIL_MAX_WIDTH = 420;
+import { geometry } from '@peers-touch/ui';
+
+export const CHAT_RAIL_DEFAULT_WIDTH = geometry.chatRail.defaultWidth;
+export const CHAT_RAIL_MIN_WIDTH = geometry.chatRail.minWidth;
+export const CHAT_RAIL_MAX_WIDTH = geometry.chatRail.maxWidth;
+export const CHAT_RAIL_COMPACT_WIDTH = geometry.chatRail.compactWidth;
 export const CHAT_RAIL_WIDTH_STORAGE_KEY = 'peers.chat.railWidth';
 
 /** Keyboard drag step (ArrowLeft / ArrowRight), in px. */
-export const CHAT_RAIL_KEYBOARD_STEP = 16;
+export const CHAT_RAIL_KEYBOARD_STEP = geometry.chatRail.keyboardStep;
 
 /** Clamp an arbitrary input into the supported rail width band. */
 export function clampChatRailWidth(width: number): number {

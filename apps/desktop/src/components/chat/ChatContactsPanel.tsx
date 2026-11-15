@@ -54,6 +54,8 @@ const SECTION_COLLAPSED_DEFAULT: Record<ContactSectionKey, boolean> = {
 };
 
 interface ChatContactsPanelProps {
+  compact?: boolean;
+  onExpandRail?: () => void;
   selectedContact: ContactSelection | null;
   onSelectContact: (selection: ContactSelection) => void;
   onStartChat?: (selection: ContactSelection) => void;
@@ -69,6 +71,8 @@ export function ChatContactsPanel({
   onSelectContact,
   onStartChat,
   embedded = false,
+  compact = false,
+  onExpandRail,
   query = '',
 }: ChatContactsPanelProps) {
   const { t } = useTranslation('chat');
@@ -514,6 +518,8 @@ export function ChatContactsPanel({
       fullWidth
       className={`sc-contact-row${selfSelected ? ' is-selected' : ''}`}
       data-chat-contact-self
+      aria-label={t('chat.social.contacts.savedMessages')}
+      title={compact ? t('chat.social.contacts.savedMessages') : undefined}
       onActivate={openSelfConversation}
     >
       <UserSquareAvatar
@@ -541,6 +547,8 @@ export function ChatContactsPanel({
         fullWidth
         className={`sc-contact-row${isSelected ? ' is-selected' : ''}`}
         data-chat-contact-ptid={conversation.peerPtid}
+        aria-label={displayName}
+        title={compact ? displayName : undefined}
         onActivate={() => {
           const groupSelection = {
             kind: 'group' as const,
@@ -593,6 +601,8 @@ export function ChatContactsPanel({
       <button
         key={friend.actorPtid}
         type="button"
+        aria-label={friend.displayName}
+        title={compact ? friend.displayName : undefined}
         className={`sc-contact-row${isSelected ? ' is-selected' : ''}`}
         data-chat-contact-ptid={friend.actorPtid}
         data-chat-contact-conversation-id={friend.conversationId ?? ''}
@@ -630,7 +640,21 @@ export function ChatContactsPanel({
       data-contact-section={key}
       data-collapsed={collapsed.includes(key) ? 'true' : 'false'}
     >
-      <Button
+      {compact ? (
+        <IconButton
+          actionId={`contacts.section.${key}`}
+          className="sc-contact-section__compact"
+          density="compact"
+          emphasis="quiet"
+          iconId={key === 'groups' ? 'users-round' : key === 'friends' ? 'users'
+            : key === 'history' ? 'history' : key === 'incoming' ? 'user-plus' : 'undo-2'}
+          label={label}
+          onActivate={() => {
+            onExpandRail?.();
+            setCollapsed((current) => current.filter((sectionKey) => sectionKey !== key));
+          }}
+        />
+      ) : <Button
         actionId={`contacts.section.${key}`}
         className="sc-contact-section__toggle"
         emphasis="quiet"
@@ -646,7 +670,7 @@ export function ChatContactsPanel({
           />
         )}
         onActivate={() => toggleSection(key)}
-      />
+      />}
       <div className="sc-contact-section__body">{children}</div>
     </section>
   );
@@ -689,6 +713,7 @@ export function ChatContactsPanel({
     <div
       className="sc-contacts"
       data-chat-contacts
+      data-contact-compact={compact ? 'true' : 'false'}
       data-chat-friendship-state={
         friendRequestsError ? 'error' : friendshipReady ? 'ready' : 'loading'
       }
@@ -698,7 +723,11 @@ export function ChatContactsPanel({
         : { width: PANEL_WIDTH, minWidth: PANEL_WIDTH }}
     >
       <div className="sc-contacts__scroll">
-        {friendRequestsError ? (
+        {friendRequestsError && compact ? (
+          <IconButton actionId="contacts.expand-error" iconId="warning" density="compact"
+            label={t('chat.social.findPeople.friendshipUnavailable')}
+            emphasis="quiet" onActivate={onExpandRail} />
+        ) : friendRequestsError ? (
           <PtAlert
             className="sc-contacts__alert"
             tone="danger"

@@ -349,12 +349,12 @@
   /* No top padding: the header itself owns the 8px frame inset + 44px title
      row (one 52px band), so a full-bleed wallpaper layer behind the column
      is fully covered above its hairline without a magic top offset. */
-  padding: 0 22px 12px; gap: 12px;
+  padding: 0; gap: 0;
 }
 /* Vertical-only scroll host: horizontal overflow is hidden so a long token
    or an absolutely-positioned hover bar can never grow a horizontal
    scrollbar (or get clipped by the frame) — content wraps instead. */
-.sk-msg-stream { flex: 1; min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding-right: 4px; }
+.sk-msg-stream { flex: 1; min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 12px 26px 12px 22px; }
 /* Avatar top-aligns with the bubble (desktop ChatArea parity): the avatar
    and the content column share flex-start, so in 1:1 chats avatar and bubble
    begin on the same line; in groups the avatar aligns with the sender name.

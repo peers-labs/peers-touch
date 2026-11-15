@@ -1,8 +1,6 @@
 // Source-contract: the composer embedded in the thread side sheet follows
-// the prototype .sk-thread-composer grammar — sheet footer with 10px 12px
-// padding and a 7% hairline top border — instead of the main composer's
-// outer inset. The modifier class owns padding; no inline padding is passed
-// on that surface.
+// the prototype .sk-thread-composer grammar — the shared parent inset and a
+// 7% hairline top border. The modifier class owns padding on that surface.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
@@ -22,9 +20,9 @@ describe('thread sheet composer (north-star .sk-thread-composer parity)', () => 
     expect(composerSource).toContain(': { padding: visualLayout.composerOuterPadding }');
   });
 
-  it('pads 10px 12px with the prototype 7% hairline top border', () => {
+  it('uses the shared parent inset with the prototype 7% hairline top border', () => {
     const rule = chatCss.match(/\.sc-composer--thread\s*\{([^}]*)\}/)?.[1] ?? '';
-    expect(rule).toContain('padding: 10px 12px');
+    expect(rule).toContain('padding: var(--pt-composer-outer-inset)');
     expect(rule).toContain(
       'border-top: 1px solid color-mix(in srgb, var(--pt-text) 7%, transparent)',
     );

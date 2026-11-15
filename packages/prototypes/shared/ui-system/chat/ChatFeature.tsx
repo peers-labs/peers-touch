@@ -4,10 +4,11 @@
  * adds the increment 10 catalog layer: chats/contacts sub-navigation,
  * friend requests, contact detail, unified search and group creation.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { MessagesSquare } from 'lucide-react';
-import { Empty } from '@peers-touch/ui';
+import { Empty, geometry } from '@peers-touch/ui';
 import { ChatRail } from './ChatRail';
+import { ChatRailResizer } from './ChatRailResizer';
 import { ConversationView } from './ConversationView';
 import { CreateGroupDialog, PickPersonDialog } from './ChatDialogs';
 import type { CallDirection, CallKind } from './CallOverlay';
@@ -41,6 +42,14 @@ export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal,
   const prefs = usePrefs();
   const t = makeTranslate(prefs.locale);
   const [tab, setTab] = useState<'chats' | 'contacts'>('chats');
+  const [railWidth, setRailWidth] = useState<number>(geometry.chatRail.defaultWidth);
+  const [isNarrow, setIsNarrow] = useState(() => window.matchMedia('(max-width: 720px)').matches);
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 720px)');
+    const changed = () => setIsNarrow(media.matches);
+    media.addEventListener('change', changed);
+    return () => media.removeEventListener('change', changed);
+  }, []);
   const [sessions, setSessions] = useState<Conversation[]>(CONVERSATIONS);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messagesByConv, setMessagesByConv] = useState<Record<string, ChatMessage[]>>(SEED_MESSAGES);
@@ -397,10 +406,13 @@ export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal,
 
   return (
     <div className={`sk-chat-feature${narrowOpen ? ' sk-narrow-open' : ''}`}
+      style={{ '--pt-chat-rail-width': `${railWidth}px` } as CSSProperties}
       data-message-layout={prefs.messageLayout}
       data-hide-own-avatar={prefs.messageLayout === 'sides' && prefs.hideOwnAvatarInSides ? 'true' : 'false'}
       data-locale={prefs.locale}>
       <ChatRail
+        compact={!isNarrow && railWidth < geometry.chatRail.compactWidth}
+        onExpandRail={() => setRailWidth(geometry.chatRail.defaultWidth)}
         tab={tab} onTabChange={setTab}
         sessions={sessions} selectedId={selectedId}
         people={peoplePool}
@@ -419,6 +431,7 @@ export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal,
         onCreateGroup={() => setGroupOpen(true)}
         onOpenSelf={openSelfDirect}
       />
+      {!isNarrow && <ChatRailResizer width={railWidth} onResize={setRailWidth} />}
 
       <div className="sk-chat-main">
         {selectedConversation ? (

@@ -160,6 +160,23 @@
   border-right: 0;
 }
 
+/* Avatar-only catalog: two icon tabs, then search/new; no text competes
+   with the 40px avatars. The narrow single-pane view never enables this. */
+.sc-sessions[data-rail-compact='true'] .sc-rail-header {
+  display: grid;
+  grid-template-columns: 28px 28px;
+  justify-content: center;
+  gap: 4px;
+  height: 72px;
+  padding: 6px 2px;
+}
+.sc-rail-compact-tabs { grid-column: 1 / -1; display: flex; gap: 4px; }
+.sc-sessions[data-rail-compact='true'] .sc-rail-title,
+.sc-sessions[data-rail-compact='true'] .sc-session-row__body,
+.sc-sessions[data-rail-compact='true'] .sc-session-row__actions { display: none; }
+.sc-sessions[data-rail-compact='true'] .sc-sessions__scroll { padding: 8px 2px; }
+.sc-sessions[data-rail-compact='true'] .sc-sessions__empty { overflow: hidden; }
+
 /* Manual catalog-rail resize handle. An absolutely-positioned 10px hit strip
    straddling the rail's right hairline — it must NOT take flex space, or its
    transparent body exposes the canvas background as a visible grey band. The
@@ -243,6 +260,7 @@ body[data-chat-rail-resizing='true'] {
   /* Prototype .sk-conv-row hover is instant — no background transition. */
 }
 .sc-session-row:hover { background: color-mix(in srgb, var(--pt-text) 4%, transparent); }
+.sc-sessions[data-rail-compact='true'] .sc-session-row { justify-content: center; padding: 10px 0; }
 /* Pinned rows carry a quiet tile wash even at rest (prototype
    sk-conv-row.is-pinned-row parity). */
 .sc-session-row.is-pinned-row {
@@ -372,11 +390,9 @@ body[data-chat-rail-resizing='true'] {
   flex-direction: column;
   gap: 8px;
 }
-/* Inside the thread sheet the composer is the sheet footer: prototype
-   .sk-thread-composer grammar — 10px 12px padding with a 7% hairline top.
-   The inline padding from the visual layout is overridden on this surface. */
+/* The thread footer shares the dock's parent inset. */
 .sc-composer--thread {
-  padding: 10px 12px;
+  padding: var(--pt-composer-outer-inset);
   border-top: 1px solid color-mix(in srgb, var(--pt-text) 7%, transparent);
 }
 .sc-composer__drop {
@@ -3030,6 +3046,17 @@ body[data-chat-rail-resizing='true'] {
   color: var(--pt-muted);
 }
 .sc-contact-row__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sc-contacts[data-contact-compact='true'] .sc-contacts__scroll { padding: 8px 2px; }
+.sc-contacts[data-contact-compact='true'] .sc-contacts__self { margin-left: 0; margin-right: 0; }
+.sc-contacts[data-contact-compact='true'] .sc-contact-row { justify-content: center; }
+.sc-contacts[data-contact-compact='true'] .sc-contact-row__body,
+.sc-contacts[data-contact-compact='true'] .sc-identity-row__body,
+.sc-contacts[data-contact-compact='true'] .sc-contacts__empty,
+.sc-contacts[data-contact-compact='true'] [data-contact-section='incoming'] .sc-contact-section__body,
+.sc-contacts[data-contact-compact='true'] [data-contact-section='outgoing'] .sc-contact-section__body,
+.sc-contacts[data-contact-compact='true'] [data-contact-section='history'] .sc-contact-section__body { display: none; }
+.sc-contacts[data-contact-compact='true'] .sc-identity-row { justify-content: center; }
+.sc-contact-section__compact { align-self: center; margin: 4px 0; }
 .sc-contact-row__name {
   font-size: 13px;
   font-weight: 600;

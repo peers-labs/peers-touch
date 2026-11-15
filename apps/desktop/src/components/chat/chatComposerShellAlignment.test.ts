@@ -99,12 +99,12 @@ describe('composer expand toggle and frame inset', () => {
     expect(composerSource).not.toContain('`${inputMaxHeight}px`');
   });
 
-  it('frames the main composer with the tight 12px WeChat column inset', () => {
+  it('frames the main composer with the shared parent inset', () => {
     const policySource = readFileSync(
       new URL('./chatPresentationPolicy.ts', import.meta.url),
       'utf8',
     );
-    expect(policySource).toContain("composerOuterPadding: '4px 12px 10px'");
+    expect(policySource).toContain('composerOuterPadding: `${geometry.composer.outerInset}px`');
   });
 
   it('makes the whole input region click-to-focus, not only the textarea itself', () => {

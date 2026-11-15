@@ -31,7 +31,7 @@ describe('clampChatRailWidth', () => {
   });
 
   it('clamps to the min / max band', () => {
-    expect(clampChatRailWidth(120)).toBe(CHAT_RAIL_MIN_WIDTH);
+    expect(clampChatRailWidth(20)).toBe(CHAT_RAIL_MIN_WIDTH);
     expect(clampChatRailWidth(900)).toBe(CHAT_RAIL_MAX_WIDTH);
   });
 
@@ -86,7 +86,7 @@ describe('readStoredChatRailWidth', () => {
 describe('persistChatRailWidth', () => {
   it('stores the clamped width and returns it', () => {
     const storage = memoryStorage();
-    const committed = persistChatRailWidth(100, storage);
+    const committed = persistChatRailWidth(20, storage);
     expect(committed).toBe(CHAT_RAIL_MIN_WIDTH);
     expect(storage.getItem(CHAT_RAIL_WIDTH_STORAGE_KEY)).toBe(
       String(CHAT_RAIL_MIN_WIDTH),
@@ -97,5 +97,13 @@ describe('persistChatRailWidth', () => {
     const storage = memoryStorage();
     persistChatRailWidth(367.8, storage);
     expect(readStoredChatRailWidth(storage)).toBe(368);
+  });
+
+  it('preserves avatar-only widths instead of restoring the former 240px floor', () => {
+    const storage = memoryStorage();
+    for (const width of [64, 80, 127]) {
+      expect(persistChatRailWidth(width, storage)).toBe(width);
+      expect(readStoredChatRailWidth(storage)).toBe(width);
+    }
   });
 });

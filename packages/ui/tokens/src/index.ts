@@ -8,7 +8,8 @@ export const geometry = {
   radius: { xs: 4, sm: 8, md: 10, lg: 14, xl: 18, '2xl': 22, full: 999 },
   space: { xxs: 4, xs: 8, sm: 12, md: 16, lg: 20, xl: 24, xxl: 32 },
   control: { compact: 28, searchCompact: 34, row: 30, menu: 30, normal: 36, comfortable: 44 },
-  composer: { radius: 8, inset: 6, inputPadding: '12px 16px 8px', collapsedRows: 1, expandedRows: 4, maximumRows: 10 },
+  composer: { radius: 8, inset: 6, outerInset: 3, inputPadding: '12px 16px 8px', collapsedRows: 1, expandedRows: 4, maximumRows: 10 },
+  chatRail: { defaultWidth: 300, minWidth: 64, maxWidth: 420, compactWidth: 128, keyboardStep: 16 },
   icon: { compact: 16, normal: 18, comfortable: 20 },
   font: {
     sans: "Manrope, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', 'PingFang SC', sans-serif",
@@ -121,6 +122,7 @@ export function tokenVariables(mode: 'light' | 'dark'): Record<string, string> {
   for (const [key, value] of Object.entries(geometry.control)) out[`--pt-control-${key}`] = `${value}px`;
   out['--pt-composer-radius'] = `${geometry.composer.radius}px`;
   out['--pt-composer-inset'] = `${geometry.composer.inset}px`;
+  out['--pt-composer-outer-inset'] = `${geometry.composer.outerInset}px`;
   out['--pt-composer-input-padding'] = geometry.composer.inputPadding;
   for (const [key, value] of Object.entries(geometry.motion)) out[`--pt-motion-${key}`] = typeof value === 'number' ? `${value}ms` : value;
   out['--pt-font'] = geometry.font.sans;
