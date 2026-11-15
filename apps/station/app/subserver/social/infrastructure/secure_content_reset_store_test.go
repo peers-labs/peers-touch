@@ -2,6 +2,7 @@ package infrastructure
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	dbmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -510,6 +512,49 @@ func TestExtractLegacyAttachmentKeysIsolatesFallbackDecodeState(t *testing.T) {
 	}
 	if len(keys) != 1 || keys[0] != "public/image.bin" {
 		t.Fatalf("extractLegacyAttachmentKeys() = %#v", keys)
+	}
+}
+
+func TestExtractLegacyAttachmentKeysPollUsesCanonicalRequest(t *testing.T) {
+	for _, request := range []*model.CreatePollPostRequest{
+		{
+			Text: "public duration poll", Question: "Which routes?",
+			Options: []string{"Direct", "Relay", "Both"}, DurationHours: 1,
+			MultipleChoice: true, MinChoices: 2, MaxChoices: 3,
+		},
+		{
+			Text: "public deadline poll", Question: "Which route?",
+			Options: []string{"Direct", "Relay"}, MinChoices: 1, MaxChoices: 1,
+			ExpiresAtUnixMs: 1_789_808_400_000,
+		},
+	} {
+		t.Run(request.Text, func(t *testing.T) {
+			// The public Post converter persists encoding/json of this model.
+			payload, err := json.Marshal(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			keys, err := extractLegacyAttachmentKeys("POLL", string(payload))
+			if err != nil {
+				t.Fatalf("canonical public poll rejected: %v", err)
+			}
+			if len(keys) != 0 {
+				t.Fatalf("poll acquired reset object keys: %#v", keys)
+			}
+		})
+	}
+	for _, payload := range []string{
+		`{"question":"Which route?","image_ids":["oss://self/public/image.bin"]}`,
+		`{"question":"Which route?","min_choices":"1"}`,
+		`{"question":"Which route?","options":[{"id":"oss://self/public/image.bin"}]}`,
+		`{"question":"Which route?"} {"image_ids":["oss://self/public/image.bin"]}`,
+		`{"question":`,
+	} {
+		t.Run(payload, func(t *testing.T) {
+			if keys, err := extractLegacyAttachmentKeys("POLL", payload); err == nil {
+				t.Fatalf("unreviewed poll shape accepted: %#v", keys)
+			}
+		})
 	}
 }
 
@@ -1870,6 +1915,31 @@ CREATE TABLE social_private_audience_grants (
 	if err := database.Create(&publicPost).Error; err != nil {
 		t.Fatal(err)
 	}
+	for index, request := range []*model.CreatePollPostRequest{
+		{
+			Text: "public-duration-preserved", Question: "Which routes?",
+			Options: []string{"Direct", "Relay", "Both"}, DurationHours: 1,
+			MultipleChoice: true, MinChoices: 2, MaxChoices: 3,
+		},
+		{
+			Text: "public-deadline-preserved", Question: "Which route?",
+			Options: []string{"Direct", "Relay"}, MinChoices: 1, MaxChoices: 1,
+			ExpiresAtUnixMs: now.Add(time.Hour).UnixMilli(),
+		},
+	} {
+		payload, err := json.Marshal(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		poll := dbmodel.SocialPublicPost{
+			ID: uint64(102 + index), AuthorID: 1, Type: "POLL",
+			AudienceKind: "PUBLIC", TextBody: request.Text,
+			AttachmentsJSON: string(payload), CreatedAt: now, UpdatedAt: now,
+		}
+		if err := database.Create(&poll).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
 	privatePost := dbmodel.SocialPrivateContentPost{
 		PostID:                    "post-private",
 		ContentID:                 "content-private",
@@ -1976,7 +2046,7 @@ CREATE TABLE social_private_audience_grants (
 	assertResetRowCount(t, database, "social_comments", "post_class = 'private'", 0)
 	assertResetRowCount(t, database, "social_reactions", "post_class = 'private'", 0)
 	assertResetRowCount(t, database, "social_moment_deliveries", "", 0)
-	assertResetRowCount(t, database, "social_public_posts", "", 1)
+	assertResetRowCount(t, database, "social_public_posts", "", 3)
 	assertResetRowCount(t, database, "social_comments", "post_class = 'public'", 1)
 	assertResetRowCount(t, database, "social_reactions", "post_class = 'public'", 1)
 
