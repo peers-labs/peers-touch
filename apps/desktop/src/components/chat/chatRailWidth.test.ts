@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { geometry, normalizeChatRailWidth, resizeChatRailWidth } from '@peers-touch/ui';
 
 import {
   CHAT_RAIL_DEFAULT_WIDTH,
   CHAT_RAIL_MAX_WIDTH,
   CHAT_RAIL_MIN_WIDTH,
   CHAT_RAIL_WIDTH_STORAGE_KEY,
-  clampChatRailWidth,
   persistChatRailWidth,
   readStoredChatRailWidth,
 } from './chatRailWidth';
@@ -24,25 +24,59 @@ function memoryStorage(): Storage {
   } as Storage;
 }
 
-describe('clampChatRailWidth', () => {
+describe('normalizeChatRailWidth', () => {
   it('keeps in-band values and rounds them', () => {
-    expect(clampChatRailWidth(312.4)).toBe(312);
-    expect(clampChatRailWidth(CHAT_RAIL_DEFAULT_WIDTH)).toBe(300);
+    expect(normalizeChatRailWidth(312.4)).toBe(312);
+    expect(normalizeChatRailWidth(CHAT_RAIL_DEFAULT_WIDTH)).toBe(300);
   });
 
   it('clamps to the min / max band', () => {
-    expect(clampChatRailWidth(20)).toBe(CHAT_RAIL_MIN_WIDTH);
-    expect(clampChatRailWidth(900)).toBe(CHAT_RAIL_MAX_WIDTH);
+    expect(normalizeChatRailWidth(20)).toBe(CHAT_RAIL_MIN_WIDTH);
+    expect(normalizeChatRailWidth(900)).toBe(CHAT_RAIL_MAX_WIDTH);
+  });
+
+  it('maps old intermediate widths to the nearest stable endpoint', () => {
+    expect(normalizeChatRailWidth(80)).toBe(64);
+    expect(normalizeChatRailWidth(151)).toBe(64);
+    expect(normalizeChatRailWidth(152)).toBe(240);
+    expect(normalizeChatRailWidth(239)).toBe(240);
   });
 
   it('falls back to the default for non-finite input', () => {
-    expect(clampChatRailWidth(Number.NaN)).toBe(CHAT_RAIL_DEFAULT_WIDTH);
-    expect(clampChatRailWidth(Number.POSITIVE_INFINITY)).toBe(
+    expect(normalizeChatRailWidth(Number.NaN)).toBe(CHAT_RAIL_DEFAULT_WIDTH);
+    expect(normalizeChatRailWidth(Number.POSITIVE_INFINITY)).toBe(
       CHAT_RAIL_DEFAULT_WIDTH,
     );
-    expect(clampChatRailWidth(Number.NEGATIVE_INFINITY)).toBe(
+    expect(normalizeChatRailWidth(Number.NEGATIVE_INFINITY)).toBe(
       CHAT_RAIL_DEFAULT_WIDTH,
     );
+  });
+});
+
+describe('resizeChatRailWidth', () => {
+  it('snaps the same intermediate pointer position according to actual direction', () => {
+    for (const width of [65, 100, 152, 185, 239]) {
+      expect(resizeChatRailWidth(width, -1)).toBe(64);
+      expect(resizeChatRailWidth(width, 1)).toBe(240);
+    }
+  });
+
+  it('keeps every expanded pixel available and clamps outside the endpoints', () => {
+    for (let width = 240; width <= 420; width += 1) {
+      expect(resizeChatRailWidth(width, -1)).toBe(width);
+      expect(resizeChatRailWidth(width, 1)).toBe(width);
+    }
+    expect(resizeChatRailWidth(30, 1)).toBe(64);
+    expect(resizeChatRailWidth(500, -1)).toBe(420);
+    expect(resizeChatRailWidth(Number.NaN, 1)).toBe(300);
+  });
+
+  it('skips the gap with arrow keys at either endpoint', () => {
+    const { keyboardStep } = geometry.chatRail;
+    expect(resizeChatRailWidth(64 + keyboardStep, 1)).toBe(240);
+    expect(resizeChatRailWidth(240 - keyboardStep, -1)).toBe(64);
+    expect(resizeChatRailWidth(300 - keyboardStep, -1)).toBe(284);
+    expect(resizeChatRailWidth(300 + keyboardStep, 1)).toBe(316);
   });
 });
 
@@ -99,11 +133,13 @@ describe('persistChatRailWidth', () => {
     expect(readStoredChatRailWidth(storage)).toBe(368);
   });
 
-  it('preserves avatar-only widths instead of restoring the former 240px floor', () => {
+  it('persists only the fixed compact state or the expanded interval', () => {
     const storage = memoryStorage();
-    for (const width of [64, 80, 127]) {
-      expect(persistChatRailWidth(width, storage)).toBe(width);
-      expect(readStoredChatRailWidth(storage)).toBe(width);
+    for (const [input, expected] of [[64, 64], [80, 64], [185, 240], [239, 240], [240, 240], [300, 300], [420, 420]]) {
+      expect(persistChatRailWidth(input, storage)).toBe(expected);
+      expect(readStoredChatRailWidth(storage)).toBe(expected);
+      storage.setItem(CHAT_RAIL_WIDTH_STORAGE_KEY, String(input));
+      expect(readStoredChatRailWidth(storage)).toBe(expected);
     }
   });
 });

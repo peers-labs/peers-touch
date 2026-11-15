@@ -411,7 +411,7 @@ export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal,
       data-hide-own-avatar={prefs.messageLayout === 'sides' && prefs.hideOwnAvatarInSides ? 'true' : 'false'}
       data-locale={prefs.locale}>
       <ChatRail
-        compact={!isNarrow && railWidth < geometry.chatRail.compactWidth}
+        compact={!isNarrow && railWidth === geometry.chatRail.minWidth}
         onExpandRail={() => setRailWidth(geometry.chatRail.defaultWidth)}
         tab={tab} onTabChange={setTab}
         sessions={sessions} selectedId={selectedId}

@@ -1,18 +1,18 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { normalizeChatRailWidth, resizeChatRailWidth, type ChatRailResizeDirection } from '@peers-touch/ui';
 import { WindowDragRegion } from '../shell/WindowDragRegion';
 
 import {
   CHAT_RAIL_KEYBOARD_STEP,
   CHAT_RAIL_MAX_WIDTH,
   CHAT_RAIL_MIN_WIDTH,
-  clampChatRailWidth,
 } from './chatRailWidth';
 
 interface ChatRailResizerProps {
   /** Current rail width in px, mirrored into aria-value* and drag math. */
   width: number;
-  /** Live drag update; clamps but does not persist (commit happens on drop). */
+  /** Live stable-width update; persistence happens on drop. */
   onPreview: (width: number) => void;
   /** Commits a width on pointer drop / keyboard action. */
   onCommit: (width: number) => void;
@@ -31,12 +31,27 @@ export function ChatRailResizer({
 }: ChatRailResizerProps) {
   const { t } = useTranslation('chat');
   const [dragging, setDragging] = useState(false);
-  const dragState = useRef<{ startX: number; startWidth: number } | null>(null);
+  const dragState = useRef<{
+    pointerId: number;
+    startX: number;
+    lastX: number;
+    startWidth: number;
+    width: number;
+    direction: ChatRailResizeDirection;
+  } | null>(null);
+
+  useEffect(() => () => {
+    if (dragState.current) delete document.body.dataset.chatRailResizing;
+  }, []);
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || dragState.current) return;
     event.preventDefault();
-    dragState.current = { startX: event.clientX, startWidth: width };
+    const startWidth = normalizeChatRailWidth(width);
+    dragState.current = {
+      pointerId: event.pointerId, startX: event.clientX, lastX: event.clientX,
+      startWidth, width: startWidth, direction: 0,
+    };
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
     } catch {
@@ -48,25 +63,34 @@ export function ChatRailResizer({
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     const state = dragState.current;
-    if (!state) return;
-    onPreview(state.startWidth + (event.clientX - state.startX));
+    if (!state || state.pointerId !== event.pointerId) return;
+    if (event.clientX !== state.lastX) {
+      state.direction = event.clientX < state.lastX ? -1 : 1;
+      state.lastX = event.clientX;
+    }
+    state.width = resizeChatRailWidth(
+      state.startWidth + (event.clientX - state.startX), state.direction,
+    );
+    onPreview(state.width);
   };
 
-  const finishDrag = () => {
-    if (!dragState.current) return;
+  const finishDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    const state = dragState.current;
+    if (!state || state.pointerId !== event.pointerId) return;
+    const committedWidth = state.width;
     dragState.current = null;
     delete document.body.dataset.chatRailResizing;
     setDragging(false);
-    onCommit(width);
+    onCommit(committedWidth);
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'ArrowLeft') {
       event.preventDefault();
-      onCommit(width - CHAT_RAIL_KEYBOARD_STEP);
+      onCommit(resizeChatRailWidth(width - CHAT_RAIL_KEYBOARD_STEP, -1));
     } else if (event.key === 'ArrowRight') {
       event.preventDefault();
-      onCommit(width + CHAT_RAIL_KEYBOARD_STEP);
+      onCommit(resizeChatRailWidth(width + CHAT_RAIL_KEYBOARD_STEP, 1));
     } else if (event.key === 'Home') {
       event.preventDefault();
       onCommit(CHAT_RAIL_MIN_WIDTH);
@@ -82,7 +106,7 @@ export function ChatRailResizer({
       aria-orientation="vertical"
       aria-label={t('chat.rail.resize')}
       title={t('chat.rail.resize')}
-      aria-valuenow={clampChatRailWidth(width)}
+      aria-valuenow={normalizeChatRailWidth(width)}
       aria-valuemin={CHAT_RAIL_MIN_WIDTH}
       aria-valuemax={CHAT_RAIL_MAX_WIDTH}
       tabIndex={0}
@@ -91,8 +115,9 @@ export function ChatRailResizer({
       data-dragging={dragging ? 'true' : 'false'}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
-      onPointerUp={finishDrag}
+      onPointerUp={event => { handlePointerMove(event); finishDrag(event); }}
       onPointerCancel={finishDrag}
+      onLostPointerCapture={finishDrag}
       onDoubleClick={onReset}
       onKeyDown={handleKeyDown}
     >

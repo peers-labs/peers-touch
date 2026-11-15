@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { normalizeChatRailWidth } from '@peers-touch/ui';
 import { ChatSessionList, type ChatRailTab } from '../components/chat/ChatSessionList';
 import { ChatContactsPanel } from '../components/chat/ChatContactsPanel';
 import { ChatMessageArea } from '../components/chat/ChatMessageArea';
 import { ChatRailResizer } from '../components/chat/ChatRailResizer';
 import {
   CHAT_RAIL_DEFAULT_WIDTH,
-  CHAT_RAIL_COMPACT_WIDTH,
-  clampChatRailWidth,
+  CHAT_RAIL_MIN_WIDTH,
   persistChatRailWidth,
   readStoredChatRailWidth,
 } from '../components/chat/chatRailWidth';
@@ -140,7 +140,7 @@ export function SocialChatPage() {
   const [railWidth, setRailWidth] = useState<number>(() =>
     readStoredChatRailWidth(window.localStorage));
   const previewRailWidth = useCallback(
-    (next: number) => setRailWidth(clampChatRailWidth(next)),
+    (next: number) => setRailWidth(normalizeChatRailWidth(next)),
     [],
   );
   const commitRailWidth = useCallback((next: number) => {
@@ -151,7 +151,7 @@ export function SocialChatPage() {
       persistChatRailWidth(CHAT_RAIL_DEFAULT_WIDTH, window.localStorage),
     );
   }, []);
-  const compactRail = !isNarrow && railWidth < CHAT_RAIL_COMPACT_WIDTH;
+  const compactRail = !isNarrow && railWidth === CHAT_RAIL_MIN_WIDTH;
 
   const openDirectConversation = useCallback((contact: FriendContactSelection) => {
     const requestGeneration = ++directOpenGenerationRef.current;
