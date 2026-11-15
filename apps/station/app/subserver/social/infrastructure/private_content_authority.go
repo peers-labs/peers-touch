@@ -1052,20 +1052,29 @@ func loadFollowersSnapshot(
 		CreatedAt time.Time `gorm:"column:created_at"`
 	}
 	var rows []followerRow
-	if err := database.WithContext(ctx).
-		Table("follows AS follow").
+	if err := privateLocalFollowerQuery(database.WithContext(ctx)).
 		Select(
-			"follow.id AS follow_id, actor.ptid AS ptid, follow.created_at AS created_at",
+			"follow.id AS follow_id, follower.ptid AS ptid, follow.created_at AS created_at",
 		).
-		Joins("JOIN touch_actor AS actor ON actor.id = follow.follower_id").
 		Where("follow.following_id = ?", authorID).
-		Order("actor.ptid ASC").
+		Order("follower.ptid ASC").
 		Find(&rows).Error; err != nil {
 		return socialdomain.FriendsSnapshot{}, err
 	}
-	peers := make([]string, 0, len(rows))
+	var remoteRows []FeedSubscriptionRecord
+	if err := privateRemoteFollowerQuery(database.WithContext(ctx)).
+		Select("subscription.*").
+		Where("subscription.author_ptid = ?", authorPTID).
+		Order("subscription.subscriber_ptid ASC").
+		Find(&remoteRows).Error; err != nil {
+		return socialdomain.FriendsSnapshot{}, err
+	}
+	peers := make([]string, 0, len(rows)+len(remoteRows))
 	for _, row := range rows {
 		peers = append(peers, row.PTID)
+	}
+	for _, row := range remoteRows {
+		peers = append(peers, row.SubscriberPTID)
 	}
 	blocked, err := NewBlockGraphRepository(database).
 		BlockedActorPTIDs(ctx, authorPTID, peers)
@@ -1075,8 +1084,10 @@ func loadFollowersSnapshot(
 	head := sha256.New()
 	writeSnapshotField(head, "followers")
 	writeSnapshotField(head, authorPTID)
-	recipients := make([]string, 0, len(rows))
+	recipients := make([]string, 0, len(peers))
+	revision := uint64(len(rows)) + 1
 	for _, row := range rows {
+		writeSnapshotField(head, "local")
 		writeSnapshotField(head, strconv.FormatUint(row.FollowID, 10))
 		writeSnapshotField(head, row.PTID)
 		writeSnapshotField(head, row.CreatedAt.UTC().Format(time.RFC3339Nano))
@@ -1086,13 +1097,26 @@ func loadFollowersSnapshot(
 		}
 		recipients = append(recipients, row.PTID)
 	}
+	for _, row := range remoteRows {
+		writeSnapshotField(head, "remote")
+		writeSnapshotField(head, row.SubscriberPTID)
+		writeSnapshotField(head, row.AuthorStation)
+		writeSnapshotField(head, row.SubscriberStation)
+		writeSnapshotField(head, strconv.FormatUint(row.Revision, 10))
+		revision += row.Revision
+		if blocked[row.SubscriberPTID] {
+			writeSnapshotField(head, "blocked")
+			continue
+		}
+		recipients = append(recipients, row.SubscriberPTID)
+	}
 	return requireNonEmptyAudienceSnapshot(
 		"social.private_content.followers_snapshot",
 		socialdomain.FriendsSnapshot{
 			Audience:         &actormodel.Audience{Kind: actormodel.Audience_FOLLOWERS},
-			SourceRevision:   uint64(len(rows)) + 1,
+			SourceRevision:   revision,
 			SourceHeadSHA256: head.Sum(nil),
-			RecipientPTIDs:   recipients,
+			RecipientPTIDs:   uniqueSortedStrings(recipients),
 		},
 	)
 }
