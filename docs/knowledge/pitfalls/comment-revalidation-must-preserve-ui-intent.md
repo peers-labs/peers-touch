@@ -13,6 +13,7 @@ owns:
   - apps/desktop/src/acceptance/moments/feedObservation.ts
   - apps/desktop/src/acceptance/moments/commentReadFault.ts
   - tooling/development/secure_content/social_feed_ui.py
+  - tooling/development/secure_content/test_social_feed_ui.py
   - tooling/acceptance/gates/social/public_comment_revalidation.py
 referenced-by:
   - tooling/acceptance/features/social-public-signed-feed.yaml
@@ -99,3 +100,10 @@ tooling.acceptance.gates.social.test_desktop_private_e2e`. Removed/reinserted
 nodes, transient restored text/counts, lost selection/focus and missing
 Native phases must fail. Execute `social-public-feed-native-e2e` and
 `social-private-desktop-e2e` through the shared Runner for actual product proof.
+
+The private observer watches the whole page for retained card identity, but
+loading mutations belong to its original acquired comment thread. A spinner in
+another thread's initial acquisition must not be labeled as this thread's
+loading or removal. The executable observer tests distinguish that neighboring
+spinner from a target-thread spinner inserted and removed between paint frames;
+the latter still fails even when the final captured DOM has no spinner.

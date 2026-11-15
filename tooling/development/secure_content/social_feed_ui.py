@@ -230,9 +230,13 @@ const check = () => {
 const observer = new MutationObserver(records => {
   stats.mutations += records.length;
   for (const record of records) {
-    for (const added of record.addedNodes || []) {
-      if (added.nodeType === 1 && (added.matches('.pt-spinner') || added.querySelector('.pt-spinner')))
-        fail('thread-loading-or-removal');
+    // The page also acquires unrelated threads while the Runtime reconciles.
+    // Keep the loading oracle bound to this original acquired thread.
+    if (record.target === thread || (record.target && thread.contains(record.target))) {
+      for (const added of record.addedNodes || []) {
+        if (added.nodeType === 1 && (added.matches('.pt-spinner') || added.querySelector('.pt-spinner')))
+          fail('thread-loading-or-removal');
+      }
     }
     for (const removed of record.removedNodes) {
       if (Array.from(protectedNodes).some(node => removed === node || removed.contains(node)))

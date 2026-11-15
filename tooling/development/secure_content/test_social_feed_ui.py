@@ -120,6 +120,14 @@ if (input.mode.startsWith('alive-')) {
   thread.querySelector = () => leaf('spinner');
   callbacks.shift()();
   thread.querySelector = () => null;
+} else if (input.mode === 'unrelated-spinner' || input.mode === 'transient-thread-spinner') {
+  // Loading elsewhere in the page is not a target-thread replacement.
+  // A spinner inserted and removed in the retained thread between paint
+  // frames must still fail through the mutation record.
+  const spinner = {...leaf(''), nodeType: 1, matches: () => true, querySelector: () => null};
+  observe([{type: 'childList',
+    target: input.mode === 'transient-thread-spinner' ? thread : cards[1],
+    addedNodes: [spinner], removedNodes: []}]);
 } else if (input.mode === 'changed-count') {
   rows[0].querySelector('[data-comment-like]').getAttribute = () => '0';
   callbacks.shift()();
@@ -167,6 +175,11 @@ class FeedTemporalObserverTest(unittest.TestCase):
     def test_initial_spinner_or_changed_confirmed_reaction_cannot_pass(self):
         self.assertIn("thread-loading-or-removal", self.observe("spinner")["violations"])
         self.assertIn("comment-content-or-reaction", self.observe("changed-count")["violations"])
+
+    def test_loading_mutations_belong_to_the_original_comment_thread(self):
+        self.assertEqual(self.observe("unrelated-spinner")["violations"], [])
+        self.assertIn("thread-loading-or-removal",
+                      self.observe("transient-thread-spinner")["violations"])
 
     def test_empty_and_collapsed_baselines_remain_valid_without_reopening(self):
         for mode in ("empty-stable", "collapsed"):
