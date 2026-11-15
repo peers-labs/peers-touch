@@ -235,6 +235,100 @@ class PrivateSocialNativeProvisionerTest(unittest.TestCase):
             cleanup_registered=True,
         )
 
+    def prepare_actor_provisioning(self):
+        from tooling.acceptance.fixtures import chat_native_reset
+
+        manifest = self.outage_manifest()
+        actors = ActorManifest(
+            fixture_id=self.provisioner.fixture_id,
+            environment_id=self.provisioner.environment_id,
+            run_id=manifest.run_id, created_at=manifest.created_at,
+            actors=tuple(ActorIdentity(role=role, account_ref=f"fixture:{role}", ptid=f"ptid:{role}")
+                         for role in ("alice", "bob", "eve")),
+            credential_refs=(), reset_authorized=True, target_verified=True,
+        )
+        self.enterContext(mock.patch.object(
+            self.provisioner, "_new_base_manifest", return_value=manifest,
+        ))
+        self.enterContext(mock.patch.object(
+            self.provisioner, "_resolve_active_profile",
+            return_value=("fiveArm", {}, 1, None),
+        ))
+        self.enterContext(mock.patch.object(
+            self.provisioner, "_provision_station_services", return_value=self.services,
+        ))
+        self.enterContext(mock.patch.object(
+            self.provisioner, "_resolve_credentials", return_value=((), {}),
+        ))
+        self.enterContext(mock.patch.object(
+            self.provisioner, "_clients", return_value=manifest.clients,
+        ))
+        self.enterContext(mock.patch.dict(
+            "os.environ", {"PT_ACCEPTANCE_RUNTIME_CELL": "desktop-macos-native"},
+        ))
+        self.reset_context = self.enterContext(mock.patch(
+            "tooling.acceptance.provisioners.native_tauri_embedded_webdriver."
+            "bound_reset_profiles",
+        )).return_value
+        self.reset_context.__enter__.side_effect = lambda: self.events.append(("reset-enter",))
+        self.reset_context.__exit__.side_effect = (
+            lambda *_: self.events.append(("reset-exit",)) or False
+        )
+        self.produce_actors = self.enterContext(mock.patch(
+            "tooling.acceptance.provisioners.native_tauri_embedded_webdriver."
+            "produce_bound_actor_manifest",
+            side_effect=lambda **_: (
+                self.events.append(("actors",))
+                or (actors, None, manifest.actor_manifest_ref)
+            ),
+        ))
+        self.reset_follows = self.enterContext(mock.patch.object(
+            chat_native_reset, "reset_fixture_follow_edges",
+            side_effect=lambda url, environment, ptids: self.events.append(
+                ("follows", url, environment, tuple(ptids)),
+            ),
+        ))
+        ready = self.provisioner._ready
+        self.ready = self.enterContext(mock.patch.object(
+            self.provisioner, "_ready", side_effect=lambda value: (
+                self.events.append(("ready",)) or ready(value)
+            ),
+        ))
+
+    def test_private_actor_baseline_resets_each_bound_station_before_ready(self):
+        self.prepare_actor_provisioning()
+        result = self.provisioner.provision(self.run.gate_id)
+        self.assertEqual(ProvisioningState.FIXTURE_READY, result.state)
+        primary = self.services["station-four"]
+        secondary = self.services["station-five-arm"]
+        self.assertEqual([
+            ("reset-enter",), ("actors",),
+            ("follows", primary.endpoint, primary.deployment_environment, ("ptid:alice",)),
+            ("follows", secondary.endpoint, secondary.deployment_environment,
+             ("ptid:bob", "ptid:eve")),
+            ("reset-exit",), ("ready",),
+        ], self.events)
+        self.ready.assert_called_once()
+
+    def test_public_actor_baseline_keeps_original_follow_preparation(self):
+        self.prepare_actor_provisioning()
+        result = self.provisioner.provision("social-public-feed-native-e2e")
+        self.assertEqual(ProvisioningState.FIXTURE_READY, result.state)
+        self.reset_follows.assert_not_called()
+        self.assertEqual([
+            ("reset-enter",), ("actors",), ("reset-exit",), ("ready",),
+        ], self.events)
+
+    def test_private_follow_reset_failure_cannot_admit_clients(self):
+        self.prepare_actor_provisioning()
+        failure = BlockedError(reason="bound follow reset failed", resource="fixture-follows")
+        self.reset_follows.side_effect = [None, failure]
+        result = self.provisioner.provision(self.run.gate_id)
+        self.assertEqual(ProvisioningState.BLOCKED, result.state)
+        self.assertEqual(2, self.reset_follows.call_count)
+        self.ready.assert_not_called()
+        self.reset_context.__exit__.assert_called_once()
+
     def test_private_outage_binds_only_the_attested_receiver_and_fail_safe_cleanup(self):
         from tooling.acceptance.provisioners import mobile_simulator
         self.provisioner._manifest = self.outage_manifest()

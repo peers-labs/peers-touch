@@ -90,6 +90,17 @@ environment and provisioning epoch before using the receiver and outsider
 identities. Regression must use the real RuntimeManifest and ActorManifest
 types; adding `actors` to a permissive runtime substitute hides this failure.
 
+The cross-Station private Suite starts its FOLLOWERS relationship baseline
+after the original bound Actor producer, inside the same reset-profile context.
+Chat reset seeds preset follows; those can target local accounts without an
+enrolled content-key identity and reject the later mixed FOLLOWERS publication
+with `RECIPIENT_KEY_UNAVAILABLE`. Group the manifest's exact Actor PTIDs by their
+bound Station and call `reset_fixture_follow_edges` once per target before
+readiness. Keep friendship preparation, live reset lease and target verification
+with their original owners. Other Gates retain their original follow baseline.
+The private provisioner regressions require both exact subsets, ordering within
+the reset context, and refusal to mark ready after a reset failure.
+
 ## How to detect a recurrence
 
 - Run the Social Search Desktop or Mobile native Suite against a reviewed

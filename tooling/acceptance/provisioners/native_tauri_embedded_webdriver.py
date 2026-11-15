@@ -615,6 +615,18 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
                     fixture_id=self.fixture_id,
                     friendship_roles=self._friendship_roles(gate_id, roles),
                 )
+                if gate_id == "social-cross-station-native-e2e":
+                    from tooling.acceptance.fixtures.chat_native_reset import (
+                        reset_fixture_follow_edges,
+                    )
+
+                    follow_targets: dict[tuple[str, str], list[str]] = {}
+                    for actor in actor_manifest.actors:
+                        follow_targets.setdefault(
+                            role_targets[actor.role], [],
+                        ).append(actor.ptid)
+                    for (station_url, environment), ptids in follow_targets.items():
+                        reset_fixture_follow_edges(station_url, environment, ptids)
             if gate_id == "federation-two-station-lifecycle-e2e":
                 actor_ref = self._persist_station_keyed_actor_manifest(
                     manifest=actor_manifest,
