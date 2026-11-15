@@ -381,6 +381,8 @@
 
 .sk-composer {
   flex-shrink: 0; min-width: 0; display: flex; align-items: flex-end; gap: 10px;
+  box-sizing: border-box;
+  border: 1px solid var(--sk-card-border);
   /* Symmetric inset: tools/send share one rhythm and the dock aligns cleanly
      inside the stream column (no wide asymmetric lead beside the catalog). */
   padding: 8px; border-radius: var(--pt-composer-radius);

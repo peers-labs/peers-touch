@@ -347,7 +347,7 @@ export function ChatComposer({
       attachmentCount: readyAttachments.length,
       capabilities: activeCapabilities,
     });
-  const composerShellBorder = dragging ? '1px solid var(--pt-borderStrong)' : '1px solid transparent';
+  const composerShellBorder = dragging ? '1px solid var(--pt-borderStrong)' : '1px solid var(--pt-border)';
 
   useEffect(() => {
     setEmojiOpen(false);
