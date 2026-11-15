@@ -6228,8 +6228,40 @@ impl MessagingStore {
                 |row| row.get::<_, String>(0),
             )
             .optional()
-            .map_err(|error| error.to_string())?
-            .ok_or_else(|| "messaging retry target is unavailable".to_string())?;
+            .map_err(|error| error.to_string())?;
+        // Authority commit removes the draft, but an accepted message can
+        // still lack delivery receipts (MP-D34). Its retained command ledger,
+        // rather than the deleted pending row, owns manual redrive.
+        if pending_state.is_none() {
+            let command_id = transaction
+                .query_row(
+                    "SELECT attempt.command_id
+                     FROM messaging_command_attempts attempt
+                     JOIN messaging_command_outbox outbox
+                       ON outbox.command_id = attempt.command_id
+                     JOIN messaging_local_commands local
+                       ON local.command_id = attempt.command_id
+                     JOIN messaging_message_projections message
+                       ON message.conversation_id = attempt.conversation_id
+                      AND message.message_id = attempt.message_id
+                     WHERE attempt.conversation_id = ?1
+                       AND attempt.message_id = ?2
+                       AND attempt.state = 'committed'
+                       AND outbox.state = 'committed'
+                       AND local.state = 'committed'
+                       AND message.retracted = 0
+                     ORDER BY attempt.created_at_unix_ms DESC, attempt.command_id DESC
+                     LIMIT 1",
+                    params![conversation_id, message_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()
+                .map_err(|error| error.to_string())?
+                .ok_or_else(|| "messaging retry target is unavailable".to_string())?;
+            transaction.commit().map_err(|error| error.to_string())?;
+            return Ok(MessageRetryDisposition::SubmittedRedrive { command_id });
+        }
+        let pending_state = pending_state.unwrap();
         if pending_state == "draft" {
             return Ok(MessageRetryDisposition::DraftReady);
         }
@@ -19022,6 +19054,97 @@ mod tests {
                 .filter(|command| command.command_id == "message-3")
                 .count(),
             1
+        );
+    }
+
+    #[test]
+    fn manual_retry_redrives_committed_message_after_pending_cleanup() {
+        let store = MessagingStore::in_memory().unwrap();
+        let exact_bytes = b"committed exact bytes";
+        persist_direct_command(&store, "message-1", exact_bytes, 10).unwrap();
+        store
+            .mark_command_submitted("message-1", exact_bytes, 0)
+            .unwrap();
+        store
+            .persist_claimed_item(
+                "item-1",
+                "event-1",
+                "conversation-1",
+                1,
+                1,
+                &[2; 32],
+                b"authority accepted event",
+                20,
+            )
+            .unwrap();
+        store
+            .commit_public_event(&PublicEventReceiveCommit {
+                item_id: "item-1",
+                event_id: "event-1",
+                conversation_id: "conversation-1",
+                command_id: "message-1",
+                message_id: "message-1",
+                event_sequence: 1,
+                lane_sequence: 1,
+                consumer_epoch: 1,
+                payload_sha256: &[2; 32],
+                event_hash: &[3; 32],
+                previous_event_hash: &[],
+                sender_ptid: "ptid:alice",
+                sender_device_id: "alice-device",
+                attachments: &[],
+                reply_to_message_id: None,
+                thread_root_message_id: None,
+                committed_at_unix_ms: 20,
+                receipt_id: "receipt-1",
+                receipt_bytes: b"receipt",
+                consumed_at_unix_ms: 20,
+            })
+            .unwrap();
+        assert!(store.message_draft("message-1").unwrap().is_none());
+        let before = store
+            .conversation_message_page("conversation-1", None, 50)
+            .unwrap();
+        assert_eq!(before.messages[0].state, "accepted");
+        assert_eq!(before.messages[0].delivered_device_count, 0);
+
+        for now in [86_400_020, 86_400_021] {
+            assert_eq!(
+                store
+                    .prepare_message_retry("conversation-1", "message-1", now)
+                    .unwrap(),
+                MessageRetryDisposition::SubmittedRedrive {
+                    command_id: "message-1".to_string(),
+                }
+            );
+        }
+        assert!(store.message_draft("message-1").unwrap().is_none());
+        assert!(store.next_command(86_400_021).unwrap().is_none());
+        assert_eq!(store.lane_checkpoint().unwrap(), (1, 1));
+        let connection = store.connection().unwrap();
+        let ledger: (String, Vec<u8>, i64) = connection
+            .query_row(
+                "SELECT state, command_bytes,
+                        (SELECT COUNT(*) FROM messaging_command_attempts
+                         WHERE message_id = 'message-1')
+                 FROM messaging_command_outbox WHERE command_id = 'message-1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(ledger, ("committed".to_string(), exact_bytes.to_vec(), 1));
+        drop(connection);
+        assert_eq!(
+            store
+                .prepare_message_retry("other-conversation", "message-1", 86_400_022)
+                .unwrap_err(),
+            "messaging retry target is unavailable"
+        );
+        assert_eq!(
+            store
+                .prepare_message_retry("conversation-1", "missing-message", 86_400_022)
+                .unwrap_err(),
+            "messaging retry target is unavailable"
         );
     }
 

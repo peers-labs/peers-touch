@@ -1221,6 +1221,9 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             allow_existing_fixture=True,
         )
         gate.clients = {"alice": Mock(), "bob": Mock()}
+        gate.clients["alice"].invoke_app_result.return_value = {
+            "ok": True, "data": {"paused": True},
+        }
         gate.clients["bob"].invoke_app_result.return_value = {
             "ok": True, "data": {"paused": True},
         }
@@ -1258,6 +1261,10 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         gate.clients["bob"].invoke_app_result.assert_called_once_with(
             "messaging_acceptance_pause_lifecycle",
             {"input": {"expected_actor_ptid": "ptid:bob"}},
+        )
+        gate.clients["alice"].invoke_app_result.assert_called_once_with(
+            "messaging_acceptance_pause_lifecycle",
+            {"input": {"expected_actor_ptid": "ptid:alice"}},
         )
         self.assertEqual(
             [call.args[1] for call in harness.call_args_list],

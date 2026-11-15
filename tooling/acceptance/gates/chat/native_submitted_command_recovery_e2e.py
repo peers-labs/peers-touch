@@ -33,6 +33,7 @@ REQUIRED_STEPS = {
     "command.reconciliation.restart",
     "command.reconciliation",
     "command.reconciliation.receiver_visible",
+    "command.committed_retry",
     "client.restart",
     "conversation.restore",
 }
@@ -81,6 +82,27 @@ def validate_submitted_command_recovery(report: dict) -> None:
     ]
     positions = [steps.index(name) for name in required_order]
     require(positions == sorted(positions), "Recovery must observe UI send, fault, real restart and convergence in order")
+    retry = runtime.get("committedMessageRetry")
+    require(isinstance(retry, dict), "Committed message retry evidence is required")
+    before, after = retry.get("before"), retry.get("after")
+    outcome, delivered = retry.get("retryOutcome"), retry.get("senderDelivered")
+    require(
+        isinstance(before, dict) and isinstance(after, dict)
+        and before.get("projection") is not None
+        and after.get("projection") == before.get("projection")
+        and after.get("commandLedger") == before.get("commandLedger")
+        and after.get("outbox") == before.get("outbox")
+        and (before.get("outbox") or {}).get("state") == "committed"
+        and retry.get("visibleRetryClicked") is True
+        and isinstance(outcome, dict)
+        and outcome.get("state") == "redriving"
+        and outcome.get("command_id") == target["commandId"]
+        and outcome.get("message_id") == target["messageId"]
+        and isinstance(delivered, dict)
+        and delivered.get("messageUlid") == target["messageId"]
+        and delivered.get("receipt") in {"delivered", "read"},
+        "Committed retry must preserve exact identity and converge to sender-visible delivery",
+    )
 
 
 def main() -> int:

@@ -926,6 +926,9 @@ submitted (Authority accepted fact)
   `next_attempt_at`，让用户看到排队原因与下一次尝试；
 - `undeliverable_suspected` 文案必须表达“尚未确认送达 + 当前原因分类”，禁止渲染成
   失败，禁止阻止后续事实升级；用户可显式“立即重试”，复用同一 command 身份；
+- 本地 Authority commit 删除 pending draft 后，“立即重试”通过已提交消息投影与
+  retained command ledger 解析原 command，唤醒投递/回执对账；不得要求已删除的
+  draft，不得降低 committed 状态、重新 prepare 或创建新消息；
 - Authority terminal reject 永远覆盖任何视野判断；
 - 群 `x/N delivered` 消费 originator Device Inbox 中已有的逐设备回执投影（同站
   enqueue / 跨站 Federation outbox），required set 仍由 immutable delivery
