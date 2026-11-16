@@ -959,6 +959,56 @@ class PublicFeedNativeEntryTest(unittest.TestCase):
         self.assertEqual(gate.e2e_preflight["selectedGateIds"], [GATE_ID])
         self.assertEqual(gate.e2e_preflight["dispatchGateIds"], [GATE_ID])
 
+    def test_click_reveals_a_present_offscreen_control_before_the_visible_gate(self):
+        gate = object.__new__(Gate)
+        client = Mock()
+        target = Mock()
+        client.find_elements.return_value = [target]
+        gate.clients = {"alice": client}
+        # Mounted but clipped on the first poll; after the reveal scroll the same
+        # real control satisfies the unchanged visible predicate.
+        gate.visible_element = Mock(side_effect=[None, target])
+
+        def fake_wait_until(predicate, description, *, timeout):
+            self.assertEqual(timeout, 120)
+            for _ in range(5):
+                value = predicate()
+                if value:
+                    return value
+            raise GateError(description)
+
+        with patch("tooling.acceptance.gates.social.public_feed_native.wait_until",
+                   side_effect=fake_wait_until):
+            gate.click("alice", ".offscreen-menu")
+        client.execute_script.assert_any_call(
+            "arguments[0].scrollIntoView({block:'center',inline:'nearest'});", target)
+        self.assertEqual(gate.visible_element.call_count, 2)
+        target.click.assert_called_once_with()
+
+    def test_click_never_passes_a_control_absent_from_the_dom(self):
+        gate = object.__new__(Gate)
+        client = Mock()
+        client.find_elements.return_value = []
+        client.execute_script.return_value = {"scopedPresent": False}
+        gate.clients = {"alice": client}
+        gate.visible_element = Mock(return_value=None)
+
+        def fake_wait_until(predicate, description, *, timeout):
+            for _ in range(3):
+                if predicate():
+                    return predicate()
+            raise GateError(description)
+
+        with patch("tooling.acceptance.gates.social.public_feed_native.wait_until",
+                   side_effect=fake_wait_until):
+            with self.assertRaises(GateError):
+                gate.click("alice", ".missing-menu")
+        # No present candidate means no reveal scroll, no visibility bypass and
+        # no click; only the failure diagnostic script is allowed to run.
+        self.assertFalse(any("scrollIntoView" in str(call)
+                             for call in client.execute_script.call_args_list))
+        gate.visible_element.assert_not_called()
+
     def test_inherited_chat_identity_is_rejected_before_construction(self):
         with patch.dict(os.environ, {PREFLIGHT_ENV: self.binding()}), patch.object(
             Gate, "gate_id", "chat-device-search-native-e2e",

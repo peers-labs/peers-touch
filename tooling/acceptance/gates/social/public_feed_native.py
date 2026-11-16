@@ -264,16 +264,20 @@ class Gate(DeviceSearchGate):
 
     def click(self, actor: str, selector: str) -> None:
         def locate() -> Any:
-            element = self.visible_element(actor, selector)
-            if element is not None:
-                # Feed accumulates many cards; bring the target into the
-                # viewport before interacting instead of relying on it staying
-                # on screen after later scenarios appended content.
-                self.clients[actor].execute_script(
-                    "arguments[0].scrollIntoView({block:'center',inline:'nearest'});",
-                    element,
-                )
-            return element
+            # Presence precedes visibility. The feed clips retained cards in
+            # its scroll container, so a mounted but offscreen control fails the
+            # native displayed predicate until its real element is revealed.
+            # Scrolling first is the same reveal order the poll/paint oracles
+            # use. A control that is missing or CSS-hidden still returns None,
+            # so the original visible gate and its deadline are preserved.
+            candidates = self.clients[actor].find_elements(selector)
+            if not candidates:
+                return None
+            self.clients[actor].execute_script(
+                "arguments[0].scrollIntoView({block:'center',inline:'nearest'});",
+                candidates[0],
+            )
+            return self.visible_element(actor, selector)
         try:
             element = wait_until(locate, selector, timeout=120)
         except GateError:
@@ -299,6 +303,16 @@ class Gate(DeviceSearchGate):
                   canEdit: card?.getAttribute('data-can-edit') ?? null,
                   menusInDom: document.querySelectorAll('[data-acceptance-id="social-moment-menu"]').length,
                   matchingCards: pid ? document.querySelectorAll(`[data-post-id="${pid}"]`).length : 0,
+                  scopedPresent: !!document.querySelector(s),
+                  scopedRect: (() => {
+                    const node = document.querySelector(s);
+                    if (!node) return null;
+                    const r = node.getBoundingClientRect();
+                    const cs = getComputedStyle(node);
+                    return { width: r.width, height: r.height, top: r.top, bottom: r.bottom,
+                      display: cs.display, visibility: cs.visibility, opacity: cs.opacity };
+                  })(),
+                  viewport: { width: innerWidth, height: innerHeight },
                   scrollY: window.scrollY,
                 };
             """, selector)
