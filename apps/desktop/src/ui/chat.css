@@ -4048,6 +4048,14 @@ body:has([data-chat-rail-resize][data-dragging='true']) {
   color: var(--pt-muted);
 }
 .sc-verdict--compact { font-size: 10px; }
+/* In-flight indicator shown after the user accepts a retry: the failure icon
+   is replaced by a quiet spinner, signalling the send is being re-attempted. */
+.sc-verdict--retrying {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--pt-muted);
+}
 .sc-verdict[data-message-delivery-state='fully_delivered'] { color: var(--pt-secondary); }
 .sc-verdict[data-message-delivery-state='submit_overdue'],
 .sc-verdict[data-message-delivery-state='undeliverable_suspected'] { color: var(--pt-warning); }
