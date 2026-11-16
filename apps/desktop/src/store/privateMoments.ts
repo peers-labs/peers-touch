@@ -543,10 +543,12 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
           }
         }
         return {
-          scope: {
-            ...state.scope,
-            nativeSessionGeneration: snapshot.sessionGeneration,
-          },
+          scope: state.scope.nativeSessionGeneration === snapshot.sessionGeneration
+            ? state.scope
+            : {
+                ...state.scope,
+                nativeSessionGeneration: snapshot.sessionGeneration,
+              },
           postsById,
           reactionCommands,
           ...(advancedGeneration ? { reactionLiveFlights: {} } : {}),

@@ -200,6 +200,9 @@ Social profile invalidation.
   terminal rejection has no retry action. Exact retry callers share their flight,
   while a direct retry cannot overlap the original submission. Ballots remain
   separate from post-reaction presentation and admission.
+  An equivalent Native-session snapshot retains the current private Moments
+  activation identity. A newer Native generation or explicit reactivation
+  replaces it, including reactivation with the same Actor and renderer values.
 - merge private Comment content generation and reaction revision independently,
   including replacement pages and Native snapshots; a delayed reaction updates
   only the currently retained target and cannot recreate a deleted row or restore

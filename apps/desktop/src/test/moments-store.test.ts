@@ -1989,6 +1989,48 @@ describe('private Moments Native projection', () => {
     );
   });
 
+  it.each(['bootstrap', 'reconcile'] as const)(
+    'preserves private activation identity across same-session %s',
+    async action => {
+      installEventWindowStub();
+      Object.assign(window, { __TAURI_INTERNALS__: {} });
+      usePrivateMomentsStore.getState().activateActor('ptid:viewer', 5);
+      const snapshot = (generation: string) => statusOk({
+        actor_ptid: 'ptid:viewer',
+        device_id: 'device-1',
+        session_generation: generation,
+        projections: [],
+      });
+      enqueue('social_private_moments_bootstrap', snapshot('9'));
+      await usePrivateMomentsStore.getState().bootstrap(5);
+      const activation = usePrivateMomentsStore.getState().scope;
+
+      enqueue(
+        action === 'bootstrap'
+          ? 'social_private_moments_bootstrap' : 'social_private_moments_reconcile',
+        snapshot('9'),
+      );
+      if (action === 'bootstrap') {
+        await usePrivateMomentsStore.getState().bootstrap(5);
+      } else {
+        await usePrivateMomentsStore.getState().reconcile(['poll'], 'periodic', 5);
+      }
+      expect(usePrivateMomentsStore.getState().scope).toBe(activation);
+
+      enqueue('social_private_moments_bootstrap', snapshot('10'));
+      await usePrivateMomentsStore.getState().bootstrap(5);
+      const advanced = usePrivateMomentsStore.getState().scope;
+      expect(advanced).not.toBe(activation);
+      expect(advanced.nativeSessionGeneration).toBe('10');
+
+      usePrivateMomentsStore.getState().activateActor('ptid:viewer', 5);
+      enqueue('social_private_moments_bootstrap', snapshot('10'));
+      await usePrivateMomentsStore.getState().bootstrap(5);
+      expect(usePrivateMomentsStore.getState().scope).toEqual(advanced);
+      expect(usePrivateMomentsStore.getState().scope).not.toBe(advanced);
+    },
+  );
+
   it('retains the projection reference when a same-generation reconcile is unchanged', async () => {
     installEventWindowStub();
     Object.assign(window, { __TAURI_INTERNALS__: {} });
