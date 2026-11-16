@@ -807,6 +807,9 @@ fn main() {
                 {
                     tracing::warn!(error = %error, "native notifications unavailable");
                 }
+                if let Err(error) = application::wake_lock::init(app.handle().clone()) {
+                    tracing::warn!(error = %error, "idle auto-lock observer unavailable");
+                }
             }
             Ok(())
         })
@@ -1386,6 +1389,7 @@ fn main() {
             notification::notification_preferences,
             notification::notification_preferences_update,
             host_events::desktop_native_event_emit,
+            host_events::desktop_wake_ack,
             #[cfg(feature = "acceptance-webdriver")]
             station::acceptance_station_route_probe,
             #[cfg(feature = "acceptance-webdriver")]
@@ -1397,6 +1401,7 @@ fn main() {
             native_surface::native_window_apply_auth_surface,
             native_surface::native_window_apply_ready_surface,
             station::station_list,
+            station::station_local_candidates,
             station::station_set_active,
             station::station_binding_complete,
             station::station_add,
@@ -1498,6 +1503,9 @@ fn main() {
         // bound by a generous wall-clock budget so a wedged station
         // cannot prevent shutdown.
         if matches!(event, tauri::RunEvent::Resumed) {
+            // Arm the blank-webview watchdog before emitting resume; the
+            // renderer acks through desktop_wake_ack once its event loop runs.
+            application::wake_watchdog::arm(app);
             if let Err(error) = application::host_events::emit_resume(app, "tauri-run-event") {
                 let _ = application::host_events::emit_native_event_error(
                     app,

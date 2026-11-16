@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { WindowDragRegion } from '../shell/WindowDragRegion';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import {
   type ChatAttachmentLike,
@@ -1157,7 +1158,7 @@ export function ChatDetailPanel() {
       {/* Header — prototype .sk-side-head: title left, quiet search/background/
           close glyph actions right. Background and message search are header
           actions, not full setting rows. */}
-      <header className="sc-detail__header" style={{ height: DETAIL_HEADER_HEIGHT }}>
+      <WindowDragRegion><header className="sc-detail__header" style={{ height: DETAIL_HEADER_HEIGHT }}>
         <strong>{t('chat.social.detail.title')}</strong>
         <span className="sc-detail__header-actions">
           <IconButton
@@ -1197,7 +1198,7 @@ export function ChatDetailPanel() {
             onActivate={() => setShowDetail(false)}
           />
         </span>
-      </header>
+      </header></WindowDragRegion>
 
       {/* Scrollable content */}
       <div className="sc-detail__scroll">

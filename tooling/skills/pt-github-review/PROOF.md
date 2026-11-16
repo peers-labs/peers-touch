@@ -15,6 +15,9 @@
 7. Review Learning Check classifies every reusable lesson into a durable repository asset or records `no_growth_needed`;
 8. MR/PR submission starts the quality lifecycle before PR creation;
 9. self-growth is constrained to PR-reviewed updates with fixtures, gates, knowledge, skills, CI/tooling, and owner review.
+10. real Git topology regressions reject silent/historical regressions, weak
+    standards, missing/failed/zero/skipped/stale proof and unsafe release
+    entrypoints while accepting legitimate preservation and replacement.
 
 ## Proof Command
 
@@ -45,6 +48,9 @@ fails.
 | Knowledge directory matching | trailing-slash `owns:` regression in `skill-check.sh` |
 | Growth protocol fixtures | `tooling/review-fixtures/growth-*/growth.yml` |
 | Review OS integration | `make review` and `.github/workflows/review.yml` |
+| Actual integration admission | `integration_review.py`, `integration_gate.py`, submit and GitHub entrypoints |
+| Real topology and entrypoint regressions | `integration_review_test.py` invoked by `skill-check.sh` and CI |
+| External original-output transport | `integration_evidence.py` and `integration-evidence.yml` |
 
 ## Current Golden Fixtures
 
@@ -67,3 +73,8 @@ fails.
 The skill may propose updates to itself, fixtures, `docs/knowledge`, acceptance
 contracts/gates, or CI/tooling, but those changes must pass `skill-check.sh` and
 CODEOWNER review before merge.
+
+Keywords and fixture schema cannot prove Agent competence. Independent
+unpublished-case calibration and live GitHub branch-protection audit are
+separate evidence. Until the required server checks are active, local gate
+success cannot be described as server enforcement.

@@ -21,6 +21,7 @@ import { conversationContentWidth, CONVERSATION_DOCK_WIDTH } from './conversatio
 import { resolveI18nValue } from '../i18n';
 import { useAgentStore } from '../store/agent';
 import { extractMessageArtifacts, useChatStore } from '../store/chat';
+import { WindowDragRegion } from '../components/shell/WindowDragRegion';
 
 export function ChatPage({ narrow }: { onOpenProfile?: () => void; narrow?: boolean }) {
   const { t } = useTranslation('agent');
@@ -126,7 +127,7 @@ export function ChatPage({ narrow }: { onOpenProfile?: () => void; narrow?: bool
         background: token.colorBgContainer,
       }}
     >
-      <header
+      <WindowDragRegion><header
         data-pt-agent-conversation-header
         style={{
           height: 52,
@@ -154,7 +155,7 @@ export function ChatPage({ narrow }: { onOpenProfile?: () => void; narrow?: bool
           {topicTitle}
         </strong>
         {searchOpen ? (
-          <div
+          <WindowDragRegion mode="none"><div
             role="search"
             aria-label={t('agent.chat.search.open')}
             style={{
@@ -235,7 +236,7 @@ export function ChatPage({ narrow }: { onOpenProfile?: () => void; narrow?: bool
               title={t('agent.chat.search.close')}
               onClick={closeSearch}
             />
-          </div>
+          </div></WindowDragRegion>
         ) : (
           <ActionIcon
             ref={searchTriggerRef}
@@ -248,7 +249,7 @@ export function ChatPage({ narrow }: { onOpenProfile?: () => void; narrow?: bool
             }}
           />
         )}
-      </header>
+      </header></WindowDragRegion>
 
       <div
         ref={scrollRef}

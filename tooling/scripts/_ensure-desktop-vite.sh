@@ -24,7 +24,7 @@ vite_compute_fingerprint() {
   local web_port="$2"
   local gateway_port="$3"
   local profile="$4"
-  local station_url="${PEERS_STATION_URL:-}"
+  local station_url="${PEERS_PROFILE_STATION_URL:-${PEERS_STATION_URL:-}}"
   local acceptance_harness="${VITE_ACCEPTANCE_HARNESS:-}"
 
   local files=()
@@ -142,7 +142,7 @@ ensure_desktop_vite_ready() {
     if [[ "$native_dev" == "1" ]]; then
       echo "[ERROR] Native Desktop renderer port :$web_port is already occupied"
       return 1
-    elif vite_is_healthy "$web_port" && vite_meta_matches "$VITE_META_FILE" "$desired_fp" "$web_port" "$gateway_port" "$profile" "${PEERS_STATION_URL:-}" "${VITE_ACCEPTANCE_HARNESS:-}"; then
+    elif vite_is_healthy "$web_port" && vite_meta_matches "$VITE_META_FILE" "$desired_fp" "$web_port" "$gateway_port" "$profile" "${PEERS_PROFILE_STATION_URL:-${PEERS_STATION_URL:-}}" "${VITE_ACCEPTANCE_HARNESS:-}"; then
       echo "[INFO] Vite already running and reusable on $web_url"
       return 0
     else
@@ -165,7 +165,7 @@ VITE_FINGERPRINT='${desired_fp}'
 VITE_PROFILE='${profile}'
 VITE_PORT='${web_port}'
 VITE_GATEWAY_PORT='${gateway_port}'
-VITE_STATION_URL='${PEERS_STATION_URL:-}'
+VITE_STATION_URL='${PEERS_PROFILE_STATION_URL:-${PEERS_STATION_URL:-}}'
 VITE_ACCEPTANCE_HARNESS='${VITE_ACCEPTANCE_HARNESS:-}'
 VITE_PID='${VITE_PID}'
 EOF

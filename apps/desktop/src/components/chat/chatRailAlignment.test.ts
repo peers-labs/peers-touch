@@ -9,6 +9,14 @@ const listSource = readFileSync(new URL('./ChatSessionList.tsx', import.meta.url
 const detailSource = readFileSync(new URL('./ChatDetailPanel.tsx', import.meta.url), 'utf8');
 const createGroupSource = readFileSync(new URL('./CreateGroupModal.tsx', import.meta.url), 'utf8');
 const chatCss = readFileSync(new URL('../../ui/chat.css', import.meta.url), 'utf8');
+const prototypeRailSource = readFileSync(
+  new URL('../../../../../packages/prototypes/shared/ui-system/chat/ChatRail.tsx', import.meta.url),
+  'utf8',
+);
+const prototypeChatCss = readFileSync(
+  new URL('../../../../../packages/prototypes/shared/ui-system/chat/chat.css', import.meta.url),
+  'utf8',
+);
 
 function collectTsxSources(dirUrl: URL): string[] {
   return readdirSync(dirUrl, { withFileTypes: true }).flatMap((entry) => {
@@ -39,6 +47,58 @@ describe('chat rail prototype alignment', () => {
     const rowRule = chatCss.match(/\.sc-session-row\s*\{[^}]*\}/)?.[0] ?? '';
     expect(rowRule).toMatch(/position:\s*relative/);
     expect(chatCss).toMatch(/\.sc-session-row__actions\s*\{[^}]*position:\s*absolute/);
+  });
+
+  it('keeps only a three-dot row action and moves status tags to the bottom-right in both hosts', () => {
+    // Quick pin/mute buttons are removed: the three-dot menu owns every action.
+    expect(listSource).not.toContain('actionId={`session.pin-');
+    expect(listSource).not.toContain('actionId={`session.mute-');
+    expect(listSource).toContain('actionId={`session.more-');
+    expect(prototypeRailSource).not.toContain('data-row-action="pin"');
+    expect(prototypeRailSource).not.toContain('data-row-action="mute"');
+    expect(prototypeRailSource).toContain('data-row-action="more"');
+    // pin-off still appears inside the context menus (state-correct glyph).
+    expect(listSource).toContain("iconId: isPinned ? 'pin-off' : 'pin'");
+    expect(prototypeRailSource).toContain(
+      "leading: c.pinned ? <PinOff size={14} /> : <Pin size={14} />",
+    );
+    // Status tags live on the bottom line, not the name line, and yield the
+    // corner to the three-dot tile on hover/focus.
+    expect(listSource).toContain('sc-session-row__flags');
+    const nameBlock = listSource.match(
+      /className="sc-session-row__name"[\s\S]*?<\/span>\s*<span className="sc-session-row__time"/,
+    )?.[0] ?? '';
+    expect(nameBlock).not.toContain('sc-session-row__flag');
+    expect(chatCss).toContain('.sc-session-row:focus-within .sc-session-row__flags');
+    expect(prototypeRailSource).toMatch(
+      /<span className="sk-conv-preview">[\s\S]*?sk-conv-flags/,
+    );
+    expect(prototypeChatCss).toContain('.sk-conv-item:focus-within .sk-conv-flags');
+    // The single-tile lane is ~36px, not the old three-button 88px.
+    expect(chatCss).toMatch(
+      /\.sc-session-row:focus-within \.sc-session-row__preview\s*\{[^}]*margin-right: 36px;/,
+    );
+    expect(prototypeChatCss).toMatch(
+      /\.sk-conv-item:focus-within \.sk-conv-preview\s*\{[^}]*margin-right: 36px;/,
+    );
+    // Hidden action pills must not intercept row clicks.
+    const actionsRule = prototypeChatCss.match(/\.sk-conv-actions\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(actionsRule).toContain('pointer-events: none');
+  });
+
+  it('holds icon-only segmented tiles at a fixed size and slides instead of squashing', () => {
+    const primitiveCss = readFileSync(
+      new URL('../../../../../packages/ui/web/src/styles.css', import.meta.url),
+      'utf8',
+    );
+    const iconOnlyRule = primitiveCss.match(
+      /\.pt-segmented\[data-icon-only='true'\]>\.pt-button\s*\{([^}]*)\}/,
+    )?.[1] ?? '';
+    expect(iconOnlyRule).toContain('flex:0 0 auto');
+    expect(iconOnlyRule).toContain('width:var(--pt-control-compact)');
+    expect(primitiveCss).toMatch(
+      /\.pt-segmented\[data-icon-only='true'\]\s*\{[^}]*overflow-x:auto/,
+    );
   });
 
   it('renders session preview at the prototype 11.5px muted scale', () => {

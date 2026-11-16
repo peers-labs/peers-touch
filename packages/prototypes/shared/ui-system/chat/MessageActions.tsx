@@ -16,7 +16,7 @@ import {
   Bookmark, Check, CheckCheck, Copy, CornerUpLeft, EyeOff, Flag, Forward, ListChecks, Loader2,
   MessageCircle, MoreHorizontal, Pencil, Pin, RotateCcw, Smile, Undo2,
 } from 'lucide-react';
-import { Button, Dialog, Empty, Menu, Popover, Tag, type MenuEntry } from '@peers-touch/ui';
+import { Button, Dialog, Empty, IconButton, Menu, Popover, Tag, type MenuEntry } from '@peers-touch/ui';
 import type { ChatMessage, Conversation, DeliveryStatus } from './chat-data';
 import { usePrefs, useT, type Translate } from '../prefs';
 import {
@@ -59,12 +59,13 @@ export function DeliveryMeta({ message, onRetry }: {
   const status = message.status;
   if (status === 'failed') {
     return onRetry ? (
-      <button type="button" className="sk-msg-retry" data-msg-retry
-        aria-label={t('status.failedAria')} title={t('status.failedAria')}
-        onClick={event => { event.stopPropagation(); onRetry(); }}>
-        <RotateCcw size={11} /> {t('status.failedRetry')}
-      </button>
-    ) : <span className="sk-msg-status is-failed"><RotateCcw size={11} /> {t('status.failed')}</span>;
+      <IconButton actionId={`message-retry-${message.id}`} data-msg-retry
+        iconId="rotate-ccw" iconSize={12} density="compact" emphasis="quiet"
+        label={t('status.failedAria')} title={t('status.failedAria')}
+        onActivate={event => { event.stopPropagation(); onRetry(); }} />
+    ) : <span className="sk-msg-status is-failed" aria-label={t('status.failed')} title={t('status.failed')}>
+      <RotateCcw size={11} />
+    </span>;
   }
   const map: Record<Exclude<DeliveryStatus, 'failed'>, { node: React.ReactNode; label: string }> = {
     sending: { node: <Loader2 size={11} className="sk-spin" />, label: t('status.sending') },

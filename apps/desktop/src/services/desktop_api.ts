@@ -283,6 +283,14 @@ export interface DesktopNativeHostEventInput {
   reason?: string;
 }
 
+export interface DesktopWakeAckInput {
+  reason: string;
+}
+
+export interface DesktopWakeAckResult {
+  acknowledged: boolean;
+}
+
 export interface DesktopHealth {
   readonly status: 'ok';
   readonly clientForm: 'desktop';
@@ -4945,6 +4953,17 @@ export interface StationDiscoveryResult {
   entries: StationEntry[];
 }
 
+export type LocalStationCandidateSource = 'environment' | 'injected';
+
+export interface LocalStationCandidate {
+  source: LocalStationCandidateSource;
+  canonical_origin: string;
+}
+
+export interface StationLocalCandidatesResponse {
+  candidates: LocalStationCandidate[];
+}
+
 export type XConfigFreshness = 'current' | 'stale' | 'embedded' | 'unavailable';
 
 export interface XConfigSuggestion {
@@ -8820,6 +8839,15 @@ export const api = {
       input,
     ),
 
+  // Renderer liveness ack for the native resume watchdog. A missing ack after
+  // a system resume tells the native side the WebView is unresponsive and must
+  // be reloaded to recover from a blank compositing surface.
+  desktopWakeAck: (input: DesktopWakeAckInput) =>
+    invokeRustDataFromStatus<DesktopWakeAckInput, DesktopWakeAckResult>(
+      'desktop_wake_ack',
+      input,
+    ),
+
   nativeNotificationShow: (input: NativeNotificationShowInput) =>
     invokeRustDataFromStatus<NativeNotificationShowInput, NativeNotificationShowResult>(
       'native_notification_show',
@@ -8846,6 +8874,11 @@ export const api = {
 
   stationList: () =>
     invokeRustDataFromStatus<void, StationListResponse>('station_list'),
+
+  stationLocalCandidates: () =>
+    invokeRustDataFromStatus<void, StationLocalCandidatesResponse>(
+      'station_local_candidates',
+    ),
 
   stationSetActive: async (stationPeerId: string, routeId?: string) => {
     const result = await invokeRustDataFromStatus<

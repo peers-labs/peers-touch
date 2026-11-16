@@ -724,7 +724,11 @@ export async function startDesktop(
   const childEnvironment = windowsDeveloperEnvironment({
     ...runtimeEnv,
     PT_PROFILE: runtimeIdentity.profile,
-    PEERS_STATION_URL: resolved.profile.PT_STATION_URL,
+    // Profile Station is delivered through its own source-tagged channel so
+    // the app can classify it as the environment tier. An externally supplied
+    // PEERS_STATION_URL passes through runtimeEnv unchanged as the injected
+    // tier; the Profile value must never overwrite it (NCP-D22/NCP-D23).
+    PEERS_PROFILE_STATION_URL: resolved.profile.PT_STATION_URL,
     PEERS_STATION_MODE: resolved.profile.PT_STATION_MODE,
     PEERS_STORAGE_ROOT: runtimeIdentity.storageRoot,
     PT_GATEWAY_PORT: String(values.gatewayPort),

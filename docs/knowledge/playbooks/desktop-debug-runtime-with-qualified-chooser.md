@@ -56,6 +56,62 @@ installer, signing, or package-only validation.
 7. Release only owned processes, staging directories, storage and leases.
    Diagnose cleanup failure before further dispatch.
 
+## Station Candidate Catalog (login surface)
+
+The login Station switcher renders one candidate catalog built from three
+source tiers, ordered by proximity to the local runtime
+(architecture decision NCP-D22..D24, module `node-connectivity`):
+
+1. `environment` — the Profile/environment-repository Station, delivered through
+   the source-tagged `PEERS_PROFILE_STATION_URL` that `tooling/devctl/desktop.mjs`
+   derives from the selected Profile's `PT_STATION_URL`. Packaged builds never
+   set this tier.
+2. `injected` — a process-level `PEERS_STATION_URL` supplied by a shell,
+   operator/MDM launch, or an E2E/Acceptance harness.
+3. `xconfig` — direct-Station suggestions from the accepted signed snapshot.
+
+Ordering is `environment > injected > xconfig`; identical normalized origins
+collapse into one row keeping the highest-priority source label. Verified
+registry entries never reappear as suggestions.
+
+Operational rules:
+
+- Packaged builds and the `injected`/`xconfig` tiers never auto-select. On a
+  clean Profile storage the picker shows the ordered catalog and waits for a
+  click.
+- Development convenience: the `environment` tier (`PEERS_PROFILE_STATION_URL`,
+  present only under `make desktop`) is activated automatically on the login
+  surface by `ensureDevStationActive` (guarded by `import.meta.env.DEV`). With no
+  active Station it re-runs signed discovery `station_add` to refresh route
+  attestations, picks the freshest healthy direct route (falls back to relay),
+  then `station_set_active`. Re-discovery is mandatory because a persisted route
+  with an expired attestation is rejected by activation. It is idempotent, never
+  touches the other two tiers, and logs `failed` instead of blocking the card.
+- Selecting any candidate manually runs the same signed discovery
+  (`station_add` for local tiers, `x_config_discover_suggestion` for cloud).
+  Only verified routes enter `stations.json`; an environment variable can never
+  bypass discovery or extend auth identity-migration origins (NCP-D23).
+- After activation the active Station id persists in `stations.json` and is
+  restored automatically on later launches (`already-active` short-circuit); no
+  second click is needed. Removing the active Station returns to the unpicked
+  catalog.
+- X Config being unavailable never blocks the local catalog; cloud rows simply
+  stay absent or nonactionable.
+
+Quick triage when `make desktop` still shows "No stations configured":
+
+```bash
+# Is the Profile channel actually exported to the running app?
+pgrep -af peers-touch | tr ' ' '\n' | grep PEERS_PROFILE_STATION_URL
+# Read-only projection of the two local tiers (no discovery, no storage write)
+# through the station_local_candidates command; the renderer catalog merges it
+# with station_list and the x_config projection.
+```
+
+If the variable is missing, the machine registry is not bound to the expected
+Profile — fix the Profile binding, not the client. If it is present but the row
+is missing, check origin normalization (http/https only, trailing slash trimmed).
+
 ## Verification
 
 Run the focused source and Driver/Cell checks, then the exact-source native

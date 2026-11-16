@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { WindowDragRegion } from '../../components/shell/WindowDragRegion';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft } from 'lucide-react';
 import { Button, StatGrid } from '@peers-touch/ui';
@@ -104,6 +105,7 @@ export function MomentsUserView({
 
   return (
     <div>
+      <WindowDragRegion><div>
       <Button
         actionId="moments.profile.back"
         emphasis="quiet"
@@ -113,6 +115,7 @@ export function MomentsUserView({
       >
         {t('moments.action.back')}
       </Button>
+      </div></WindowDragRegion>
 
       <UserProfileHeader
         actor={author ?? fallbackAuthor}

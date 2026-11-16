@@ -19,14 +19,15 @@ from tooling.acceptance.gates.chat.native_two_client_runner import (
     CURRENT_PROFILE_REQUIRED_ASSERTIONS,
     REQUIRED_ASSERTIONS,
 )
+from tooling.acceptance.gates.chat.drawer_layout import REQUIRED_DRAWER_ASSERTIONS, drawer_geometry_valid
 
 
 REQUIRED_CURRENT_PROFILE_STEPS = (
     REQUIRED_STEPS - {"fixture.reset"}
-    | {"fixture.existing", "runtime.instance_isolation", "client.restart", "conversation.restore"}
+    | {"fixture.existing", "runtime.instance_isolation", "client.restart", "conversation.restore", "layout.drawer"}
 )
 REQUIRED_CURRENT_PROFILE_ASSERTIONS = (
-    REQUIRED_ASSERTIONS | CURRENT_PROFILE_REQUIRED_ASSERTIONS
+    REQUIRED_ASSERTIONS | CURRENT_PROFILE_REQUIRED_ASSERTIONS | REQUIRED_DRAWER_ASSERTIONS
 )
 
 
@@ -125,6 +126,15 @@ def main() -> int:
         required_assertions=REQUIRED_CURRENT_PROFILE_ASSERTIONS,
     )
     validate_current_profile_topology(report)
+    drawer = report["runtime"].get("drawerLayout") or {}
+    frames = drawer.get("frames") or []
+    require(
+        len(frames) == 5 and all(drawer_geometry_valid(frame) for frame in frames)
+        and all(frame["catalog"]["width"] >= 200 and frame["compact"] == "false" for frame in frames[:2])
+        and len(drawer.get("pointer") or []) == 2
+        and drawer.get("draftRetained") is True and drawer.get("windowRestored") is True,
+        "Native drawer pressure, input, draft and window restoration evidence is incomplete",
+    )
     validation_ref = write_validation(
         report, source_ref=source_ref, gate_id=CURRENT_PROFILE_GATE_ID,
         required_assertions=REQUIRED_CURRENT_PROFILE_ASSERTIONS,

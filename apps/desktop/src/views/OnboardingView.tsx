@@ -20,6 +20,8 @@ export function OnboardingView({ lifecycle }: OnboardingViewProps) {
         onUnlockWithPin={lifecycle.unlockWithPin}
         restoredUser={lifecycle.restoredUser}
         knownAccounts={lifecycle.knownAccounts}
+        lockedAccountId={lifecycle.lockedAccountId}
+        onLockConsumed={lifecycle.clearLockMarker}
       />
     </GlobalLayout>
   );

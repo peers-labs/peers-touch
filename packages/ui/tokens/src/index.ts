@@ -1,4 +1,5 @@
 /** Concrete value owner. UI Identity owns the meanings and their policy. */
+import { structuralSurfaces } from './structural-surfaces';
 export { foundationCandidates, foundationCandidateVariables } from './foundation-candidates';
 export type { FoundationCandidate } from './foundation-candidates';
 export { expressionCandidate, expressionCandidateVariables } from './expression-candidate';
@@ -8,7 +9,11 @@ export const geometry = {
   radius: { xs: 4, sm: 8, md: 10, lg: 14, xl: 18, '2xl': 22, full: 999 },
   space: { xxs: 4, xs: 8, sm: 12, md: 16, lg: 20, xl: 24, xxl: 32 },
   control: { compact: 28, searchCompact: 34, row: 30, menu: 30, normal: 36, comfortable: 44 },
-  composer: { radius: 12, inset: 6, collapsedRows: 1, expandedRows: 4, maximumRows: 10 },
+  frame: { inset: 1 },
+  avatar: { navigation: { size: 36, radius: 6 }, catalog: { size: 36, radius: 6 } },
+  composer: { radius: 8, inset: 6, outerInset: 8, inputPadding: '12px 16px 8px', collapsedRows: 1, expandedRows: 4, maximumRows: 10 },
+  chatRail: { defaultWidth: 300, minWidth: 64, rowsMinWidth: 144, toolsMinWidth: 160, rowHeight: 48, maxWidth: 360, keyboardStep: 16, resizeHitWidth: 10 },
+  drawer: { work: { minimum: 200, usable: 280, reading: 480, compactTools: 400, sideActionRail: 720 }, leaf: { width: 320 } },
   icon: { compact: 16, normal: 18, comfortable: 20 },
   font: {
     sans: "Manrope, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', 'PingFang SC', sans-serif",
@@ -18,8 +23,9 @@ export const geometry = {
   layer: { popup: 1000 },
   social: { feedTopThreshold: 4, feedPillInset: 4, authorAvatar: 48, profileAvatar: 72 },
   motion: {
-    instant: 0, fast: 100, surface: 140, searchReveal: 160, normal: 200, slow: 300,
+    instant: 0, fast: 100, surface: 140, searchReveal: 160, normal: 200, slow: 300, navigation: 420,
     searchFocus: 'cubic-bezier(.22,1,.36,1)',
+    drawer: 'cubic-bezier(.25,.25,.5,1)',
     standard: 'cubic-bezier(0.645, 0.045, 0.355, 1)',
     out: 'cubic-bezier(0.215, 0.61, 0.355, 1)',
     emphasized: 'cubic-bezier(0.78, 0.14, 0.15, 0.86)',
@@ -59,6 +65,7 @@ const pine: Record<'light' | 'dark', { solid: string; hover: string; on: string;
   dark: { solid: '#5ea182', hover: '#6fb091', on: '#0e1a14', subtle: 'rgba(94,161,130,0.16)' },
 };
 const light = {
+  ...structuralSurfaces.light,
   canvas: '#f4f5f4', surface: '#ffffff', subtle: '#eef0f0', raised: '#ffffff',
   text: '#171a1c', secondary: '#5d6368', muted: '#8a9096',
   primary: ink.light.solid, primaryHover: ink.light.hover, onPrimary: ink.light.onSolid,
@@ -75,6 +82,7 @@ const light = {
   mediaStage: '#10131a', mediaStageSoft: '#1b1f29', mediaStageText: 'rgba(255,255,255,0.65)',
 };
 const dark: typeof light = {
+  ...structuralSurfaces.dark,
   canvas: '#101211', surface: '#171b19', subtle: '#1f2421', raised: '#232926',
   text: '#f1f3f2', secondary: '#aeb6b1', muted: '#8f9792',
   primary: ink.dark.solid, primaryHover: ink.dark.hover, onPrimary: ink.dark.onSolid,
@@ -121,6 +129,13 @@ export function tokenVariables(mode: 'light' | 'dark'): Record<string, string> {
   for (const [key, value] of Object.entries(geometry.control)) out[`--pt-control-${key}`] = `${value}px`;
   out['--pt-composer-radius'] = `${geometry.composer.radius}px`;
   out['--pt-composer-inset'] = `${geometry.composer.inset}px`;
+  out['--pt-composer-outer-inset'] = `${geometry.composer.outerInset}px`;
+  out['--pt-composer-input-padding'] = geometry.composer.inputPadding;
+  out['--pt-frame-inset'] = `${geometry.frame.inset}px`;
+  out['--pt-avatar-navigation-size'] = `${geometry.avatar.navigation.size}px`;
+  out['--pt-avatar-navigation-radius'] = `${geometry.avatar.navigation.radius}px`;
+  out['--pt-avatar-catalog-size'] = `${geometry.avatar.catalog.size}px`;
+  out['--pt-chat-session-row-height'] = `${geometry.chatRail.rowHeight}px`;
   for (const [key, value] of Object.entries(geometry.motion)) out[`--pt-motion-${key}`] = typeof value === 'number' ? `${value}ms` : value;
   out['--pt-font'] = geometry.font.sans;
   out['--pt-mono'] = geometry.font.mono;

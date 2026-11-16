@@ -3,6 +3,7 @@ import { Button, theme } from 'antd';
 import { useTranslation } from 'react-i18next';
 
 import { useAgentStore } from '../../../store/agent';
+import { WindowDragRegion } from '../../shell/WindowDragRegion';
 
 // Placeholder sub-surface for the former top-level Atelier module. It renders
 // no extension runtime: no runtime page, extension store, page descriptor or
@@ -25,7 +26,7 @@ export function AtelierPlaceholder({ agentName }: { agentName: string }) {
         background: token.colorBgLayout,
       }}
     >
-      <div
+      <WindowDragRegion><div
         style={{
           flexShrink: 0,
           height: 52,
@@ -49,7 +50,7 @@ export function AtelierPlaceholder({ agentName }: { agentName: string }) {
         <span style={{ fontSize: 14, fontWeight: 700, color: token.colorText }}>
           {t('agent.atelier.title')}
         </span>
-      </div>
+      </div></WindowDragRegion>
       <div
         style={{
           flex: 1,

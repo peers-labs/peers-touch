@@ -10,6 +10,8 @@ export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
   emphasis?: Emphasis;
   tone?: ActionTone;
   density?: Density;
+  /** Identity image is the complete control, without a second button frame. */
+  appearance?: 'control' | 'identity';
   behavior?: ActionBehavior;
   availability?: Availability;
   execution?: ActionExecution;
@@ -21,7 +23,7 @@ export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
 }
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button({
   actionId, label, children, emphasis = 'secondary', tone = 'neutral', density = 'normal',
-  behavior = 'action', availability, execution = 'idle', executionLabel,
+  appearance = 'control', behavior = 'action', availability, execution = 'idle', executionLabel,
   leading, trailing, fullWidth, onActivate, onClick, className = '', ...props
 }, ref) {
   const reason = disabledReason(availability);
@@ -35,6 +37,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     <button {...props} ref={ref} type={behavior === 'action' ? 'button' : behavior}
       className={`pt-button ${className}`} data-action-id={actionId} data-emphasis={emphasis}
       data-tone={tone} data-density={density} data-execution={execution}
+      data-appearance={appearance}
       data-full-width={fullWidth || undefined}
       aria-disabled={!allowed || undefined} aria-busy={busy || undefined}
       aria-label={props['aria-label'] ?? label}

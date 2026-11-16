@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
+import { WindowDragRegion } from '../components/shell/WindowDragRegion';
 import { Button, Tag } from '@lobehub/ui';
 import { Empty, Input, Select, theme } from 'antd';
 import {
@@ -717,7 +718,7 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
       }}
     >
       <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <header
+        <WindowDragRegion><header
           style={{
             flexShrink: 0,
             minHeight: 86,
@@ -755,7 +756,7 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
             <Tag color="purple" style={{ margin: 0 }}>{engineLabel}</Tag>
             <Tag color="green" style={{ margin: 0 }}>{t('agent.canvas.goalKeeperEnabled')}</Tag>
           </Flexbox>
-        </header>
+        </header></WindowDragRegion>
 
         <section
           style={{

@@ -81,7 +81,7 @@ export function PrototypePortal() {
   useEffect(() => {
     if (!fullscreen) return;
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') setFullscreen(false);
+      if (event.key === 'Escape' && !event.defaultPrevented) setFullscreen(false);
     };
     document.body.classList.add('prototype-preview-fullscreen-open');
     window.addEventListener('keydown', handleKeyDown);

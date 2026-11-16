@@ -94,6 +94,11 @@ export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(function 
 }, ref) {
   const inputFocus = useInputFocusPolicy();
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  // Last effective height constraints. ResizeObserver alone cannot catch a
+  // min/max-height change that leaves the border box unchanged: auto-grow's own
+  // inline height then pins the box, so collapsing an expanded field never
+  // re-measures (expansion works because a larger min-height forces the box).
+  const constraintKeyRef = useRef('');
   const bindRef = useCallback((element: HTMLTextAreaElement | null) => {
     inputRef.current = element;
     if (typeof ref === 'function') ref(element);
@@ -111,7 +116,10 @@ export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(function 
       floor * lineHeight + padding,
       Number.parseFloat(computed.minHeight) || 0,
     );
-    const maximumHeight = Math.max(minimumHeight, ceiling * lineHeight + padding);
+    const maximumHeight = Math.max(minimumHeight, Math.min(
+      ceiling * lineHeight + padding,
+      Number.parseFloat(computed.maxHeight) || Number.POSITIVE_INFINITY,
+    ));
     element.style.height = 'auto';
     const height = Math.min(Math.max(element.scrollHeight, minimumHeight), maximumHeight);
     element.style.height = `${height}px`;
@@ -120,16 +128,35 @@ export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(function 
   useLayoutEffect(() => {
     grow();
     const element = inputRef.current;
-    if (!autoGrow || !element || typeof ResizeObserver === 'undefined') return;
+    if (!autoGrow || !element) return;
+    constraintKeyRef.current = (() => {
+      const computed = getComputedStyle(element);
+      return `${computed.minHeight}:${computed.maxHeight}`;
+    })();
+    if (typeof ResizeObserver === 'undefined') return;
     let measurementKey = '';
     const observer = new ResizeObserver(() => {
       const computed = getComputedStyle(element);
-      const nextKey = `${element.clientWidth}:${computed.lineHeight}:${computed.paddingTop}:${computed.paddingBottom}:${computed.minHeight}`;
+      const nextKey = `${element.clientWidth}:${computed.lineHeight}:${computed.paddingTop}:${computed.paddingBottom}:${computed.minHeight}:${computed.maxHeight}`;
       if (nextKey !== measurementKey) { measurementKey = nextKey; grow(); }
     });
     observer.observe(element);
     return () => observer.disconnect();
   }, [autoGrow, grow, props.value, density]);
+  // Re-measure when the min/max-height contract changes even if the border box
+  // does not resize. Callers that drive expand/collapse through CSS constraints
+  // (rather than row props) re-render with a new style object on each toggle.
+  useLayoutEffect(() => {
+    if (!autoGrow) return;
+    const element = inputRef.current;
+    if (!element) return;
+    const computed = getComputedStyle(element);
+    const constraintKey = `${computed.minHeight}:${computed.maxHeight}`;
+    if (constraintKey !== constraintKeyRef.current) {
+      constraintKeyRef.current = constraintKey;
+      grow();
+    }
+  }, [autoGrow, grow, style]);
   return <FieldFrame invalid={!!props['aria-invalid']} disabled={props.disabled} style={style} className={frameClassName} data-framing={framing} data-multiline="true" data-density={density}>
     <textarea {...props} autoFocus={inputFocus === 'automatic' && props.autoFocus} ref={bindRef} className={`pt-textarea ${className}`} rows={props.rows ?? minimumRows ?? 3} data-density={density}
       style={!autoGrow && maximumRows ? { maxHeight: `${maximumRows * 1.5 + 1}em` } : undefined}

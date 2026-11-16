@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { usePortalStore, type PortalView } from '../../store/portal';
 import { useChatStore } from '../../store/chat';
 import { useAgentStore } from '../../store/agent';
+import { WindowDragRegion } from '../shell/WindowDragRegion';
 
 interface PortalHeaderProps {
   activeView: PortalView | null;
@@ -67,7 +68,7 @@ export function PortalHeader({ activeView, artifactsOnly }: PortalHeaderProps) {
   ];
 
   return (
-    <Flexbox
+    <WindowDragRegion><Flexbox
       style={{
         borderBottom: `1px solid ${token.colorBorderSecondary}`,
         flexShrink: 0,
@@ -125,7 +126,7 @@ export function PortalHeader({ activeView, artifactsOnly }: PortalHeaderProps) {
       </Flexbox>
 
       {/* Working tabs navigation — visible when portal is in working mode or always as quick-access */}
-      {!artifactsOnly && <Flexbox
+      {!artifactsOnly && <WindowDragRegion mode="none"><Flexbox
         horizontal
         align="center"
         gap={2}
@@ -154,7 +155,7 @@ export function PortalHeader({ activeView, artifactsOnly }: PortalHeaderProps) {
             <span>{label}</span>
           </Flexbox>
         ))}
-      </Flexbox>}
-    </Flexbox>
+      </Flexbox></WindowDragRegion>}
+    </Flexbox></WindowDragRegion>
   );
 }

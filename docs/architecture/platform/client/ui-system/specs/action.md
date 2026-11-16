@@ -34,6 +34,7 @@ UI Owner 管激活和外观；Form、Messaging、Agent 与 Domain runtime 各自
 - emphasis=primary/secondary/quiet/inline；默认 secondary；主要承诺用 primary。
 - behavior=action/submit/reset；默认 action；提交、恢复初值显式。
 - tone=neutral/danger；默认 neutral；按实际影响选 danger。
+- appearance=control/identity；默认 control；identity 是以头像为完整轮廓的身份入口。
 - execution=idle/pending/succeeded/failed/recovering；默认 idle，消费外部投影。
 
 禁止：href 与 action 混合、pressed 持久值、多个无关 primary、未具名 icon、pending 隐藏取消；完整反例见 B01–B20。
@@ -79,6 +80,9 @@ Enter/Space 激活；IME 未结束不提交；单一焦点轮廓；触摸命中�
 ### 图形、几何与动效
 
 24/28/30/32/34/36/40 既有视觉尺度按角色使用；圆角方形；fast 颜色反馈，pending 不换宽。 轮廓与时间函数统一引用 [资产/动效提案](../icon-motion-spec.md)；新增数值均待打样确认。
+
+导航身份入口使用 shared `geometry.avatar.navigation`：36px、6px 圆角，
+图像填满命中区，按钮不增加垫边、描边或阴影。头像半径与其它控件半径独立。
 
 ### 极端数据与生命周期
 
@@ -607,4 +611,3 @@ actions/priorities/minVisibleActions/availableWidth/overflowLabel。这是语义
 反例至少包括本项所有禁止组合；极端数据使用本项边界，再叠加总入口的主题、文字放大、RTL、输入模式和 reduced-motion 条件。生命周期验证本项资源释放与身份切换，不只验证默认截图。
 
 specimen 当前为 **NOT_BUILT**；规范结构检查不等于视觉、交互、原生或业务 Journey PASS。业务事实与 receiver 侧结果仍需对应业务 Gate。
-

@@ -84,6 +84,12 @@ report. Reuse revalidates complete inventory/hash, source, definition, policy,
 current runtime/provider/oracle/action-plan contract, DONE/PROVEN and cleanup.
 Missing identities or invalid references return the item to pending scope. Source
 change invalidates all old proof. Failed, blocked or cancelled work remains unproven.
+Runtime Resource source paths and Run source hashes are distinct representations
+of the same worktree. Apply the canonical comparison in
+`data-model.md §11`: preserve exact snapshot matching and canonical-root binding.
+Whole-object DTO equality rejects legitimate runtime proof; snapshot-only
+comparison would permit foreign-worktree substitution. The generic
+`test_runtime_source_binds_snapshot_and_canonical_worktree` regression covers both.
 Every report accounts for the full required set and separates validation, origin
 cost and actual dispatch; absence of a manifest cannot be repaired by a PASS label.
 Each request begins with the full dispatch set and zero validated Gates. Original

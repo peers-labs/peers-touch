@@ -57,7 +57,8 @@ export function UISystemGallery() {
     window.history.replaceState(null, '', url);
   }, [view]);
 
-  const isPrototype = view === 'desktop';
+  const [assemblyStudy] = useState(() =>
+    new URLSearchParams(window.location.search).get('drawer') === 'assembly');
 
   return (
     <UIProvider theme="light" className="ui-view-provider">
@@ -75,7 +76,7 @@ export function UISystemGallery() {
         </nav>
         <div className="ui-view-body">
           {view === 'desktop' ? (
-            <DesignDirections />
+            <DesignDirections assemblyStudy={assemblyStudy} />
           ) : (
             <UIProvider theme="light" className="ui-north-star-board pt-north-star"
               style={northStarVariables('light')}>

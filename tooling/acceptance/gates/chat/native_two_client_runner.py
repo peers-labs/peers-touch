@@ -99,6 +99,8 @@ SUBMITTED_COMMAND_RECOVERY_REQUIRED_ASSERTIONS = {
     "actor_isolation",
     "submitted_command_fixture_exact",
     "submitted_command_converged",
+    "committed_message_retry_identity",
+    "committed_message_retry_receipt",
     "resources_released",
 }
 
@@ -271,7 +273,7 @@ def reconciled_command_snapshot_outcome(
         and bool(projection.get("eventId"))
         and int(projection.get("eventSequence") or 0) > 0
         and projection.get("deliveryState")
-        in {"sent", "delivered", "read", "consumed"}
+        in {"accepted", "delivered", "read", "consumed"}
         and intent_matches
         and (
             intent is None
@@ -423,8 +425,18 @@ def message_composer_geometry(
             height: value.height,
           } : null;
         };
+        // Row padding owns inter-message rhythm, not readable content.
+        // Include every rendered descendant so metadata, avatars and an
+        // overflowing Retry control remain part of the clearance check.
+        const contentRects = row ? Array.from(row.querySelectorAll('*'))
+          .filter(element => getComputedStyle(element).visibility !== 'hidden')
+          .map(rect).filter(value => value.width > 0 && value.height > 0) : [];
         return composer && viewport && timeline && sentinel ? {
           row: rect(row),
+          content: contentRects.length ? {
+            top: Math.min(...contentRects.map(value => value.top)),
+            bottom: Math.max(...contentRects.map(value => value.bottom)),
+          } : null,
           composer: rect(composer),
           viewport: rect(viewport),
           timeline: rect(timeline),
@@ -443,6 +455,20 @@ def message_composer_geometry(
         message_id,
     )
     return value if isinstance(value, dict) else None
+
+
+def message_geometry_is_unobscured(geometry: dict[str, Any]) -> bool:
+    content, composer, viewport, sentinel = (
+        geometry.get(key) for key in ("content", "composer", "viewport", "sentinel")
+    )
+    if not all(isinstance(item, dict) for item in (content, composer, viewport, sentinel)):
+        return False
+    return (
+        geometry.get("timelineFlexShrink") == "0"
+        and content["bottom"] <= composer["top"] - 8
+        and content["bottom"] <= viewport["bottom"] - 8
+        and sentinel["top"] >= content["bottom"] + 8
+    )
 
 
 def is_bundled_square_avatar(source: str) -> bool:
@@ -1052,12 +1078,7 @@ class NativeTwoClientGate(AcceptanceGate):
                 for item in (row, composer, viewport, sentinel)
             ):
                 return None
-            return geometry if (
-                geometry.get("timelineFlexShrink") == "0"
-                and row["bottom"] <= composer["top"] - 8
-                and row["bottom"] <= viewport["bottom"] - 8
-                and sentinel["top"] >= row["bottom"] + 8
-            ) else None
+            return geometry if message_geometry_is_unobscured(geometry) else None
 
         try:
             geometry = self.step(
@@ -1198,6 +1219,13 @@ class NativeTwoClientGate(AcceptanceGate):
         actor = CURRENT_PROFILE_INITIAL_SENDER
         client = self.clients[actor]
         plaintext = f"submitted-command-recovery-{time.time_ns()}"
+        receiver = next(name for name in self.clients if name != actor)
+        paused_receiver = self.clients[receiver].invoke_app_result(
+            "messaging_acceptance_pause_lifecycle",
+            {"input": {"expected_actor_ptid": self.ptids[receiver]}},
+        )
+        if (paused_receiver.get("data") or {}).get("paused") is not True:
+            raise GateError("Committed retry fixture did not pause receiver delivery")
         pause_result = client.invoke_app_result(
             "messaging_acceptance_pause_lifecycle",
             {"input": {"expected_actor_ptid": self.ptids[actor]}},
@@ -1212,6 +1240,24 @@ class NativeTwoClientGate(AcceptanceGate):
             "command.reconciliation.ui_send", lambda: send_text(client, plaintext), actor,
         )
         message_id = str(sent.get("messageUlid") or "")
+        # MP-D33 admits only a durable draft. With dispatch paused, use the
+        # existing production retry boundary to prepare that exact draft.
+        preparation = client.invoke_app_result(
+            "messaging_retry_message",
+            {"input": {"conversation_id": conversation_id, "message_id": message_id}},
+        )
+        outcome = preparation.get("data") or {}
+        command_id = str(outcome.get("command_id") or "")
+        if (
+            preparation.get("ok") is not True
+            or outcome.get("state") != "pending"
+            or outcome.get("message_id") != message_id
+            or not command_id
+        ):
+            raise GateError(
+                "UI-admitted draft did not prepare its exact command: "
+                + json.dumps(preparation, sort_keys=True)
+            )
         snapshot = async_harness(
             client, "engineInteractionSnapshot",
             {"actorPtid": self.ptids[actor], "conversationId": conversation_id,
@@ -1224,9 +1270,8 @@ class NativeTwoClientGate(AcceptanceGate):
             and row.get("outboxState") == "pending"
             and row.get("attemptState") == "prepared"
         ]
-        if not message_id or len(rows) != 1 or not rows[0].get("commandId"):
+        if not message_id or len(rows) != 1 or rows[0].get("commandId") != command_id:
             raise GateError("UI send did not create one exact durable prepared command")
-        command_id = str(rows[0]["commandId"])
         exact_prepared = async_harness(
             client, "engineInteractionSnapshot",
             {"actorPtid": self.ptids[actor], "conversationId": conversation_id,
@@ -1251,6 +1296,7 @@ class NativeTwoClientGate(AcceptanceGate):
             **target,
             "plaintext": plaintext,
             "plaintextSha256": hashlib.sha256(plaintext.encode()).hexdigest(),
+            "draftPreparation": outcome,
             "preparedSnapshot": exact_prepared,
         }
         prepared = async_harness(
@@ -1294,6 +1340,9 @@ class NativeTwoClientGate(AcceptanceGate):
                 raise GateError(
                     "historical command snapshot returned invalid evidence"
                 )
+            # Keep the last real read in the final report even when convergence
+            # times out; a failed wait must not discard the command's state.
+            self.report.runtime["submittedCommandLastObservation"] = value
             return value
 
         original_rows = [
@@ -1340,6 +1389,18 @@ class NativeTwoClientGate(AcceptanceGate):
             final_snapshot,
             "historical submitted command convergence",
         )
+        if self.gate_id == SUBMITTED_COMMAND_RECOVERY_GATE_ID:
+            self.step(
+                "command.committed_retry",
+                lambda: self.prove_committed_message_retry(target, snapshot),
+                actor,
+            )
+            resumed = self.clients[receiver].invoke_app_result(
+                "messaging_acceptance_resume_lifecycle",
+                {"input": {"expected_actor_ptid": self.ptids[receiver]}},
+            )
+            if (resumed.get("data") or {}).get("activated") is not True:
+                raise GateError("Committed retry receiver lifecycle did not resume")
         final_outcome = reconciled_command_snapshot_outcome(
             snapshot,
             target["commandId"],
@@ -1434,7 +1495,109 @@ class NativeTwoClientGate(AcceptanceGate):
             json.dumps(evidence, sort_keys=True),
         )
         self.report.runtime["submittedCommandReconciliation"] = evidence
+        if self.gate_id == SUBMITTED_COMMAND_RECOVERY_GATE_ID:
+            delivered = wait_until(
+                lambda: (
+                    value if (value := message_snapshot(self.clients[actor], plaintext))
+                    and value.get("receipt") in {"delivered", "read"} else None
+                ),
+                "committed retry sender-visible delivered receipt",
+            )
+            self.assert_condition(
+                "committed_message_retry_receipt",
+                delivered.get("messageUlid") == target["messageId"]
+                and delivered.get("receipt") in {"delivered", "read"},
+                json.dumps(delivered, sort_keys=True),
+            )
+            self.report.runtime["committedMessageRetry"]["senderDelivered"] = delivered
         return evidence
+
+    def prove_committed_message_retry(
+        self, target: dict[str, str], before: dict[str, Any],
+    ) -> dict[str, Any]:
+        client = self.clients[target["actor"]]
+        if before.get("projection") is None:
+            raise GateError("Committed retry requires the authority message projection")
+        enter_chat_page(client)
+        async_harness(
+            client, "syncFriendSession",
+            {"sessionUlid": target["conversationId"]},
+        )
+        paused = client.invoke_app_result(
+            "messaging_acceptance_pause_lifecycle",
+            {"input": {"expected_actor_ptid": self.ptids[target["actor"]]}},
+        )
+        if (paused.get("data") or {}).get("paused") is not True:
+            raise GateError("Committed retry sender fixture did not pause lifecycle")
+        # Advance only the renderer's horizon clock. Authority facts, message
+        # timestamps, exact bytes, and the durable recipient queue stay real.
+        client.execute_script(
+            """
+            window.__committedRetryOriginalNow = Date.now;
+            Date.now = () => window.__committedRetryOriginalNow() + 86430000;
+            """,
+        )
+        try:
+            retry = client.find_element(
+                f'[data-message-retry="{target["messageId"]}"]', 40,
+            )
+            self.save_screenshot(client, "committed-retry-unconfirmed")
+            retry.click()
+            # The visible control must await the real command. A second API
+            # invocation would conceal a disconnected or failed UI handler.
+            action = wait_until(
+                lambda: client.execute_script(
+                    """
+                    const control = document.querySelector(arguments[0]);
+                    return control?.dataset.execution === 'succeeded'
+                      ? {execution: control.dataset.execution,
+                         messageId: control.dataset.messageRetry,
+                         label: control.textContent.trim()}
+                      : null;
+                    """,
+                    f'[data-message-retry="{target["messageId"]}"]',
+                ),
+                "committed retry visible command completion",
+            )
+            self.save_screenshot(client, "committed-retry-requested")
+            after = async_harness(
+                client, "engineInteractionSnapshot",
+                {"actorPtid": self.ptids[target["actor"]],
+                 "conversationId": target["conversationId"],
+                 "messageId": target["messageId"],
+                 "commandId": target["commandId"]},
+            )
+            page_text = client.execute_script("return document.body.innerText;")
+            evidence = {
+                "target": target, "before": before, "after": after,
+                "retryAction": action, "visibleRetryClicked": True,
+            }
+            self.assert_condition(
+                "committed_message_retry_identity",
+                action.get("execution") == "succeeded"
+                and action.get("messageId") == target["messageId"]
+                and action.get("label") in {"Retry requested", "已请求重试"}
+                and isinstance(after, dict)
+                and after.get("projection") == before.get("projection")
+                and after.get("commandLedger") == before.get("commandLedger")
+                and after.get("outbox") == before.get("outbox")
+                and "Retry failed" not in str(page_text)
+                and "重试失败" not in str(page_text),
+                json.dumps(evidence, sort_keys=True),
+            )
+            self.report.runtime["committedMessageRetry"] = evidence
+            return evidence
+        finally:
+            client.execute_script(
+                """
+                Date.now = window.__committedRetryOriginalNow;
+                delete window.__committedRetryOriginalNow;
+                """,
+            )
+            client.invoke_app_result(
+                "messaging_acceptance_resume_lifecycle",
+                {"input": {"expected_actor_ptid": self.ptids[target["actor"]]}},
+            )
 
     def collect_client_evidence(self, actor: str) -> None:
         client = self.clients[actor]

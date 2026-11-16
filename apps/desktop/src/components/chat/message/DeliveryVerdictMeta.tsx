@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Tooltip } from '@peers-touch/ui';
-import { RotateCcw } from 'lucide-react';
+import { IconButton, Tooltip } from '@peers-touch/ui';
+import { Check, CheckCheck } from 'lucide-react';
+import { MessageStatus } from '../../../gen/proto/domain/chat/chat_pb';
 
 import {
   evaluateDeliveryVerdict,
@@ -93,7 +94,20 @@ interface DeliveryVerdictMetaProps {
   message: ChatMessage;
   isGroup: boolean;
   compact: boolean;
-  onRetryMessage: (message: ChatMessage) => void;
+  onRetryMessage: (message: ChatMessage) => Promise<void>;
+}
+
+/** Receipt and recovery are mutually exclusive projections of one verdict. */
+function DirectReceipt({ status }: { status: MessageStatus }) {
+  const receipt = status === MessageStatus.READ ? 'read'
+    : status === MessageStatus.DELIVERED ? 'delivered'
+      : status === MessageStatus.SENT ? 'sent' : null;
+  if (!receipt) return null;
+  return (
+    <span className={`sc-msg-status is-${receipt}`} data-message-receipt={receipt}>
+      {receipt === 'sent' ? <Check size={11} /> : <CheckCheck size={11} />}
+    </span>
+  );
 }
 
 /**
@@ -110,6 +124,36 @@ export function DeliveryVerdictMeta({
 }: DeliveryVerdictMetaProps) {
   const { t } = useTranslation('chat');
   const nowMs = useHorizonTick();
+  const [retryExecution, setRetryExecution] = useState<'idle' | 'pending' | 'succeeded' | 'failed'>('idle');
+  const retryAttempt = useRef({ generation: 0, pending: false });
+
+  useEffect(() => () => {
+    retryAttempt.current.generation += 1;
+    retryAttempt.current.pending = false;
+  }, [message.ulid]);
+
+  useEffect(() => {
+    if (retryExecution !== 'succeeded') return;
+    const timer = window.setTimeout(() => setRetryExecution('idle'), 2500);
+    return () => window.clearTimeout(timer);
+  }, [retryExecution]);
+
+  const retry = async () => {
+    if (retryAttempt.current.pending) return;
+    retryAttempt.current.pending = true;
+    const generation = ++retryAttempt.current.generation;
+    setRetryExecution('pending');
+    try {
+      await onRetryMessage(message);
+      if (generation === retryAttempt.current.generation) setRetryExecution('succeeded');
+    } catch {
+      // The command owner reports the error. This control projects the same
+      // outcome without replacing the message's durable delivery fact.
+      if (generation === retryAttempt.current.generation) setRetryExecution('failed');
+    } finally {
+      if (generation === retryAttempt.current.generation) retryAttempt.current.pending = false;
+    }
+  };
 
   const verdict = useMemo<DeliveryVerdict | null>(
     () =>
@@ -137,7 +181,7 @@ export function DeliveryVerdictMeta({
     ],
   );
 
-  if (!verdict) return null;
+  if (!verdict) return isGroup ? null : <DirectReceipt status={message.status as MessageStatus} />;
 
   // Direct messages render positive facts through the existing
   // single/double receipt ticks, so the text meta covers convergence states,
@@ -152,7 +196,7 @@ export function DeliveryVerdictMeta({
       || verdict.kind === 'read'
     )
   ) {
-    return null;
+    return <DirectReceipt status={message.status as MessageStatus} />;
   }
   if (isGroup && verdict.kind === 'read') {
     return null;
@@ -204,33 +248,47 @@ export function DeliveryVerdictMeta({
   const canRetry = verdict.kind === 'failed_terminal'
     || verdict.kind === 'undeliverable_suspected';
   const retryLabel = t('chat.message.action.retry');
+  const retryActionLabel = retryExecution === 'pending'
+    ? t('chat.social.messageArea.stateRetrying')
+    : retryExecution === 'succeeded'
+      ? t('chat.social.messageArea.retryRequested')
+      : retryExecution === 'failed'
+        ? t('chat.social.messageArea.retryFailed')
+        : retryLabel;
+
+  if (canRetry) {
+    return (
+      <IconButton
+        actionId={`message-retry-${message.ulid}`}
+        data-message-retry={message.ulid}
+        data-message-delivery-state={verdict.kind}
+        data-message-delivery-fact={message.deliveryState ?? ''}
+        data-message-delivery-reason={verdict.reasonCode ?? ''}
+        iconId="rotate-ccw"
+        iconSize={12}
+        label={retryActionLabel}
+        title={[retryActionLabel, label, details].filter(Boolean).join(' · ')}
+        emphasis="quiet"
+        density="compact"
+        execution={retryExecution}
+        executionLabel={retryActionLabel}
+        aria-live="polite"
+        onActivate={() => { void retry(); }}
+      />
+    );
+  }
 
   return (
-    <>
-      <Tooltip label={details || label}>
-        <span
-          className={compact ? 'sc-verdict sc-verdict--compact' : 'sc-verdict'}
-          data-message-delivery-state={verdict.kind}
-          data-message-delivery-fact={message.deliveryState ?? ''}
-          data-message-delivery-reason={verdict.reasonCode ?? ''}
-        >
-          {label}
-          {details ? ` · ${details}` : ''}
-        </span>
-      </Tooltip>
-      {canRetry && (
-        <Button
-          actionId={`message-retry-${message.ulid}`}
-          data-message-retry={message.ulid}
-          aria-label={retryLabel}
-          emphasis="quiet"
-          density="compact"
-          leading={<RotateCcw size={12} />}
-          onActivate={() => onRetryMessage(message)}
-        >
-          {retryLabel}
-        </Button>
-      )}
-    </>
+    <Tooltip className="sc-msg-verdict-details" label={details || label}>
+      <span
+        className={compact ? 'sc-verdict sc-verdict--compact' : 'sc-verdict'}
+        data-message-delivery-state={verdict.kind}
+        data-message-delivery-fact={message.deliveryState ?? ''}
+        data-message-delivery-reason={verdict.reasonCode ?? ''}
+      >
+        {label}
+        {details ? ` · ${details}` : ''}
+      </span>
+    </Tooltip>
   );
 }

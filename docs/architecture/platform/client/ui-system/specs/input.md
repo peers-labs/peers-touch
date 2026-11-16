@@ -56,8 +56,9 @@ UI Owner 管输入语义与FieldFrame；Form/Domain Owner 管draft、值有效�
 - `UIProvider inputFocus=automatic/explicit` 管作用域内的自动输入焦点；默认 automatic。Mobile 与 Mobile 原型选 explicit：TextField/TextArea/InlineEdit 不自动聚焦，选择结果或异步校验不恢复已失去的编辑焦点。用户直接点输入位置或 Tab 到输入仍走原生行为；草稿、选区不依赖自动聚焦。
 - validation=untouched/checking/valid/invalid；默认 untouched，与transport分离。
 - appearance=field/search；局部实时筛选使用 `TextField appearance="search"`，显式提交查询使用 `SearchField`，两者共享外框合同。`reveal` 仅在原位展开时启用：160ms ease-out 淡入，无位移；focus 边框为 accent 32% 与 normal border 混合，2px accent 9% 光晕；border/shadow 140ms cubic-bezier(.22,1,.36,1)。错误焦点保持 danger 语义，disabled 不显示正常焦点，减弱动效关闭淡入和过渡。Mobile comfortable/触控输入至少16px，compact Desktop 搜索保持34px外框。
-- `FieldFrame appearance="composer"`：单个写作外框，12px 圆角、6px 内距；工具、输入与发送均在其中。子输入使用 `TextArea framing="embedded"`，由父框给唯一焦点边界，发送保留 primary 语义。页面只负责外部位置与槽位布局。
+- `FieldFrame appearance="composer"`：单个写作外框，8px 圆角、6px 内距；工具、输入与发送均在其中。子输入使用 `TextArea framing="embedded"`，由父框给唯一焦点边界，发送保留 primary 语义。页面只负责外部位置与槽位布局。聊天输入通过 `--pt-textarea-padding: var(--pt-composer-input-padding)` 使用上12px、左右16px、下8px的文字留白，通过 `--pt-textarea-caret-color: var(--pt-accent)` 使用现有强调色；公共控件消费这些变量，不由页面提高选择器优先级覆盖内边距。
 - `TextArea autoGrow` 默认关闭；开启时由控件测量内容、实际字体和宽度，`minimumRows`/`maximumRows` 定义行限；超过上限仅输入内部滚动。改变行限立即影响空草稿高度。调用者不得写输入高度或复制测量逻辑。comfortable 输入为16px；embedded 输入可点击区域至少44px，自动高度的上下限同时服从控件最小触控高度。字体缩放、最小高度和横竖屏变化重新测量。
+- 已有 Desktop 行高策略通过 `--pt-textarea-min-height` / `--pt-textarea-max-height` 传递边界；embedded 控件消费边界，不能用自身的默认零高度或无限上限覆盖调用方。未绑定边界的其他 embedded 输入保持默认行为。
 
 禁止：placeholder代label、Number用truthiness丢0、逐字符IME校验、密码进日志、PIN六个独立错误ring、readonly被禁用。
 

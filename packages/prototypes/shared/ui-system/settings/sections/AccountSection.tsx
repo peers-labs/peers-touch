@@ -5,7 +5,7 @@
  * (blocked users). Authorized devices and the QR linking flow live under
  * Network › Your Station (LinkedDevices). Identity is one tile: the banner
  * bleeds to the card's top corners and the avatar overlaps its lower edge
- * with a card-colored separation ring (reference profile geometry).
+ * with a white separation ring (reference profile geometry).
  */
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, Link2, Plus, Trash2, Users } from 'lucide-react';
@@ -85,7 +85,7 @@ export function AccountSection() {
             <div className="sk-identity-row">
               <div className="sk-identity-avatar">
                 <Avatar name={displayName} source={avatar || undefined} background="#2f6a50"
-                  size={80} style={{ borderRadius: 22 }} />
+                  size={80} style={{ borderRadius: 22, border: '2px solid var(--pt-white)' }} />
                 <span className="sk-identity-avatar-action">
                   <FilePicker iconOnly iconId="edit" accept="image/*" label={t('account.avatarChange')}
                     onFiles={applyImage(setAvatar)} />

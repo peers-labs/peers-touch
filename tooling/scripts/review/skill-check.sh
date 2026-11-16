@@ -214,6 +214,7 @@ done
 node tooling/skills/pt-code-structure-review/scripts/validate-fixtures.mjs
 node --test tooling/skills/pt-code-structure-review/scripts/structure-signals.test.mjs
 python3 tooling/scripts/review/code_structure_decision_test.py
+python3 tooling/scripts/review/integration_review_test.py
 
 if rg -n \
   'ignore (previous|all) instructions|you are now|system:\s*override|curl .*\| *sh|rm -rf /' \

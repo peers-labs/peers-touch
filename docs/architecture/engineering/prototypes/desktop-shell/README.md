@@ -14,6 +14,20 @@
 
 源码在 `packages/prototypes/desktop/shell/`（统一原型工作区；独立 web 工程）。本目录只放入口说明，不复制源码（架构文档标准 §5.8）。
 
+### 抽屉集应力候选（2026-11-15，drafting）
+
+`qa/chat-rail-motion.html` 是此 Shell 内部的可执行 kinetic wireflow，交互说明在
+[`chat-rail-motion.md`](../../../../../packages/prototypes/desktop/shell/qa/chat-rail-motion.md)。
+它直接挂载 `DesignDirections` canonical 窗框；目录、会话、内叶和写作台使用
+同一宽高快照。应力设计在
+[`drawer-assembly.md`](../../../platform/client/ui-system/prototype/drawer-assembly.md)，
+可读哲学同步到 Frontend Eles「设计理念」。
+Portal `?site=frontend-eles&eles=desktop&drawer=assembly` 进入全集评审，
+`&theme=dark` 使用现有north-star暗色角色。原单独侧栏模型已经撤除；
+旧400ms/420上限/独立720断点的候选证据失效。
+它不是新增的 Desktop Portal 功能卡片，未进入高保真或生产准入；真实产品验证
+和独立 Experience admission 仍未证明。
+
 这个原型展示 **peers-touch desktop 容器外壳长什么样**。容器壳负责全局导航与页面切换；Agent 使用 Peers-owned Shell Agent Surface，Modern Chat 产品评审态来自 `modern-chat-agent`。Atelier 等待产品设计，暂时隐藏模块 Tab、启动器、命令面板和 Create Orchestrator；旧 Atelier 路由返回 Agent Chat，保留原型源码。
 
 ## 怎么跑

@@ -16,12 +16,8 @@ const MAX_ID_CHARS: usize = 128;
 
 /// Keep the native title-bar chrome in step with the auth / ready surface:
 /// one close light on login, the full three-light cluster in the ready shell.
-/// Inert under the acceptance build, where harness window placement and the
-/// setup-time auth chrome stay authoritative.
+/// Harness-owned window geometry does not replace the product chrome state.
 fn apply_traffic_light_mode(window: &tauri::Window, mode: TrafficLightMode) {
-    if cfg!(feature = "acceptance-webdriver") {
-        return;
-    }
     let state = window.state::<Arc<TrafficLightState>>().inner().clone();
     TrafficLightState::apply(window, state, mode);
 }

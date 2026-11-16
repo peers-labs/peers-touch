@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { WindowDragRegion } from '../components/shell/WindowDragRegion';
 import { Flexbox } from 'react-layout-kit';
 import { Empty } from '@lobehub/ui';
 import { Button, Card, Modal, Form, Input, Select, Tag, Popconfirm, Avatar, theme } from 'antd';
@@ -233,14 +234,14 @@ export function AgentGroupsPage() {
     >
       <PageColumn tier="standard">
       {/* Page header */}
-      <Flexbox horizontal align="center" distribution="space-between" style={{ marginBottom: 20 }}>
+      <WindowDragRegion><Flexbox horizontal align="center" distribution="space-between" style={{ marginBottom: 20 }}>
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>
           {t('agent.groups.title')}
         </h2>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateModalOpen(true)}>
           {t('agent.groups.create')}
         </Button>
-      </Flexbox>
+      </Flexbox></WindowDragRegion>
 
       {/* Group list */}
       {groups.length === 0 ? (

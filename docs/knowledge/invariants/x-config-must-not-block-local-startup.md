@@ -7,6 +7,7 @@ owns:
   - apps/desktop/src-tauri/src/state/
   - apps/desktop/src/runtimes/xConfigRuntime.ts
   - apps/desktop/src/services/xConfig.ts
+  - apps/desktop/src/services/stationCandidates.ts
 related:
   - docs/architecture/platform/client/control-plane/design.md
   - docs/architecture/platform/client/control-plane/experience-contract.md

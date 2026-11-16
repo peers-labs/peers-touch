@@ -72,7 +72,7 @@ interface ChatMessageTimelineProps {
   onReact: (message: ChatMessage, emoji: string) => void;
   onRecall: (message: ChatMessage) => void;
   onReply: (messageUlid: string) => void;
-  onRetryMessage: (message: ChatMessage) => void;
+  onRetryMessage: (message: ChatMessage) => Promise<void>;
   onRetryReaction: (message: ChatMessage) => void;
   pinnedMessageUlids: ReadonlySet<string>;
   /** Projects the loaded thread slice for one root through the store memo. */

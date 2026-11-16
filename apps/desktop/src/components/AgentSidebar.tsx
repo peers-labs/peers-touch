@@ -1,3 +1,4 @@
+import { WindowDragRegion } from './shell/WindowDragRegion';
 import {
   useCallback,
   useMemo,
@@ -283,7 +284,7 @@ export function AgentSidebar({
       height="100%"
       style={{ background: token.colorBgContainer }}
     >
-      <div
+      <WindowDragRegion><div
         style={{
           height: 44,
           padding: '0 14px',
@@ -306,9 +307,9 @@ export function AgentSidebar({
         >
           {currentAgent?.title || currentAgent?.name || t('agent.sidebar.noAgentsYet')}
         </span>
-      </div>
+      </div></WindowDragRegion>
 
-      <Flexbox
+      <WindowDragRegion><Flexbox
         horizontal
         align="center"
         gap={4}
@@ -368,7 +369,7 @@ export function AgentSidebar({
             />
           </>
         )}
-      </Flexbox>
+      </Flexbox></WindowDragRegion>
 
       <Flexbox
         horizontal

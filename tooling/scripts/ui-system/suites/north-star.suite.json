@@ -35,6 +35,23 @@
   },
   "scenarios": [
     {
+      "id": "ui.prototype.north-star.identity-contour",
+      "title": "导航身份图就是完整36px入口，hover没有外垫边或第二层框",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "hover", "target": "[data-rail-self]" }
+      ],
+      "oracles": [
+        { "id": "identity-width", "type": "computedStyle", "target": "[data-rail-self]", "prop": "width", "equals": "36px" },
+        { "id": "identity-height", "type": "computedStyle", "target": "[data-rail-self]", "prop": "height", "equals": "36px" },
+        { "id": "identity-radius", "type": "computedStyle", "target": "[data-rail-self]", "prop": "borderTopLeftRadius", "equals": "6px" },
+        { "id": "identity-padding", "type": "computedStyle", "target": "[data-rail-self]", "prop": "padding", "equals": "0px" },
+        { "id": "identity-border", "type": "computedStyle", "target": "[data-rail-self]", "prop": "borderWidth", "equals": "0px" },
+        { "id": "identity-shadow", "type": "computedStyle", "target": "[data-rail-self]", "prop": "boxShadow", "equals": "none" }
+      ],
+      "finalizers": []
+    },
+    {
       "id": "ui.prototype.north-star.frame-and-contract",
       "title": "单扇窗框完整：默认落地动态流，搜索是 overlay 触发器而非页面",
       "level": "L4_RUNTIME",
@@ -105,7 +122,7 @@
         {
           "id": "rail-self-avatar-pine",
           "type": "computedStyle",
-          "target": ".sk-rail .sk-rail-avatar",
+          "target": ".sk-rail .sk-rail-avatar .pt-avatar",
           "prop": "backgroundColor",
           "equals": "rgb(47, 106, 80)"
         },
@@ -4269,7 +4286,7 @@
         {
           "id": "rail-avatar-composite-up",
           "type": "count",
-          "target": ".sk-conv-list li:first-child .sk-group-avatar-tile",
+          "target": ".sk-conv-list li:first-child .pt-group-avatar .pt-avatar",
           "equals": 6
         },
         {
@@ -7017,11 +7034,11 @@
           "equals": "13px"
         },
         {
-          "id": "rail-identity-44",
+          "id": "rail-identity-36",
           "type": "computedStyle",
           "target": ".sk-rail-avatar",
           "prop": "width",
-          "equals": "44px"
+          "equals": "36px"
         },
         {
           "id": "trust-lines",

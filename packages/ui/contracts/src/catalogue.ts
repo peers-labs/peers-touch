@@ -2,6 +2,26 @@ import type { CapabilityRecord } from './index';
 /** Contract presence and source implementation are never product proof. */
 export const capabilityCatalogue: readonly CapabilityRecord[] = [
   {
+    id: 'ui.spec.drawerassembly', title: 'DrawerAssembly / DrawerRailResizer',
+    category: 'layout', owner: 'Client Platform / UI System',
+    specRef: 'docs/architecture/platform/client/ui-system/specs/layout.md#ui.spec.drawerassembly',
+    exports: ['useDrawerAssembly', 'resolveDrawerAssembly', 'DrawerRailResizer'],
+    implementationRefs: ['packages/ui/web/src/drawer-assembly.ts', 'packages/ui/web/src/use-drawer-assembly.ts', 'packages/ui/web/src/drawer-resizer.tsx'],
+    specimenRef: 'packages/prototypes/shared/ui-system/chat/ChatFeature.tsx; frontend-eles desktop drawer assembly',
+    platformSupport: [{ renderer: 'web', status: 'implemented' }, { renderer: 'lynx', status: 'unsupported', reason: 'No Lynx guide adapter implemented' }],
+    evidenceStatus: 'UNPROVEN', implementationStatus: 'PRESENTATION_IMPLEMENTED',
+    ownerBoundary: 'Shared UI owns measured guides and gestures; hosts own object selection, commands, content and preference storage.',
+    anatomy: 'Fixed frame / finite catalogue paper / exposed catalogue / main work bay / one current inner task.',
+    statePolicy: 'Pressure changes exposure, gesture changes preference, selection changes navigation. Back retains business selection.',
+    invalidCombinations: 'Viewport breakpoint pane swaps, unbounded catalogue, snapping during pointer movement, child admitted before parent, covered input.',
+    lifecycleAndCleanup: 'One observer and cancellable RAF guides per host; current leaf retained for closing travel/draft; observer and frames release on unmount.',
+    accessibility: 'Named separator; arrows/Home/End; Escape/pointercancel rollback; deepest Back; inert hidden regions; preventScroll focus restoration.',
+    variantAxes: ['input=frame/gesture/navigation', 'leaf=detail/thread', 'pressure=continuous', 'motion=system/reduced'],
+    geometryAndMotion: 'geometry.chatRail and geometry.drawer; 200px row/tool presentation is independent of 240px stable preference; Segmented measures label budget; parent snapshot conserves width; resize immediate; navigation monotonic and retargetable.',
+    extremeData: '390..1600 width, short height, compact/expanded preference, midflight reversal, long title, draft and failed-send Retry.',
+    publicContractFields: 'initialPreference/onPreferenceCommit/focus; surface/pose/preferred/open/leaf/leafContent/navigation/leafProgress/reveal/back/setLeaf/setCatalog/gesture intents'
+  },
+  {
     id: 'ui.spec.momentcomposition', title: 'MomentComposerSurface / AudiencePicker / CircleCard / CircleEditor',
     category: 'identity', owner: 'Client Platform / UI System',
     specRef: 'docs/architecture/platform/client/ui-system/specs/identity.md#ui.spec.momentcomposition',
@@ -188,11 +208,12 @@ export const capabilityCatalogue: readonly CapabilityRecord[] = [
       "emphasis=primary/secondary/quiet/inline；默认 secondary；主要承诺用 primary。",
       "behavior=action/submit/reset；默认 action；提交、恢复初值显式。",
       "tone=neutral/danger；默认 neutral；按实际影响选 danger。",
+      "appearance=control/identity；默认 control；identity 图像就是命中区，无二次边框、垫边或阴影。",
       "execution=idle/pending/succeeded/failed/recovering；默认 idle，消费外部投影。"
     ],
     "geometryAndMotion": "24/28/30/32/34/36/40 既有视觉尺度按角色使用；圆角方形；fast 颜色反馈，pending 不换宽。",
     "extremeData": "超长本地化标签、批量对象数、零可提交内容、别端已处理与200%文本。",
-    "publicContractFields": "actionId/label/behavior/emphasis/tone/density/availability/execution/onActivate；Split 另有 defaultActionId/alternatives"
+    "publicContractFields": "actionId/label/behavior/emphasis/tone/density/appearance/availability/execution/onActivate；Split 另有 defaultActionId/alternatives"
   },
   {
     "id": "ui.spec.actionicon",
@@ -487,7 +508,7 @@ export const capabilityCatalogue: readonly CapabilityRecord[] = [
       "FieldFrame.appearance=composer；一个外框包含工具、embedded TextArea和发送；唯一焦点边界。",
       "TextArea.autoGrow=false/true；true由控件测量内容与宽度，minimumRows/maximumRows控制展开和滚动。"
     ],
-    "geometryAndMotion": "同意图一个外框和focus ring；composer为12px圆角、6px内距，embedded输入不画第二个边框或ring，发送保留primary语义；autoGrow以实际字体/内容/宽度计算行限，上下限服从控件最小高度，超限内部滚动；comfortable embedded输入至少44px触控高度；search原位160ms ease-out淡入，焦点32% accent边框、2px 9% accent光晕，140ms cubic-bezier(.22,1,.36,1)；减弱动效关闭动画和过渡；comfortable/触控输入16px防iOS缩放；不加位移动画。",
+    "geometryAndMotion": "同意图一个外框和focus ring；composer为8px圆角、6px内距，embedded输入不画第二个边框或ring，发送保留primary语义；聊天文字通过--pt-textarea-padding消费composer.inputPadding（12px 16px 8px），游标通过--pt-textarea-caret-color消费accent，其他embedded输入保留默认留白；autoGrow以实际字体/内容/宽度计算行限，上下限服从控件最小高度，超限内部滚动；comfortable embedded输入至少44px触控高度；search原位160ms ease-out淡入，焦点32% accent边框、2px 9% accent光晕，140ms cubic-bezier(.22,1,.36,1)；减弱动效关闭动画和过渡；comfortable/触控输入16px防iOS缩放；不加位移动画。",
     "extremeData": "空与0、负数/指数/小数精度、中文IME、emoji组合字符、长URL、粘贴带空格、200%字；PIN长度不写死为6。",
     "publicContractFields": "各kind独立value类型；fieldId/label/draft/validation/readOnly；number有min/max/step/precision；pin有length/alphabet；onEdit/onCommit"
   },
@@ -1655,9 +1676,9 @@ export const capabilityCatalogue: readonly CapabilityRecord[] = [
       "size=inline/list/header/profile；默认 list按角色token。",
       "group=none/overlap/grid；默认 none；overlap必须有总数。"
     ],
-    "geometryAndMotion": "圆角由size policy钳制；group separation ring为结构，不是信任；图到达无尺寸跳变。",
+    "geometryAndMotion": "默认圆角由size policy钳制；公共radius接收角色值；导航/目录36px、radius6；group separation ring为结构，不是信任；图到达无尺寸跳变。",
     "extremeData": "无名、同名、超长、0成员、超过显示上限、资源过期与恶意图片。",
-    "publicContractFields": "entityId/name/resourceView/sizeRole/presenceView/groupMembers/maxVisible"
+    "publicContractFields": "entityId/name/resourceView/sizeRole/size/radius/presenceView/groupMembers/maxVisible"
   },
   {
     "id": "ui.spec.groupavatar",
@@ -1696,9 +1717,9 @@ export const capabilityCatalogue: readonly CapabilityRecord[] = [
       "members=representative/hidden；默认 representative按隐私。",
       "size=list/header；默认 list。"
     ],
-    "geometryAndMotion": "固定2×2或注册布局提案，外轮廓圆角方形；不把群头像画成四个独立可点区。",
+    "geometryAndMotion": "2–4成员2×2、5–9成员3×3；公共radius按角色取值，目录36px/radius6；外轮廓圆角方形；不把群头像画成四个独立可点区。",
     "extremeData": "0/1/2/1000成员、退群、隐藏成员、custom失效。",
-    "publicContractFields": "groupId/name/customAvatarView/visibleMemberViews/privacyPolicy/sizeRole"
+    "publicContractFields": "groupId/name/customAvatarView/visibleMemberViews/privacyPolicy/sizeRole/size/radius"
   },
   {
     "id": "ui.spec.filetypeicon",

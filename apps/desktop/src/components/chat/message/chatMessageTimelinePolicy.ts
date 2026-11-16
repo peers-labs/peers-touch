@@ -27,13 +27,6 @@ export function shouldAdjustChatMessageScrollPosition(
   return sizeDelta !== 0 && itemStart < scrollOffset;
 }
 
-export function chatMessageTailScrollOptions(): ScrollIntoViewOptions {
-  return {
-    behavior: 'auto',
-    block: 'end',
-  };
-}
-
 interface ChatMessageScrollMetrics {
   clientHeight: number;
   scrollHeight: number;

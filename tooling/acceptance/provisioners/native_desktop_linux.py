@@ -622,7 +622,13 @@ class NativeDesktopLinuxProvisioner:
         gate_id: str = "runtime-cell-preflight",
         *,
         artifact_kind: str = "acceptance-binary",
+        required_capabilities: tuple[str, ...] | None = None,
     ) -> RuntimeCellManifest:
+        if required_capabilities:
+            raise BlockedError(
+                reason="Linux runtime cell has no qualified optional capabilities",
+                resource=f"runtime-cell-capabilities:{self.contract.cell_id}",
+            )
         if artifact_kind not in _SUPPORTED_ARTIFACT_KINDS:
             raise ProvisioningError(
                 f"Linux runtime-cell artifact kind {artifact_kind!r} is invalid"

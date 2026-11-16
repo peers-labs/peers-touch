@@ -1,14 +1,17 @@
 # Node Connectivity - Decisions
 
 > **Status**: active
-> **Version**: v1.4
-> **Created**: 2026-10-10 | **Updated**: 2026-10-18
+> **Version**: v1.5
+> **Created**: 2026-10-10 | **Updated**: 2026-11-13
 > **Owner**: Architecture Team
 
 ## Decision Index
 
 | ID | Decision | Status |
 |---|---|---|
+| NCP-D22 | One proximity-ordered Station candidate catalog over three source tiers | accepted |
+| NCP-D23 | Local Station inputs are unprivileged suggestions, never direct connections | accepted |
+| NCP-D24 | No implicit default Station; the last explicit selection restores | accepted |
 | NCP-D01 | One connectivity architecture owner | accepted |
 | NCP-D02 | Station / Relay roles; ingress inside existing Frame | accepted |
 | NCP-D03 | Standard Circuit v2 plus Station-terminated TLS | accepted |
@@ -520,3 +523,195 @@ Execution must first repair corpstable database readiness, prove Station-host
 reachability to the Home Relay, preserve existing data and keys, and obtain
 API-only attachment/restart evidence. It does not prove Desktop or Mobile
 native journeys.
+
+## NCP-D22: One Proximity-Ordered Station Candidate Catalog Over Three Source Tiers
+
+**Status**: accepted
+**Date**: 2026-11-13
+
+### Context
+
+Desktop launch currently shows "No stations configured" even when the selected
+development Profile already binds a Station. The inputs that could populate the
+picker live in three disconnected places:
+
+- the Profile/environment-repository Station (`PT_STATION_URL`, resolved through
+  the machine registry and exported by `tooling/devctl/desktop.mjs`);
+- the process environment variable `PEERS_STATION_URL`, read in
+  `infrastructure/station_registry.rs` as a private `discovery_seed` that the
+  renderer cannot see;
+- signed X Config suggestions (`network.default_station` / direct-Station
+  endpoint seeds), already projected through `x_config_discover_suggestion` but
+  never rendered by the login Station switcher.
+
+Each input is separately derived, so the picker, the auth fallback and the cloud
+projection can disagree about which Stations exist.
+
+### Decision
+
+Desktop and Mobile expose one Station candidate catalog assembled by a single
+client-side aggregation owner. Every candidate carries a closed source tier:
+
+1. `environment` — the Profile/environment-repository Station, delivered through
+   a dedicated, source-tagged process input (`PEERS_PROFILE_STATION_URL`) that
+   only the local development controller populates; absent in packaged builds;
+2. `injected` — a process-level `PEERS_STATION_URL` supplied by a shell,
+   operator/MDM launch, or an E2E/Acceptance harness;
+3. `xconfig` — direct-Station suggestions from the accepted signed snapshot.
+
+Catalog ordering follows proximity to the local runtime:
+`environment` > `injected` > `xconfig`. Candidates with the same normalized
+canonical origin collapse into one row; the first occurrence in priority order
+owns the displayed source label, and order inside one tier is stable. A
+candidate whose canonical origin already matches a verified registry entry is
+not repeated as a suggestion.
+
+The catalog is an ordering and presentation contract only. It never confers
+trust: per CCP-D02 and NCP-D20, selecting any candidate runs the existing signed
+discovery path, and only verified routes enter the Station registry.
+
+### Rationale
+
+One merged catalog removes the dual-track derivation where the same Station is
+represented by an env seed, a hidden auth fallback and a cloud suggestion. The
+tier order makes the effective value explainable: the most local, most specific
+configuration wins ordering without overriding the user's explicit choice.
+Keeping the Profile channel distinct from a raw environment injection preserves
+the two configuration layers even though development launches currently flatten
+both into one variable.
+
+### Alternatives Considered
+
+- Merge all process variables into one bucket and treat baked/embedded snapshot
+  content as the middle tier: rejected because embedded snapshot Station seeds
+  already surface through the X Config projection, so splitting them again would
+  recreate a second derivation of the same data.
+- Auto-select the highest-priority candidate: rejected because it contradicts
+  CCP-D02 (remote or local publication must not replace user choice) and the
+  explicit product decision that no Station is selected without a user action.
+- Let each UI surface fetch its own sources: rejected because it reintroduces
+  multiple aggregation points and divergent ordering.
+
+### Consequences
+
+`tooling/devctl` must export the Profile Station through the new source-tagged
+input and stop manufacturing the generic `PEERS_STATION_URL` from the Profile
+value; externally supplied injections still pass through unchanged. A new Rust
+read-only command exposes normalized local candidates with source tags, and a
+new renderer service owns merge, dedup and ordering. X Config availability must
+not gate the catalog (see invariant `x-config-must-not-block-local-startup`).
+
+## NCP-D23: Local Station Inputs Are Unprivileged Suggestions, Never Direct Connections
+
+**Status**: accepted
+**Date**: 2026-11-13
+
+### Context
+
+`PEERS_STATION_URL` currently holds privileges no other bootstrap input has:
+`StationRegistry::new` stores it as `discovery_seed`, and
+`application/auth/service.rs` extends Station origin lookup with it during
+identity migration. It can therefore influence authentication and identity
+continuity without ever passing signed Station discovery, while a cloud
+suggestion with the same URL would have to be verified first.
+
+### Decision
+
+The `discovery_seed` special case is deleted. `PEERS_STATION_URL` and
+`PEERS_PROFILE_STATION_URL` are only inputs to the NCP-D22 candidate catalog.
+Neither variable can:
+
+- extend auth or identity-migration Station origins;
+- write `stations.json`, pin a key, or create an identity record;
+- select or activate a Station.
+
+Reaching a Station from either input always executes the same
+`discover_station_*` plus `store_verified_routes` path used by manual
+`station_add` and `x_config_discover_suggestion`. The auth identity-migration
+lookup reads only verified registry routes; with no verified Station there is no
+local Actor identity at that Station to migrate.
+
+Retained, non-product-trust uses are explicitly out of scope for removal: the
+Vite development proxy and Rust/Vite build meta generation, and E2E/Acceptance
+harness environment plumbing.
+
+### Rationale
+
+Trust must follow one rule regardless of how an origin arrived: signed discovery
+before any identity material is persisted. Keeping a privileged env path creates
+a bypass that the control-plane decisions explicitly forbid and makes the
+security model depend on how the process was launched.
+
+### Alternatives Considered
+
+- Delete the variable entirely: rejected because dozens of harness and build
+  call sites legitimately need a deterministic Station target; the defect is the
+  privileged runtime semantics, not the variable itself.
+- Keep the auth fallback but require discovery "eventually": rejected because a
+  temporary bypass is still a trust bypass and leaves two origin-resolution
+  paths in authentication.
+
+### Consequences
+
+The `seed_is_discovery_input_not_an_identity_record` characterization is replaced
+by tests asserting local inputs appear only as tagged, unverified candidates.
+Acceptance closures that currently expect a launch-time Station from
+`PEERS_STATION_URL` must drive candidate discovery explicitly or rely on a
+pre-provisioned verified registry; this impact is tracked in `integration.md`.
+
+## NCP-D24: No Implicit Default Station; The Last Explicit Selection Restores
+
+**Status**: accepted
+**Date**: 2026-11-13
+
+### Context
+
+The product requires that launch never silently picks a Station on the user's
+behalf, yet returning users should not re-pick the Station they already chose.
+An earlier first-run auto-apply mechanism (`services/stationDefault.ts`) was
+built for a cloud relay default but its auto-apply functions have no production
+caller; only the explicit-choice marker is wired into the Station switcher.
+
+### Decision
+
+- With no verified active Station and no recorded explicit choice, the picker
+  renders the ordered NCP-D22 catalog and selects nothing.
+- The sole automatic exception is the development `environment` tier
+  (`PEERS_PROFILE_STATION_URL`, populated only by the local dev controller and
+  absent from packaged builds). On the login surface the renderer runs the same
+  signed discovery and activation sequence a manual click would, so test
+  accounts can sign in without a manual pick. This is dev-only convenience, not
+  a trust bypass: discovery still verifies the Station, only verified routes are
+  activated, and the `injected`/`xconfig` tiers are never auto-selected. The
+  path is eliminated from production bundles by the `import.meta.env.DEV` guard.
+- An explicit selection (or manual add) runs signed discovery, persists the
+  verified entry and the active Station id in `stations.json`, and records the
+  explicit-choice marker. On every later launch the `StationRuntime` restores
+  that active Station from the registry; the catalog highlights it.
+- Removing the active Station clears the active id and returns the user to the
+  unpicked catalog. No candidate — local or cloud — is silently promoted outside
+  the dev `environment` tier above.
+- X Config refreshes never mutate the active Station; cloud changes affect only
+  the suggestion section.
+
+### Rationale
+
+The verified registry already persists the active Station id and the runtime
+already starts from it, so "remember the last choice" needs no new store. Adding
+a second persistence channel (for example a renderer-only default) would split
+selection authority across the Rust registry and localStorage.
+
+### Alternatives Considered
+
+- Auto-apply the highest-priority candidate once on first run: rejected as
+  implicit selection and inconsistent with CCP-D02.
+- Remember the choice only as a highlighted row without restoring the active
+  Station: rejected because it forces a redundant click on every launch and does
+  not satisfy "keep the last selected Station".
+
+### Consequences
+
+The unwired auto-apply functions in `stationDefault.ts` are removed rather than
+extended; the explicit-choice marker stays. Verified-entry restoration remains
+native and survives renderer storage reset. Mobile follows the same contract in
+its own sequencing.

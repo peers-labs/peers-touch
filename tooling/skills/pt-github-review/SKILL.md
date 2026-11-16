@@ -63,8 +63,7 @@ Verify range endpoints before trusting any report derived from them.
 
 ### 1.1 Cross-Branch Preservation Review
 
-When the target branch has advanced since the reviewed branch diverged, or when
-the PR overlaps behavior already present on the target, review the prospective merge tree
+For every integration, review the prospective merge tree
 rather than treating the PR's three-dot diff as the final product:
 
 ```bash
@@ -109,6 +108,24 @@ conflicts or the rewritten series cannot be explained mechanically. Any
 `UNPROVEN` overlap prevents approval. This review applies to tracked and
 standalone PRs; it is review judgment over the final merged source and does not
 create a Plan, infer a global worktree order, or become a scheduler.
+
+Prepare `integration_review.py`'s complete bilateral inventory before selecting
+checks. Cover automatic merges and non-overlapping files, follow architecture
+dependencies, and investigate historical merge regressions. Record both
+branch intents and one outcome per path. Required/conditional/advisory checks
+are classified before execution; affected product compilation, behavior and
+actual UI interaction cannot be replaced by source-string checks.
+
+The separate reviewer inspects original runner output, original assertions,
+all affected owners and the final candidate and records executable
+counterexamples. Do not echo the executor's summary as independent judgment.
+Missing/failed/skipped/zero-case evidence or unresolved findings block
+approval. Either HEAD, merge base, tree, policy or manifest change invalidates
+old evidence. Run the shared `integration_review.py verify` before approval;
+release entrypoints use `integration_gate.py`, never separate pass rules.
+Schema fixtures prove admission rules; new isolated Agent cases prove only
+the observed calibration sample. See the owning contract:
+`docs/architecture/engineering/quality/integration-review.md`.
 
 ### 2. Collect Quality Evidence
 

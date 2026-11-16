@@ -7,11 +7,16 @@ observations and never treats a caller's PASS label as evidence.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
-from .errors import EvidenceManifestInvalid
+from .errors import EvidenceManifestInvalid, ProvisioningError
 from .evidence_store import ArtifactRef, EvidenceStore, canonical_secret_scan
 from .finalization_contracts import LatestAuthorityMode
+from .runtime_cell import (
+    parse_runtime_cell_capabilities, require_runtime_cell_capabilities,
+    runtime_source_matches,
+)
 
 
 class ProofSourceMismatch(EvidenceManifestInvalid):
@@ -139,6 +144,24 @@ def read_gate_proof(
     inventory = manifest["artifacts"]
     if not inventory:
         raise EvidenceManifestInvalid(f"{gate_id}: proof inventory is empty")
+    if "runtimeCellCapabilities" in definition:
+        try:
+            required = parse_runtime_cell_capabilities(
+                gate_id, definition["runtimeCellCapabilities"],
+            )
+            cell_ref = inventory.get("runtime-cell-manifest")
+            if not cell_ref:
+                raise ProofIncomplete(f"{gate_id}: runtime capability evidence is missing")
+            cell = store.read_json(ArtifactRef.from_dict(cell_ref))
+            if (
+                cell.get("gateId") != gate_id
+                or cell.get("cellId") != sealed.get("runtimeCell")
+                or not runtime_source_matches(dict(source), cell.get("source"))
+            ):
+                raise ProofIncomplete(f"{gate_id}: runtime capability identity changed")
+            require_runtime_cell_capabilities(cell, required)
+        except (ProvisioningError, KeyError, TypeError) as error:
+            raise ProofIncomplete(f"{gate_id}: runtime capability evidence is invalid") from error
     if "assertions" in sealed and not assertions_pass(sealed["assertions"]):
         raise EvidenceManifestInvalid(f"{gate_id}: sealed assertions are incomplete")
     runtime = sealed.get("manifest")
@@ -183,6 +206,7 @@ def read_gate_proof(
         elif environment:
             raise EvidenceManifestInvalid(f"{gate_id}: source report kind changed")
     if environment:
+        runtime_source = runtime.get("source") if isinstance(runtime, dict) else None
         if (
             source_ref is None
             or sealed.get("evidenceGateId") != gate_id
@@ -190,7 +214,10 @@ def read_gate_proof(
             or not isinstance(runtime, dict)
             or runtime.get("state") != "FIXTURE_READY"
             or not runtime.get("runId")
-            or runtime.get("source") != dict(source)
+            or not runtime_source_matches(dict(source), runtime_source)
+            or not isinstance(runtime_source.get("worktree"), str)
+            or not Path(runtime_source["worktree"]).is_absolute()
+            or Path(runtime_source["worktree"]).resolve() != store.worktree
         ):
             raise EvidenceManifestInvalid(f"{gate_id}: runtime proof is incomplete")
     return manifest

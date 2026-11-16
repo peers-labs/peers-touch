@@ -1,7 +1,7 @@
 ---
 status: active
 owner: Client Platform Team
-updated: 2026-11-11
+updated: 2026-11-14
 review-cadence: semiannual
 next-review: 2027-04-27
 ---
@@ -14,6 +14,9 @@ This document adapts Auth UI Identity to Desktop.
 
 It does not redefine the Auth product model. It defines Desktop layout, surface,
 and motion constraints for implementing it.
+
+Settings Identity 的资料头像以白色边框与封面、卡片分隔，使用 `--pt-white`。
+图片、姓名后备和加载态共享该边框；不得跟随卡片底色或通用灰色边框。
 
 ## 2. Desktop Auth Layout
 
@@ -41,18 +44,27 @@ window with empty space. Geometry is owned by the native shell
   remembered ready size. Logging out shrinks the window back to 360×640.
 - The hard window floor stays 320×440; persisted geometry below it or outside a
   sane maximum is discarded in favor of the default.
-- The feature is inert under the `acceptance-webdriver` build, where harness
-  window placement remains the single authority.
+- Window geometry is inert under the `acceptance-webdriver` build, where
+  harness window placement remains the single authority. Native button
+  visibility still follows the real Auth/Ready surface: Auth shows Close only;
+  Ready restores Close, Minimize and Zoom, including diagnostic builds.
 - macOS chrome uses `titleBarStyle: "Overlay"` with `hiddenTitle: true` and
   decorations retained. The web content fills the title bar, so the in-window
   headers rise into that band instead of leaving an empty strip. Geometry is
   split into two tokens: `--pt-titlebar-inset` (8px on macOS, 0 elsewhere) is
   the small top clearance for the list/chat/auth columns whose header sits
-  beside the lights, while `--pt-rail-top` (28px) is the larger offset for the
+  beside the lights, while `--pt-rail-top` (40px) is the larger offset for the
   icon rail, the only column whose avatar sits under the lights. Each header is
-  a slim 48px band marked `data-tauri-drag-region`. All three traffic lights
-  (close/minimize/zoom — none hidden) shift as one cluster toward the left edge
-  and down 2pt to center on that band, matching the macOS WeChat convention.
+  a slim 48px band marked `data-tauri-drag-region`. The original AppKit standard
+  window buttons remain in their native title-bar container, with Auto Layout
+  leading offsets **5/23/41pt**, **14pt** native hit targets and the container's
+  native vertical center. Each original button's drawing coordinates paint a
+  **12pt** circle around that same center. The visible circles
+  start at **6/24/42pt** and end at 54pt, entirely inside the fixed
+  60px icon rail, matching the WeChat convention. Adjacent chat/settings headers
+  keep their normal padding. No manual button/container frames, reparenting,
+  resize callbacks or Tao `trafficLightPosition` participate in placement.
+  Auth shows only close; the ready shell shows close, minimize and zoom.
   `maximizable` stays `true` so the green zoom light is enabled rather than
   greyed out; it only affects user zoom, not the configured/remembered size.
   The platform flag is set synchronously in `kernel/hostPolicy` before first

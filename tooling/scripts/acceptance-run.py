@@ -103,6 +103,10 @@ from tooling.acceptance.core.proof import read_gate_proof, require_report_proof
 from tooling.acceptance.core.result_contracts import (
     DEVELOPMENT_RESULT_KINDS, development_verification_class,
 )
+from tooling.acceptance.core.runtime_cell import (
+    parse_runtime_cell_capabilities, require_runtime_cell_capabilities,
+)
+from tooling.acceptance.core.errors import ProvisioningError
 
 
 def utc_now() -> str:
@@ -889,6 +893,7 @@ def provision_runtime_cell(
     gate_run: Any,
     provisioner: Any = None,
     artifact_kind: str = "acceptance-binary",
+    required_capabilities: tuple[str, ...] | None = None,
 ) -> tuple[Any, dict[str, Any], Path]:
     from tooling.acceptance.provisioners import get_runtime_cell_lifecycle
 
@@ -898,9 +903,15 @@ def provision_runtime_cell(
         manifest = lifecycle.ready(
             gate_id,
             artifact_kind=artifact_kind,
+            **(
+                {"required_capabilities": required_capabilities}
+                if required_capabilities is not None else {}
+            ),
         )
         acquired = True
         payload = manifest.to_dict()
+        if required_capabilities is not None:
+            require_runtime_cell_capabilities(payload, required_capabilities)
         manifest_ref = gate_run.write_json(
             "runtime/runtime-cell-manifest.json",
             payload,
@@ -1292,6 +1303,15 @@ def gate_from_definition(gate_id: str, definition: dict[str, Any]) -> dict[str, 
         gate["executionInputs"] = definition["executionInputs"]
     if "e2e" in definition:
         gate["e2e"] = definition["e2e"]
+    if "runtimeCellCapabilities" in definition:
+        if not gate["requiredRuntimeCells"]:
+            raise SystemExit(f"{gate_id}: runtimeCellCapabilities requires requiredRuntimeCells")
+        try:
+            gate["runtimeCellCapabilities"] = list(parse_runtime_cell_capabilities(
+                gate_id, definition["runtimeCellCapabilities"],
+            ))
+        except ProvisioningError as error:
+            raise SystemExit(str(error)) from error
     artifact_kind = definition.get("runtimeCellArtifact")
     if artifact_kind is not None:
         if artifact_kind not in ("acceptance-binary", "installed-appimage"):
@@ -1387,6 +1407,7 @@ def plan_gate_from_entry(entry: Any, definitions: dict[str, Any]) -> dict[str, A
         "argv",
         "ephemeralCapabilities",
         "runtimeCellArtifact",
+        "runtimeCellCapabilities",
         "dependsOn",
         "judgment",
         "executionInputs",
@@ -3310,6 +3331,10 @@ def main() -> int:
                                 artifact_kind=str(
                                     gate.get("runtimeCellArtifact")
                                     or "acceptance-binary"
+                                ),
+                                required_capabilities=(
+                                    tuple(gate["runtimeCellCapabilities"])
+                                    if "runtimeCellCapabilities" in gate else None
                                 ),
                             )
                     except EvidenceError:

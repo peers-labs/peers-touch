@@ -30,6 +30,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { WindowDragRegion } from '../components/shell/WindowDragRegion';
 import { Flexbox } from 'react-layout-kit';
 
 import { AgentIconTile } from '../components/agent/AgentIconTile';
@@ -544,7 +545,7 @@ function ProfileEditor({ agent, onBack }: { agent: Agent; onBack?: () => void })
           }
         }
       `}</style>
-      <div
+      <WindowDragRegion mode="self"><div
         data-pt-agent-profile-content
         style={{
           width: '100%',
@@ -557,7 +558,7 @@ function ProfileEditor({ agent, onBack }: { agent: Agent; onBack?: () => void })
           boxSizing: 'border-box',
         }}
       >
-        <div style={{ display: 'grid', gridTemplateColumns: '64px minmax(0, 1fr)', gap: 12, alignItems: 'center' }}>
+        <WindowDragRegion><div style={{ display: 'grid', gridTemplateColumns: '64px minmax(0, 1fr)', gap: 12, alignItems: 'center' }}>
           <div style={{ width: 64, display: 'flex', justifyContent: 'flex-start' }}>
             <ProfileIconButton
               data-pt-agent-profile-back
@@ -594,7 +595,7 @@ function ProfileEditor({ agent, onBack }: { agent: Agent; onBack?: () => void })
               boxSizing: 'border-box',
             }}
           />
-        </div>
+        </div></WindowDragRegion>
 
         <div style={{ display: 'grid', gridTemplateColumns: '64px minmax(0, 1fr)', gap: 12, alignItems: 'start', marginTop: 10 }}>
           <button
@@ -750,7 +751,7 @@ function ProfileEditor({ agent, onBack }: { agent: Agent; onBack?: () => void })
             onOpenAtelier={() => useAgentStore.getState().setAgentSurface(agent.name, 'atelier')}
           />
         )}
-      </div>
+      </div></WindowDragRegion>
       {avatarPickerOpen ? (
         <AvatarPicker
           avatar={agent.avatar}

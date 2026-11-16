@@ -10,6 +10,7 @@ import {
 } from '../useActiveAgentStores';
 import { AgentSidebar } from '../../AgentSidebar';
 import { PanelToggleDock } from './PanelToggleDock';
+import { WindowDragRegion } from '../../shell/WindowDragRegion';
 
 interface TopicRailProps {
   collapsed: boolean;
@@ -50,7 +51,7 @@ export function TopicRail({
 
   if (collapsed) {
     return (
-      <aside
+      <WindowDragRegion mode="self"><aside
         data-pt-topic-rail="collapsed"
         style={{
           width: 48,
@@ -88,7 +89,7 @@ export function TopicRail({
           title={t('agent.chat.expandPanel')}
           onClick={onToggle}
         />
-      </aside>
+      </aside></WindowDragRegion>
     );
   }
 

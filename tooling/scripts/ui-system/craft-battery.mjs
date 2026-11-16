@@ -52,6 +52,18 @@ export function craftBatterySource(rootSelector) {
       if (slash) return parseFloat(slash[1]);
       return rgbaAlpha(value);
     };
+    // Identity images are the whole control, never padded button cards.
+    root.querySelectorAll('button[data-appearance="identity"]').forEach(el => {
+      if (!visible(el)) return;
+      const s = cs(el), r = box(el);
+      if (Math.abs(r.width - 36) > .5 || Math.abs(r.height - 36) > .5 ||
+          parseFloat(s.borderTopLeftRadius) !== 6 ||
+          ['paddingLeft','paddingRight','paddingTop','paddingBottom',
+           'borderTopWidth','borderRightWidth','borderBottomWidth','borderLeftWidth']
+            .some(prop => parseFloat(s[prop]) !== 0) || s.boxShadow !== 'none') {
+        flag('identity-control-geometry', describe(el));
+      }
+    });
     // Shared search motion never moves the field; focus tint is UI-owned.
     root.querySelectorAll('[data-appearance="search"]').forEach(el => {
       if (!visible(el)) return;
@@ -72,7 +84,7 @@ export function craftBatterySource(rootSelector) {
     root.querySelectorAll('[data-appearance="composer"]').forEach(el => {
       if (!visible(el)) return;
       const s = cs(el);
-      if (Math.abs(parseFloat(s.borderTopLeftRadius) - 12) > 1 ||
+      if (Math.abs(parseFloat(s.borderTopLeftRadius) - 8) > 1 ||
           Math.abs(parseFloat(s.paddingLeft) - 6) > 1) flag('composer-frame-geometry', describe(el));
       el.querySelectorAll('[data-framing="embedded"]').forEach(inputFrame => {
         if (parseFloat(cs(inputFrame).borderTopWidth) !== 0 || cs(inputFrame).boxShadow !== 'none')
@@ -85,6 +97,22 @@ export function craftBatterySource(rootSelector) {
           flag('composer-input-touch-height', describe(input), { height: box(input).height });
         if (box(input).right > box(el).right + 1) flag('composer-input-overflow', describe(input));
       });
+    });
+
+    // Writing insets must survive the embedded primitive's specificity.
+    root.querySelectorAll('.sk-composer-input, [data-pt-text-input="chat-composer"]').forEach(input => {
+      if (!visible(input)) return;
+      const s = cs(input);
+      const padding = [s.paddingTop, s.paddingRight, s.paddingBottom, s.paddingLeft].map(parseFloat);
+      if (padding.some((value, index) => Math.abs(value - [12, 16, 8, 16][index]) > 0.5))
+        flag('composer-writing-inset', describe(input), { padding });
+      const accent = document.createElement('span');
+      accent.style.color = 'var(--pt-accent)';
+      input.parentElement.appendChild(accent);
+      const expectedCaret = cs(accent).color;
+      accent.remove();
+      if (s.caretColor !== expectedCaret)
+        flag('composer-caret-color', describe(input), { actual: s.caretColor, expected: expectedCaret });
     });
 
     // C1 — Native OS chrome must never be visibly rendered. File/color inputs

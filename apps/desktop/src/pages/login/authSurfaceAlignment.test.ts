@@ -331,14 +331,12 @@ describe('auth surface polish', () => {
       'TrafficLightMode::Ready => [false, false, false]',
     );
     expect(trafficLightRs).toContain('button.setHidden(hidden[slot])');
-    // Placement stays fully native: the module must never write button frames
-    // or subscribe to frame changes, because any programmatic move loses the
-    // live-resize layout race and clips the lights against the top corner.
+    // Native Auto Layout solves the compact cluster in the title-bar layout
+    // pass. Frame writes and resize callbacks would race that pass.
     expect(trafficLightRs).not.toContain('setFrameOrigin');
     expect(trafficLightRs).not.toContain('setFrame(');
     expect(trafficLightRs).not.toContain('NSViewFrameDidChangeNotification');
-    // No declarative inset either: with trafficLightPosition absent, AppKit
-    // keeps the lights at their native top-left inset through every resize.
+    // Tao's content-draw inset must not compete with title-bar constraints.
     const tauriConf = readFileSync(
       new URL('../../../src-tauri/tauri.conf.json', import.meta.url),
       'utf8',
@@ -346,6 +344,11 @@ describe('auth surface polish', () => {
     const windowConfig = JSON.parse(tauriConf).app.windows[0];
     expect(windowConfig.trafficLightPosition).toBeUndefined();
     expect(trafficLightRs).toContain('DispatchQueue::main().exec_async');
+    expect(trafficLightRs).toContain('NSLayoutConstraint::activateConstraints');
+    expect(trafficLightRs).toContain('setTranslatesAutoresizingMaskIntoConstraints(false)');
+    expect(trafficLightRs).toContain('constraintEqualToAnchor(&parent.centerYAnchor())');
+    expect(trafficLightRs).toContain('parent.constraints().iter()');
+    expect(trafficLightRs).not.toContain('addSubview');
 
     // main.rs no longer owns a one-shot configurator; it applies the auth
     // mode at setup and lets the surface commands drive later transitions.
@@ -355,11 +358,14 @@ describe('auth surface polish', () => {
     expect(nativeSurfaceRs).toContain('fn apply_traffic_light_mode');
     expect(nativeSurfaceRs).toContain('TrafficLightMode::Auth');
     expect(nativeSurfaceRs).toContain('TrafficLightMode::Ready');
-    // Chrome switching is inert under the acceptance build so harness chrome
-    // stays governed by setup and harness window placement.
-    expect(nativeSurfaceRs).toMatch(
-      /fn apply_traffic_light_mode[\s\S]*?cfg!\(feature = "acceptance-webdriver"\)/,
+    // Harness geometry remains separate from product chrome: the actual
+    // Ready surface must restore every light in diagnostic builds too.
+    const chromeApply = nativeSurfaceRs.slice(
+      nativeSurfaceRs.indexOf('fn apply_traffic_light_mode'),
+      nativeSurfaceRs.indexOf('#[derive(Debug, Deserialize)]'),
     );
+    expect(chromeApply).toContain('TrafficLightState::apply(window, state, mode)');
+    expect(chromeApply).not.toContain('acceptance-webdriver');
 
     // The icon rail keeps its fixed 60px column; the native light cluster sits
     // in the shared overlay title-bar strip above it, so it never collides with
@@ -377,8 +383,8 @@ describe('auth surface polish', () => {
       'utf8',
     );
     // A full-height hard seam made the native green light straddle the
-    // rail/stage boundary. The base rail rule must no longer paint the 1px
-    // inset line (only the soft glow spans the whole column).
+    // rail/stage boundary. The base rail rule must not paint a full-height
+    // inset line across the continuous chrome.
     const railRule = northstar.match(/\.ds-rail\s*\{([^}]*)\}/)?.[1] ?? '';
     expect(railRule).not.toContain('inset -1px 0 0');
     // The hairline moves to a pseudo that starts under the title band, so the
@@ -392,18 +398,22 @@ describe('auth surface polish', () => {
     );
   });
 
-  it('lets the frosted rail own the left edge instead of painting a frame on it', () => {
+  it('uses the same opaque L1 material around the inset rounded stage', () => {
     const northstar = readFileSync(
       new URL('../../ui/northstar.css', import.meta.url),
       'utf8',
     );
-    // The rail is a translucent blurred material no solid color can match, so
-    // the shell frame is three-sided: zero left border (rail fills to the
-    // rounded corner), 3px subtle frame only on the stage edges.
+    // The perimeter must match L1, including its top edge, rather than L2.
     const shell = northstar.match(/\.ds-shell\s*\{([^}]*)\}/)?.[1] ?? '';
-    expect(shell).toContain('border-width: 3px 3px 3px 0');
-    expect(shell).toContain('border-color: var(--pt-subtle)');
-    expect(shell).not.toContain('border: 3px solid');
+    const rail = northstar.match(/\.ds-rail\s*\{([^}]*)\}/)?.[1] ?? '';
+    const stage = northstar.match(/\.ds-stage\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(shell).toContain('border-width: var(--pt-frame-inset) var(--pt-frame-inset) var(--pt-frame-inset) 0');
+    expect(shell).toContain('border-color: var(--pt-frame)');
+    expect(shell).toContain('background: var(--pt-frame)');
+    expect(rail).toContain('background: var(--pt-frame)');
+    expect(rail).not.toContain('linear-gradient');
+    expect(rail).not.toContain('backdrop-filter');
+    expect(stage).toContain('border-radius: max(0px, calc(var(--pt-window-radius) - var(--pt-frame-inset)))');
   });
 });
 
@@ -528,6 +538,40 @@ describe('native auth/ready window surface', () => {
     expect(chatStyles).toMatch(/\.sc-rail-header\s*\{[^}]*height: 48px/);
     expect(chatStyles).toMatch(/\.sc-rail-header\s*\{[^}]*overflow: hidden/);
     expect(chatStyles).not.toMatch(/\.sc-rail-header\s*\{[^}]*min-height: 40px/);
+  });
+
+  it('keeps the native cluster inside the rail without shifting stage headers', () => {
+    const northstar = readFileSync(
+      new URL('../../ui/northstar.css', import.meta.url),
+      'utf8',
+    );
+    expect(northstar).not.toContain('--pt-stage-traffic-inset');
+    expect(northstar).toMatch(
+      /\.sc-settings__subbar\s*\{[^}]*padding: 8px 14px 10px;/,
+    );
+
+    const chatStyles = readFileSync(
+      new URL('../../ui/chat.css', import.meta.url),
+      'utf8',
+    );
+    expect(chatStyles).not.toContain('--pt-stage-traffic-inset');
+    expect(chatStyles).toMatch(
+      /\.sc-rail-header\s*\{[^}]*padding: 6px 16px;/,
+    );
+
+    const trafficLightRs = readFileSync(
+      new URL('../../../src-tauri/src/application/traffic_lights.rs', import.meta.url),
+      'utf8',
+    );
+    const nativeConstant = (name: string) =>
+      Number(trafficLightRs.match(new RegExp(`${name}: f64 = ([\\d.]+)`))?.[1]);
+    const diameter = nativeConstant('LIGHT_DIAMETER');
+    const inset = nativeConstant('LEADING_INSET');
+    const step = nativeConstant('LIGHT_STEP');
+    expect(diameter).toBeGreaterThan(0);
+    expect(inset).toBeGreaterThan(0);
+    expect(step).toBeGreaterThan(diameter);
+    expect(inset + 2 * step + diameter).toBeLessThan(60);
   });
 
   it('defines the auth and ready geometry constants and ready fallback', () => {

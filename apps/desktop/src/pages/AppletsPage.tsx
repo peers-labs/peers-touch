@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
+import { WindowDragRegion } from '../components/shell/WindowDragRegion';
 import { toast } from '@lobehub/ui';
 import { Typography, Spin, Alert, theme } from 'antd';
 import {
@@ -172,7 +173,7 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: Page) => void 
       }}
     >
       <PageColumn tier="standard" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
-      <Flexbox
+      <WindowDragRegion><Flexbox
         horizontal
         align="center"
         justify="space-between"
@@ -240,7 +241,7 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: Page) => void 
             <Plus size={18} />
           </button>
           {importMenuOpen && (
-            <div
+            <WindowDragRegion mode="none"><div
               role="menu"
               style={{
                 position: 'absolute',
@@ -284,10 +285,10 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: Page) => void 
                 <FileInput size={15} />
                 {t('applet.page.importPackage')}
               </button>
-            </div>
+            </div></WindowDragRegion>
           )}
         </div>
-      </Flexbox>
+      </Flexbox></WindowDragRegion>
 
       {stationUnavailable && (
         <div style={{ padding: '0 0 4px', flexShrink: 0 }}>

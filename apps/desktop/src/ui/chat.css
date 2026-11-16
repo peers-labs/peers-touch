@@ -12,15 +12,11 @@
   min-width: 0;
   min-height: 0;
   width: 100%;
-  display: flex;
-  flex-direction: row;
-  overflow-x: auto;
-  overflow-y: hidden;
-  /* One continuous paper field from the icon-rail boundary to the window
-     edge. The catalog rail and conversation are surface-white, so the host
-     must match: a canvas host would leak a grey band through any scrollbar
-     gutter or sub-pixel gap and break the full-bleed surface into two tones. */
-  background: var(--pt-surface);
+  display: block;
+  overflow: clip;
+  /* The host carries reading paper; the finite catalogue owns its next
+     darker structural role. Control wells do not define either layer. */
+  background: var(--pt-reading);
   color: var(--pt-text);
 }
 
@@ -42,7 +38,7 @@
   gap: 8px;
   height: 48px;
   box-sizing: border-box;
-  padding: 6px 16px;
+  padding: 6px 8px;
   flex-shrink: 0;
   overflow: hidden;
 }
@@ -76,21 +72,40 @@
   color: var(--pt-secondary);
   flex-shrink: 0;
 }
-@media (max-width: 960px) {
-  .sc-chat[data-chat-side-panel-open='true'] {
-    overflow-x: hidden;
-  }
-  .sc-chat[data-chat-side-panel-open='true']
-    > [data-chat-conversation-pane] {
-    display: none !important;
-  }
-  /* The detail/thread panel owns the full width once its sibling panes hide;
-     its fixed 320/360px catalog width would leave an empty stage. */
-  .sc-chat[data-chat-side-panel-open='true'] > .sc-detail,
-  .sc-chat[data-chat-side-panel-open='true'] > .sc-thread {
-    flex: 1 1 auto;
-    width: auto;
-  }
+.sc-catalog-guide {
+  position: absolute; inset: 0 auto 0 0;
+  width: var(--sc-catalog-visible); overflow: clip;
+  background: var(--pt-catalog);
+}
+.sc-catalog-guide[data-drawn='false'] { visibility: hidden; }
+.sc-catalog-guide .sc-rail-header,
+.sc-catalog-guide .sc-sessions__scroll,
+.sc-catalog-guide .sc-contacts {
+  width: min(var(--sc-catalog-visible), var(--pt-chat-rail-width));
+  box-sizing: border-box;
+}
+.sc-chat-work {
+  position: absolute; inset: 0 auto 0 0;
+  width: var(--sc-work-width); min-width: 0;
+  transform: translateX(var(--sc-work-x));
+  background: var(--pt-reading); z-index: 2;
+  overflow: clip;
+}
+.sc-chat-work[data-visible='false'],
+.sc-chat-leaf[data-visible='false'] { visibility: hidden; }
+.sc-chat-work__body { width: 100%; height: 100%; min-height: 0; }
+.sc-chat-leaf {
+  position: absolute; top: 0; bottom: 0; right: 0;
+  width: var(--sc-leaf-width);
+  transform: translateX(var(--sc-leaf-x));
+  background: var(--pt-reading); z-index: 3; overflow: clip;
+}
+.sc-chat-leaf > .sc-detail,
+.sc-chat-leaf > .sc-thread { width: 100%; min-width: 0; }
+.sc-chat-rest-placeholder {
+  position: absolute; top: 0; bottom: 0;
+  left: var(--pt-chat-rail-width); right: 0;
+  display: grid; place-items: center; pointer-events: none;
 }
 
 /* ── Messaging continuity recovery gate ─────────────────────────────────── */
@@ -138,9 +153,8 @@
 
 /* ── Conversation session list ──────────────────────────────────────────── */
 .sc-sessions {
-  /* Catalog column at desktop widths. The default 300px is overridable via
-     --pt-chat-rail-width (manual ChatRailResizer drag); width stays in CSS,
-     not inline styles, so the 720px narrow media query can still override it. */
+  /* Natural paper width comes from the shared assembly; its enclosing guide
+     owns visible exposure under frame pressure. */
   width: var(--pt-chat-rail-width, 300px);
   flex: 0 0 var(--pt-chat-rail-width, 300px);
   align-self: stretch;
@@ -150,7 +164,7 @@
   /* Level-2 zone: a quiet subtle fill. It separates from the level-3 white
      conversation purely by tonal step (north-star grammar #2 — material, not
      a hairline), so no border-right is drawn between the two chrome zones. */
-  background: var(--pt-subtle);
+  background: var(--pt-catalog);
   position: relative;
 }
 /* Embedded contacts share the rail material — no second border. */
@@ -160,18 +174,26 @@
   border-right: 0;
 }
 
+/* Row text and header controls consume independent footprint budgets. */
+.sc-sessions[data-rail-tools-compact='true'] .sc-rail-header {
+  justify-content: center;
+  padding: 6px 2px;
+}
+.sc-sessions[data-rail-compact='true'] .sc-rail-title,
+.sc-sessions[data-rail-compact='true'] .sc-session-row__body,
+.sc-sessions[data-rail-compact='true'] .sc-session-row__actions { display: none; }
+.sc-sessions[data-rail-compact='true'] .sc-sessions__scroll { padding: 8px 2px; }
+.sc-sessions[data-rail-compact='true'] .sc-sessions__empty { overflow: hidden; }
+
 /* Manual catalog-rail resize handle. An absolutely-positioned 10px hit strip
    straddling the rail's right hairline — it must NOT take flex space, or its
    transparent body exposes the canvas background as a visible grey band. The
    visual rule stays invisible until hover/drag so resting chrome is unchanged.
-   Below 720px the single-pane swap owns layout and the handle is hidden. */
+   The shared controller owns whether its complete hit target is exposed. */
 .sc-chat-rail-resizer {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: var(--pt-chat-rail-width, 300px);
-  width: 10px;
-  margin-left: -5px;
   z-index: 3;
   cursor: col-resize;
   touch-action: none;
@@ -181,7 +203,6 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 50%;
   width: 1px;
   margin-left: -0.5px;
   background: transparent;
@@ -189,15 +210,22 @@
 }
 .sc-chat-rail-resizer:hover .sc-chat-rail-resizer__line,
 .sc-chat-rail-resizer[data-dragging='true'] .sc-chat-rail-resizer__line,
-.sc-chat-rail-resizer:focus-visible .sc-chat-rail-resizer__line {
+.sc-chat-rail-resizer[data-keyboard-focus='true'] .sc-chat-rail-resizer__line {
   background: var(--pt-accent);
 }
-.sc-chat-rail-resizer:focus-visible {
-  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--pt-accent) 35%, transparent);
+/* The 10px full-height hit strip must never render a box-shaped focus ring:
+   an outline/inset shadow on it reads as two parallel full-height lines.
+   The single separator line above is the only focus indicator. This beats
+   the global .pt-ui [tabindex]:focus-visible outline (specificity 0,2,0). */
+.sc-chat-rail-resizer[data-chat-rail-resize]:focus,
+.sc-chat-rail-resizer[data-chat-rail-resize]:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
+.sc-chat-rail-resizer[data-available='false'] { visibility: hidden; pointer-events: none; }
 /* While dragging, the col-resize cursor and text-selection lock apply
    document-wide even when the pointer moves over other panes. */
-body[data-chat-rail-resizing='true'] {
+body:has([data-chat-rail-resize][data-dragging='true']) {
   cursor: col-resize;
   user-select: none;
 }
@@ -233,16 +261,22 @@ body[data-chat-rail-resizing='true'] {
   gap: 10px;
   width: 100%;
   box-sizing: border-box;
-  height: 64px;
-  min-height: 64px;
-  padding: 10px 8px;
+  height: var(--pt-chat-session-row-height);
+  min-height: var(--pt-chat-session-row-height);
+  padding: var(--pt-space-xxs) var(--pt-space-xs);
   overflow: visible;
-  border-radius: var(--pt-radius-md);
+  border-radius: var(--pt-radius-sm);
   cursor: pointer;
   background: transparent;
   /* Prototype .sk-conv-row hover is instant — no background transition. */
 }
 .sc-session-row:hover { background: color-mix(in srgb, var(--pt-text) 4%, transparent); }
+.sc-sessions[data-rail-compact='true'] .sc-session-row {
+  justify-content: center;
+  width: var(--pt-chat-session-row-height);
+  margin-inline: auto;
+  padding: 0;
+}
 /* Pinned rows carry a quiet tile wash even at rest (prototype
    sk-conv-row.is-pinned-row parity). */
 .sc-session-row.is-pinned-row {
@@ -252,7 +286,7 @@ body[data-chat-rail-resizing='true'] {
    sk-conv-row.is-selected parity), never the green-tile fill. */
 .sc-session-row.is-active {
   background: var(--pt-surface);
-  box-shadow: inset 2.5px 0 0 var(--pt-accent);
+  box-shadow: inset 1px 0 0 var(--pt-accent);
 }
 .sc-session-avatar { position: relative; display: inline-flex; flex-shrink: 0; }
 .sc-session-presence {
@@ -311,6 +345,7 @@ body[data-chat-rail-resizing='true'] {
 .sc-session-row__sub {
   display: flex;
   align-items: center;
+  gap: 6px;
   height: 20px;
   min-width: 0;
 }
@@ -325,8 +360,20 @@ body[data-chat-rail-resizing='true'] {
   text-overflow: ellipsis;
 }
 .sc-session-row__group-glyph { color: var(--pt-secondary); flex-shrink: 0; display: inline-flex; }
-.sc-session-row__pin { color: var(--pt-accent); flex-shrink: 0; display: inline-flex; }
-.sc-session-row__muted { color: var(--pt-muted); flex-shrink: 0; display: inline-flex; }
+/* Status tags (pin/mute) rest at the bottom-right of the row, never on the
+   name line. They yield the corner to the three-dot action on hover/focus. */
+.sc-session-row__flags {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--pt-muted);
+}
+.sc-session-row__flag { display: inline-flex; align-items: center; }
+.sc-session-row__flag--pin { color: var(--pt-accent); }
+.sc-session-row__flag--mute { color: var(--pt-muted); }
+.sc-session-row:hover .sc-session-row__flags,
+.sc-session-row:focus-within .sc-session-row__flags { display: none; }
 
 /* Hover quick actions: overlay the preview line at the bottom-right and fade
    in; the time collapses on hover (prototype sk-conv-actions parity). */
@@ -351,6 +398,11 @@ body[data-chat-rail-resizing='true'] {
 }
 .sc-session-row:hover .sc-session-row__time,
 .sc-session-row:focus-within .sc-session-row__time { visibility: hidden; }
+/* The single three-dot tile owns the bottom-right corner while visible; shrink
+   the preview line so its text ellipsizes before the tile instead of sliding
+   under it. tile 24px + 4px pill padding + 2px offset delta + 6px gap ≈ 36px. */
+.sc-session-row:hover .sc-session-row__preview,
+.sc-session-row:focus-within .sc-session-row__preview { margin-right: 36px; }
 .sc-session-row__actions .sc-session-state {
   width: 24px;
   height: 24px;
@@ -371,12 +423,12 @@ body[data-chat-rail-resizing='true'] {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-height: 0;
+  max-height: var(--sc-composer-budget, 280px);
 }
-/* Inside the thread sheet the composer is the sheet footer: prototype
-   .sk-thread-composer grammar — 10px 12px padding with a 7% hairline top.
-   The inline padding from the visual layout is overridden on this surface. */
+/* The thread footer shares the dock's parent inset. */
 .sc-composer--thread {
-  padding: 10px 12px;
+  padding: var(--pt-composer-outer-inset);
   border-top: 1px solid color-mix(in srgb, var(--pt-text) 7%, transparent);
 }
 .sc-composer__drop {
@@ -443,9 +495,17 @@ body[data-chat-rail-resizing='true'] {
 .sc-composer__shell {
   display: flex;
   flex-direction: column;
-  background: var(--pt-subtle);
+  background: var(--pt-reading);
   overflow: hidden;
+  min-height: 0;
+  flex: 0 1 auto;
 }
+.sc-composer__context {
+  flex: 0 1 auto; min-height: 0; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 8px;
+  max-height: max(0px, calc(var(--sc-composer-budget, 280px) - 122px));
+}
+.sc-composer__context:empty { display: none; }
 /* Draft strip, recording and voice preview live ABOVE the composer pill
    (prototype .sk-composer-zone grammar). The rows are self-painted tiles;
    the .sc-composer column gap owns the rhythm. */
@@ -606,7 +666,7 @@ body[data-chat-rail-resizing='true'] {
   min-width: 0;
   height: 34px;
 }
-/* The input is a peers-ui TextArea (framing="embedded"): the rounded host pill
+/* The input is a peers-ui TextArea (framing="embedded"): the rounded host dock
    owns all chrome, so the library frame stays borderless/transparent with no
    inner focus ring (prototype sk-composer parity). App CSS only owns geometry
    and type so the auto-grow effect keeps its min/max-height contract. */
@@ -623,27 +683,27 @@ body[data-chat-rail-resizing='true'] {
   box-shadow: none;
 }
 /* The layout policy drives the resting shell with an inline box-shadow:none;
-   focus must still ring the whole pill, so win that reset explicitly. */
+   focus must still ring the whole dock, so win that reset explicitly. */
 .sc-composer__shell:focus-within {
   box-shadow: 0 0 0 2px var(--pt-focus) !important;
 }
 /* WeChat composer grammar: the textarea fills the full top region (the large
    editable area), and the tool/send controls sit in a separate footer row.
-   13.5px / 1.55 type with symmetric gutters; auto-grow is instant (no height
+   13.5px / 1.55 type with shared writing insets; auto-grow is instant (no height
    transition) between the min/max-height contract. */
 .sc-composer__input {
   width: 100%;
   box-sizing: border-box;
   resize: none;
-  padding: 10px 12px 6px;
+  --pt-textarea-padding: var(--pt-composer-input-padding);
+  --pt-textarea-caret-color: var(--pt-accent);
   background: transparent;
   color: var(--pt-text);
-  caret-color: var(--pt-primary);
   font-family: inherit;
   font-size: 13.5px;
   line-height: 1.55;
-  min-height: var(--sc-composer-input-min-height, 34px);
-  max-height: var(--sc-composer-input-max-height, 180px);
+  --pt-textarea-min-height: var(--sc-composer-input-min-height, 34px);
+  --pt-textarea-max-height: var(--sc-composer-input-max-height, 180px);
   overflow-y: auto;
 }
 /* The input region owns the full shell width so expanded text fills the box
@@ -654,19 +714,25 @@ body[data-chat-rail-resizing='true'] {
   min-height: 0;
   display: flex;
 }
-/* Footer: borderless tool glyphs on the left, expand + send on the right, all
-   on one 34px-tall row under the text area. */
+/* Keep each control whole. When the pane cannot fit both groups, the send
+   group moves to a second line rather than painting outside the dock. */
 .sc-composer__footer {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   padding: 2px 8px 6px;
 }
 .sc-composer__tools,
-.sc-composer__send-group { display: inline-flex; align-items: center; }
+.sc-composer__send-group {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  max-width: 100%;
+}
 .sc-composer__tools { gap: 1px; }
-.sc-composer__send-group { gap: 8px; }
+.sc-composer__send-group { gap: 8px; margin-left: auto; justify-content: flex-end; }
 
 /* Message hover action bar — borderless ghost icon buttons (prototype
    sk-msg-action parity): no chip chrome, quiet ink, hover warms only. */
@@ -2273,7 +2339,7 @@ body[data-chat-rail-resizing='true'] {
   max-width: 100%;
   min-width: 0;
   height: 100%;
-  background: var(--pt-surface);
+  background: var(--pt-reading);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -2787,7 +2853,7 @@ body[data-chat-rail-resizing='true'] {
   --thread-card-divider-strong: color-mix(in srgb, var(--pt-text) 12%, transparent);
   width: 360px;
   height: 100%;
-  background: var(--pt-surface);
+  background: var(--pt-reading);
   border-left: 1px solid var(--pt-border);
   flex-shrink: 0;
   position: relative;
@@ -2830,11 +2896,7 @@ body[data-chat-rail-resizing='true'] {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--pt-subtle) transparent;
 }
-.sc-thread__scroll::-webkit-scrollbar { width: 6px; height: 0; }
-.sc-thread__scroll::-webkit-scrollbar-thumb { background: var(--pt-subtle); border-radius: 999px; }
 
 /* Unified neutral card hosting the root message and every reply. The panel
    chrome stays white; the content surface uses the shared subtle well with a
@@ -3028,8 +3090,30 @@ body[data-chat-rail-resizing='true'] {
 .sc-contact-row .sc-identity-row__metadata span {
   font-size: 11.5px;
   color: var(--pt-muted);
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sc-contact-section__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .sc-contact-row__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sc-contacts[data-contact-compact='true'] .sc-contacts__scroll { padding: 8px 2px; }
+.sc-contacts[data-contact-compact='true'] .sc-contacts__self { margin-left: 0; margin-right: 0; }
+.sc-contacts[data-contact-compact='true'] .sc-contact-row { justify-content: center; }
+.sc-contacts[data-contact-compact='true'] .sc-contact-row__body,
+.sc-contacts[data-contact-compact='true'] .sc-identity-row__body,
+.sc-contacts[data-contact-compact='true'] .sc-contacts__empty,
+.sc-contacts[data-contact-compact='true'] [data-contact-section='incoming'] .sc-contact-section__body,
+.sc-contacts[data-contact-compact='true'] [data-contact-section='outgoing'] .sc-contact-section__body,
+.sc-contacts[data-contact-compact='true'] [data-contact-section='history'] .sc-contact-section__body { display: none; }
+.sc-contacts[data-contact-compact='true'] .sc-identity-row { justify-content: center; }
+.sc-contact-section__compact { align-self: center; margin: 4px 0; }
 .sc-contact-row__name {
   font-size: 13px;
   font-weight: 600;
@@ -3500,7 +3584,7 @@ body[data-chat-rail-resizing='true'] {
   /* Full-bleed stage: one continuous surface with the catalog rail from the
      first-level nav boundary to the window edge — no card frame, gutter,
      border or radius. The rail's own right hairline is the only separator. */
-  background: var(--pt-surface);
+  background: var(--pt-reading);
 }
 .sc-conversation--empty,
 .sc-conversation__center {
@@ -3508,7 +3592,7 @@ body[data-chat-rail-resizing='true'] {
   align-items: center;
   justify-content: center;
 }
-.sc-conversation--empty { background: var(--pt-surface); }
+.sc-conversation--empty { background: var(--pt-reading); }
 /* The narrow single-pane mode inherits the same full-bleed surface; no frame
    override is needed because the base rule never introduces one. */
 .sc-conversation__center {
@@ -3621,7 +3705,7 @@ body[data-chat-rail-resizing='true'] {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  background: var(--pt-surface);
+  background: var(--pt-reading);
   border-bottom: 1px solid var(--pt-column-hairline);
 }
 .sc-chat-head-id { flex: 1 1 auto; display: flex; align-items: center; gap: 10px; min-width: 0; }
@@ -3773,15 +3857,7 @@ body[data-chat-rail-resizing='true'] {
   /* Tight 12px horizontal inset shared with the composer so bubble edges line
      up with the input shell (WeChat parity); 12px below the header band. */
   padding: 12px 12px 6px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--pt-subtle) transparent;
 }
-.sc-conversation__stream::-webkit-scrollbar { width: 6px; height: 0; }
-.sc-conversation__stream::-webkit-scrollbar-thumb {
-  background: var(--pt-subtle);
-  border-radius: 999px;
-}
-.sc-conversation__stream::-webkit-scrollbar-track { background: transparent; }
 .sc-conversation__bot-bar {
   display: flex;
   align-items: center;
@@ -3918,6 +3994,7 @@ body[data-chat-rail-resizing='true'] {
 }
 .sc-msg-meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   /* Prototype .sk-msg-under: 6px item gap. */
   gap: 6px;
@@ -3928,11 +4005,20 @@ body[data-chat-rail-resizing='true'] {
   padding: 0 4px;
   box-sizing: border-box;
   min-height: 16px;
+  min-width: 0;
   max-width: 100%;
-  overflow: hidden;
   white-space: nowrap;
 }
+.sc-msg-meta[data-own='true'] { justify-content: flex-end; }
+/* The verdict's Tooltip is a flex item too: constrain that app-owned anchor,
+   so its long text wraps before it can push Retry past the message bounds. */
+.sc-msg-verdict-details {
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+}
 .sc-msg-time {
+  flex-shrink: 0;
   font-size: 10.5px;
   line-height: 1.2;
   color: var(--pt-muted);
@@ -3945,6 +4031,7 @@ body[data-chat-rail-resizing='true'] {
    read ticks take the pine primary. */
 .sc-msg-status {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 3px;
   color: var(--pt-muted);
@@ -3954,6 +4041,8 @@ body[data-chat-rail-resizing='true'] {
 /* Delivery verdict meta (north-star .sk-msg-status.is-failed grammar).
    Tone is driven by the evidence data attribute, never inline color. */
 .sc-verdict {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 11px;
   line-height: 1.2;
   color: var(--pt-muted);
@@ -4452,102 +4541,17 @@ body[data-chat-rail-resizing='true'] {
 .sc-list-error--block .sc-list-error__text { flex: none; font-weight: 600; color: var(--pt-text); }
 
 
-/* ─────────────────────────────────────────────────────────────────────────
- * Narrow single-pane swap (prototype sk-narrow-open / WeChat parity).
- * Override blocks live at the end of the stylesheet, after every base rule,
- * so first-match source-contract tests still resolve the desktop grammar.
- * The 60px material rail stays visible; inside the stage the catalog rail
- * and the conversation never share the row below 720px — data-narrow-open
- * decides which pane owns the screen, the header back tile returns.
- * ───────────────────────────────────────────────────────────────────────── */
-.sc-chat-head__back { display: none; }
+/* Frame pressure and work-tool density consume the shared assembly snapshot.
+   No independent viewport breakpoint chooses a pane or changes its width. */
+.sc-chat-head__back { flex: 0 0 auto; }
 
-/* Narrow pane navigation is a WeChat-style horizontal push. The conversation
-   is a persistent full-stage layer that slides in from the right over the
-   catalog and slides back out on back. Both panes stay mounted — only a
-   transform/visibility transition flips — so enter and exit are symmetric with
-   no display reflow and no keyframe re-trigger. This deliberately replaces the
-   earlier instant flip; it is NOT the rejected keyframe version (which tied a
-   translateX animation to a display:none→flex swap and could animate in but
-   never out). See pitfalls/css-full-pane-translate-mimics-h5-reload.md. */
-@media (max-width: 720px) {
-  .sc-chat[data-narrow='true'] { overflow-x: hidden; }
-
-  /* Single-pane swap: manual rail resize is unavailable. */
-  .sc-chat[data-narrow='true'] .sc-chat-rail-resizer { display: none; }
-
-  /* The catalog stays mounted as the base layer even while a conversation is
-     open; the sliding conversation covers it and reveals it again on pop. */
-  .sc-chat[data-narrow='true'] .sc-sessions {
-    width: 100%;
-    flex-basis: 100%;
-    border-right: 0;
-  }
-
-  /* Persistent sliding layer: parked just off the right edge and removed from
-     input/AT while parked, then translated to rest when data-narrow-open. The
-     visibility delay keeps it in the tab order only after the slide-out ends. */
-  .sc-chat[data-narrow='true'] .sc-conversation {
-    position: absolute;
-    inset: 0;
-    z-index: 20;
-    flex: none;
-    width: 100%;
-    transform: translateX(100%);
-    visibility: hidden;
-    transition:
-      transform var(--pt-motion-slow) var(--pt-motion-out),
-      visibility 0s linear var(--pt-motion-slow);
-  }
-  .sc-chat[data-narrow='true'][data-narrow-open='true'] .sc-conversation {
-    transform: translateX(0);
-    visibility: visible;
-    transition:
-      transform var(--pt-motion-slow) var(--pt-motion-out),
-      visibility 0s;
-  }
-
-  .sc-chat[data-narrow='true'] .sc-chat-head__back { display: inline-flex; }
-  .sc-chat[data-narrow='true'] .sc-chat-head {
-    padding-left: 10px;
-    padding-right: 10px;
-    gap: 6px;
-  }
-  .sc-chat[data-narrow='true'] .sc-conversation__stream {
-    padding-left: 14px;
-    padding-right: 14px;
-  }
-
-  /* Detail and thread panels become full-stage overlays instead of squeezed
-     flex columns. .sc-chat is the positioning context. */
-  .sc-chat[data-narrow='true'] .sc-detail,
-  .sc-chat[data-narrow='true'] .sc-thread {
-    position: absolute;
-    inset: 0;
-    z-index: 30;
-    width: 100%;
-    border-left: 0;
-  }
-}
-
-/* Phone-narrow compact insets; bubbles are width-driven already (inline
-   maxWidth calc), so only chrome tightens here. */
-@media (max-width: 480px) {
-  .sc-chat[data-narrow='true'] .sc-conversation__stream {
-    padding-left: 10px;
-    padding-right: 10px;
-  }
-  .sc-chat[data-narrow='true'] .sc-chat-head-actions [data-action-id='chat-call-video'],
-  .sc-chat[data-narrow='true'] .sc-chat-head-actions [data-action-id='chat-open-detail'] {
-    display: none;
-  }
-  .sc-chat[data-narrow='true'] .sc-chat-head-actions { gap: 2px; }
-  .sc-chat[data-narrow='true'] .sc-chat-head-actions .sc-head-action {
-    width: 32px;
-    height: 32px;
-    min-height: 32px;
-  }
-}
+.sc-chat[data-compressed='true'] .sc-chat-head { padding-inline: 10px; gap: 6px; }
+.sc-chat[data-compressed='true'] .sc-conversation__stream { padding-inline: 14px; }
+.sc-chat[data-work-compact='true'] .sc-conversation__stream { padding-inline: 10px; }
+.sc-chat[data-work-compact='true'] .sc-chat-head__station { display: none; }
+.sc-chat[data-work-compact='true'] .sc-chat-head-id { gap: 4px; }
+.sc-chat[data-work-compact='true'] .sc-chat-head__subtitle { white-space: normal; }
+.sc-chat[data-work-compact='true'] .sc-composer__tools { flex-basis: 100%; }
 
 /* The composer is vertical by construction (textarea on top, tool/send
    footer below), so it already degrades cleanly to phone-narrow widths without

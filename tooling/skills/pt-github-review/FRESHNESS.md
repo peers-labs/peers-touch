@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-11-14
-covered_docs_hash: 59099018e34bffcfce986ab7863f6a14e783231e931282ec17d780f45281a3d5
+last_verified_at: 2026-11-15
+covered_docs_hash: 64e86db8c307296560181ec91220a2a40dfd02b13b75a2b4217190494d0c1480
 
 covered_docs:
   - AGENTS.md
@@ -27,6 +27,18 @@ covered_docs:
   - docs/knowledge/README.md
 
 ## Freshness Contract
+
+Reviewed integration admission across submit, divergent merge commit,
+reverse-sync and GitHub merge. The shared owner binds both HEADs/base/tree,
+complete bilateral scope and original check output; affected builds,
+behavior, original standards and independent counterexamples remain required.
+Real Git topology and release-entrypoint regressions replace keyword-only
+claims. CI consumes external parent-bound evidence using accepted base policy.
+First installation uses a distinct installation-review context selected from
+accepted-base Git history; removal of an existing owner fails closed. Real
+temporary Git repositories exercise absent, installed and removed policies.
+Server activation and isolated Agent calibration remain separately verified
+properties, never inferred from the source workflow or fixture schema.
 
 Reviewed the canonical Feature denominator and proof reader across coverage,
 gaps, prerequisites, aggregates and continuation. Failed original assertions,

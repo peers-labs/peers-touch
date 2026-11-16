@@ -24,6 +24,8 @@ export function useVoiceRecorder(onRecorded: (voice: RecordedVoice) => void, onE
   const timerRef = useRef<number | null>(null);
   const cancelledRef = useRef(false);
   const startedAtRef = useRef(0);
+  const acquisition = useRef(0);
+  const active = useRef(true);
   const [recording, setRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
 
@@ -45,6 +47,7 @@ export function useVoiceRecorder(onRecorded: (voice: RecordedVoice) => void, onE
   }, [stopStream]);
 
   const cancel = useCallback(() => {
+    acquisition.current++;
     cancelledRef.current = true;
     stopStream();
   }, [stopStream]);
@@ -56,7 +59,12 @@ export function useVoiceRecorder(onRecorded: (voice: RecordedVoice) => void, onE
       return;
     }
     try {
+      const request = ++acquisition.current;
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!active.current || request !== acquisition.current) {
+        stream.getTracks().forEach(track => track.stop());
+        return;
+      }
       const recorder = new MediaRecorder(stream);
       chunksRef.current = [];
       cancelledRef.current = false;
@@ -83,9 +91,14 @@ export function useVoiceRecorder(onRecorded: (voice: RecordedVoice) => void, onE
     }
   }, [onError, onRecorded, recording]);
 
-  useEffect(() => () => {
-    cancelledRef.current = true;
-    stopStream();
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+      acquisition.current++;
+      cancelledRef.current = true;
+      stopStream();
+    };
   }, [stopStream]);
 
   return { recording, recordingSeconds, start, cancel, finish };

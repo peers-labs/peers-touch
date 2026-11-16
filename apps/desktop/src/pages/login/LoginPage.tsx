@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Card, Icon, IconButton } from '@peers-touch/ui';
 import { feedbackChannel, notifyError } from '../../ui/feedback';
+import { WindowDragRegion } from '../../components/shell/WindowDragRegion';
 import { BRANDING } from '../../branding';
 import { LanguageSwitcher } from '../../components/common/LanguageSwitcher';
 import {
@@ -55,6 +56,10 @@ interface Props {
   onUnlockWithPin: (accountId: string, pin: string) => Promise<void>;
   restoredUser?: SessionUser | null;
   knownAccounts?: SessionUser[];
+  /** When set, the window was parked on the PIN gate by an idle/lock event. */
+  lockedAccountId?: string | null;
+  /** Called once the locked account has been routed to PIN entry. */
+  onLockConsumed?: () => void;
   embedded?: boolean;
 }
 
@@ -80,6 +85,8 @@ export function LoginPage({
   onUnlockWithPin,
   restoredUser,
   knownAccounts = [],
+  lockedAccountId = null,
+  onLockConsumed,
   embedded,
 }: Props) {
   const { t } = useTranslation('auth');
@@ -235,6 +242,21 @@ export function LoginPage({
       if (!authenticated) setLoginState('logged_out');
     }
   }, [loginState]);
+
+  // Idle/lock edge: open the PIN entry directly for the locked account
+  // instead of making the user pick it from the account list again.
+  useEffect(() => {
+    if (!lockedAccountId) return;
+    const lockedAccount = knownAccounts.find(
+      account => account.accountId === lockedAccountId && account.hasPin,
+    );
+    if (lockedAccount) {
+      setSelectedAccount(lockedAccount);
+      setPinError('');
+      setLoginState('pin_entry');
+    }
+    onLockConsumed?.();
+  }, [lockedAccountId, knownAccounts, onLockConsumed]);
 
   // ── Helpers ──
 
@@ -1110,10 +1132,8 @@ export function LoginPage({
   if (embedded) return card;
 
   return (
-    // deep: blank shell area drags the login window; form controls stay
-    // interactive because Tauri excludes inputs/buttons from the subtree walk.
-    <div className="pt-auth-shell" data-tauri-drag-region="deep">
+    <WindowDragRegion><div className="pt-auth-shell">
       <div className="pt-auth-region">{card}</div>
-    </div>
+    </div></WindowDragRegion>
   );
 }

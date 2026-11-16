@@ -1,0 +1,2 @@
+/* Review host only. Product geometry lives in the canonical frame. */
+html, body, #root { margin: 0; height: 100%; }

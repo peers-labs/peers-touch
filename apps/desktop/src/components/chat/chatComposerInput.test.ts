@@ -168,7 +168,7 @@ describe('chat visual layout contract', () => {
     expect(main.hoverActionBridgeInsetX).toBeGreaterThanOrEqual(160);
     expect(main.composerInputExpandedMinHeight).toBe('min(120px, 22vh)');
     expect(main.composerInputExpandedMaxHeight).toBe('min(320px, 40vh)');
-    expect(main.composerOuterPadding).toBe('4px 12px 10px');
+    expect(main.composerOuterPadding).toBe('8px');
     expect(desktopChatMessageRowMaxWidth(main, { own: false, groupPeer: true })).toBe('min(82%, 800px)');
 
     expect(thread.avatarSize).toBe(30);

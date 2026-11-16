@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
+import { WindowDragRegion } from '../components/shell/WindowDragRegion';
 import { Empty } from '@lobehub/ui';
 import {
   Alert,
@@ -179,7 +180,7 @@ export function HomePage() {
       style={{ height: '100%', overflow: 'auto' }}
     >
       <PageColumn tier="standard" style={{ display: 'flex', flexDirection: 'column', gap: token.marginLG }}>
-      <Flexbox horizontal align="center" justify="space-between" gap={12}>
+      <WindowDragRegion><Flexbox horizontal align="center" justify="space-between" gap={12}>
         <Flexbox gap={2}>
           <Typography.Title level={3} style={{ margin: 0 }}>
             {t('agent.home.title')}
@@ -194,7 +195,7 @@ export function HomePage() {
           loading={loading}
           onClick={() => void refreshHomeProjection()}
         />
-      </Flexbox>
+      </Flexbox></WindowDragRegion>
 
       {error ? (
         <Alert

@@ -2,10 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   type KVStorage,
   hasUserChosenStation,
-  loadStationAutoDefault,
   markStationUserChoice,
-  shouldAutoApplyDefault,
-  storeStationAutoDefault,
 } from "./stationDefault";
 
 class MemoryStorage implements KVStorage {
@@ -24,34 +21,19 @@ class MemoryStorage implements KVStorage {
   }
 }
 
-describe("station default auto-apply policy", () => {
-  it("allows a fresh profile to auto-apply once", () => {
+describe("station explicit choice marker", () => {
+  it("is unset until an explicit user action", () => {
     const storage = new MemoryStorage();
-    expect(shouldAutoApplyDefault("relay-cn-1", storage)).toBe(true);
-    storeStationAutoDefault("relay-cn-1", storage);
-    expect(shouldAutoApplyDefault("relay-cn-1", storage)).toBe(false);
-    expect(loadStationAutoDefault(storage)?.seedId).toBe("relay-cn-1");
+    expect(hasUserChosenStation(storage)).toBe(false);
   });
 
-  it("allows a changed cloud seed exactly once more", () => {
-    const storage = new MemoryStorage();
-    storeStationAutoDefault("relay-old", storage);
-    expect(shouldAutoApplyDefault("relay-new", storage)).toBe(true);
-  });
-
-  it("never auto-applies after an explicit user choice", () => {
+  it("records an explicit choice permanently", () => {
     const storage = new MemoryStorage();
     markStationUserChoice(storage);
     expect(hasUserChosenStation(storage)).toBe(true);
-    expect(shouldAutoApplyDefault("relay-cn-1", storage)).toBe(false);
   });
 
-  it("rejects empty seed ids and missing storage", () => {
-    const storage = new MemoryStorage();
-    expect(shouldAutoApplyDefault(null, storage)).toBe(false);
-    expect(shouldAutoApplyDefault(undefined, storage)).toBe(false);
-    expect(shouldAutoApplyDefault("", storage)).toBe(false);
+  it("treats missing storage as no choice", () => {
     expect(hasUserChosenStation(null)).toBe(false);
-    expect(loadStationAutoDefault(null)).toBeNull();
   });
 });

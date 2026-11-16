@@ -117,6 +117,77 @@ def control_probe(replies=None, *, started=0.0):
 
 
 class NativeObservationDiagnosticTests(unittest.TestCase):
+    def test_panel_lookup_returns_the_sheet_without_traversing_its_webview_sibling(self) -> None:
+        support = ast.Module(body=[
+            node for node in ast.parse(_NATIVE_AX_SUPPORT).body
+            if getattr(node, "name", "") in {
+                "find_path", "release_path", "open_panel", "NativeAXWindowsUnavailable",
+            }
+        ], type_ignores=[])
+        for default_button, refusal in ((True, False), (False, False), (True, True)):
+            with self.subTest(default_button=default_button, refusal=refusal):
+                windows, sheets = [1], [3]
+                arrays, retained, released, calls = [], [], [], []
+                failure = NativeAXReadUnavailable("AXSheets", -25202, False, 0.01)
+
+                class NativeArray(list):
+                    def __bool__(self):
+                        return True
+
+                def attribute(element, name, **kwargs):
+                    calls.append((element, name))
+                    if name == "AXWindows":
+                        return windows
+                    if name == "AXSheets":
+                        if refusal:
+                            raise failure
+                        return sheets if element == 1 else None
+                    if name == "AXDefaultButton":
+                        return 4 if default_button else None
+                    self.assertEqual(name, "AXChildren")
+                    if element in (1, 2):
+                        raise NativeAXReadUnavailable(name, -25202, False, 0.01)
+                    children = NativeArray({3: [4, 5], 4: [], 5: []}[element])
+                    arrays.append(children)
+                    return children
+
+                def retain(value):
+                    retained.append(value)
+                    return value
+
+                namespace = {
+                    "time": SimpleNamespace(monotonic=lambda: 0.0),
+                    "copy_attribute": attribute,
+                    "copied_text": lambda element, name: "OKButton" if element == 4 else "",
+                    "reads": SimpleNamespace(begin_observation=lambda: None),
+                    "NativeAXReadUnavailable": NativeAXReadUnavailable,
+                    "array_items": lambda value: value or [],
+                    "core_foundation": SimpleNamespace(CFRetain=retain, CFRelease=released.append),
+                }
+                exec(compile(support, "<native-sheet-panel-lookup>", "exec"), namespace)
+                if refusal:
+                    with self.assertRaises(NativeAXReadUnavailable) as caught:
+                        namespace["open_panel"](42)
+                    self.assertIs(caught.exception, failure)
+                else:
+                    panel = namespace["open_panel"](42)
+                    self.assertEqual(panel, 3)
+                    namespace["core_foundation"].CFRelease(panel)
+                    self.assertNotIn((1, "AXChildren"), calls)
+                    self.assertNotIn((2, "AXChildren"), calls)
+                expected_arrays = [windows, *([] if refusal else [sheets]), *arrays]
+                self.assertEqual(
+                    sorted(id(value) for value in released if isinstance(value, list)),
+                    sorted(id(value) for value in expected_arrays),
+                )
+                # Default-button reads own a copied reference in addition to
+                # references explicitly retained by the path finder.
+                copied_buttons = sum(name == "AXDefaultButton" for _, name in calls) if default_button else 0
+                self.assertEqual(
+                    sorted(value for value in released if isinstance(value, int)),
+                    sorted([*retained, *([4] * copied_buttons)]),
+                )
+
     def test_panel_default_button_uses_actual_reader_with_original_budget(self) -> None:
         names = {"find_path", "release_path", "open_panel", "NativeAXWindowsUnavailable"}
         support = ast.Module(body=[
@@ -200,6 +271,9 @@ class NativeObservationDiagnosticTests(unittest.TestCase):
                         self.assertEqual(observed["axAttribute"], "AXDefaultButton")
                         self.assertEqual(observed["axStatus"], -25202 if scenario == "refusal" else 0)
                         self.assertEqual(observed["focusDeadlineExceeded"], scenario == "late")
+                        self.assertEqual(observed["selectorLookupPhase"], "default-button")
+                        self.assertEqual(observed["selectorRootKind"], "window")
+                        self.assertEqual(observed["selectorRootIndex"], 0)
                         self.assertEqual(releases.count(43 if scenario == "refusal" else 42), 1)
                     else:
                         panel = namespace["open_panel"](50)
@@ -239,7 +313,7 @@ class NativeObservationDiagnosticTests(unittest.TestCase):
                 def children(element, name, **kwargs):
                     if name == "AXWindows":
                         return windows
-                    if name == "AXDefaultButton":
+                    if name in ("AXDefaultButton", "AXSheets"):
                         return None
                     self.assertEqual(name, "AXChildren")
                     reads.append(element)
@@ -315,7 +389,7 @@ class NativeObservationDiagnosticTests(unittest.TestCase):
         def attribute(element, name, **kwargs):
             if name == "AXWindows":
                 return windows
-            if name == "AXDefaultButton":
+            if name in ("AXDefaultButton", "AXSheets"):
                 return None
             self.assertEqual(name, "AXChildren")
             if element == 3:
@@ -392,6 +466,7 @@ class NativeObservationDiagnosticTests(unittest.TestCase):
 
                 namespace = {
                     "home": SimpleNamespace(name="operator"), "copied_text": read_text,
+                    "NativeAXReadUnavailable": NativeAXReadUnavailable,
                     "copy_attribute": lambda element, name: tree[element],
                     "array_items": lambda children: children,
                     "core_foundation": SimpleNamespace(
@@ -417,6 +492,47 @@ class NativeObservationDiagnosticTests(unittest.TestCase):
                     [(element, name) for element, name in reads if name == "AXValue"],
                     [(3, "AXValue")] if sidebar and failed_attribute != "AXRole" else [],
                 )
+
+    def test_tree_failure_retains_structural_position_without_native_contents(self) -> None:
+        support = ast.Module(body=[
+            node for node in ast.parse(_NATIVE_AX_SUPPORT).body
+            if getattr(node, "name", "") == "find_path"
+        ], type_ignores=[])
+        for phase in ("predicate", "children"):
+            with self.subTest(phase=phase):
+                failure = NativeAXReadUnavailable("AXIdentifier", -25204, False, 0.5)
+                released = []
+
+                class NativeArray(list):
+                    def __bool__(self):
+                        return True
+
+                def predicate(element, path):
+                    if phase == "predicate" and element == 3:
+                        raise failure
+                    return False
+
+                def children(element, name):
+                    if phase == "children" and element == 3:
+                        raise failure
+                    return NativeArray({1: [2, 3], 2: [], 3: []}[element])
+
+                namespace = {
+                    "NativeAXReadUnavailable": NativeAXReadUnavailable,
+                    "copy_attribute": children, "array_items": lambda value: value,
+                    "core_foundation": SimpleNamespace(CFRelease=released.append),
+                }
+                exec(compile(support, "<native-tree-diagnostics>", "exec"), namespace)
+                with self.assertRaises(NativeAXReadUnavailable) as caught:
+                    namespace["find_path"](1, predicate)
+                self.assertIs(caught.exception, failure)
+                self.assertEqual(failure.observed["selectorTraversalPhase"], phase)
+                self.assertEqual(failure.observed["selectorDepth"], 1)
+                self.assertEqual(failure.observed["selectorSiblingIndex"], 1)
+                self.assertEqual(failure.observed["selectorLevelWidth"], 2)
+                self.assertIn([2, 3], released)
+                if phase == "children":
+                    self.assertIn([], released)
 
     def test_control_reads_distinguish_optional_absence_and_native_failure(self) -> None:
         for name, status, value in (
@@ -705,6 +821,7 @@ class NativeObservationDiagnosticTests(unittest.TestCase):
                 namespace, _, released = control_probe({
                     "AXWindows": (status, value, 0.1),
                     "AXDefaultButton": (-25212, 0, 0.0),
+                    "AXSheets": (-25212, 0, 0.0),
                 })
                 namespace.update({
                     "array_items": lambda item: windows,

@@ -210,6 +210,9 @@ is_source_file() {
 
 is_ui_file() {
   case "$1" in
+    # Rendered test fixtures have fixed labels, not product localization copy.
+    # Source checks above still inspect their secrets, errors and debug output.
+    *.test.tsx|*.spec.tsx) return 1 ;;
     apps/desktop/src/*.tsx|apps/desktop/src/**/*.tsx|apps/mobile/src/*.tsx|apps/mobile/src/**/*.tsx|packages/ui/**/*.tsx|*/apps/desktop/src/*.tsx|*/apps/desktop/src/**/*.tsx|*/apps/mobile/src/*.tsx|*/apps/mobile/src/**/*.tsx|*/packages/ui/**/*.tsx) return 0 ;;
     *) return 1 ;;
   esac

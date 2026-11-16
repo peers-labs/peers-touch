@@ -87,8 +87,16 @@ describe('Segmented icon-only cramp behavior (shared base component)', () => {
     expect(uiStyles).toContain(
       ".pt-segmented[data-icon-only='true'] .pt-segmented__label{display:none}",
     );
-    expect(uiStyles).toContain(
-      ".pt-segmented[data-icon-only='true']>.pt-button{justify-content:center;gap:0}",
+    // Icon-only tiles keep their centered glyph AND a fixed compact footprint:
+    // they slide/scroll horizontally instead of continuously squashing.
+    const iconOnlyButtonRule = uiStyles.match(
+      /\.pt-segmented\[data-icon-only='true'\]>\.pt-button\s*\{([^}]*)\}/,
+    )?.[1] ?? '';
+    expect(iconOnlyButtonRule).toContain('justify-content:center;gap:0');
+    expect(iconOnlyButtonRule).toContain('flex:0 0 auto');
+    expect(iconOnlyButtonRule).toContain('width:var(--pt-control-compact)');
+    expect(uiStyles).toMatch(
+      /\.pt-segmented\[data-icon-only='true'\]\s*\{[^}]*overflow-x:auto/,
     );
   });
 

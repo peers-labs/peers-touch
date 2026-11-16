@@ -1,0 +1,11 @@
+{
+  "path": "apps/desktop/src/pages/SettingsPage.tsx",
+  "firstRegressiveMerge": "4fcb884ed09827127fe537ee25b44435ac2bcb4f",
+  "propagationMerge": "78f349a8955e40be5b8e4fd2e4cdbb7a1cbcb44a",
+  "ours": "fa91af8e47260a62ab3cc1723869ce92bc89f2aa",
+  "theirs": "2c96ad7b40a04fa00ab70b80af0bf3f5a627f2fc",
+  "mergeBase": "385c4f5ec6ef14e1ba9091b0ea27a78ec394f1f6",
+  "acceptedBlob": "8b5a9a1cd2d83c24a8d8c6d3fb78ce4487626f8a",
+  "oldBlob": "9427f4f3d9e97380ebebce505bb845eaa495a3c6",
+  "expected": "HISTORICAL_REVERSION_UNPROVEN"
+}

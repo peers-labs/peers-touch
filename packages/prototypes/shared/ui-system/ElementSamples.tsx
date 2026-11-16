@@ -40,7 +40,7 @@ import {
   ShortcutField, ShortcutHint, SideNav, Skeleton, SlashCommandMenu, Slider, Spin, SplitButton,
   Statistic, Steps, SurfaceFade, Switch, Tabs, Tag, Text, TextArea, TextField, TimeField, Toggle,
   ToggleGroup, Tooltip, Tree, TreeSelect, VideoPlayer, ViewErrorBoundary, VirtualList,
-  createFeedbackChannel, useFormController,
+  createFeedbackChannel, geometry, useFormController,
 } from '@peers-touch/ui';
 import type { Availability, ResourceView } from '@peers-touch/ui';
 import { CAPABILITIES, CATEGORIES, type CapabilityRecord } from './registry';
@@ -86,7 +86,10 @@ const ACTION: Record<string, Renderer> = {
   Button: c => <>
     <Button actionId="el.primary" emphasis="primary" availability={c.unavailable}>{c.L('保存改动', '这是一段用于检验伸展与折行的较长主操作文案')}</Button>
     <Button actionId="el.secondary" availability={c.unavailable}>次操作</Button>
-    <Button actionId="el.quiet" emphasis="quiet" tone="danger" availability={c.unavailable}>删除</Button></>,
+    <Button actionId="el.quiet" emphasis="quiet" tone="danger" availability={c.unavailable}>删除</Button>
+    <Button actionId="el.button-identity" emphasis="quiet" appearance="identity" aria-label="查看我的资料" availability={c.unavailable}>
+      <Avatar name="林" background="#2f6a50" {...geometry.avatar.navigation} />
+    </Button></>,
   IconButton: c => <>
     <IconButton actionId="el.i.search" iconId="search" label="搜索" />
     <IconButton actionId="el.i.plus" iconId="plus" label="新建" />

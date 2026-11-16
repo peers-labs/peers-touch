@@ -1,3 +1,4 @@
+import { WindowDragRegion } from '../shell/WindowDragRegion';
 import {
   useCallback,
   useEffect,
@@ -206,7 +207,7 @@ function ThreadMessageItem({
   );
 }
 
-export function ChatThreadPanel() {
+export function ChatThreadPanel({ rootUlid }: { rootUlid?: string } = {}) {
   const { t } = useTranslation('chat');
   const {
     activeTab,
@@ -218,7 +219,7 @@ export function ChatThreadPanel() {
     threadHasMore,
     threadNextCursor,
     currentUserPtid,
-    openThreadRootUlid,
+    openThreadRootUlid: requestedRootUlid,
     closeThread,
     loadThreadMessages,
     refreshThreadCounts,
@@ -257,6 +258,8 @@ export function ChatThreadPanel() {
     getIMConversations: s.getIMConversations,
     getIMSenderProfile: s.getIMSenderProfile,
   }));
+  // Retain the current task through its closing travel and while parked.
+  const openThreadRootUlid = rootUlid ?? requestedRootUlid;
   const [sending, setSending] = useState(false);
   const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ChatMessage | null>(null);
@@ -500,7 +503,7 @@ export function ChatThreadPanel() {
       data-chat-thread-reply-count={replies.length}
       data-chat-thread-root={openThreadRootUlid}
     >
-      <header className="sc-thread__header">
+      <WindowDragRegion><header className="sc-thread__header">
         <span className="sc-thread__title-group">
           <MessagesSquare size={16} className="sc-thread__title-icon" />
           <span className="sc-thread__title-text">
@@ -529,7 +532,7 @@ export function ChatThreadPanel() {
             onActivate={closeThread}
           />
         </span>
-      </header>
+      </header></WindowDragRegion>
 
       {!rootMessage ? (
         <div className="sc-thread__missing">

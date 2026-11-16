@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { theme } from 'antd';
 import { useTranslation } from 'react-i18next';
+import { WindowDragRegion } from '../../shell/WindowDragRegion';
 
 import {
   DEFAULT_PANEL_WIDTH,
@@ -82,7 +83,7 @@ export function WorkbenchResizeHandle() {
   };
 
   return (
-    <div
+    <WindowDragRegion mode="none"><div
       role="separator"
       aria-orientation="vertical"
       aria-label={t('chat.workbench.resize')}
@@ -121,6 +122,6 @@ export function WorkbenchResizeHandle() {
           if (!dragging) event.currentTarget.style.background = 'transparent';
         }}
       />
-    </div>
+    </div></WindowDragRegion>
   );
 }

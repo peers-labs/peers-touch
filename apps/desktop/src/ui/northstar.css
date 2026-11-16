@@ -17,6 +17,7 @@
 
 .pt-ui.ds-theme {
   color: var(--pt-text);
+  background: var(--pt-frame);
   font-family: var(--pt-font);
   /* Own the full viewport instead of relying on a 100% parent chain: the
      outer antd App wrapper has no intrinsic height, so width/height:100%
@@ -44,14 +45,13 @@
      splits it into a header band (traffic lights only) and a content band
      below; the self avatar anchors the content band top, never the seam. */
   --pt-rail-top: 0px;
-  /* WeChat-parity faint column hairline: material carries the separation, the
-     line is only a 6% ink whisper, never a hard rule. */
-  --pt-column-hairline: color-mix(in srgb, var(--pt-text) 6%, transparent);
   /* Non-mac windows are square; macOS overrides this to the native corner. */
   --pt-window-radius: 0px;
 }
 :root[data-platform='macos'] {
   --pt-titlebar-inset: 8px;
+  /* AppKit constraints keep the compact native cluster entirely inside the
+     60px icon rail, so adjacent stage headers need no horizontal workaround. */
   /* Slim header band: the traffic lights keep their native top position
      (~24px tall), so 40px gives a small breathing gap before the self avatar
      instead of wasting a full 48px strip that pushed the avatar down. */
@@ -60,8 +60,8 @@
      (~13.5pt circular-equivalent on a 2x display). The previous 20px was read
      off physical pixels instead of CSS points, so its arc overshot the native
      corner and left a crescent sliver between the native edge and this frame.
-     CSS points equal screen points; 14px keeps the frame on the native edge,
-     and the 3px border absorbs the residual continuous-vs-circular difference. */
+     CSS points equal screen points; 14px traces the native edge. The shared
+     1px inset exposes only the thin structural perimeter. */
   --pt-window-radius: 14px;
 }
 
@@ -70,26 +70,25 @@
  * content stage. Unlike the centered prototype card there is no outer margin;
  * the rail is the material zone and the stage is the canvas.
  *
- * The frame is deliberately three-sided, not a uniform ring. The L1 rail is a
- * translucent, backdrop-blurred material whose flattened color shifts with
- * whatever is behind it, so no solid border color can match it on every
- * surface — a solid ring always reads as a darker frame painted ON the menu.
- * Instead the left edge has NO border: the rail's own frosted fill runs to the
- * window's rounded corner (the shell's overflow + radius clip it), which is the
- * native macOS sidebar treatment. The subtle solid frame stays only on the
- * stage edges (top/right/bottom), where it also covers the corner crescent. */
+ * L1 and the entire perimeter share the existing surface color, including the
+ * top-left traffic-light corner. The 60px rail owns the left edge; the other
+ * three edges extend that same material around an inset, rounded stage.
+ * A translucent rail or a subtle/L2-colored border breaks that continuity. */
 .ds-shell {
+  /* Color tokens live on UIProvider, below :root. Derive the column rule
+     here so --pt-text resolves in the same scope as the painted frame. */
+  --pt-column-hairline: color-mix(in srgb, var(--pt-text) 6%, transparent);
   width: 100%;
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: row;
   overflow: hidden;
-  background: var(--pt-canvas);
+  background: var(--pt-frame);
   color: var(--pt-text);
   border-style: solid;
-  border-color: var(--pt-subtle);
-  border-width: 3px 3px 3px 0;
+  border-color: var(--pt-frame);
+  border-width: var(--pt-frame-inset) var(--pt-frame-inset) var(--pt-frame-inset) 0;
   border-radius: var(--pt-window-radius);
 }
 
@@ -105,26 +104,9 @@
      below it while other columns rise into the title-bar strip. */
   padding: var(--pt-rail-top) 0 14px;
   gap: 4px;
-  /* Chrome zones separate by material (translucent surface + blur), never by
-     an opaque hairline — north-star frame grammar #2. WeChat-parity frosted
-     glass: a wide translucent-surface gradient with real light play (bright
-     outer edge fading toward the stage) and a soft inset edge that defines
-     the material boundary. The saturated backdrop blur is live for any
-     overlay content; the rail's fixed 60px column means page content never
-     scrolls beneath it, so true desktop vibrancy would additionally require
-     a native NSVisualEffectView window treatment. */
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--pt-surface) 88%, transparent),
-    color-mix(in srgb, var(--pt-surface) 38%, transparent)
-  );
-  backdrop-filter: blur(26px) saturate(1.8);
-  -webkit-backdrop-filter: blur(26px) saturate(1.8);
-  /* Only the soft inset glow spans the full height. The hard 1px column
-     hairline lives on ::after and starts below the traffic-light header band,
-     so the native lights never straddle a vertical seam. */
-  box-shadow:
-    inset 8px 0 18px -16px color-mix(in srgb, var(--pt-text) 18%, transparent);
+  /* Keep the original L1 surface color and extend it around the perimeter.
+     L2/subtle and the reading stage keep their existing palette. */
+  background: var(--pt-frame);
 }
 /* Rail/stage hairline. It begins at --pt-rail-top (the bottom of the title
    band), not at the window's top edge: with macOS titleBarStyle Overlay the
@@ -153,6 +135,7 @@
   overflow: hidden;
   position: relative;
   background: var(--pt-canvas);
+  border-radius: max(0px, calc(var(--pt-window-radius) - var(--pt-frame-inset)));
 }
 
 /* Rail groups */
@@ -165,30 +148,8 @@
 .ds-rail-spacer { flex: 1; }
 .ds-rail-entry { position: relative; display: inline-flex; }
 
-/* Self identity tile: peers-ui Button reshaped to the 44px rounded square.
- * The avatar image/fallback fills the tile (real profile material wins — we
- * never repaint a user photo into a pine block). The rail-scoped selectors
- * deliberately outrank the library button chrome. */
-.ds-rail .ds-rail-avatar.pt-button {
-  width: 44px;
-  height: 44px;
-  min-height: 0;
-  margin-bottom: 18px;
-  padding: 0;
-  border: 0;
-  border-radius: 12px;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  background: transparent;
-  box-shadow: 0 8px 20px -14px rgba(20, 24, 22, 0.5);
-  transition: box-shadow 0.16s cubic-bezier(0.22, 1, 0.36, 1);
-}
-.ds-rail .ds-rail-avatar.pt-button:hover {
-  box-shadow: 0 12px 26px -12px rgba(20, 24, 22, 0.6);
-}
-.ds-rail .ds-rail-avatar.pt-button > .pt-button-content { width: 100%; height: 100%; display: grid; place-items: center; }
-.ds-rail .ds-rail-avatar.pt-button:focus-visible { outline: 2px solid var(--pt-focus); outline-offset: 2px; }
+/* Identity control geometry and chrome belong to peers-ui. */
+.ds-rail-avatar { margin-bottom: 18px; }
 
 /* Nav tiles: fixed 38px squares. Neutralized peers-ui IconButton chrome. */
 .ds-rail .ds-rail-group .pt-icon-button,
@@ -813,7 +774,7 @@
   }
 }
 .sk-identity-avatar .pt-avatar {
-  box-shadow: 0 0 0 4px var(--sk-overlay), 0 6px 16px rgba(15, 23, 42, .18);
+  box-shadow: 0 0 0 4px var(--pt-white), 0 6px 16px rgba(15, 23, 42, .18);
 }
 .sk-identity-meta {
   flex: 1;

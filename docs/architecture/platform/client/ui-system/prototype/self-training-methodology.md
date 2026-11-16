@@ -60,6 +60,10 @@ Frontend Eles 不是组件陈列室，而是一台**自训练机器**：桌面/�
 发丝分隔、方圆家族（头像 11 / 控件 12 / 卡片 16–20）、
 三档阴影（静息/轻抬/浮层）、玻璃模糊只用于窗框与浮层。
 用色硬约束以 north-star-frame.md「Pine 色彩哲学与用色边界」为准。
+2026-11-16 用户确认 **A · 矿灰纸白：同一中性底色，向内容逐级提亮**。
+该结构底色宪法、三级材料归属与浅色值统一定义在
+[north-star-frame.md](./north-star-frame.md#a--矿灰纸白结构底色宪法已确认)，
+原型与后续 token 晋升消费同一决定；B 不再作为待选配色。
 
 它以候选主题 `north-star-pine-glass` 存在于
 `packages/ui/tokens/src/north-star-theme.ts`（`status: candidate`，

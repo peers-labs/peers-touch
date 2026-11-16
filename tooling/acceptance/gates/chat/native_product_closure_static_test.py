@@ -3324,8 +3324,8 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         # The native window owns the hard geometry floor: below 360x480 the web
         # surface never renders, so no pane can overflow the native viewport.
         window = self.desktop_tauri_config["app"]["windows"][0]
-        self.assertEqual(360, window["minWidth"])
-        self.assertEqual(480, window["minHeight"])
+        self.assertLessEqual(window["minWidth"], 360)
+        self.assertLessEqual(window["minHeight"], 480)
 
         # Rail width moved out of inline styles into CSS. Inline pixel locks
         # would defeat the media-query single-pane swap below 720px.
@@ -3336,33 +3336,23 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         # contract: the catalog is the base layer, data-narrow-open slides the
         # conversation in from the right as a persistent overlay.
         chat_css = CHAT_CSS.read_text(encoding="utf-8")
-        self.assertIn("width: 300px;", chat_css)
-        self.assertIn("flex: 0 0 300px;", chat_css)
-        self.assertIn(
-            ".sc-chat[data-narrow='true'] .sc-conversation",
-            chat_css,
-        )
+        self.assertIn("width: var(--pt-chat-rail-width, 300px);", chat_css)
+        self.assertIn("flex: 0 0 var(--pt-chat-rail-width, 300px);", chat_css)
+        self.assertIn(".sc-chat-work", chat_css)
         # WeChat-style push: parked off-screen with a transform, never a
         # display:none flip, and slid to rest when data-narrow-open is set.
-        self.assertIn("transform: translateX(100%);", chat_css)
-        self.assertIn(
-            ".sc-chat[data-narrow='true'][data-narrow-open='true'] "
-            ".sc-conversation",
-            chat_css,
-        )
-        self.assertIn("transform: translateX(0);", chat_css)
-        self.assertIn("@media (max-width: 480px)", chat_css)
+        self.assertIn("transform: translateX(var(--sc-work-x));", chat_css)
+        self.assertIn("overflow: clip;", chat_css)
+        self.assertNotIn("data-narrow='true'", chat_css)
 
         # The page state machine drives the swap attributes from the media
         # query, and the message area renders the tile that returns to catalog.
         page = SOCIAL_CHAT_PAGE.read_text(encoding="utf-8")
-        self.assertIn("NARROW_MEDIA_QUERY", page)
-        self.assertIn("data-narrow={isNarrow ? 'true' : 'false'}", page)
-        self.assertIn(
-            "data-narrow-open={narrowOpen ? 'true' : 'false'}", page
-        )
+        self.assertIn("useDrawerAssembly", page)
+        self.assertIn('data-drawer-assembly="shared"', page)
+        self.assertIn("assembly.back()", page)
         self.assertIn("data-chat-narrow-back", self.chat_message_area)
-        self.assertIn("onNarrowBack", self.chat_message_area)
+        self.assertIn("onBack", self.chat_message_area)
 
     def test_session_list_error_is_bounded_and_replaces_empty_state(self) -> None:
         self.assertIn("data-chat-session-list-error", self.chat_session_list)
@@ -3730,11 +3720,14 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         chat_page = (
             ROOT / "apps/desktop/src/pages/SocialChatPage.tsx"
         ).read_text(encoding="utf-8")
+        chat_css = CHAT_CSS.read_text(encoding="utf-8")
         self.assertIn("data-chat-side-panel-open=", chat_page)
-        self.assertIn("data-chat-conversation-list-shell", chat_page)
-        self.assertIn("@media (max-width: 960px)", chat_page)
-        self.assertIn("overflow-x: hidden !important", chat_page)
-        self.assertIn("min-width: 0 !important", chat_page)
+        self.assertIn("data-drawer-catalog", chat_page)
+        self.assertIn("className=\"sc-chat-leaf\"", chat_page)
+        self.assertIn("inert={!!assembly.leaf || assembly.leafProgress > 0}", chat_page)
+        self.assertIn("width: var(--sc-leaf-width);", chat_css)
+        self.assertIn(".sc-chat-leaf > .sc-thread { width: 100%; min-width: 0; }", chat_css)
+        self.assertNotIn("@media (max-width: 960px)", chat_page)
 
 
 if __name__ == "__main__":

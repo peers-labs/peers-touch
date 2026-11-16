@@ -5,7 +5,6 @@ import {
   CHAT_MESSAGE_VIRTUALIZATION_THRESHOLD,
   chatMessageTailScrollTop,
   chatMessageTimelineContainerStyle,
-  chatMessageTailScrollOptions,
   isChatMessageTailPinned,
   reconcileTailScrollOnResize,
   shouldAdjustChatMessageScrollPosition,
@@ -141,11 +140,9 @@ describe('ChatMessageTimeline layout', () => {
     });
   });
 
-  it('places a newly rendered tail above the composer without animation', () => {
-    expect(chatMessageTailScrollOptions()).toEqual({
-      behavior: 'auto',
-      block: 'end',
-    });
+  it('keeps short content at the top and overflowing content above the composer', () => {
+    expect(chatMessageTailScrollTop({ clientHeight: 600, scrollHeight: 200 })).toBe(0);
+    expect(chatMessageTailScrollTop({ clientHeight: 600, scrollHeight: 1_400 })).toBe(800);
   });
 
   it('reconciles delayed virtual measurements while the tail remains pinned', () => {

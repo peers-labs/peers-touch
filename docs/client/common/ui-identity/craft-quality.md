@@ -220,6 +220,15 @@ feel like revealing an existing view, not loading a new document.
 
 ### 11.1 Three motion scopes, three different rules
 
+Scoped frame-drawer exception: the persistent catalogue/main/inner assembly
+may translate along its declared guide to express task ownership, using the
+shared `useDrawerAssembly` controller and navigation motion tokens. All
+rectangles come from one measured parent snapshot; resize is immediate,
+retargeting starts at the current drawn pose, and Back preserves the working
+instance. This does not authorize route-enter sweeps or keyframes attached
+to display/remount. The governing contract is
+[drawer-assembly.md](../../../architecture/platform/client/ui-system/prototype/drawer-assembly.md).
+
 | Scope | Examples | Allowed motion | Forbidden |
 | --- | --- | --- | --- |
 | Route / page / persistent surface | primary nav tabs, chat ↔ agent ↔ settings, narrow single-pane conversation swap, in-rail tab (Messages/People) | Instant visibility flip (`display`/`visibility`) on a keepAlive tree; no enter/exit animation on the surface itself | Whole-surface `translateX/Y` sweep, whole-view fade, scale/zoom enter, remount-on-navigate, keyframe that moves the surface's own geometry |

@@ -2,6 +2,7 @@
  * Module registrations.
  * Import this file once (in main.tsx) to trigger all self-registrations.
  */
+import { installWakeRecovery } from '../kernel/wakeRecovery';
 import './model-service';
 import './voice';
 import './account';
@@ -17,3 +18,6 @@ import './knowledge';
 import './memory';
 import './oss';
 import './logs';
+
+// Wake/lock self-healing (white-screen watchdog + idle PIN lock routing).
+installWakeRecovery();

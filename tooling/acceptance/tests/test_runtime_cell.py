@@ -28,6 +28,9 @@ from tooling.acceptance.core import (
     RuntimeCellState,
     parse_required_runtime_cells,
 )
+from tooling.acceptance.core.runtime_cell import (
+    parse_runtime_cell_capabilities, require_runtime_cell_capabilities,
+)
 
 
 def _valid_linux_contract() -> dict:
@@ -60,6 +63,21 @@ def _valid_linux_contract() -> dict:
 
 
 class RuntimeCellContractTests(unittest.TestCase):
+    def test_optional_capabilities_are_explicit_and_fail_closed(self) -> None:
+        self.assertEqual(parse_runtime_cell_capabilities("synthetic", []), ())
+        self.assertEqual(
+            parse_runtime_cell_capabilities("synthetic", ["file-chooser"]),
+            ("file-chooser",),
+        )
+        for value in (None, False, "file-chooser", {}, ["unknown"], [False], [[]],
+                      ["file-chooser", "file-chooser"]):
+            with self.subTest(value=value), self.assertRaises(ProvisioningError):
+                parse_runtime_cell_capabilities("synthetic", value)
+        require_runtime_cell_capabilities({}, ())
+        for manifest in ({}, {"nativeAdapter": None}, {"nativeAdapter": {}}):
+            with self.subTest(manifest=manifest), self.assertRaises(ProvisioningError):
+                require_runtime_cell_capabilities(manifest, ("file-chooser",))
+
     def test_valid_contract_parses(self) -> None:
         contract = RuntimeCellContract.from_dict(_valid_linux_contract())
         self.assertEqual(contract.cell_id, "desktop-linux-native")

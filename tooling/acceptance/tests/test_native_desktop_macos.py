@@ -18,6 +18,7 @@ from unittest.mock import Mock, call, patch
 from tooling.acceptance.core import (
     CellAdapterIdentity,
     CellDisplayIdentity,
+    CellNonInterferenceIdentity,
     CellPlatformIdentity,
     CellSourceIdentity,
     CellTransportIdentity,
@@ -50,6 +51,50 @@ from tooling.acceptance.provisioners.native_desktop_macos import (
 
 
 class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
+    def test_text_only_probe_keeps_operator_and_cleanup_without_chooser(self) -> None:
+        identity = CellNonInterferenceIdentity(
+            41, 41, 100.0, 200.0, 100.0, 200.0, "b" * 64, "b" * 64,
+        )
+        lifecycle = NativeDesktopMacOSProvisioner()
+        lifecycle._acceptance_binary = Path("/tmp/synthetic-binary")
+        lifecycle._required_capabilities = ()
+        session = Mock(process_id=42, log_path=None)
+        session.stop.return_value = []
+        operator = Mock()
+        operator.__exit__ = Mock()
+        operator.sample.return_value = identity
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+        adapter.observe_operator.return_value = operator
+        module = "tooling.acceptance.provisioners.native_desktop_macos."
+        with patch.dict("os.environ", {
+            "PT_ACCEPTANCE_DESKTOP_INPUT_MODE": "semantic-nonintrusive",
+        }, clear=True), patch(
+            module + "TauriSession", return_value=session,
+        ), patch(
+            module + "MacOSNativeDesktopAdapter", return_value=adapter,
+        ), patch(
+            module + "LocalTauriLauncher", return_value=Mock(log_path=None),
+        ), patch(
+            module + "resolve_smoke_port", return_value=45123,
+        ), patch.object(
+            lifecycle, "_probe_semantic_non_interference",
+            return_value=(True, True, identity),
+        ) as semantic, patch.object(
+            lifecycle, "_probe_file_chooser",
+            side_effect=BlockedError("synthetic chooser unavailable"),
+        ) as chooser:
+            probes, port = lifecycle._probe_native_adapter(Mock(), "run")
+        self.assertEqual(port, 45123)
+        self.assertIsNone(probes.file_chooser)
+        self.assertTrue(probes.semantic_action_probe)
+        self.assertTrue(probes.semantic_screenshot_probe)
+        self.assertTrue(probes.non_interference_probe)
+        semantic.assert_called_once()
+        chooser.assert_not_called()
+        operator.sample.assert_called_once_with("owned-stop", target_process_id=42)
+        operator.__exit__.assert_called_once()
+        session.stop.assert_called_once()
+
     def setUp(self) -> None:
         self.contract_path = (
             REPO_ROOT
@@ -650,12 +695,16 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
 
     def test_scope_support_defers_native_reads_until_a_deadline_bound_request(self) -> None:
         library = Mock()
+        workspace = SimpleNamespace(frontmost_pid=Mock(return_value=41))
         namespace = {}
-        with patch("ctypes.CDLL", return_value=library), patch.object(
+        with patch("ctypes.CDLL", return_value=library), patch.dict(
+            sys.modules, {"tooling.acceptance.drivers.native.macos_workspace": workspace},
+        ), patch.object(
             sys, "argv", ["probe", "observation-scope"],
         ):
             exec(_NATIVE_AX_SUPPORT, namespace)
         library.AXUIElementCreateSystemWide.assert_not_called()
+        workspace.frontmost_pid.assert_not_called()
         self.assertIsNone(namespace["reads"])
         reads = Mock()
         namespace["reads"] = reads
@@ -688,18 +737,14 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         library.CFArrayGetCount.return_value = 0
         library.CGEventCreate.return_value = 1
         library.CGEventGetLocation.return_value = SimpleNamespace(x=100.0, y=200.0)
-        application = Mock(spec=["processIdentifier"])
-        application.processIdentifier.return_value = 41
-        workspace = Mock(spec=["frontmostApplication"])
-        workspace.frontmostApplication.return_value = application
-        appkit = SimpleNamespace(NSWorkspace=SimpleNamespace(
-            sharedWorkspace=lambda: workspace,
-        ))
+        workspace = SimpleNamespace(frontmost_pid=Mock(return_value=41))
         for mode, process_id in (("control", 42), ("pointer", 0)):
             with self.subTest(mode=mode):
                 output = io.StringIO()
                 with patch("ctypes.CDLL", return_value=library), patch.dict(
-                    sys.modules, {"AppKit": appkit},
+                    sys.modules, {
+                        "tooling.acceptance.drivers.native.macos_workspace": workspace,
+                    },
                 ), patch.object(sys, "argv", [
                     "probe", mode, str(process_id), str(time.monotonic() + 1.0), "0.05",
                 ]), redirect_stdout(output):

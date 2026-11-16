@@ -54,6 +54,8 @@ pub mod traffic_lights;
 pub mod tray;
 #[cfg(feature = "acceptance-webdriver")]
 pub mod updater_verification;
+pub mod wake_lock;
+pub mod wake_watchdog;
 pub mod window_lifecycle;
 pub mod window_sizing;
 pub mod x_config;

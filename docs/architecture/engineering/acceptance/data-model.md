@@ -741,6 +741,11 @@ Rules：
 为无需清理。原报告包含非空断言数组，每个 `passed` 必须严格为布尔 true。
 源码、Runtime Cell、原引用或提供的材料字段不一致时，proof 保持 UNPROVEN。
 统一判定由 `core/proof.py` 实施，业务 Oracle 负责所需断言集合。
+Runtime Resource Manifest 的 `source` 使用绝对 `worktree` 路径，而 Run
+Manifest 使用 `canonicalWorktreeHash`。Proof reader 必须通过既有
+`runtime_source_matches` 核验同一 commit/workspaceDigest，并把 Runtime 的
+绝对路径规范化后与 Evidence Store 的 canonical worktree 比较；不能直接比较
+两种 DTO，也不能只核验 commit 而接受另一个 worktree。
 即使缺失 sourceArtifact，同 Gate canonical report 的断言仍须核验；报告
 角色名不构成豁免。支持性 JSON 数组或标量不被转换为证真对象。
 `operationObservation.lockObservation` 记录阶段内 Evidence Store 锁的
@@ -1590,6 +1595,13 @@ Identity and proof rules:
   parent 在真实选择及 owned stop 后产生 descriptor，Binding 从同一个 prepared
   Cell 消费并重新核验 source/binary。Driver 的操作员采样是唯一实现，运行时
   picker 冻结自己的真实基线且保持各阶段原始失败，不恢复焦点或触碰剪贴板。
+- Gate Catalog 的 `runtimeCellCapabilities` 显式声明 optional capability 需求，
+  当前支持 `file-chooser`。缺省保留平台原有完整资格探测；`[]` 只要求原有
+  mandatory semantic/window/screenshot/operator probes。该声明参与冻结的
+  Gate/source identity，Plan 不得覆盖。Runner 传给原有 Cell owner；声明
+  `file-chooser` 时，Runner 与原始 proof reader 均核验 exact-source descriptor。
+  无 chooser descriptor 的 Binding 仍拒绝任何 chooser 操作；文本 Journey
+  不因没有使用的 optional capability 而打开原生文件面板。
 
 macOS Driver 私有观察协议（不是业务 API、proto 或可持久化资格）：
 

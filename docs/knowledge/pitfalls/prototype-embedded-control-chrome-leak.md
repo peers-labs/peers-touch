@@ -78,6 +78,41 @@ next identical defect had to be noticed by a human again.
 
 ## How to detect a recurrence
 
+### Identity controls and catalogue presentation
+
+The 2026-11-16 comparison with WeChat exposed a 44px self tile plus private
+button chrome, 40px catalogue avatars, and centred avatar-only rows despite
+208px of exposed paper. Stable drag preference was incorrectly used as the
+row-presentation threshold, with another threshold hiding all header tools.
+
+The frame contract now separates preference from presentation. Shared avatar
+roles and `Button appearance="identity"` own the complete contour; app CSS
+only positions the control. Avatar radius must never override the general
+control radius. Verify real exposure just below/at/above 200px, both tab
+glyphs plus search/new, label restoration, identity hover/keyboard activation,
+and the current native screenshot. A browser pass is not OS-resize proof.
+See [the frame contract](../../architecture/platform/client/ui-system/prototype/north-star-frame.md)
+for the current values.
+
+### Embedded writing insets and expanded bounds
+
+The 2026-11-15 Desktop composer put its caret against the curved upper-left
+edge. Its app class declared wider padding, but the shared embedded
+`FieldFrame` descendant selector won the cascade with `8px 4px`. That same
+selector reset min/max height, leaving the expand button pressed while the
+editor stayed one line tall.
+
+Embedded TextArea now consumes public `--pt-textarea-padding`,
+`--pt-textarea-caret-color`, `--pt-textarea-min-height` and
+`--pt-textarea-max-height` inputs. Chat binds the shared `12px 16px 8px`
+writing inset and accent caret; Desktop passes its existing height bounds.
+The default embedded geometry and comfortable touch floor still apply to
+other callers. Never fix this by increasing the app selector's specificity.
+The writing dock's shared radius is 8px. The craft battery checks resolved
+padding and caret paint, so a source-only assertion cannot hide another
+cascade override. Check an empty native editor, expansion and collapse, plus
+single-line/multiline text and narrow geometry on the current source.
+
 ### Embedded composer touch height
 
 The 2026-11-13 whole-product native iOS run failed `chat.direct-thread`:

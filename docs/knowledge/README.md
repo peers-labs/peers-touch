@@ -192,7 +192,9 @@ Pick one based on intent:
 
 ### Pitfalls
 
+- [`pitfalls/desktop-header-drag-regions-fragmented.md`](pitfalls/desktop-header-drag-regions-fragmented.md) — Desktop pane headers consume one shell drag adapter; custom controls and forwarded composite roots require real hit testing.
 - [`pitfalls/private-endpoint-account-hint-equality.md`](pitfalls/private-endpoint-account-hint-equality.md) — verified private endpoints compare actor/device identity without treating account routing hints as authorization.
+- [`pitfalls/automatic-merge-can-propagate-accepted-ui-loss.md`](pitfalls/automatic-merge-can-propagate-accepted-ui-loss.md) — all bilateral and automatic merge paths require final-source preservation proof; keyword-only checks do not prove enforcement.
 - [`pitfalls/feed-derived-counts-must-preserve-authored-time.md`](pitfalls/feed-derived-counts-must-preserve-authored-time.md) — derived counts and authored edits must preserve signed post timestamps.
 - [`pitfalls/social-publication-and-retry-ownership.md`](pitfalls/social-publication-and-retry-ownership.md) — relationship readback and exact reaction retry share their original revision and command owners.
 - [`pitfalls/agent-user-message-identity-placeholder.md`](pitfalls/agent-user-message-identity-placeholder.md) — Agent user messages project the authenticated session actor through the shared avatar path.

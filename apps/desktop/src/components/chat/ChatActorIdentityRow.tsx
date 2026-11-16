@@ -11,12 +11,14 @@ import { UserSquareAvatar } from '../common/UserSquareAvatar';
 interface ChatActorIdentityRowProps {
   identity: ChatActorIdentityProjection;
   avatarSize?: number;
+  avatarRadius?: number;
   style?: CSSProperties;
 }
 
 export function ChatActorIdentityRow({
   identity,
   avatarSize = 36,
+  avatarRadius,
   style,
 }: ChatActorIdentityRowProps) {
   const { t } = useTranslation('chat');
@@ -46,6 +48,7 @@ export function ChatActorIdentityRow({
           actorPtid={identity.actorPtid}
           name={identity.displayName}
           size={avatarSize}
+          radius={avatarRadius}
         />
       </span>
       <div className="sc-identity-row__body">

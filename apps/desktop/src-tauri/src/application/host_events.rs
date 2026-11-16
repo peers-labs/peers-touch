@@ -5,6 +5,9 @@ pub const DESKTOP_RESUME_EVENT: &str = "desktop:resume";
 pub const DESKTOP_TRAY_OPEN_EVENT: &str = "desktop:tray-open";
 pub const DESKTOP_NOTIFICATION_TAP_EVENT: &str = "desktop:notification-tap";
 pub const DESKTOP_NATIVE_EVENT_ERROR: &str = "desktop:native-event-error";
+/// Emitted after a system sleep/screen-lock so the renderer can park on the
+/// PIN gate when the active account is PIN-protected.
+pub const DESKTOP_LOCKED_EVENT: &str = "desktop:locked";
 
 #[derive(Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -21,6 +24,15 @@ pub struct DesktopHostEventPayload {
 }
 
 #[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopLockedPayload {
+    kind: &'static str,
+    account_id: Option<String>,
+    pin_required: bool,
+    reason: String,
+}
+
+#[derive(Clone, Serialize)]
 struct DesktopHostEventError<'a> {
     operation: &'a str,
     message: &'a str,
@@ -33,6 +45,26 @@ pub fn emit_resume<R: Runtime>(
     app.emit(
         DESKTOP_RESUME_EVENT,
         DesktopHostEventPayload::resume(reason),
+    )
+}
+
+/// Notify the renderer that the system locked or is about to sleep. The
+/// renderer routes PIN-protected accounts to the PIN gate and ignores the
+/// event for accounts without a PIN.
+pub fn emit_locked<R: Runtime>(
+    app: &AppHandle<R>,
+    account_id: Option<String>,
+    pin_required: bool,
+    reason: &str,
+) -> Result<(), tauri::Error> {
+    app.emit(
+        DESKTOP_LOCKED_EVENT,
+        DesktopLockedPayload {
+            kind: "locked",
+            account_id,
+            pin_required,
+            reason: reason.to_string(),
+        },
     )
 }
 

@@ -11,6 +11,10 @@ const composerSource = readFileSync(
   'utf8',
 );
 const chatCss = readFileSync(new URL('../../ui/chat.css', import.meta.url), 'utf8');
+const textAreaPrimitiveSource = readFileSync(
+  new URL('../../../../../packages/ui/web/src/fields.tsx', import.meta.url),
+  'utf8',
+);
 
 function rule(selector: string): string {
   const stripped = chatCss.replace(/\/\*[\s\S]*?\*\//g, '');
@@ -38,7 +42,7 @@ describe('composer vertical shell (WeChat grammar)', () => {
     expect(input).toContain('width: 100%');
     expect(input).toContain('font-size: 13.5px');
     expect(input).toContain('line-height: 1.55');
-    expect(input).toContain('min-height: var(--sc-composer-input-min-height, 34px)');
+    expect(input).toContain('--pt-textarea-min-height: var(--sc-composer-input-min-height, 34px)');
     const wrap = rule('.sc-composer__input-wrap');
     expect(wrap).toContain('flex: 1 1 auto');
   });
@@ -99,12 +103,29 @@ describe('composer expand toggle and frame inset', () => {
     expect(composerSource).not.toContain('`${inputMaxHeight}px`');
   });
 
-  it('frames the main composer with the tight 12px WeChat column inset', () => {
+  it('re-measures auto-grow when CSS height constraints change without a box resize', () => {
+    // Regression guard for "can expand but cannot collapse": the desktop
+    // composer drives expand/collapse through min/max-height CSS vars while
+    // row props stay fixed. ResizeObserver alone misses a constraint change
+    // when the inline height keeps the border box unchanged, so the primitive
+    // must track the computed constraint signature and re-run grow().
+    expect(textAreaPrimitiveSource).toContain('constraintKeyRef');
+    expect(textAreaPrimitiveSource).toMatch(
+      /useLayoutEffect\([\s\S]*?constraintKey !== constraintKeyRef\.current[\s\S]*?grow\(\)/,
+    );
+    // The signature must be built from the effective computed constraints.
+    expect(textAreaPrimitiveSource).toContain('computed.minHeight');
+    expect(textAreaPrimitiveSource).toContain('computed.maxHeight');
+    // The effect re-runs when the caller passes a new style object on toggle.
+    expect(textAreaPrimitiveSource).toMatch(/\}, \[autoGrow, grow, style\]\);/);
+  });
+
+  it('frames the main composer with the shared parent inset', () => {
     const policySource = readFileSync(
       new URL('./chatPresentationPolicy.ts', import.meta.url),
       'utf8',
     );
-    expect(policySource).toContain("composerOuterPadding: '4px 12px 10px'");
+    expect(policySource).toContain('composerOuterPadding: `${geometry.composer.outerInset}px`');
   });
 
   it('makes the whole input region click-to-focus, not only the textarea itself', () => {
@@ -123,13 +144,15 @@ describe('composer expand toggle and frame inset', () => {
     // The parent re-anchors the stream tail on this signal so a growing
     // composer pushes the last message up instead of covering it.
     expect(composerSource).toContain('onComposerGeometryChange?: () => void');
-    expect(composerSource).toContain('dataset.composerHeight');
+    expect(composerSource).toContain('new ResizeObserver');
+    expect(composerSource).toContain('autoGrow');
+    expect(composerSource).not.toContain('element.style.height');
     expect(composerSource).toContain('onGeometryChangeRef.current?.()');
   });
 
   it('keeps the main composer frame transparent so no solid white band is painted', () => {
-    // The grey shell is the only visible surface. The outer composer zone must
-    // default to transparent, letting the conversation surface show through.
+    // The shell shares the conversation canvas. The outer composer zone stays
+    // transparent so the same conversation surface shows through.
     expect(composerSource).toContain(
       "background: surfaceBackground ?? 'transparent'",
     );

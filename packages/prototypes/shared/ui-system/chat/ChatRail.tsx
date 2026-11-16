@@ -9,11 +9,11 @@
  */
 import { useMemo, useState, type ReactNode } from 'react';
 import {
-  BellOff, CheckCheck, ChevronDown, EyeOff, MessageCircle, MoreHorizontal, Pin, Search,
+  BellOff, CheckCheck, ChevronDown, EyeOff, MessageCircle, MoreHorizontal, Pin, PinOff, Search,
   Trash2, UserPlus, Users,
 } from 'lucide-react';
 import {
-  Alert, Avatar, Button, Dialog, Empty, IconButton, Menu, Segmented, Tag, TextField,
+  Alert, Avatar, Button, Dialog, Empty, IconButton, Menu, Segmented, Tag, TextField, geometry,
 } from '@peers-touch/ui';
 import type { Conversation, Person } from './chat-data';
 import { SELF_DIRECT_ID, VIEWER_NAME, VIEWER_TONE } from './chat-data';
@@ -50,7 +50,8 @@ function SessionRows({ sessions, selectedId, onSelect, onTogglePin, onToggleMute
   const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
 
   const menuFor = (c: Conversation) => [
-    { id: 'pin', label: c.pinned ? t('session.unpin') : t('session.pin'), leading: <Pin size={14} /> },
+    { id: 'pin', label: c.pinned ? t('session.unpin') : t('session.pin'),
+      leading: c.pinned ? <PinOff size={14} /> : <Pin size={14} /> },
     { id: 'mute', label: c.muted ? t('session.unmute') : t('session.mute'), leading: <BellOff size={14} /> },
     { id: 'read', label: t('session.markRead'), leading: <CheckCheck size={14} />,
       availability: c.unread > 0 ? undefined : { kind: 'disabled' as const, reason: t('session.noUnread') } },
@@ -84,14 +85,16 @@ function SessionRows({ sessions, selectedId, onSelect, onTogglePin, onToggleMute
               setOpenMenu({ id: c.id, point: { x: event.clientX, y: event.clientY } });
             }}>
             <button type="button"
+              aria-label={c.selfDirect ? t('contacts.savedMessages') : c.name}
+              title={c.selfDirect ? t('contacts.savedMessages') : c.name}
               className={`sk-conv-row${selectedId === c.id ? ' is-selected' : ''}${c.pinned ? ' is-pinned-row' : ''}`}
               aria-current={selectedId === c.id ? 'true' : undefined}
               onClick={() => onSelect(c.id)}>
               <span className="sk-conv-avatar">
                 {c.kind === 'group'
-                  ? <GroupAvatarComposite members={c.members ?? []} label={c.name} size={40} imageUrl={c.avatarImage} />
-                  : <Avatar name={c.selfDirect ? VIEWER_NAME : c.name} background={c.tone} size={40}
-                      style={{ borderRadius: 'var(--sk-avatar-radius)' }} aria-label={c.selfDirect ? t('contacts.savedMessages') : c.name} />}
+                  ? <GroupAvatarComposite members={c.members ?? []} label={c.name} {...geometry.avatar.catalog} imageUrl={c.avatarImage} />
+                  : <Avatar name={c.selfDirect ? VIEWER_NAME : c.name} background={c.tone} {...geometry.avatar.catalog}
+                      aria-label={c.selfDirect ? t('contacts.savedMessages') : c.name} />}
                 {c.kind === 'person' && !c.selfDirect && (
                   <span className={`sk-presence-dot ${c.online ? 'is-online' : 'is-offline'}`}
                     data-presence={c.online ? 'online' : 'offline'} aria-hidden />
@@ -105,30 +108,21 @@ function SessionRows({ sessions, selectedId, onSelect, onTogglePin, onToggleMute
               <span className="sk-conv-meta">
                 <span className="sk-conv-name-line">
                   <strong>{c.selfDirect ? t('contacts.savedMessages') : c.name}</strong>
-                  <span className="sk-conv-flags">
-                    {c.pinned && <Pin size={11} aria-label={t('session.pinnedFlag')} />}
-                    {c.muted && <BellOff size={11} aria-label={t('session.mutedFlag')} />}
-                  </span>
                 </span>
                 <span className="sk-conv-preview">
                   <span className="sk-conv-last">{c.selfDirect && !c.last ? t('contacts.savedMessagesHint') : c.last}</span>
+                  {/* Status tags rest at the bottom-right, ahead of the time. */}
+                  {(c.pinned || c.muted) && (
+                    <span className="sk-conv-flags">
+                      {c.pinned && <Pin size={11} aria-label={t('session.pinnedFlag')} />}
+                      {c.muted && <BellOff size={11} aria-label={t('session.mutedFlag')} />}
+                    </span>
+                  )}
                   <time>{relativeTime(c.lastTs, t) || c.lastAt}</time>
                 </span>
               </span>
             </button>
             <span className="sk-conv-actions">
-              <button type="button" className="sk-conv-state"
-                aria-label={c.muted ? t('session.unmute') : t('session.mute')}
-                data-row-action="mute"
-                onClick={() => onToggleMute(c.id)}>
-                <BellOff size={11} />
-              </button>
-              <button type="button" className="sk-conv-state"
-                aria-label={c.pinned ? t('session.unpin') : t('session.pin')}
-                data-row-action="pin"
-                onClick={() => onTogglePin(c.id)}>
-                <Pin size={11} />
-              </button>
               <Menu
                 open={openMenu?.id === c.id}
                 onOpenChange={open => { if (!open) setOpenMenu(null); }}
@@ -199,8 +193,7 @@ function RequestCard({ request, failed, onAccept, onReject, onCancel, onDeleteRe
     <div className={`sk-request-card${outgoing ? ' is-outgoing' : ''}${settled ? ' is-history' : ''}`}
       data-request-id={request.id}
       data-request-state={request.state} data-request-direction={outgoing ? 'outgoing' : 'in'}>
-      <Avatar name={request.name} background={request.tone} size={40}
-        style={{ borderRadius: 'var(--sk-avatar-radius)' }} />
+      <Avatar name={request.name} background={request.tone} {...geometry.avatar.catalog} />
       <div className="sk-request-id">
         <div className="sk-request-name">
           <strong>{request.name}</strong>
@@ -246,26 +239,36 @@ function RequestCard({ request, failed, onAccept, onReject, onCancel, onDeleteRe
   );
 }
 
-function ContactSection({ sectionKey, label, collapsed, onToggle, children }: {
+function ContactSection({ sectionKey, label, collapsed, onToggle, compact, onExpand, children }: {
   sectionKey: ContactSectionKey;
   label: string;
   collapsed: boolean;
   onToggle: () => void;
+  compact: boolean;
+  onExpand: () => void;
   children: ReactNode;
 }) {
   return (
     <section className="sk-contact-section" data-contact-section={sectionKey}
       data-collapsed={collapsed ? 'true' : 'false'}>
-      <Button actionId={`contacts.section.${sectionKey}`} emphasis="quiet" density="compact"
-        fullWidth className="sk-section-toggle" label={label} aria-expanded={!collapsed}
+      {compact ? (
+        <IconButton actionId={`contacts.section.${sectionKey}`} emphasis="quiet" density="compact"
+          className="sk-section-compact"
+          iconId={sectionKey === 'groups' ? 'users-round' : sectionKey === 'friends' ? 'users'
+            : sectionKey === 'history' ? 'history' : sectionKey === 'incoming' ? 'user-plus' : 'undo-2'}
+          label={label} onActivate={onExpand} />
+      ) : <Button actionId={`contacts.section.${sectionKey}`} emphasis="quiet" density="compact"
+        fullWidth className="sk-section-toggle" title={label} aria-expanded={!collapsed}
         leading={<ChevronDown size={12} className="sk-section-chevron" aria-hidden />}
-        onActivate={onToggle} />
+        onActivate={onToggle}>
+        <span className="sk-section-label">{label}</span>
+      </Button>}
       <div className="sk-section-body">{children}</div>
     </section>
   );
 }
 
-export function ContactsPane({ requests, friends, groups, selectedContactId, failedIds, query,
+export function ContactsPane({ requests, friends, groups, selectedContactId, failedIds, query, compact, onExpandRail,
   onAccept, onReject, onCancelRequest, onDeleteRecord, onRemoveContact, onSelectContact, onOpenGroup,
   onOpenSelf, selfSelectedId }: {
   requests: FriendRequest[];
@@ -274,6 +277,8 @@ export function ContactsPane({ requests, friends, groups, selectedContactId, fai
   selectedContactId: string | null;
   failedIds: Set<string>;
   query: string;
+  compact: boolean;
+  onExpandRail: () => void;
   onAccept: (id: string) => void;
   onReject: (id: string) => void;
   onCancelRequest: (id: string) => void;
@@ -291,6 +296,10 @@ export function ContactsPane({ requests, friends, groups, selectedContactId, fai
   const [removeTarget, setRemoveTarget] = useState<Person | null>(null);
   const toggle = (key: ContactSectionKey) =>
     setCollapsed(prev => ({ ...prev, [key]: !prev[key] }));
+  const expand = (key: ContactSectionKey) => {
+    onExpandRail();
+    setCollapsed(prev => ({ ...prev, [key]: false }));
+  };
 
   const incoming = requests.filter(request => request.state === 'pending' && request.direction !== 'out');
   const outgoing = requests.filter(request => request.state === 'pending' && request.direction === 'out');
@@ -309,10 +318,11 @@ export function ContactsPane({ requests, friends, groups, selectedContactId, fai
   const renderGroup = (group: Conversation) => (
     <li key={group.id} className="sk-conv-item sk-contact-group" data-contact-group-id={group.id}>
       <Button actionId={`contact.open-group.${group.id}`} emphasis="quiet" density="normal"
+        aria-label={group.name} title={group.name}
         className={`sk-conv-row${selectedContactId === group.id ? ' is-selected' : ''}`}
         onActivate={() => onOpenGroup(group.id)}>
         <GroupAvatarComposite members={(group.members ?? []).map(m => ({ name: m.name, tone: m.tone }))}
-          label={group.name} size={38} imageUrl={group.avatarImage} />
+          label={group.name} {...geometry.avatar.catalog} imageUrl={group.avatarImage} />
         <span className="sk-conv-meta">
           <span className="sk-conv-name-line"><strong>{group.name}</strong></span>
           <span className="sk-conv-preview"><span className="sk-conv-last">
@@ -331,10 +341,10 @@ export function ContactsPane({ requests, friends, groups, selectedContactId, fai
   const renderFriend = (person: Person) => (
     <li key={person.id} className="sk-conv-item sk-contact-friend" data-contact-id={person.id}>
       <button type="button"
+        aria-label={person.name} title={person.name}
         className={`sk-conv-row${selectedContactId === person.id ? ' is-selected' : ''}`}
         onClick={() => onSelectContact(person)}>
-        <Avatar name={person.name} background={person.tone} size={38}
-          style={{ borderRadius: 'var(--sk-avatar-radius)' }} />
+        <Avatar name={person.name} background={person.tone} {...geometry.avatar.catalog} />
         <span className="sk-conv-meta">
           <span className="sk-conv-name-line"><strong>{person.name}</strong></span>
           <span className="sk-conv-preview"><span className="sk-conv-last">{person.bio}</span></span>
@@ -364,10 +374,10 @@ export function ContactsPane({ requests, friends, groups, selectedContactId, fai
     <ul className="sk-conv-list sk-contact-self" data-self-direct-entry>
       <li className="sk-conv-item">
         <Button actionId="contact.open-self" emphasis="quiet" density="normal"
+          aria-label={t('contacts.savedMessages')} title={t('contacts.savedMessages')}
           className={`sk-conv-row${selfSelectedId ? ' is-selected' : ''}`}
           onActivate={onOpenSelf}>
-          <Avatar name={VIEWER_NAME} background={VIEWER_TONE} size={38}
-            style={{ borderRadius: 'var(--sk-avatar-radius)' }}
+          <Avatar name={VIEWER_NAME} background={VIEWER_TONE} {...geometry.avatar.catalog}
             aria-label={t('contacts.savedMessages')} />
           <span className="sk-conv-meta">
             <span className="sk-conv-name-line"><strong>{t('contacts.savedMessages')}</strong></span>
@@ -397,6 +407,7 @@ export function ContactsPane({ requests, friends, groups, selectedContactId, fai
         <>
           {incoming.length > 0 && (
             <ContactSection sectionKey="incoming"
+              compact={compact} onExpand={() => expand('incoming')}
               label={t('contacts.incoming', { n: incoming.length })}
               collapsed={collapsed.incoming} onToggle={() => toggle('incoming')}>
               {incoming.map(renderCard)}
@@ -404,6 +415,7 @@ export function ContactsPane({ requests, friends, groups, selectedContactId, fai
           )}
           {outgoing.length > 0 && (
             <ContactSection sectionKey="outgoing"
+              compact={compact} onExpand={() => expand('outgoing')}
               label={t('contacts.outgoing', { n: outgoing.length })}
               collapsed={collapsed.outgoing} onToggle={() => toggle('outgoing')}>
               {outgoing.map(renderCard)}
@@ -411,24 +423,27 @@ export function ContactsPane({ requests, friends, groups, selectedContactId, fai
           )}
           {history.length > 0 && (
             <ContactSection sectionKey="history"
+              compact={compact} onExpand={() => expand('history')}
               label={t('contacts.history', { n: history.length })}
               collapsed={collapsed.history} onToggle={() => toggle('history')}>
               {history.map(renderCard)}
             </ContactSection>
           )}
           <ContactSection sectionKey="groups"
+            compact={compact} onExpand={() => expand('groups')}
             label={t('contacts.savedGroups', { n: groups.length })}
             collapsed={collapsed.groups} onToggle={() => toggle('groups')}>
             {groups.length > 0
               ? <ul className="sk-conv-list">{groups.map(renderGroup)}</ul>
-              : <Empty description={t('contacts.noGroups')} />}
+              : <Empty className="sk-contact-empty" description={t('contacts.noGroups')} />}
           </ContactSection>
           <ContactSection sectionKey="friends"
+            compact={compact} onExpand={() => expand('friends')}
             label={t('contacts.friends', { n: friends.length })}
             collapsed={collapsed.friends} onToggle={() => toggle('friends')}>
             {friends.length > 0
               ? <ul className="sk-conv-list">{friends.map(renderFriend)}</ul>
-              : <Empty description={t('contacts.emptyFriends')} />}
+              : <Empty className="sk-contact-empty" description={t('contacts.emptyFriends')} />}
           </ContactSection>
         </>
       )}
@@ -453,13 +468,16 @@ export function ContactsPane({ requests, friends, groups, selectedContactId, fai
 
 /* ── Rail shell ────────────────────────────────────────── */
 
-export function ChatRail({ tab, onTabChange, sessions, selectedId, people, onSelect, onTogglePin, onToggleMute,
+export function ChatRail({ tab, onTabChange, sessions, selectedId, people, onSelect, onTogglePin, onToggleMute, compact, toolsCompact, onExpandRail,
   onMarkRead, onHide, onDelete,
   requests, friends, groups, selectedContactId, failedRequestIds, onAccept, onReject, onCancelRequest,
   onDeleteRequestRecord, onRemoveContact, onSelectContact, onOpenGroup,
   onFindPeople, onCreateGroup, onOpenSelf }: {
   tab: 'chats' | 'contacts';
   onTabChange: (tab: 'chats' | 'contacts') => void;
+  compact: boolean;
+  toolsCompact: boolean;
+  onExpandRail: () => void;
   sessions: Conversation[];
   selectedId: string | null;
   /** Known-people pool (contacts + recent chats) for search-as-create. */
@@ -489,8 +507,10 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, people, onSel
 }) {
   const { t } = useT();
   const [searchOpen, setSearchOpen] = useState(false);
+  const visibleSearch = searchOpen && !compact;
   const [query, setQuery] = useState('');
   const closeSearch = () => { setSearchOpen(false); setQuery(''); };
+  const openSearch = () => { if (compact) onExpandRail(); setSearchOpen(true); };
 
   // The rail is always pinned-first, latest-first. Search is a local filter;
   // global finding/navigation belongs to the outer rail ⌘K overlay.
@@ -512,36 +532,52 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, people, onSel
     : [];
 
   return (
-    <aside className="sk-conv-rail" aria-label={t('rail.aria')}>
-      <header className="sk-rail-header" data-rail-search={searchOpen ? 'active' : 'idle'}>
-        {searchOpen ? (
+    <aside className="sk-conv-rail" aria-label={t('rail.aria')}
+      data-rail-compact={compact ? 'true' : 'false'}>
+      <header className="sk-rail-header" data-rail-search={visibleSearch ? 'active' : 'idle'}>
+        {visibleSearch ? (
           <>
             <span className="sk-rail-search">
               <TextField density="compact" leading={<Search size={14} />} clearable
                 onClear={() => setQuery('')} autoFocus
                 aria-label={t('rail.search')} placeholder={t('rail.searchPlaceholder')}
                 value={query} onValueChange={setQuery} data-rail-search-value={query}
-                onKeyDown={event => { if (event.key === 'Escape') closeSearch(); }} />
+                onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); closeSearch(); } }} />
             </span>
             <IconButton actionId="sk.rail-search-close" iconId="close" iconSize={15} density="compact"
               className="sk-rail-new" label={t('rail.cancelSearch')} emphasis="quiet"
               onActivate={closeSearch} />
           </>
+        ) : toolsCompact ? (
+          <Menu placement="bottom" label={t('rail.new')} actions={[
+            { id: 'sk.rail-tab.chats', label: t('tab.chats'), leading: <MessageCircle size={14} />,
+              onActivate: () => onTabChange('chats') },
+            { id: 'sk.rail-tab.contacts', label: t('tab.contacts'), leading: <Users size={14} />,
+              onActivate: () => onTabChange('contacts') },
+            { id: 'sk.rail-search', label: t('rail.search'), leading: <Search size={14} />,
+              onActivate: openSearch },
+            { id: 'sk.new-person', label: t('rail.new.person'), leading: <UserPlus size={14} />, onActivate: onFindPeople },
+            { id: 'sk.new-group', label: t('rail.new.group'), leading: <Users size={14} />, onActivate: onCreateGroup },
+          ]}>
+            <IconButton actionId="sk.rail-current-tab" data-rail-current-tab={tab}
+              iconId={tab === 'chats' ? 'message-circle' : 'users'} iconSize={16} density="compact"
+              label={t(tab === 'chats' ? 'tab.chats' : 'tab.contacts')} emphasis="quiet" />
+          </Menu>
         ) : (
           <>
             <div className="sk-rail-tabs">
               <Segmented<'chats' | 'contacts'> className="sk-chat-subnav" aria-label="chat-subnav"
                 density="compact" fullWidth
                 options={[
-                  { value: 'chats', label: <span className="sk-subnav-label"><MessageCircle size={13} />{t('tab.chats')}</span> },
-                  { value: 'contacts', label: <span className="sk-subnav-label"><Users size={13} />{t('tab.contacts')}</span> },
+                  { value: 'chats', label: t('tab.chats'), leading: <MessageCircle size={13} /> },
+                  { value: 'contacts', label: t('tab.contacts'), leading: <Users size={13} /> },
                 ]}
                 value={tab} onValueChange={value => onTabChange(value ?? 'chats')} />
             </div>
 
             <IconButton actionId="sk.rail-search" iconId="search" iconSize={15} density="compact"
               className="sk-rail-new" label={t('rail.search')} emphasis="quiet"
-              onActivate={() => setSearchOpen(true)} />
+              onActivate={openSearch} />
             <Menu placement="bottom" actions={[
               { id: 'sk.new-person', label: t('rail.new.person'), leading: <UserPlus size={14} />, onActivate: onFindPeople },
               { id: 'sk.new-group', label: t('rail.new.group'), leading: <Users size={14} />, onActivate: onCreateGroup },
@@ -572,8 +608,7 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, people, onSel
                     <Button actionId={`contact.search-open.${person.id}`} emphasis="quiet" density="normal"
                       className="sk-conv-row sk-conv-contact-row"
                       onActivate={() => { closeSearch(); onSelectContact(person); }}>
-                      <Avatar name={person.name} background={person.tone} size={40}
-                        style={{ borderRadius: 'var(--sk-avatar-radius)' }} />
+                      <Avatar name={person.name} background={person.tone} {...geometry.avatar.catalog} />
                       <span className="sk-conv-meta">
                         <span className="sk-conv-name-line"><strong>{person.name}</strong></span>
                         <span className="sk-conv-preview"><span className="sk-conv-last">
@@ -589,6 +624,7 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, people, onSel
         </>
       ) : (
         <ContactsPane requests={requests} friends={friends} groups={groups} selectedContactId={selectedContactId}
+          compact={compact} onExpandRail={onExpandRail}
           failedIds={failedRequestIds} query={query}
           onAccept={onAccept} onReject={onReject} onCancelRequest={onCancelRequest}
           onDeleteRecord={onDeleteRequestRecord} onRemoveContact={onRemoveContact}

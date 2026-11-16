@@ -79,6 +79,12 @@ export interface AppLifecycle {
   restoredUser: SessionUser | null;
   knownAccounts: SessionUser[];
   dataReady: boolean;
+  /**
+   * Set while the window is parked on the PIN gate by an idle/lock event.
+   * The login card uses it to open the PIN entry directly for this account
+   * instead of making the user pick it from the account list again.
+   */
+  lockedAccountId: string | null;
   completeLogin: () => Promise<void>;
   loginWithPassword: (account: string, password: string) => Promise<void>;
   /** Production login-card password edge: close through the identity runtime. */
@@ -86,6 +92,14 @@ export interface AppLifecycle {
   loginWithOAuthBridge: () => Promise<void>;
   switchAccount: (accountId: string) => Promise<void>;
   unlockWithPin: (accountId: string, pin: string) => Promise<void>;
+  /** Park the window on the PIN gate after a system lock/sleep event. */
+  lockForIdle: (input: {
+    accountId: string | null;
+    pinRequired: boolean;
+    reason: string;
+  }) => Promise<void>;
+  /** Clear the idle-lock marker once the login card consumed it. */
+  clearLockMarker: () => void;
   refreshCurrentProfile: (fallbackAvatar?: string) => Promise<void>;
   beginPinRecovery: (recoveryId: string, targetLocalAccountId: string, provider: string) => void;
   cancelPinRecovery: () => void;

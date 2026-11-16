@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-07-23 | **Updated**: 2026-07-23
+> **Created**: 2026-07-23 | **Updated**: 2026-11-15
 > **Owner**: @printfcoder
 
 ---
@@ -32,8 +32,8 @@ state) during development without polluting production code.
 ┌─────────────────────────────────────────────────────────────┐
 │ App.tsx                                                      │
 │  └── <DevOverlayProvider />  ← conditional import (DEV only)│
-│       ├── slot: 'titleBar'   → [worktree-badge]             │
-│       ├── slot: 'bottomLeft' → [perf-monitor, ...]          │
+│       ├── slot: 'titleBar'   → [future identity plugins]    │
+│       ├── slot: 'bottomLeft' → [worktree-badge, ...]        │
 │       └── slot: 'floating'   → [store-inspector, ...]       │
 ├─────────────────────────────────────────────────────────────┤
 │ kernel/boot.ts                                               │
@@ -52,12 +52,10 @@ state) during development without polluting production code.
 ### Runtime Data Flow
 
 ```
-dev-desktop-app.sh
-  → exports VITE_GIT_BRANCH, VITE_GIT_COMMIT, VITE_GIT_WORKTREE
-  → Vite exposes as import.meta.env.VITE_*
-
-Plugin reads import.meta.env at module scope
-  → renders into assigned slot
+apps/desktop/vite.config.ts
+  → defines __PT_DEV_WORKTREE__ and __PT_DEV_BRANCH__
+  → worktree plugin reads the compile-time values
+  → renders into the bottomLeft slot
 ```
 
 ---
@@ -87,17 +85,23 @@ interface DevOverlayPlugin {
 
 ```typescript
 // dev/registry.ts
-const plugins: DevOverlayPlugin[] = [];
+const plugins = new Map<string, DevOverlayPlugin>();
 
 export function registerDevPlugin(plugin: DevOverlayPlugin): void {
-  plugins.push(plugin);
-  plugins.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  plugins.set(plugin.id, plugin);
 }
 
 export function getPluginsForSlot(slot: DevSlot): DevOverlayPlugin[] {
-  return plugins.filter(p => p.slot === slot);
+  return [...plugins.values()]
+    .filter(p => p.slot === slot)
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 }
 ```
+
+Registration is idempotent by plugin ID. Hot module re-evaluation replaces the
+current component, slot and order; it never appends another mounted instance.
+The provider remains the sole renderer. Do not mask duplicate registration
+with CSS, random React keys or component-local deduplication.
 
 ### 3.4 Conditional Import Entry
 
@@ -117,9 +121,8 @@ const DevOverlayProvider = import.meta.env.DEV
 - All dev overlay code lives under `apps/desktop/src/dev/`.
 - Plugin registration happens inside `dev/plugins/` at module scope.
 - `DevOverlayProvider` is the sole consumer of the registry.
-- Environment variables for dev info use `VITE_` prefix (Vite convention).
-- The launch script (`dev-desktop-app.sh`) is the only place that computes
-  git/worktree metadata and exports env vars.
+- Vite configuration owns compile-time worktree and branch metadata.
+- The diagnostic plugin consumes those values without running Git itself.
 
 ### 4.2 MUST NOT
 
@@ -140,24 +143,22 @@ const DevOverlayProvider = import.meta.env.DEV
 
 ## 5. First Plugin: Worktree Badge
 
-Renders in `titleBar` slot:
-
-```
-┌──────────────────────────────────┐
-│  peers-group-chat @ a1b2c3d      │
-│  profile: one | station: remote  │
-└──────────────────────────────────┘
-```
+Renders in the `bottomLeft` slot. The resting `wt:` button fits inside the
+60px navigation rail at every window width, so it cannot cover the composer.
+Its accessible name and hover title retain the full worktree and branch.
+Activating it opens the read-only diagnostic panel; Escape or an outside click
+closes it. The panel stays within the viewport, wraps complete long identifiers,
+and scrolls vertically in short windows.
 
 Data sources:
-- `import.meta.env.VITE_GIT_BRANCH` — current branch name
-- `import.meta.env.VITE_GIT_COMMIT` — short commit hash
-- `import.meta.env.VITE_GIT_WORKTREE` — worktree directory basename
-- `import.meta.env.PEERS_STATION_URL` — station connection target (via Rust)
+- `__PT_DEV_WORKTREE__` — worktree directory basename.
+- `__PT_DEV_BRANCH__` — current branch name.
+- Read-only `stationList` and session projections — connection and identity
+  details loaded on expansion.
 
 Visual:
 - Semi-transparent background, monospace font, small (11px)
-- Non-interactive (no click handlers)
+- A compact diagnostic toggle; complete worktree and branch appear in its panel.
 - Does not overlap with window controls or navigation
 
 ---

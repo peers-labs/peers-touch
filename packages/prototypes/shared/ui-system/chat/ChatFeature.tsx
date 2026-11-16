@@ -4,10 +4,11 @@
  * adds the increment 10 catalog layer: chats/contacts sub-navigation,
  * friend requests, contact detail, unified search and group creation.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { MessagesSquare } from 'lucide-react';
-import { Empty } from '@peers-touch/ui';
+import { Empty, geometry, useDrawerAssembly, drawerPolicy, DrawerRailResizer } from '@peers-touch/ui';
 import { ChatRail } from './ChatRail';
+import { ConversationWorkingSet } from './conversation-working-state';
 import { ConversationView } from './ConversationView';
 import { CreateGroupDialog, PickPersonDialog } from './ChatDialogs';
 import type { CallDirection, CallKind } from './CallOverlay';
@@ -41,6 +42,9 @@ export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal,
   const prefs = usePrefs();
   const t = makeTranslate(prefs.locale);
   const [tab, setTab] = useState<'chats' | 'contacts'>('chats');
+  const assembly = useDrawerAssembly();
+  const workingSet = useRef(new ConversationWorkingSet());
+  useEffect(() => () => workingSet.current.dispose(), []);
   const [sessions, setSessions] = useState<Conversation[]>(CONVERSATIONS);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messagesByConv, setMessagesByConv] = useState<Record<string, ChatMessage[]>>(SEED_MESSAGES);
@@ -65,6 +69,13 @@ export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal,
   };
 
   const selectedConversation = sessions.find(c => c.id === selectedId) ?? null;
+  // Selection owns business identity; opening owns the guide. Back keeps
+  // the selected conversation and composer alive instead of deleting them.
+  useLayoutEffect(() => {
+    if (selectedId) assembly.reveal();
+    // Selection changes alone request reveal, never a frame-size change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
   const peoplePool = useMemo(() => [...PEOPLE, ...sessions
     .filter(c => c.kind === 'person')
     .map(c => ({ id: c.id, name: c.name, tone: c.tone, station: t('search.recentStation'), bio: c.last }))],
@@ -114,16 +125,17 @@ export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal,
 
   const hideConversation = (id: string) => {
     setSessions(list => list.filter(c => c.id !== id));
-    if (selectedId === id) setSelectedId(null);
+    if (selectedId === id) { assembly.retireTask(); setSelectedId(null); }
   };
   const deleteConversation = (id: string) => {
+    workingSet.current.drop(id);
     setSessions(list => list.filter(c => c.id !== id));
     setMessagesByConv(map => {
       const next = { ...map };
       delete next[id];
       return next;
     });
-    if (selectedId === id) setSelectedId(null);
+    if (selectedId === id) { assembly.retireTask(); setSelectedId(null); }
   };
 
   const clearMessages = (id: string) =>
@@ -390,21 +402,61 @@ export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal,
     setTab('chats');
   };
 
-  // Narrow single-pane swap: the catalog rail owns the screen until a
-  // conversation or contact surface opens; the header back control returns.
-  const narrowOpen = !!selectedConversation;
-  const backToList = () => { setSelectedId(null); };
+  const { pose } = assembly;
+  const backToList = assembly.back;
+  const expandCatalog = () => {
+    assembly.back();
+    if (assembly.preferred === drawerPolicy.catalog.compact) {
+      assembly.setCatalog(drawerPolicy.catalog.default);
+    }
+  };
+  const showConversation = assembly.open || assembly.navigation > 0;
 
   return (
-    <div className={`sk-chat-feature${narrowOpen ? ' sk-narrow-open' : ''}`}
+    <div ref={assembly.surface} className="sk-chat-feature"
+      style={{
+        '--sk-catalog-paper': `${pose.paper}px`,
+        '--sk-catalog-exposure': `${pose.exposure}px`,
+        '--sk-catalog-visible': `${pose.visibleCatalog}px`,
+        '--sk-work-width': `${pose.workWidth}px`,
+        '--sk-work-x': `${pose.mainX}px`,
+        '--sk-leaf-width': `${pose.leafWidth}px`,
+        '--sk-leaf-x': `${pose.leafX}px`,
+      } as CSSProperties}
+      data-drawer-assembly="candidate"
+      data-compressed={pose.compressed}
+      data-work-compact={pose.workToolsCompact}
+      data-message-tools={pose.messageToolsBelow ? 'below' : 'beside'}
+      data-preferred-width={assembly.preferred}
+      data-catalog-rest={assembly.catalogRest}
+      data-catalog-phase={assembly.catalogPhase}
+      data-catalog-tools={pose.catalogToolsCompact ? 'compact' : 'full'}
+      data-catalog-exposure={pose.exposure}
+      data-navigation-progress={assembly.navigation}
+      data-main-open={assembly.open}
+      data-catalog-rows={pose.catalogRowsCompact ? 'compact' : 'full'}
       data-message-layout={prefs.messageLayout}
       data-hide-own-avatar={prefs.messageLayout === 'sides' && prefs.hideOwnAvatarInSides ? 'true' : 'false'}
-      data-locale={prefs.locale}>
+      data-locale={prefs.locale}
+      onKeyDown={event => {
+        if (event.key === 'Escape' && !event.defaultPrevented &&
+            !(event.target as HTMLElement).closest('.pt-modal-layer') && (assembly.open || assembly.leaf)) {
+          event.preventDefault();
+          assembly.back();
+        }
+      }}>
+      <div className="sk-catalog-guide" data-drawer-catalog data-drawn={pose.catalogInteractive}
+        inert={!pose.catalogInteractive || !!assembly.leaf || assembly.leafProgress > 0 || (assembly.open && assembly.navigation < 1)}
+        aria-hidden={!pose.catalogInteractive || !!assembly.leaf || assembly.leafProgress > 0 || (assembly.open && assembly.navigation < 1)}
+        style={{ width: pose.visibleCatalog }}>
       <ChatRail
+        compact={pose.catalogRowsCompact}
+        toolsCompact={pose.catalogToolsCompact}
+        onExpandRail={expandCatalog}
         tab={tab} onTabChange={setTab}
         sessions={sessions} selectedId={selectedId}
         people={peoplePool}
-        onSelect={id => { setSelectedId(id); markAsRead(id); }}
+        onSelect={id => { setSelectedId(id); markAsRead(id); assembly.reveal(); }}
         onTogglePin={togglePin} onToggleMute={toggleMute}
         onMarkRead={markAsRead} onHide={hideConversation} onDelete={deleteConversation}
         requests={requests} friends={friends} groups={groupSessions} selectedContactId={null}
@@ -419,10 +471,22 @@ export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal,
         onCreateGroup={() => setGroupOpen(true)}
         onOpenSelf={openSelfDirect}
       />
+      </div>
+      <DrawerRailResizer assembly={assembly} label={t('rail.aria')}
+        className="sk-chat-rail-resizer" lineClassName="sk-chat-rail-resizer-line" />
 
-      <div className="sk-chat-main">
+      <div className="sk-chat-main" data-drawer-work data-conversation-visible={showConversation}
+        aria-hidden={!assembly.open}
+        inert={!assembly.open || assembly.navigation < 1}>
         {selectedConversation ? (
           <ConversationView
+            key={selectedConversation.id}
+            working={workingSet.current.get(selectedConversation.id)}
+            presentation={pose}
+            leaf={assembly.leaf}
+            leafContent={assembly.leafContent}
+            leafProgress={assembly.leafProgress}
+            onLeafChange={assembly.setLeaf}
             conversation={selectedConversation}
             messages={messagesByConv[selectedConversation.id] ?? []}
             conversations={sessions}
@@ -464,6 +528,12 @@ export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal,
           </div>
         )}
       </div>
+      {!showConversation && (
+        <div className="sk-chat-rest-placeholder" aria-hidden="true">
+          <Empty icon={<MessagesSquare size={28} strokeWidth={1.5} />}
+            description={tab === 'contacts' ? t('conv.selectContact') : t('conv.selectConversation')} />
+        </div>
+      )}
 
       <PickPersonDialog open={pickerOpen} people={peoplePool} directory={FEDERATION_DIRECTORY}
         friends={friends} selfName={VIEWER_NAME}

@@ -1,6 +1,7 @@
 import { useMemo, useState, useCallback, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, ContextMenu, Empty, Icon, IconButton, Menu, Segmented, TextField } from '@peers-touch/ui';
+import { WindowDragRegion } from '../shell/WindowDragRegion';
+import { Button, ContextMenu, Empty, Icon, IconButton, Menu, Segmented, TextField, geometry } from '@peers-touch/ui';
 import type { MenuAction } from '@peers-touch/ui';
 import { GroupSquareAvatar } from '../common/GroupSquareAvatar';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
@@ -43,9 +44,11 @@ function reportDirectOpenDebug(detail: Record<string, unknown>): void {
 
 function ConversationListError({
   compact = false,
+  avatarOnly = false,
   onRetry,
 }: {
   compact?: boolean;
+  avatarOnly?: boolean;
   onRetry: () => Promise<void>;
 }) {
   const { t } = useTranslation(['chat', 'common']);
@@ -61,6 +64,20 @@ function ConversationListError({
     }
   };
 
+  if (avatarOnly) {
+    return (
+      <IconButton
+        actionId="chat.session-list.retry"
+        data-chat-session-list-retry
+        iconId="warning"
+        density="compact"
+        emphasis="quiet"
+        execution={retrying ? 'pending' : 'idle'}
+        label={`${t('chat.social.sessionList.loadFailed')} · ${t('common.action.retry', { ns: 'common' })}`}
+        onActivate={handleRetry}
+      />
+    );
+  }
   return (
     <div
       className={`sc-list-error${compact ? '' : ' sc-list-error--block'}`}
@@ -133,6 +150,9 @@ function conversationWithActorIdentity(
 export type ChatRailTab = 'chats' | 'contacts';
 
 interface ChatSessionListProps {
+  compact?: boolean;
+  toolsCompact?: boolean;
+  onExpandRail?: () => void;
   onConversationSelected: () => void;
   onOpenDirect: (contact: FriendContactSelection) => void;
   /** Active rail tab (消息 / 联系人). Contacts renders the renderContacts slot. */
@@ -143,6 +163,9 @@ interface ChatSessionListProps {
 }
 
 export function ChatSessionList({
+  compact = false,
+  toolsCompact = false,
+  onExpandRail,
   onConversationSelected,
   onOpenDirect,
   tab,
@@ -212,6 +235,7 @@ export function ChatSessionList({
   // Inline rail search stays collapsed until the magnifier is tapped
   // (prototype sk-rail-search parity).
   const [searchOpen, setSearchOpen] = useState(false);
+  const visibleSearch = searchOpen && !compact;
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [showFindPeople, setShowFindPeople] = useState(false);
 
@@ -225,6 +249,10 @@ export function ChatSessionList({
   const closeSearch = () => {
     setSearchOpen(false);
     setSearchText('');
+  };
+  const openSearch = () => {
+    if (compact) onExpandRail?.();
+    setSearchOpen(true);
   };
   const clearChatUnread = useNavigationBadgeStore((state) => state.clearChatUnread);
   const stationNamesByPeerId = useMemo(() => Object.fromEntries(
@@ -416,6 +444,27 @@ export function ChatSessionList({
       onActivate: () => setShowCreateGroup(true),
     },
   ];
+  const compactMenuItems: MenuAction[] = [
+    {
+      id: 'chat.rail-tab.chats',
+      iconId: 'message-circle',
+      label: t('chat.social.subNav.chats'),
+      onActivate: () => switchTab('chats'),
+    },
+    {
+      id: 'chat.rail-tab.contacts',
+      iconId: 'users',
+      label: t('chat.social.subNav.contacts'),
+      onActivate: () => switchTab('contacts'),
+    },
+    {
+      id: 'chat.rail-search',
+      iconId: 'search',
+      label: t('chat.social.sessionList.searchPlaceholder'),
+      onActivate: openSearch,
+    },
+    ...plusMenuItems,
+  ];
 
   const handleSelect = (c: DesktopIMConversationProjection) => {
     onConversationSelected();
@@ -446,7 +495,7 @@ export function ChatSessionList({
     const actions: MenuAction[] = [
       {
         id: 'pin',
-        iconId: 'pin',
+        iconId: isPinned ? 'pin-off' : 'pin',
         label: isPinned ? t('chat.social.contextMenu.unpin') : t('chat.social.contextMenu.pin'),
         onActivate: () => void applyLocal({ sticky: !isPinned }),
       },
@@ -508,22 +557,21 @@ export function ChatSessionList({
         className="sc-sessions"
         data-chat-conversation-pane
         data-rail-tab={tab}
-        data-rail-search={searchOpen ? 'active' : 'idle'}
+        data-rail-compact={compact ? 'true' : 'false'}
+        data-rail-tools-compact={toolsCompact ? 'true' : 'false'}
+        data-rail-search={visibleSearch ? 'active' : 'idle'}
       >
-        {/* Rail header — one fixed 52px band. The search tile expands and
+        {/* Rail header — one fixed-height band. The search tile expands and
             TAKES OVER the band (prototype sk-rail-header parity): while open
             the segmented island and chrome tiles unmount, leaving the field
             plus one close tile on the same row so the list never jumps. */}
-        {/* deep so header blank space drags; the segmented control, search
-            field and icon buttons remain interactive (auto-excluded). */}
-        <div
+        <WindowDragRegion><div
           className="sc-rail-header"
-          data-rail-search={searchOpen ? 'active' : 'idle'}
-          data-tauri-drag-region="deep"
+          data-rail-search={visibleSearch ? 'active' : 'idle'}
         >
-          {searchOpen ? (
+          {visibleSearch ? (
             <>
-              <span className="sc-rail-search">
+              <WindowDragRegion mode="none"><span className="sc-rail-search">
                 <TextField
                   appearance="search"
                   reveal
@@ -538,9 +586,9 @@ export function ChatSessionList({
                   onValueChange={setSearchText}
                   clearable
                   onClear={() => setSearchText('')}
-                  onKeyDown={event => { if (event.key === 'Escape') closeSearch(); }}
+                  onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); closeSearch(); } }}
                 />
-              </span>
+              </span></WindowDragRegion>
               <IconButton
                 actionId="chat.rail-search-close"
                 className="sc-rail-icon"
@@ -552,6 +600,19 @@ export function ChatSessionList({
                 onClick={closeSearch}
               />
             </>
+          ) : toolsCompact ? (
+            <Menu actions={compactMenuItems} placement="bottom"
+              label={t('chat.social.sessionList.newMenu')}>
+              <IconButton
+                actionId="chat.rail-current-tab"
+                data-rail-current-tab={tab}
+                iconId={tab === 'chats' ? 'message-circle' : 'users'}
+                iconSize={16}
+                label={t(tab === 'chats' ? 'chat.social.subNav.chats' : 'chat.social.subNav.contacts')}
+                density="compact"
+                emphasis="quiet"
+              />
+            </Menu>
           ) : (
             <>
               <Segmented<ChatRailTab>
@@ -575,8 +636,8 @@ export function ChatSessionList({
                 emphasis="quiet"
                 density="compact"
                 label={t('chat.social.sessionList.searchPlaceholder')}
-                aria-expanded={searchOpen}
-                onClick={() => setSearchOpen(true)}
+                aria-expanded={visibleSearch}
+                onClick={openSearch}
               />
               <Menu actions={plusMenuItems} placement="bottom">
                 <IconButton
@@ -592,7 +653,7 @@ export function ChatSessionList({
               </Menu>
             </>
           )}
-        </div>
+        </div></WindowDragRegion>
 
         {tab === 'contacts' ? (
           renderContacts?.(searchText)
@@ -600,7 +661,7 @@ export function ChatSessionList({
           <>
 
         {loadError && visibleConversations.length > 0 && (
-          <ConversationListError compact onRetry={handleRetry} />
+          <ConversationListError compact avatarOnly={compact} onRetry={handleRetry} />
         )}
 
         {/* The Recent label stays mounted while searching (prototype
@@ -610,7 +671,7 @@ export function ChatSessionList({
 
         <div className="sc-sessions__scroll">
           {loadError && visibleConversations.length === 0 ? (
-            <ConversationListError onRetry={handleRetry} />
+            <ConversationListError avatarOnly={compact} onRetry={handleRetry} />
           ) : visibleConversations.length === 0 ? (
             <div className="sc-sessions__empty">
               <Empty description={t('chat.social.sessionList.noConversations')} />
@@ -699,6 +760,11 @@ export function ChatSessionList({
                   }}
                 >
                   <div
+                    role="button"
+                    tabIndex={0}
+                    aria-label={name}
+                    aria-current={isActive ? 'true' : undefined}
+                    title={compact ? name : undefined}
                     className={`sc-session-row${isActive ? ' is-active' : ''}${localState?.sticky ? ' is-pinned-row' : ''}`}
                     data-pt-conversation-item={c.id}
                     data-chat-conversation-kind={c.kind}
@@ -719,6 +785,13 @@ export function ChatSessionList({
                       });
                     }}
                     onClick={() => handleSelect(c)}
+                    onKeyDown={(event) => {
+                      if (event.target !== event.currentTarget) return;
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        handleSelect(c);
+                      }
+                    }}
                     style={{ height: CHAT_SESSION_ROW_HEIGHT, minHeight: CHAT_SESSION_ROW_HEIGHT }}
                   >
                     <OverlayCommitProfiler owner={contextMenuTarget} surface="chat-conversation-context-menu">
@@ -739,7 +812,7 @@ export function ChatSessionList({
                               }),
                             )}
                             name={name}
-                            size={40}
+                            {...geometry.avatar.catalog}
                           />
                           {unreadBadge}
                         </span>
@@ -757,7 +830,7 @@ export function ChatSessionList({
                             remoteUrl={c.avatar}
                             actorPtid={c.peerPtid || null}
                             name={name}
-                            size={40}
+                            {...geometry.avatar.catalog}
                           />
                           {c.peerPtid && peerOnline[c.peerPtid] ? (
                             <span className="sc-session-presence" data-presence="online" aria-hidden />
@@ -775,56 +848,31 @@ export function ChatSessionList({
                               </span>
                             )}
                             <span className="sc-session-row__name-text">{name}</span>
-                            {localState?.sticky ? (
-                              <span className="sc-session-row__pin" aria-label={t('chat.social.detail.stateSticky')}>
-                                <Icon iconId="pin" size={11} />
-                              </span>
-                            ) : null}
-                            {localState?.muted || localState?.alertEnabled === false ? (
-                              <span className="sc-session-row__muted" aria-label={t('chat.social.detail.stateMuted')}>
-                                <Icon iconId="bell-off" size={11} />
-                              </span>
-                            ) : null}
                           </span>
                           <span className="sc-session-row__time">{timeStr}</span>
                         </span>
                         <span className="sc-session-row__sub">
                           <span className="sc-session-row__preview">{subtitle}</span>
+                          {/* Status tags own the bottom-right corner at rest. */}
+                          {(localState?.sticky || localState?.muted || localState?.alertEnabled === false) && (
+                            <span className="sc-session-row__flags">
+                              {localState?.sticky ? (
+                                <span className="sc-session-row__flag sc-session-row__flag--pin" aria-label={t('chat.social.detail.stateSticky')}>
+                                  <Icon iconId="pin" size={11} />
+                                </span>
+                              ) : null}
+                              {localState?.muted || localState?.alertEnabled === false ? (
+                                <span className="sc-session-row__flag sc-session-row__flag--mute" aria-label={t('chat.social.detail.stateMuted')}>
+                                  <Icon iconId="bell-off" size={11} />
+                                </span>
+                              ) : null}
+                            </span>
+                          )}
                         </span>
                       </span>
-                      {/* Hover quick actions (prototype sk-conv-actions
-                          parity): mute / pin toggle + the full action menu. */}
+                      {/* One hover entry point: the three-dot menu owns every
+                          row action (pin / mute / mark read / hide / delete). */}
                       <span className="sc-session-row__actions">
-                        <IconButton
-                          className="sc-session-state"
-                          actionId={`session.mute-${c.id}`}
-                          iconId={localState?.muted ? 'volume-2' : 'bell-off'}
-                          iconSize={11}
-                          emphasis="quiet"
-                          density="compact"
-                          label={localState?.muted
-                            ? t('chat.social.contextMenu.unmute')
-                            : t('chat.social.contextMenu.mute')}
-                          onClick={event => {
-                            event.stopPropagation();
-                            buildContextActions(c).find(action => action.id === 'mute')?.onActivate();
-                          }}
-                        />
-                        <IconButton
-                          className="sc-session-state"
-                          actionId={`session.pin-${c.id}`}
-                          iconId="pin"
-                          iconSize={11}
-                          emphasis="quiet"
-                          density="compact"
-                          label={localState?.sticky
-                            ? t('chat.social.contextMenu.unpin')
-                            : t('chat.social.contextMenu.pin')}
-                          onClick={event => {
-                            event.stopPropagation();
-                            buildContextActions(c).find(action => action.id === 'pin')?.onActivate();
-                          }}
-                        />
                         <Menu actions={buildContextActions(c)} placement="bottom">
                           <IconButton
                             className="sc-session-state"
@@ -847,7 +895,7 @@ export function ChatSessionList({
         </div>
 
         <ChatSearchDropdown
-          searchText={searchText}
+          searchText={compact ? '' : searchText}
           results={searchResults}
           onSelect={handleSearchSelect}
           onDismiss={() => setSearchText('')}

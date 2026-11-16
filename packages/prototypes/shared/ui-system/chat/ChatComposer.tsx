@@ -5,7 +5,7 @@
  * desktop shell captures the screen; the browser shell selects an image
  * file), real MediaRecorder voice notes, and input expand/collapse.
  */
-import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
 import {
   FolderOpen, Maximize2, Mic, Minimize2, Scissors, Smile, Square, Trash2, X,
 } from 'lucide-react';
@@ -14,6 +14,7 @@ import type { MessageAttachment } from './chat-data';
 import { AttachmentDraftStrip, useAttachmentDrafts } from './ComposerAttachments';
 import { formatVoiceDuration, useVoiceRecorder, VoicePlayer, type RecordedVoice } from './VoiceNote';
 import { useT } from '../prefs';
+import type { ConversationWorkingState } from './conversation-working-state';
 import {
   COMPOSER_EMOJIS, loadRecentEmojis, nextRecentEmojis, persistRecentEmojis,
 } from './emoji-palette';
@@ -26,7 +27,10 @@ export type ComposerPayload = {
   editId?: string;
 };
 
-export function ChatComposer({ groupMembers, replyTarget, editTarget, placeholder, onCancelReply, onCancelEdit, onSend }: {
+export function ChatComposer({ working, budget, compactTools, groupMembers, replyTarget, editTarget, placeholder, onCancelReply, onCancelEdit, onSend }: {
+  working: ConversationWorkingState;
+  budget: number;
+  compactTools: boolean;
   groupMembers?: { name: string }[];
   replyTarget?: { who: string; text: string } | null;
   editTarget?: { id: string; text: string } | null;
@@ -36,30 +40,40 @@ export function ChatComposer({ groupMembers, replyTarget, editTarget, placeholde
   onSend: (payload: ComposerPayload) => void;
 }) {
   const { t } = useT();
-  const [draft, setDraft] = useState('');
-  const [expanded, setExpanded] = useState(false);
+  const saved = useSyncExternalStore(working.subscribe, () => working.snapshot.composer);
+  const draft = editTarget ? saved.editText : saved.text;
+  const setDraft = (text: string) => working.patchComposer(editTarget ? { editText: text } : { text });
+  const expanded = saved.expanded;
+  const setExpanded = (next: boolean | ((value: boolean) => boolean)) =>
+    working.patchComposer({ expanded: typeof next === 'function' ? next(working.snapshot.composer.expanded) : next });
   const [dragging, setDragging] = useState(false);
   const [voiceError, setVoiceError] = useState<'denied' | 'unsupported' | null>(null);
-  const [recordedVoice, setRecordedVoice] = useState<RecordedVoice | null>(null);
+  const recordedVoice = saved.voice;
+  const setRecordedVoice = (voice: RecordedVoice | null) => working.patchComposer({ voice });
   const [recentEmojis, setRecentEmojis] = useState<string[]>(loadRecentEmojis);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const shotInputRef = useRef<HTMLInputElement>(null);
 
   const { drafts, ready, uploading, failed, addFiles, removeDraft, retryDraft, clearDrafts } =
-    useAttachmentDrafts();
+    useAttachmentDrafts(working);
+  useLayoutEffect(() => {
+    const { start, end } = working.snapshot.composer.caret;
+    textareaRef.current?.setSelectionRange(start, end);
+  }, [working]);
 
-  // Seed the textarea when entering edit mode (parent owns the target).
+  const rememberCaret = () => {
+    const el = textareaRef.current;
+    if (el) working.patchComposer({ caret: { start: el.selectionStart, end: el.selectionEnd } });
+  };
+
+  // Edit text is seeded at the intent owner, not on remount: A→B→A must
+  // resume the unsaved edit as well as the ordinary draft beneath it.
   useEffect(() => {
     if (editTarget) {
-      setDraft(editTarget.text);
-      window.requestAnimationFrame(() => {
-        textareaRef.current?.focus();
-        const el = textareaRef.current;
-        if (el) el.setSelectionRange(el.value.length, el.value.length);
-      });
+      textareaRef.current?.focus({ preventScroll: true });
     }
-  }, [editTarget]);
+  }, [editTarget?.id]);
 
   const recorder = useVoiceRecorder(
     voice => {
@@ -96,6 +110,7 @@ export function ChatComposer({ groupMembers, replyTarget, editTarget, placeholde
     window.requestAnimationFrame(() => {
       el?.focus();
       el?.setSelectionRange(start + emoji.length, start + emoji.length);
+      rememberCaret();
     });
   };
 
@@ -103,6 +118,7 @@ export function ChatComposer({ groupMembers, replyTarget, editTarget, placeholde
     setDraft('');
     clearDrafts();
     setRecordedVoice(null);
+    working.patchComposer({ caret: { start: 0, end: 0 } });
   };
 
   const canSendText = draft.trim().length > 0 || ready.length > 0;
@@ -130,10 +146,10 @@ export function ChatComposer({ groupMembers, replyTarget, editTarget, placeholde
 
   const submitVoice = () => {
     if (!recordedVoice) return;
-    // The bubble keeps playing the same blob, so the URL is intentionally
-    // NOT revoked here; only the discard path reclaims it.
+    // The conversation bucket retains the posted blob. Sending voice does
+    // not silently discard text or staged attachments beneath the preview.
     onSend({ text: '', attachments: [], voice: recordedVoice });
-    resetComposer();
+    setRecordedVoice(null);
   };
 
   const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
@@ -153,8 +169,10 @@ export function ChatComposer({ groupMembers, replyTarget, editTarget, placeholde
     addFiles(Array.from(event.dataTransfer.files ?? []));
   };
 
-  const minRows = expanded ? 6 : 1;
-  const maxRows = expanded ? 12 : 4;
+  const hasAccessories = !!replyTarget || !!editTarget || drafts.length > 0 || !!recordedVoice || recorder.recording || !!voiceError;
+  const rowsBudget = Math.max(1, Math.floor((budget - (compactTools ? 64 : 24) - (hasAccessories ? 72 : 0)) / 21));
+  const maxRows = Math.min(expanded ? 12 : 4, rowsBudget);
+  const minRows = Math.min(expanded ? 6 : 1, maxRows);
 
   const emojiPanel = (
     <div className="sk-emoji-panel" data-emoji-panel>
@@ -186,6 +204,7 @@ export function ChatComposer({ groupMembers, replyTarget, editTarget, placeholde
       onDragOver={event => { event.preventDefault(); setDragging(true); }}
       onDragLeave={() => setDragging(false)}
       onDrop={onDrop}>
+      <div className="sk-composer-accessories" hidden={!hasAccessories}>
       {editTarget ? (
         <div className="sk-reply-bar sk-edit-bar" data-edit-banner>
           <div>
@@ -227,7 +246,7 @@ export function ChatComposer({ groupMembers, replyTarget, editTarget, placeholde
             variant="preview" />
           <button type="button" className="sk-voice-discard" aria-label={t('composer.discardVoice')}
             data-voice-discard onClick={() => {
-              if (recordedVoice.url.startsWith('blob:')) URL.revokeObjectURL(recordedVoice.url);
+              working.releaseUrl(recordedVoice.url);
               setRecordedVoice(null);
             }}><Trash2 size={14} /></button>
           <button type="button" className="sk-voice-send" data-voice-send
@@ -242,6 +261,7 @@ export function ChatComposer({ groupMembers, replyTarget, editTarget, placeholde
           description={voiceError === 'denied' ? t('composer.voiceDenied') : t('composer.voiceUnsupported')} />
       )}
       {failed && <Alert tone="danger" title={t('composer.attachFailedTitle')} description={t('composer.attachFailedBody')} />}
+      </div>
 
       <div className="sk-composer" data-composer-mode={editTarget ? 'editing' : 'compose'}>
         <div className="sk-composer-tools">
@@ -295,6 +315,9 @@ export function ChatComposer({ groupMembers, replyTarget, editTarget, placeholde
             data-composer-value={draft}
             data-composer-expanded={expanded ? 'true' : 'false'}
             onValueChange={setDraft}
+            onChange={rememberCaret}
+            onSelect={rememberCaret}
+            onBlur={rememberCaret}
             onEnter={(event: KeyboardEvent<HTMLTextAreaElement>) => {
               event.preventDefault();
               submitText();

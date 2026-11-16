@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>抽屉集 · 应力交互候选</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module">
+      // Vite serves an @fs draft page without transforming its HTML preamble.
+      if (location.pathname.startsWith('/@fs/')) {
+        const refreshPath = '/@react-refresh';
+        const { default: refresh } = await import(/* @vite-ignore */ refreshPath);
+        refresh.injectIntoGlobalHook(window);
+        window.$RefreshReg$ = () => {};
+        window.$RefreshSig$ = () => (type) => type;
+        window.__vite_plugin_react_preamble_installed__ = true;
+      }
+      await import('./chat-rail-motion.tsx');
+    </script>
+  </body>
+</html>

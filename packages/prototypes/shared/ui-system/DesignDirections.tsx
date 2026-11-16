@@ -20,7 +20,7 @@ import {
   Upload, ImageIcon,
   type LucideIcon,
 } from 'lucide-react';
-import { Button, UIProvider } from '@peers-touch/ui';
+import { Avatar, Button, UIProvider, geometry, northStarVariables } from '@peers-touch/ui';
 import { SettingsFeature } from './settings/SettingsFeature';
 import type { SettingsNavigationRequest } from './settings/SettingsFeature';
 import { ChatFeature } from './chat/ChatFeature';
@@ -52,9 +52,25 @@ const PT_BRIDGE = {
   '--pt-text-tertiary': 'var(--sk-text-3)',
   '--pt-surface': 'var(--sk-raised)',
   '--pt-subtle': 'var(--sk-tile)',
-  '--pt-radius-md': 'var(--sk-avatar-radius)',
   '--pt-focus-ring': 'var(--sk-focus-ring)',
 } as CSSProperties;
+
+/** Assembly study keeps the existing token owner, including dark roles. */
+export function assemblyTheme(mode: 'light' | 'dark'): CSSProperties {
+  const palette = northStarVariables(mode, { material: 'flat' });
+  const roles: Record<string, string> = {
+    canvas: 'canvas', surface: 'surface', subtle: 'subtle', tile: 'subtle',
+    text: 'text', 'text-2': 'secondary', 'text-3': 'muted',
+    primary: 'primary', 'primary-ink': 'onPrimary', accent: 'accent', 'on-accent': 'onAccent',
+    danger: 'danger', warning: 'warning', success: 'success',
+    'rail-bg': 'frame', 'shell-bg': 'frame', 'chat-bg': 'catalog', 'card-bg': 'surface',
+    overlay: 'reading', 'card-border': 'border', 'glass-border': 'border',
+    'card-shadow': 'shadow-rest', 'focus-ring': 'focus',
+  };
+  return { ...palette, ...PT_BRIDGE,
+    ...Object.fromEntries(Object.entries(roles).map(([local, shared]) => [`--sk-${local}`, palette[`--pt-${shared}`]])),
+  } as CSSProperties;
+}
 
 const SKINS: Skin[] = [
   { id: 'default', name: '当前默认', desc: '现有产品基线，用于对照' },
@@ -80,8 +96,10 @@ const RAIL_NAV: { icon: LucideIcon; key: RailTab; labelKey: 'tab.chats' | 'nav.m
   { icon: Sparkles, key: 'moments', labelKey: 'nav.moments' },
 ];
 
-export function DesignDirections() {
+export function DesignDirections({ assemblyStudy = false }: { assemblyStudy?: boolean }) {
   const [skinId, setSkinId] = useState('glass');
+  const [assemblyMode] = useState<'light' | 'dark'>(() =>
+    new URLSearchParams(window.location.search).get('theme') === 'dark' ? 'dark' : 'light');
   // Prototype-only command-surface grammar deep link (?cmdgrammar=...).
   // Independent from the frame skin: the experiment freezes layout and only
   // re-expresses the ⌘K panel line system.
@@ -91,7 +109,8 @@ export function DesignDirections() {
   });
   const [wallpaper, setWallpaper] = useState<string>('none');
   const [wallName, setWallName] = useState<string>('无背景');
-  const [railTab, setRailTab] = useState<RailTab>('moments');
+  const [railTab, setRailTab] = useState<RailTab>(() =>
+    assemblyStudy || new URLSearchParams(window.location.search).get('drawer') === 'assembly' ? 'chat' : 'moments');
   const [searchOpen, setSearchOpen] = useState(false);
   const [chatNav, setChatNav] = useState<ChatNavigationRequest | null>(null);
   const [newChatSignal, setNewChatSignal] = useState(0);
@@ -204,7 +223,7 @@ export function DesignDirections() {
   } as CSSProperties;
 
   return (
-    <div className="sk-page">
+    <div className="sk-page" data-assembly-study={assemblyStudy}>
       <div className="sk-switcher">
         <div className="sk-switcher-label">
           <strong>界面皮肤 · 桌面原型北极星</strong>
@@ -237,7 +256,8 @@ export function DesignDirections() {
         <p className="sk-skin-desc">{skin.desc}</p>
       </div>
 
-      <UIProvider theme="light" className={`sk-theme sk-skin-${skinId}`} style={PT_BRIDGE}>
+      <UIProvider theme={assemblyStudy ? assemblyMode : 'light'} className={`sk-theme sk-skin-${skinId}`}
+        style={assemblyStudy ? assemblyTheme(assemblyMode) : PT_BRIDGE}>
       <div className="sk-shell"
         data-wallpaper={noWallpaper ? 'none' : 'image'} style={shellStyle}>
         <div className="sk-shell-bg" aria-hidden="true">
@@ -250,8 +270,10 @@ export function DesignDirections() {
             onManageAccount={openManageAccount}>
             {/* The Popover owns open/close (its injected trigger handler);
                 no onActivate here or the click toggles twice and re-closes. */}
-            <Button actionId="rail.open-self" emphasis="quiet" className="sk-rail-avatar"
-              data-rail-self="true" aria-label="查看我的资料" aria-haspopup="dialog">林</Button>
+            <Button actionId="rail.open-self" emphasis="quiet" appearance="identity" className="sk-rail-avatar"
+              data-rail-self="true" aria-label="查看我的资料" aria-haspopup="dialog">
+              <Avatar name="林" background="#2f6a50" {...geometry.avatar.navigation} />
+            </Button>
           </SelfCardPopover>
           <div className="sk-rail-group">
             <button type="button"
