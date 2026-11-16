@@ -14,6 +14,7 @@ import {
   Empty as PtEmpty,
   Icon,
   IconButton as PtIconButton,
+  Menu,
   Spin as PtSpin,
   TextField as PtTextField,
   Tooltip as PtTooltip,
@@ -53,7 +54,6 @@ import {
 } from './message/chatMessageModel';
 import { ChatMessageTimeline } from './message/ChatMessageTimeline';
 import {
-  chatMessageTailScrollOptions,
   chatMessageTailScrollTop,
   isChatMessageTailPinned,
 } from './message/chatMessageTimelinePolicy';
@@ -79,16 +79,18 @@ const EMPTY_PROJECTED_MESSAGES: ChatMessage[] = [];
 
 interface ChatMessageAreaProps {
   directOpenIntent: DirectConversationOpenIntent | null;
-  /** True below the 720px narrow breakpoint; enables the header back control. */
-  narrow?: boolean;
-  /** Return from the single-pane conversation view to the catalog rail. */
-  onNarrowBack?: () => void;
+  /** Measured frame pressure; controls follow the same assembly snapshot. */
+  compressed?: boolean;
+  compactTools?: boolean;
+  /** Presentation Back preserves runtime selection and the working instance. */
+  onBack?: () => void;
 }
 
 export function ChatMessageArea({
   directOpenIntent,
-  narrow = false,
-  onNarrowBack,
+  compressed = false,
+  compactTools = false,
+  onBack,
 }: ChatMessageAreaProps) {
   const { t } = useTranslation('chat');
   const {
@@ -195,7 +197,6 @@ export function ChatMessageArea({
   const [deletingMessage, setDeletingMessage] = useState(false);
   const [forwardTarget, setForwardTarget] = useState<ChatMessage | null>(null);
   const [reactionMutations, setReactionMutations] = useState<Record<string, MessageReactionMutation>>({});
-  const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const tailPinnedRef = useRef(true);
   const tailReconcilePendingRef = useRef(false);
@@ -399,7 +400,8 @@ export function ChatMessageArea({
   }, [activeTab, activeUlid, loadGroupMembers]);
 
   const scrollToMessageTail = useCallback(() => {
-    bottomRef.current?.scrollIntoView(chatMessageTailScrollOptions());
+    // Only the timeline owns this scroll. scrollIntoView also scrolls clipped
+    // ancestors, pulling the offscreen narrow pane left during its slide-in.
     const container = scrollContainerRef.current;
     if (container) {
       container.scrollTop = chatMessageTailScrollTop(container);
@@ -1009,9 +1011,7 @@ export function ChatMessageArea({
     file: t('chat.social.messageArea.attachmentTypeFile'),
   });
 
-  // Narrow single-pane swap: the back tile returns to the catalog rail.
-  // CSS hides it above the 720px breakpoint (prototype sk-chat-back parity).
-  const narrowBack = narrow ? (
+  const drawerBack = compressed ? (
     <PtIconButton
       actionId="chat-back-to-list"
       className="sc-chat-head__back"
@@ -1021,19 +1021,22 @@ export function ChatMessageArea({
       emphasis="quiet"
       density="compact"
       label={t('chat.social.messageArea.backToList')}
-      onActivate={() => onNarrowBack?.()}
+      onActivate={() => onBack?.()}
     />
   ) : null;
 
+  // All selection branches share WindowDragRegion > div without a root key.
+  // Replacing that root would discard the parked narrow transform before
+  // CSS can transition it; only the composer owns a conversation/edit key.
   if (!activeUlid && directOpenIntent) {
     return (
-      <div
+      <WindowDragRegion mode="none"><div
         className="sc-conversation"
         data-chat-conversation-intent={directOpenIntent.peerPtid}
         data-chat-conversation-intent-state={directOpenIntent.phase}
       >
         <WindowDragRegion><header className="sc-chat-head">
-          {narrowBack}
+          {drawerBack}
           <div className="sc-chat-head-id">
             <div className="sc-chat-head-name">
               <strong>{directOpenIntent.displayName}</strong>
@@ -1074,7 +1077,7 @@ export function ChatMessageArea({
           sending={false}
           capabilities={DESKTOP_CHAT_COMPOSER_CAPABILITIES_MAIN}
         />
-      </div>
+      </div></WindowDragRegion>
     );
   }
 
@@ -1113,7 +1116,7 @@ export function ChatMessageArea({
     : groupSecurityState[activeUlid] === 'ready';
   const unsupportedCallReason = t('chat.social.call.unsupported');
   return (
-    <div
+    <WindowDragRegion mode="none"><div
       className="sc-conversation"
       data-chat-conversation-pane={activeUlid}
       data-session-security={activeTab === 'friend' ? directSecurityState : undefined}
@@ -1134,7 +1137,7 @@ export function ChatMessageArea({
       />
 
       <WindowDragRegion><header className="sc-chat-head">
-        {narrowBack}
+        {drawerBack}
         <div className="sc-chat-head-id">
           <div className="sc-chat-head-name">
             {activeTab === 'group' && editingGroupName ? (
@@ -1231,6 +1234,23 @@ export function ChatMessageArea({
           </div>
         </div>
         <div className="sc-chat-head-actions">
+          {compactTools ? (
+            <Menu label={t('chat.social.detail.title')}
+              actions={[
+                ...(!isAutomatedConversation && !isSelfDirect ? [
+                  { id: 'chat-call-audio', label: t('chat.social.call.startAudio'),
+                    availability: callAvailable ? undefined : { kind: 'disabled' as const, reason: unsupportedCallReason },
+                    onActivate: () => handleStartCall('audio') },
+                  { id: 'chat-call-video', label: t('chat.social.call.startVideo'),
+                    availability: callAvailable ? undefined : { kind: 'disabled' as const, reason: unsupportedCallReason },
+                    onActivate: () => handleStartCall('video') },
+                ] : []),
+                { id: 'chat-open-detail', label: t('chat.social.detail.title'), onActivate: toggleDetail },
+              ]}>
+              <PtIconButton actionId="chat.tools" iconId="more-horizontal"
+                density="compact" emphasis="quiet" label={t('chat.social.detail.title')} />
+            </Menu>
+          ) : <>
           {/* Automated conversations are one-way publishing channels and
               self-direct has no peer: no calls. */}
           {!isAutomatedConversation && !isSelfDirect && (
@@ -1276,6 +1296,7 @@ export function ChatMessageArea({
             aria-expanded={detailOpen}
             onClick={toggleDetail}
           />
+          </>}
         </div>
       </header></WindowDragRegion>
 
@@ -1341,7 +1362,6 @@ export function ChatMessageArea({
           />
         )}
         <div
-          ref={bottomRef}
           className="sc-conversation__bottom-sentinel"
           data-chat-message-bottom-sentinel
         />
@@ -1406,6 +1426,6 @@ export function ChatMessageArea({
         aria-hidden={!activeUlid}
         className="sc-conversation__overlay-host"
       />
-    </div>
+    </div></WindowDragRegion>
   );
 }

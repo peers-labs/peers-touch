@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import subprocess
 import sys
@@ -52,14 +53,17 @@ window = AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
 )
 window.setTitle_("AX responsiveness fixture")
 window.orderBack_(None)
-if sys.argv[3] == "panel":
+if sys.argv[3] in ("panel", "sheet"):
     panel = AppKit.NSOpenPanel.openPanel()
     def selected(response):
         url = panel.URL()
         (root / "selection.json").write_text(json.dumps({
             "response": int(response), "path": str(url.path()) if url else "",
         }))
-    panel.beginWithCompletionHandler_(selected)
+    if sys.argv[3] == "sheet":
+        panel.beginSheetModalForWindow_completionHandler_(window, selected)
+    else:
+        panel.beginWithCompletionHandler_(selected)
 owner = BusyOwner.alloc().init()
 timer = Foundation.NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
     0.02, owner, "tick:", None, True,
@@ -186,7 +190,7 @@ finally:
                 child.wait(timeout=3)
 
     def _probe_busy_owner(
-        self, probe: str, busy_seconds: float, *, panel: bool = False,
+        self, probe: str, busy_seconds: float, *, panel: bool = False, sheet: bool = False,
         arguments: tuple[str, ...] = (),
         probe_timeout: float = 2,
         expected_selection: Path | None = None,
@@ -198,7 +202,7 @@ finally:
             with (root / "owner.log").open("w+") as log:
                 child = subprocess.Popen(
                     (sys.executable, "-c", _BUSY_ACCESSIBILITY_OWNER,
-                     str(root), str(busy_seconds), "panel" if panel else "window"),
+                     str(root), str(busy_seconds), "sheet" if sheet else "panel" if panel else "window"),
                     stdout=log, stderr=log,
                 )
                 try:
@@ -281,13 +285,19 @@ core_foundation.CFRelease(application)
         self.assertLess(elapsed, 2)
 
     def test_fresh_file_selection_commits_through_the_real_panel(self) -> None:
+        self._assert_fresh_file_selection()
+
+    def test_fresh_file_selection_commits_through_the_real_attached_sheet(self) -> None:
+        self._assert_fresh_file_selection(sheet=True)
+
+    def _assert_fresh_file_selection(self, *, sheet: bool = False) -> None:
         with tempfile.TemporaryDirectory(
             prefix="PeersTouchSelectionRegression-", dir=Path.home(),
         ) as raw:
             target = Path(raw).resolve() / "fresh-proof.bin"
             target.write_bytes(b"fresh native selection proof")
             result, elapsed = self._probe_busy_owner(
-                _FILE_CHOOSER_SELECTION_PROBE, 0, panel=True,
+                _FILE_CHOOSER_SELECTION_PROBE, 0, panel=True, sheet=sheet,
                 arguments=(str(target),), probe_timeout=30,
                 expected_selection=target,
             )
@@ -586,16 +596,26 @@ class MacOSStatusItemAdapterTests(unittest.TestCase):
         self.assertIn('"search-multiple-matches"', probe)
         compile(probe, "_FILE_CHOOSER_SELECTION_PROBE", "exec")
 
-    def test_chooser_probe_search_commit_falls_back_to_return_key(self) -> None:
-        # When the Search field rejects AXConfirm with kAXErrorCannotComplete
-        # (-25204), the probe posts the equivalent Return key instead of
-        # hard-failing; every other AX error must still propagate.
-        probe = _FILE_CHOOSER_SELECTION_PROBE
-        self.assertIn("def commit_search_field(", probe)
-        self.assertIn('if "AX error -25204" not in str(error):', probe)
-        self.assertIn("graphics.CGEventPost(0, event)", probe)
-        self.assertIn("key_code = 0x24", probe)
-        compile(probe, "_FILE_CHOOSER_SELECTION_PROBE", "exec")
+    def test_chooser_search_confirmation_never_replays_unknown_action(self) -> None:
+        function = next(
+            node for node in ast.parse(_FILE_CHOOSER_SELECTION_PROBE).body
+            if isinstance(node, ast.FunctionDef) and node.name == "commit_search_field"
+        )
+        code = compile(
+            ast.Module(body=[function], type_ignores=[]), "native-search-confirmation", "exec",
+        )
+        search_element = object()
+        for status in (-25204, -25200, -25205):
+            with self.subTest(status=status):
+                failure = RuntimeError(f"AXConfirm action failed: AX error {status}")
+                action = mock.Mock(side_effect=failure)
+                namespace = {"perform_action": action}
+                exec(code, namespace)
+                with self.assertRaises(RuntimeError) as raised:
+                    namespace["commit_search_field"](search_element)
+                self.assertIs(raised.exception, failure)
+                action.assert_called_once_with(search_element, "AXConfirm")
+        self.assertNotIn("CGEventPost", _FILE_CHOOSER_SELECTION_PROBE)
 
     def test_search_unavailability_sentinels_fall_back_without_faking(self) -> None:
         adapter = MacOSNativeDesktopAdapter(NativeInputMode.EXCLUSIVE_NATIVE_INPUT)

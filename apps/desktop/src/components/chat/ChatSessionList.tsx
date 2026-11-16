@@ -1,7 +1,7 @@
 import { useMemo, useState, useCallback, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { WindowDragRegion } from '../shell/WindowDragRegion';
-import { Button, ContextMenu, Empty, Icon, IconButton, Menu, Segmented, TextField } from '@peers-touch/ui';
+import { Button, ContextMenu, Empty, Icon, IconButton, Menu, Segmented, TextField, geometry } from '@peers-touch/ui';
 import type { MenuAction } from '@peers-touch/ui';
 import { GroupSquareAvatar } from '../common/GroupSquareAvatar';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
@@ -583,7 +583,7 @@ export function ChatSessionList({
                   onValueChange={setSearchText}
                   clearable
                   onClear={() => setSearchText('')}
-                  onKeyDown={event => { if (event.key === 'Escape') closeSearch(); }}
+                  onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); closeSearch(); } }}
                 />
               </span></WindowDragRegion>
               <IconButton
@@ -809,7 +809,7 @@ export function ChatSessionList({
                               }),
                             )}
                             name={name}
-                            size={40}
+                            {...geometry.avatar.catalog}
                           />
                           {unreadBadge}
                         </span>
@@ -827,7 +827,7 @@ export function ChatSessionList({
                             remoteUrl={c.avatar}
                             actorPtid={c.peerPtid || null}
                             name={name}
-                            size={40}
+                            {...geometry.avatar.catalog}
                           />
                           {c.peerPtid && peerOnline[c.peerPtid] ? (
                             <span className="sc-session-presence" data-presence="online" aria-hidden />

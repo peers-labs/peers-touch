@@ -18,7 +18,7 @@ function rule(selector: string): string {
 describe('conversation stage surface (wide surfaces)', () => {
   it('shares the rail surface material and fills its whole flex cell', () => {
     const stage = rule('.sc-conversation');
-    expect(stage).toContain('background: var(--pt-surface)');
+    expect(stage).toContain('background: var(--pt-reading)');
     expect(stage).toContain('flex: 1');
     expect(stage).toContain('height: 100%');
     expect(stage).toContain('overflow: hidden');
@@ -34,7 +34,7 @@ describe('conversation stage surface (wide surfaces)', () => {
 
   it('keeps the empty state on the same surface material', () => {
     expect(rule('.sc-conversation--empty')).toContain(
-      'background: var(--pt-surface)',
+      'background: var(--pt-reading)',
     );
   });
 
@@ -48,21 +48,15 @@ describe('conversation stage surface (wide surfaces)', () => {
   });
 });
 
-describe('conversation stage surface (720px single-pane slide)', () => {
+describe('conversation stage surface (shared continuous guide)', () => {
   it('becomes a borderless full-stage sliding overlay in narrow mode', () => {
-    const narrowRule = stylesheet.match(
-      /\.sc-chat\[data-narrow='true'\]\[data-narrow-open='true'\] \.sc-conversation\s*\{[^}]*\}/,
-    )?.[0] ?? '';
-    expect(narrowRule).toContain('transform: translateX(0)');
-    expect(narrowRule).toContain('visibility: visible');
+    expect(stylesheet).toContain(".sc-chat-work[data-visible='false']");
     // The resting rule positions the pane as a full-stage overlay without
     // reintroducing a card frame.
-    const parkedRule = stylesheet.match(
-      /\.sc-chat\[data-narrow='true'\] \.sc-conversation\s*\{[^}]*\}/,
-    )?.[0] ?? '';
+    const parkedRule = rule('.sc-chat-work');
     expect(parkedRule).toContain('position: absolute');
     expect(parkedRule).toContain('inset: 0');
-    expect(parkedRule).toContain('translateX(100%)');
+    expect(parkedRule).toContain('translateX(var(--sc-work-x))');
     expect(parkedRule).not.toMatch(/\bmargin\s*:/);
     expect(parkedRule).not.toMatch(/\bborder(-radius)?\s*:/);
     expect(parkedRule).not.toMatch(/\bbox-shadow\s*:/);

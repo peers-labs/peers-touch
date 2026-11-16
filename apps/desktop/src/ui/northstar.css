@@ -17,7 +17,7 @@
 
 .pt-ui.ds-theme {
   color: var(--pt-text);
-  background: var(--pt-surface);
+  background: var(--pt-frame);
   font-family: var(--pt-font);
   /* Own the full viewport instead of relying on a 100% parent chain: the
      outer antd App wrapper has no intrinsic height, so width/height:100%
@@ -47,7 +47,6 @@
   --pt-rail-top: 0px;
   /* Non-mac windows are square; macOS overrides this to the native corner. */
   --pt-window-radius: 0px;
-  --pt-frame-inset: 3px;
 }
 :root[data-platform='macos'] {
   --pt-titlebar-inset: 8px;
@@ -61,8 +60,8 @@
      (~13.5pt circular-equivalent on a 2x display). The previous 20px was read
      off physical pixels instead of CSS points, so its arc overshot the native
      corner and left a crescent sliver between the native edge and this frame.
-     CSS points equal screen points; 14px keeps the frame on the native edge,
-     and the 3px border absorbs the residual continuous-vs-circular difference. */
+     CSS points equal screen points; 14px traces the native edge. The shared
+     1px inset exposes only the thin structural perimeter. */
   --pt-window-radius: 14px;
 }
 
@@ -85,10 +84,10 @@
   display: flex;
   flex-direction: row;
   overflow: hidden;
-  background: var(--pt-surface);
+  background: var(--pt-frame);
   color: var(--pt-text);
   border-style: solid;
-  border-color: var(--pt-surface);
+  border-color: var(--pt-frame);
   border-width: var(--pt-frame-inset) var(--pt-frame-inset) var(--pt-frame-inset) 0;
   border-radius: var(--pt-window-radius);
 }
@@ -107,7 +106,7 @@
   gap: 4px;
   /* Keep the original L1 surface color and extend it around the perimeter.
      L2/subtle and the reading stage keep their existing palette. */
-  background: var(--pt-surface);
+  background: var(--pt-frame);
 }
 /* Rail/stage hairline. It begins at --pt-rail-top (the bottom of the title
    band), not at the window's top edge: with macOS titleBarStyle Overlay the
@@ -149,30 +148,8 @@
 .ds-rail-spacer { flex: 1; }
 .ds-rail-entry { position: relative; display: inline-flex; }
 
-/* Self identity tile: peers-ui Button reshaped to the 44px rounded square.
- * The avatar image/fallback fills the tile (real profile material wins — we
- * never repaint a user photo into a pine block). The rail-scoped selectors
- * deliberately outrank the library button chrome. */
-.ds-rail .ds-rail-avatar.pt-button {
-  width: 44px;
-  height: 44px;
-  min-height: 0;
-  margin-bottom: 18px;
-  padding: 0;
-  border: 0;
-  border-radius: 12px;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  background: transparent;
-  box-shadow: 0 8px 20px -14px rgba(20, 24, 22, 0.5);
-  transition: box-shadow 0.16s cubic-bezier(0.22, 1, 0.36, 1);
-}
-.ds-rail .ds-rail-avatar.pt-button:hover {
-  box-shadow: 0 12px 26px -12px rgba(20, 24, 22, 0.6);
-}
-.ds-rail .ds-rail-avatar.pt-button > .pt-button-content { width: 100%; height: 100%; display: grid; place-items: center; }
-.ds-rail .ds-rail-avatar.pt-button:focus-visible { outline: 2px solid var(--pt-focus); outline-offset: 2px; }
+/* Identity control geometry and chrome belong to peers-ui. */
+.ds-rail-avatar { margin-bottom: 18px; }
 
 /* Nav tiles: fixed 38px squares. Neutralized peers-ui IconButton chrome. */
 .ds-rail .ds-rail-group .pt-icon-button,

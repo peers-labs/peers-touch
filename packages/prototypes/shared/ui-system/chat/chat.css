@@ -1,34 +1,66 @@
 /* ChatFeature — chats/contacts catalog + conversation surface.
    Reuses .sk-conv-* material classes; layout lives here. */
 
-/* Desktop parity: session/contacts catalog owns the LEFT column,
-   conversation view sits to its right (desktop SocialChatPage order). */
+/* One assembly snapshot owns all geometry. Paper width and exposure differ:
+   the catalogue retracts behind the working drawer, never stretches to S. */
 .sk-chat-feature {
   position: relative;
   flex: 1; min-width: 0; min-height: 0;
-  display: grid;
-  grid-template-columns: var(--pt-chat-rail-width, 300px) minmax(0, 1fr);
-  /* No fixed min-width: under extreme squeeze the surface REFLOWS into the
-     single-pane swap + compact insets (WeChat parity), it must never force a
-     640px floor that gets clipped at the frame edge. Horizontal overflow is
-     structurally impossible — every child chain has min-width:0 and the
-     message stream is the only scroll host (vertical). */
+  display: block; overflow: clip;
+}
+.sk-catalog-guide {
+  position: absolute; inset: 0 auto 0 0;
+  overflow: clip;
+}
+.sk-catalog-guide[data-drawn='false'] { visibility: hidden; }
+.sk-catalog-guide > .sk-conv-rail {
+  width: var(--sk-catalog-paper); height: 100%; min-height: 0;
+  margin: 0; padding: 0 2px 8px;
+  border-right: 0;
+}
+.sk-catalog-guide .sk-conv-item,
+.sk-catalog-guide .sk-rail-header {
+  width: min(100%, calc(var(--sk-catalog-visible) - 4px));
+}
+.sk-catalog-guide .sk-conv-row {
+  width: min(100%, calc(var(--sk-catalog-visible) - 4px));
+  gap: 10px; padding-left: 10px; padding-right: 10px;
+  height: var(--pt-chat-session-row-height); box-sizing: border-box;
+}
+.sk-catalog-guide .sk-conv-avatar { flex: 0 0 var(--pt-avatar-catalog-size); }
+.sk-chat-feature[data-catalog-rows='compact'] .sk-rail-header {
+  justify-content: center; padding-left: 0; padding-right: 0;
+}
+.sk-chat-feature[data-catalog-rows='compact'] .sk-conv-actions,
+.sk-chat-feature[data-catalog-rows='compact'] [data-contact-section='incoming'] .sk-section-body,
+.sk-chat-feature[data-catalog-rows='compact'] [data-contact-section='outgoing'] .sk-section-body,
+.sk-chat-feature[data-catalog-rows='compact'] [data-contact-section='history'] .sk-section-body {
+  display: none;
+}
+.sk-chat-feature[data-catalog-rows='compact'] .sk-conv-title { visibility: hidden; }
+.sk-chat-feature[data-catalog-rows='compact'] .sk-conv-meta { display: none; }
+.sk-chat-feature[data-catalog-rows='compact'] .sk-conv-row { justify-content: center; }
+.sk-chat-feature[data-catalog-rows='compact'] .sk-section-compact {
+  align-self: flex-start; margin-left: 14px;
 }
 .sk-chat-main {
-  grid-column: 2; min-width: 0; min-height: 0; display: flex;
+  position: absolute; inset: 0 auto 0 0;
+  width: var(--sk-work-width); min-width: 0; min-height: 0; display: flex;
+  transform: translateX(var(--sk-work-x)); z-index: 2;
   background: var(--sk-overlay);
 }
-.sk-chat-feature > .sk-conv-rail {
-  grid-column: 1; width: auto; margin: 0;
-  border-right: 1px solid color-mix(in srgb, var(--sk-text) 8%, transparent);
-}
+.sk-chat-main[data-conversation-visible='false'] { visibility: hidden; }
 .sk-chat-main > * { flex: 1; min-width: 0; }
+.sk-chat-rest-placeholder {
+  position: absolute; top: 0; bottom: 0; left: var(--sk-catalog-paper); right: 0;
+  display: grid; place-items: center; pointer-events: none; min-width: 0;
+}
 .sk-chat-placeholder {
   display: grid; place-items: center; height: 100%;
 }
 .sk-chat-rail-resizer {
   position: absolute; top: 0; bottom: 0;
-  left: var(--pt-chat-rail-width, 300px); width: 10px; margin-left: -5px;
+  left: var(--sk-catalog-visible); width: 10px; margin-left: -5px;
   z-index: 3; cursor: col-resize; touch-action: none;
 }
 .sk-chat-rail-resizer-line {
@@ -37,22 +69,7 @@
 .sk-chat-rail-resizer:hover .sk-chat-rail-resizer-line,
 .sk-chat-rail-resizer:focus-visible .sk-chat-rail-resizer-line,
 .sk-chat-rail-resizer[data-dragging='true'] .sk-chat-rail-resizer-line { background: var(--sk-accent); }
-@media (min-width: 721px) {
-  .sk-conv-rail[data-rail-compact='true'] { padding: 0 2px 8px; }
-  .sk-conv-rail[data-rail-compact='true'] .sk-rail-header {
-    justify-content: center; padding: 12px 0 4px;
-  }
-  .sk-conv-rail[data-rail-compact='true'] .sk-conv-title,
-  .sk-conv-rail[data-rail-compact='true'] .sk-conv-meta,
-  .sk-conv-rail[data-rail-compact='true'] .sk-conv-actions,
-  .sk-conv-rail[data-rail-compact='true'] .sk-conv-empty { display: none; }
-  .sk-conv-rail[data-rail-compact='true'] .sk-conv-row { justify-content: center; padding: 8px 0; }
-  .sk-conv-rail[data-rail-compact='true'] [data-contact-section='incoming'] .sk-section-body,
-  .sk-conv-rail[data-rail-compact='true'] [data-contact-section='outgoing'] .sk-section-body,
-  .sk-conv-rail[data-rail-compact='true'] [data-contact-section='history'] .sk-section-body,
-  .sk-conv-rail[data-rail-compact='true'] .sk-contact-empty { display: none; }
-  .sk-section-compact { align-self: center; margin: 4px 0; }
-}
+.sk-chat-rail-resizer[data-available='false'] { visibility: hidden; pointer-events: none; }
 
 /* Rail header: one slim row — 消息/联系人 segmented, an in-rail search tile
    and a single rounded-square new-conversation control. The search tile is a
@@ -116,32 +133,20 @@
 .sk-rail-new:hover { color: var(--sk-text); background: var(--sk-btn-quiet-bg-hover); }
 
 /* session row extensions */
-.sk-conv-row .sk-conv-avatar { flex-shrink: 0; position: relative; }
+.sk-conv-row .sk-conv-avatar { display: inline-flex; flex-shrink: 0; position: relative; }
 .sk-conv-name-line {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  line-height: 18px;
 }
 .sk-conv-flags { display: inline-flex; align-items: center; gap: 4px; color: var(--sk-text-3); flex-shrink: 0; }
 .sk-conv-preview {
   display: flex; align-items: center; gap: 6px; min-width: 0;
+  line-height: 16px;
 }
 .sk-conv-last {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1;
 }
 .sk-conv-row.is-pinned-row { background: color-mix(in srgb, var(--sk-tile) 55%, transparent); }
-
-/* Group composite avatar: 2×2 (2–4 members) or 3×3 (5–9), shared verbatim
-   by session list and profile hero so the two surfaces can never diverge. */
-.sk-group-avatar {
-  flex-shrink: 0;
-  display: grid; gap: 1px;
-  border-radius: var(--sk-avatar-radius); overflow: hidden;
-  background: var(--sk-card-border);
-}
-.sk-group-avatar-tile {
-  display: grid; place-items: center;
-  color: rgba(255,255,255,.92); font-weight: 650;
-  min-width: 0; line-height: 1;
-}
 
 /* presence dot + unread badge on the row avatar */
 .sk-presence-dot {
@@ -407,49 +412,43 @@
 }
 .sk-activity-action:hover { text-decoration: underline; }
 
-/* WeChat-style persistent two-pane: rail + chat stay side by side down to
-   tablet width; only below 720px (phones) does the rail swap to single-pane
-   with a back control in the header. The back chevron is CSS-hidden above
-   that breakpoint (desktop sessions never leave the list). */
+/* Controls consume work-bay presentation, never viewport breakpoints. */
 .sk-chat-back { display: none; }
-
-@media (max-width: 720px) {
-  .sk-chat-feature { grid-template-columns: minmax(0, 1fr); }
-  /* Reset the two-pane grid-column placements: without this the explicit
-     grid-column:2 on main creates an implicit empty auto track and the
-     conversation starts mid-shell (the old rail's width). */
-  .sk-chat-feature > .sk-conv-rail,
-  .sk-chat-feature > .sk-chat-main { grid-column: 1; }
-  .sk-chat-feature > .sk-conv-rail { display: flex; width: auto; border-right: 0; }
-  .sk-chat-feature > .sk-chat-main { display: none; }
-  .sk-chat-feature.sk-narrow-open > .sk-conv-rail { display: none; }
-  .sk-chat-feature.sk-narrow-open > .sk-chat-main { display: flex; }
-  .sk-chat-back {
+.sk-chat-feature[data-compressed='true'] .sk-chat-back {
     display: inline-grid; place-items: center;
     width: 30px; height: 30px; flex-shrink: 0; padding: 0;
     border: 0; border-radius: 9px; cursor: pointer;
     background: transparent; color: var(--sk-text-2);
-  }
-  .sk-chat-back:hover { background: var(--sk-btn-quiet-bg-hover); color: var(--sk-text); }
-  /* Single-pane compact insets (WeChat parity): tighter side padding so the
-     thread keeps usable width; the header stays one row with the back tile. */
-  .sk-msg-stream { padding-left: 14px; padding-right: 18px; }
-  .sk-chat-head { padding-left: 10px; padding-right: 10px; gap: 6px; }
-  .sk-chat-head-actions { gap: 2px; }
-  .sk-chat-head-actions .sk-head-action { width: 32px; height: 32px; min-height: 32px; }
-  .sk-composer-zone { min-width: 0; }
 }
-
-/* Phone-narrow header: keep back, title, audio; video/info already live in
-   the detail sheet reachable on wider surfaces. Bubbles take more of the
-   row; composer tools tighten so the input never overflows. */
-@media (max-width: 480px) {
-  .sk-chat-head [data-action-id='chat.call-video'],
-  .sk-chat-head [data-action-id='chat.open-info'] { display: none; }
-  .sk-msg-stream { padding-left: 10px; padding-right: 14px; }
-  .sk-msg { max-width: 88%; }
-  .sk-composer { gap: 6px; padding: 6px; }
-  .sk-composer-tools { gap: 0; }
+.sk-chat-back:hover { background: var(--sk-btn-quiet-bg-hover); color: var(--sk-text); }
+.sk-chat-feature[data-work-compact='true'] .sk-msg-stream { padding-left: 10px; padding-right: 14px; }
+.sk-chat-feature[data-work-compact='true'] .sk-chat-head { padding-left: 10px; padding-right: 10px; gap: 6px; }
+.sk-chat-feature[data-work-compact='true'] .sk-chat-head-actions { gap: 2px; }
+.sk-chat-feature[data-work-compact='true'] .sk-msg { max-width: 88%; }
+.sk-chat-feature[data-work-compact='true'] .sk-composer { gap: 6px; padding: 6px; }
+.sk-chat-feature[data-work-compact='true'] .sk-composer-tools { gap: 0; }
+.sk-work-task {
+  display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0;
+}
+.sk-working-composer { flex-shrink: 0; min-width: 0; }
+.sk-working-composer[hidden] { display: none; }
+.sk-leaf-guide {
+  position: absolute; top: 0; bottom: 0; right: 0;
+  width: var(--sk-leaf-width); transform: translateX(var(--sk-leaf-x));
+  z-index: 8;
+}
+.sk-leaf-guide[data-drawn='false'] { visibility: hidden; }
+.sk-leaf-guide > .sk-side-sheet {
+  position: relative; inset: auto; width: 100%; height: 100%;
+}
+.sk-leaf-guide .sk-side-head {
+  justify-content: space-between; gap: 8px;
+}
+.sk-leaf-guide .sk-side-head > strong {
+  min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sk-leaf-guide .sk-side-head-actions {
+  position: static; transform: none; flex-shrink: 0;
 }
 
 /* ── Increment 11: header / sheets / search / thread / call ── */
@@ -545,11 +544,6 @@
   box-shadow: -10px 0 30px -18px rgba(20, 24, 22, .30);
   display: flex; flex-direction: column;
 }
-/* Phone squeeze: the sheet takes the full pane instead of leaving an
-   unreadable sliver of chat beside a fixed 300px panel (WeChat parity). */
-@media (max-width: 560px) {
-  .sk-side-sheet { width: auto; left: 0; right: 0; border-left: 0; }
-}
 /* The sheet overlays the conv view from the frame edge; its 52px band (8 top
    + 44 row) mirrors the chat header so the titles and hairlines coincide. */
 .sk-side-head {
@@ -585,9 +579,6 @@
   padding: 14px 12px 16px;
 }
 .sk-profile-sub { font-size: 11.5px; color: var(--sk-text-3); }
-/* Hero group avatar is the same composite as the list, only larger; no
-   surface-specific tile repainting. */
-.sk-profile-hero .sk-group-avatar { border-radius: 16px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sk-text) 8%, transparent); }
 .sk-profile-avatar-box { position: relative; }
 /* Owner/admin group avatar change: camera badge on the hero corner. */
 .sk-profile-avatar-box .sk-profile-camera.pt-icon-button {
@@ -611,8 +602,6 @@
 .pt-button.sk-profile-name[data-profile-edit-name='true']:hover {
   background: color-mix(in srgb, var(--sk-text) 6%, transparent);
 }
-.sk-group-avatar-image { display: grid; place-items: center; padding: 0; }
-.sk-group-avatar-image img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
 .sk-profile-card {
   display: flex; flex-direction: column; gap: 8px;
@@ -1074,23 +1063,18 @@
   border-radius: 999px; opacity: 0; transition: opacity .12s;
   background: var(--sk-overlay);
   box-shadow: 0 4px 14px -6px rgba(28,46,32,.35);
-  z-index: 4; white-space: nowrap;
+  z-index: 4; white-space: nowrap; pointer-events: none;
 }
 .sk-msg-peer .sk-msg-actions-bar { left: calc(100% + 8px); right: auto; }
 .sk-msg-me .sk-msg-actions-bar { right: calc(100% + 8px); left: auto; }
 .sk-msg:hover .sk-msg-actions-bar,
-.sk-msg:focus-within .sk-msg-actions-bar { opacity: 1; }
-@media (max-width: 720px) {
-  /* Phone width: float just above the bubble's outer edge instead of
-     pushing the stream. Unified-left own messages share the peer (right)
-     side; only sides-mode own messages keep the left outer edge. */
-  .sk-msg-peer .sk-msg-actions-bar,
-  .sk-chat-feature[data-message-layout='left'] .sk-msg-me .sk-msg-actions-bar {
-    left: auto; right: 0; top: auto; bottom: calc(100% + 6px);
-  }
-  .sk-msg-me .sk-msg-actions-bar {
-    right: auto; left: 0; top: auto; bottom: calc(100% + 6px);
-  }
+.sk-msg:focus-within .sk-msg-actions-bar { opacity: 1; pointer-events: auto; }
+/* The assembly reserves a whole local rail when side space cannot hold it.
+   Its slot stays occupied on hover exit: no neighboring message or recovery
+   control can be covered, and hover never changes the stream's geometry. */
+.sk-chat-feature[data-message-tools='below'] .sk-msg-actions-bar {
+  position: relative; inset: auto; width: max-content; max-width: 100%;
+  margin-top: 4px;
 }
 .sk-msg-action {
   width: 26px; height: 26px; border: 0; border-radius: 50%;
@@ -1264,7 +1248,19 @@
   position: relative; flex-shrink: 0; min-width: 0;
   display: flex; flex-direction: column; gap: 8px;
   padding: var(--pt-composer-outer-inset);
+  max-height: var(--sk-composer-budget);
+  box-sizing: border-box;
 }
+.sk-composer-accessories {
+  display: flex; flex-direction: column; gap: 8px; min-height: 0;
+  overflow-y: auto; overflow-x: hidden; flex: 0 1 auto;
+}
+.sk-composer-accessories[hidden] { display: none; }
+.sk-composer-accessories > * { flex-shrink: 0; }
+.sk-chat-feature[data-work-compact='true'] .sk-composer {
+  display: grid; grid-template-columns: minmax(0, 1fr) 34px 36px;
+}
+.sk-chat-feature[data-work-compact='true'] .sk-composer-tools { grid-column: 1 / -1; }
 .sk-composer-zone > .pt-alert { margin: 0 4px; }
 /* Width/alignment only — the pill's own padding (symmetric 8px) is owned by
    design-directions.css so tools/send keep one rhythm. */

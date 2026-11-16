@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useId } from 'react';
 import { registerDevPlugin } from '../registry';
 import { api } from '../../services/desktop_api';
 import type { StationListResponse } from '../../services/desktop_api';
@@ -15,6 +15,7 @@ function WorktreeBadge() {
   const [expanded, setExpanded] = useState(false);
   const [stationInfo, setStationInfo] = useState<StationListResponse | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const panelId = useId();
 
   const authenticated = useSessionStore((s) => s.authenticated);
   const user = useSessionStore((s) => s.currentUser);
@@ -52,14 +53,27 @@ function WorktreeBadge() {
   );
 
   return (
-    <div ref={panelRef} style={{ position: 'relative', pointerEvents: 'auto' }}>
-      <span
+    <div
+      ref={panelRef}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') setExpanded(false);
+      }}
+      style={{ position: 'relative', pointerEvents: 'auto', minWidth: 0, display: 'flex' }}
+    >
+      <button
+        type="button"
+        data-dev-worktree-toggle
+        aria-label={`${WORKTREE_BADGE_PREFIX} ${worktree}${branch ? ` | ${branch}` : ''}`}
+        aria-expanded={expanded}
+        aria-controls={panelId}
+        title={`${WORKTREE_BADGE_PREFIX} ${worktree}${branch ? ` | ${branch}` : ''}`}
         onClick={() => setExpanded((v) => !v)}
         style={{
           display: 'inline-flex',
           alignItems: 'center',
           gap: 4,
           padding: '2px 6px',
+          border: 0,
           borderRadius: 4,
           background: expanded ? 'rgba(20,24,22,0.55)' : 'rgba(20,24,22,0.32)',
           backdropFilter: 'blur(6px)',
@@ -68,28 +82,27 @@ function WorktreeBadge() {
           fontSize: 10,
           fontFamily: 'monospace',
           lineHeight: 1.4,
+          whiteSpace: 'nowrap',
           cursor: 'pointer',
           userSelect: 'none',
         }}
       >
-        <span style={{ color: '#8f8' }}>{WORKTREE_BADGE_PREFIX}</span>
-        <span>{worktree}</span>
-        {branch && branch !== worktree && (
-          <>
-            <span style={{ color: '#555' }}>|</span>
-            <span style={{ color: '#ff8' }}>{branch}</span>
-          </>
-        )}
-      </span>
+        {WORKTREE_BADGE_PREFIX}
+      </button>
 
       {expanded && (
         <div
+          id={panelId}
+          data-dev-worktree-panel
           style={{
             position: 'absolute',
             bottom: '100%',
             left: 0,
             marginBottom: 4,
-            minWidth: 260,
+            boxSizing: 'border-box',
+            width: 'min(360px, calc(100vw - 8px))',
+            maxHeight: 'calc(100dvh - 40px)',
+            overflowY: 'auto',
             padding: '8px 10px',
             borderRadius: 6,
             background: 'rgba(20,24,22,0.68)',
@@ -99,10 +112,13 @@ function WorktreeBadge() {
             fontSize: 11,
             fontFamily: 'monospace',
             lineHeight: 1.6,
-            whiteSpace: 'nowrap',
+            whiteSpace: 'normal',
             boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
           }}
         >
+          <Row label="worktree" value={worktree} color="#8f8" />
+          {branch && <Row label="branch" value={branch} color="#ff8" />}
+          <Divider />
           <Row label="station" value={activeRoute?.endpoint_origin || '—'} color="#8cf" />
           {activeEntry?.display_name && (
             <Row label="label" value={activeEntry.display_name} color="#8cf" />
@@ -141,8 +157,8 @@ function WorktreeBadge() {
 function Row({ label, value, color }: { label: string; value: string; color: string }) {
   return (
     <div style={{ display: 'flex', gap: 8 }}>
-      <span style={{ color: '#888', minWidth: 56 }}>{label}:</span>
-      <span style={{ color, overflow: 'hidden', textOverflow: 'ellipsis' }}>{value}</span>
+      <span style={{ color: '#888', minWidth: 56, flexShrink: 0 }}>{label}:</span>
+      <span style={{ color, minWidth: 0, overflowWrap: 'anywhere' }}>{value}</span>
     </div>
   );
 }

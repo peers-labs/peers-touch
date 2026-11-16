@@ -1,6 +1,7 @@
 """Object-identity, protocol, deadline and complete scope-cleanup regressions."""
 
 import ctypes
+import inspect
 import json
 import os
 import subprocess
@@ -15,7 +16,10 @@ from tooling.acceptance.drivers.native.base import NativeOperatorObservation
 from tooling.acceptance.drivers.native.macos import MacOSNativeDesktopAdapter
 from tooling.acceptance.drivers.native.macos_ax import AXReadSession
 from tooling.acceptance.drivers.native.macos_operator import (
-    FocusObjects, NativeFocusUnavailable, OperatorScope, _encode, _failure, _read_line,
+    OperatorScope,
+)
+from tooling.acceptance.drivers.native.macos_operator_probe import (
+    FocusObjects, NativeFocusUnavailable, _encode, _failure, _read_line,
 )
 
 
@@ -43,9 +47,26 @@ def synthetic_native():
 
 
 _SYNTHETIC_SUPPORT = (
-    "from tooling.acceptance.tests.test_macos_operator import synthetic_native\n"
+    "import ctypes\nfrom types import SimpleNamespace\nfrom unittest.mock import Mock\n"
+    + inspect.getsource(synthetic_native)
+    + "\n"
     "globals().update(synthetic_native())\n"
 )
+_LEAN_IMPORT_GUARD = """
+import sys
+class LeanObserverImports:
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.startswith(("tooling.acceptance.core", "AppKit", "Foundation", "Quartz")) or (
+            fullname in (
+                "tooling.acceptance.drivers.native.base",
+                "tooling.acceptance.drivers.native.macos",
+                "tooling.acceptance.drivers.native.macos_operator",
+                "tooling.acceptance.drivers.native.runtime",
+            )
+        ):
+            raise ImportError("heavy observer dependency: " + fullname)
+sys.meta_path.insert(0, LeanObserverImports())
+"""
 
 
 class FocusObjectTests(unittest.TestCase):
@@ -85,8 +106,8 @@ class FocusObjectTests(unittest.TestCase):
         self, objects, clock, session, *, mode="operator", pid=0,
         end=1.0, focus_end=None,
     ):
-        with patch("tooling.acceptance.drivers.native.macos_operator.time", clock), patch(
-            "tooling.acceptance.drivers.native.macos_operator.AXReadSession", return_value=session,
+        with patch("tooling.acceptance.drivers.native.macos_operator_probe.time", clock), patch(
+            "tooling.acceptance.drivers.native.macos_operator_probe.AXReadSession", return_value=session,
         ):
             return objects.observe(
                 mode, pid, end, focus_end=end if focus_end is None else focus_end,
@@ -279,6 +300,53 @@ class OperatorProtocolTests(unittest.TestCase):
                 self.assertIsNotNone(scope._process.poll())
         self.addCleanup(release)
         return scope
+
+    def test_cold_child_focus_cannot_import_parent_runtime_or_python_appkit(self):
+        scope = self.scope(_LEAN_IMPORT_GUARD + _SYNTHETIC_SUPPORT)
+        first = scope.observe("operator", 0)
+        second = scope.observe("operator-panel", 42)
+        self.assertEqual(first.operator_state, second.operator_state)
+        self.assertTrue(second.file_chooser.present)
+        scope.close()
+        self.assertEqual(scope._process.poll(), 0)
+
+    @unittest.skipUnless(sys.platform == "darwin", "NSWorkspace is macOS-only")
+    def test_actual_workspace_queries_fit_cold_budget_without_python_bridge(self):
+        completed = subprocess.run(
+            (
+                sys.executable, "-c", _LEAN_IMPORT_GUARD + """
+import time
+started = time.monotonic()
+from tooling.acceptance.drivers.native.macos_operator_probe import (
+    OPERATOR_FOCUS_STABILITY_TIMEOUT_SECONDS,
+)
+from tooling.acceptance.drivers.native.macos_workspace import frontmost_pid
+assert frontmost_pid() > 0
+assert frontmost_pid() > 0
+assert time.monotonic() - started < OPERATOR_FOCUS_STABILITY_TIMEOUT_SECONDS
+""",
+            ),
+            capture_output=True, text=True, timeout=3,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_slow_frontmost_query_retains_zero_samples_and_original_deadline(self):
+        scope = self.scope(_SYNTHETIC_SUPPORT + """
+import time
+def frontmost_pid():
+    time.sleep(1.05)
+    return 41
+""")
+        with self.assertRaises(BlockedError) as caught:
+            scope.observe("operator", 0)
+        facts = caught.exception.diagnostic.to_dict()["resourceChecks"][0]["observed"]
+        self.assertEqual(facts["errorType"], "TimeoutError")
+        self.assertEqual(facts["focusSamplesCompleted"], 0)
+        self.assertGreater(facts["focusBudgetRemainingAtEntrySeconds"], 0)
+        self.assertLessEqual(facts["focusBudgetRemainingAtEntrySeconds"], 1)
+        self.assertGreaterEqual(facts["frontmostReadElapsedSeconds"], 1.05)
+        scope.close()
+        self.assertEqual(scope._process.poll(), 0)
 
     def test_one_child_reused_for_fresh_reads_and_close_is_terminal(self):
         scope = self.scope()

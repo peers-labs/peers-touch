@@ -17,6 +17,10 @@ class NativeCurrentProfileTwoClientEntrypoint(NativeTwoClientGate):
 
     gate_id = CURRENT_PROFILE_GATE_ID
 
+    def prove_additional_journey_assertions(self) -> None:
+        from tooling.acceptance.gates.chat.drawer_layout import prove_drawer_layout
+        self.step("layout.drawer", lambda: prove_drawer_layout(self), "bob")
+
     def __init__(self) -> None:
         cell_id = os.environ.get("PT_ACCEPTANCE_RUNTIME_CELL", "").strip()
         if cell_id != "desktop-macos-native":

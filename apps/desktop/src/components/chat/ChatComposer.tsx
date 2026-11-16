@@ -552,37 +552,23 @@ export function ChatComposer({
   // collapsed values are plain numbers. Only numbers take a px suffix —
   // appending px to a min() expression yields invalid CSS, which silently
   // dropped the min/max-height contract and made the expand toggle a no-op.
+  const availableInput = 'max(34px, calc(var(--sc-composer-budget, 280px) - 88px))';
   const inputMinHeight = inputExpanded
-    ? visualLayout.composerInputExpandedMinHeight
+    ? `min(120px, ${availableInput})`
     : visualLayout.composerInputMinHeight;
-  const inputMaxHeight = inputExpanded
-    ? visualLayout.composerInputExpandedMaxHeight
-    : 180;
+  const inputMaxHeight = `min(${inputExpanded ? 320 : 180}px, ${availableInput})`;
   const cssLength = (length: number | string): string =>
     (typeof length === 'number' ? `${length}px` : length);
 
-  // North-star composer auto-grow (prototype sk-composer parity): the native
-  // rows=1 box never grows on its own, so clamp its explicit height between the
-  // CSS min/max contract from scrollHeight. Collapsed starts at one line and
-  // grows with content; expand switches to the policy's large surface.
+  // TextArea owns growth and reacts to the frame budget. The composer only
+  // notifies the message viewport when its occupied height changes.
   useLayoutEffect(() => {
     const element = textareaRef.current;
     if (!element) return;
-    const computed = window.getComputedStyle(element);
-    const minHeight = Number.parseFloat(computed.minHeight) || 0;
-    const maxHeight = Number.parseFloat(computed.maxHeight) || Number.POSITIVE_INFINITY;
-    element.style.height = 'auto';
-    const nextHeight = Math.min(Math.max(element.scrollHeight, minHeight), maxHeight);
-    const previousHeight = Number.parseFloat(element.dataset.composerHeight ?? '0') || 0;
-    element.style.height = `${nextHeight}px`;
-    element.style.overflowY = element.scrollHeight > maxHeight + 1 ? 'auto' : 'hidden';
-    element.dataset.composerHeight = String(nextHeight);
-    // Only notify on a real geometry change; the parent re-anchors the stream
-    // tail so the growing input pushes messages up rather than covering them.
-    if (nextHeight !== previousHeight) {
-      onGeometryChangeRef.current?.();
-    }
-  }, [value, inputExpanded, editing]);
+    const observer = new ResizeObserver(() => onGeometryChangeRef.current?.());
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
 
   const toolUnavailable = (reason: string) => ({ kind: 'disabled' as const, reason });
 
@@ -618,6 +604,7 @@ export function ChatComposer({
         </div>
       )}
 
+      <div className="sc-composer__context">
       {sendError && (
         <div className="sc-composer__banner sc-composer__banner--error" role="alert" data-chat-composer-error>
           <div className="sc-composer__banner-body">
@@ -809,6 +796,7 @@ export function ChatComposer({
         </div>
       )}
 
+      </div>
       <div
         className="sc-composer__shell"
         data-dragging={dragging || undefined}
@@ -834,6 +822,9 @@ export function ChatComposer({
           }}
         >
           <TextArea
+            autoGrow
+            minimumRows={1}
+            maximumRows={10}
             ref={textareaRef}
             framing="embedded"
             className="sc-composer__input"

@@ -5,10 +5,11 @@
  * exercises the same failed/retry/remove lifecycle as the desktop composer
  * without a Tauri staging backend. All previews are local object URLs.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import { AlertCircle, File as FileIcon, Image as ImageIcon, Loader2, RotateCcw, Trash2, Video } from 'lucide-react';
 import type { MessageAttachment } from './chat-data';
 import { useT } from '../prefs';
+import type { ConversationWorkingState } from './conversation-working-state';
 
 // Local-example policy: a file this large fails its first staging attempt.
 const FAIL_FIRST_ATTEMPT_BYTES = 8 * 1024 * 1024;
@@ -36,11 +37,11 @@ export function formatAttachmentSize(bytes: number): string {
 
 let draftSeq = 0;
 
-export function useAttachmentDrafts() {
-  const [drafts, setDrafts] = useState<AttachmentDraft[]>([]);
-  const timersRef = useRef<Map<string, number>>(new Map());
-  const draftsRef = useRef<AttachmentDraft[]>([]);
-  draftsRef.current = drafts;
+export function useAttachmentDrafts(working: ConversationWorkingState) {
+  const drafts = useSyncExternalStore(working.subscribe, () => working.snapshot.attachments);
+  const setDrafts = useCallback((update: AttachmentDraft[] | ((list: AttachmentDraft[]) => AttachmentDraft[])) =>
+    working.setAttachments(update), [working]);
+  const timersRef = { current: working.timers };
 
   const clearTimer = useCallback((id: string) => {
     const timer = timersRef.current.get(id);
@@ -48,25 +49,29 @@ export function useAttachmentDrafts() {
       window.clearInterval(timer);
       timersRef.current.delete(id);
     }
-  }, []);
+  }, [working]);
 
   const patch = useCallback((id: string, next: Partial<AttachmentDraft>) => {
     setDrafts(list => list.map(item => (item.id === id ? { ...item, ...next } : item)));
-  }, []);
+  }, [setDrafts]);
 
   const stage = useCallback((id: string) => {
-    const current = draftsRef.current.find(item => item.id === id);
+    const current = working.snapshot.attachments.find(item => item.id === id);
     if (!current) return;
     const attempt = current.attempt + 1;
     clearTimer(id);
     patch(id, { status: 'uploading', progress: 8, attempt });
     // Deterministic local-example failure, recoverable via retry.
     if (current.size >= FAIL_FIRST_ATTEMPT_BYTES && attempt === 1) {
-      window.setTimeout(() => patch(id, { status: 'failed', progress: 0 }), 420);
+      const timer = window.setTimeout(() => {
+        clearTimer(id);
+        patch(id, { status: 'failed', progress: 0 });
+      }, 420);
+      timersRef.current.set(id, timer);
       return;
     }
     const timer = window.setInterval(() => {
-      const now = draftsRef.current.find(item => item.id === id);
+      const now = working.snapshot.attachments.find(item => item.id === id);
       if (!now || now.status !== 'uploading') {
         clearTimer(id);
         return;
@@ -80,7 +85,7 @@ export function useAttachmentDrafts() {
       }
     }, PROGRESS_TICK_MS);
     timersRef.current.set(id, timer);
-  }, [clearTimer, patch]);
+  }, [clearTimer, patch, working]);
 
   const addFiles = useCallback((files: File[]) => {
     if (files.length === 0) return;
@@ -99,17 +104,17 @@ export function useAttachmentDrafts() {
       };
     });
     setDrafts(list => [...list, ...added]);
-    added.forEach(item => window.setTimeout(() => stage(item.id), 0));
-  }, [stage]);
+    added.forEach(item => stage(item.id));
+  }, [stage, setDrafts]);
 
   const removeDraft = useCallback((id: string) => {
     clearTimer(id);
     setDrafts(list => {
       const target = list.find(item => item.id === id);
-      if (target?.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(target.previewUrl);
+      working.releaseUrl(target?.previewUrl);
       return list.filter(item => item.id !== id);
     });
-  }, [clearTimer]);
+  }, [clearTimer, setDrafts]);
 
   const retryDraft = useCallback((id: string) => stage(id), [stage]);
 
@@ -121,17 +126,12 @@ export function useAttachmentDrafts() {
     setDrafts(list => {
       if (revokeUrls) {
         list.forEach(item => {
-          if (item.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(item.previewUrl);
+          working.releaseUrl(item.previewUrl);
         });
       }
       return [];
     });
-  }, []);
-
-  useEffect(() => () => {
-    timersRef.current.forEach(timer => window.clearInterval(timer));
-    timersRef.current.clear();
-  }, []);
+  }, [setDrafts, working]);
 
   const ready = drafts.filter(item => item.status === 'ready');
   return {

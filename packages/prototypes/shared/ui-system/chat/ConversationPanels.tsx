@@ -18,7 +18,7 @@ import {
   Smartphone, Trash2, Users, Video,
 } from 'lucide-react';
 import {
-  Avatar, Button, Checkbox, Dialog, Empty, IconButton, QrCode, Switch, Tag,
+  Avatar, Button, Checkbox, Dialog, Empty, IconButton, Menu, QrCode, Switch, Tag,
   TextArea, TextField, Toggle,
 } from '@peers-touch/ui';
 import type { CallKind } from './CallOverlay';
@@ -32,10 +32,11 @@ import { useT, locTag, type Translate } from '../prefs';
    (the avatar already lives beside each peer bubble); the back chevron is
    rendered but CSS-hidden above the phone breakpoint (persistent two-pane). */
 
-export function ConversationHeader({ conversation, infoOpen,
+export function ConversationHeader({ conversation, infoOpen, compactTools = false,
   onBack, onAudio, onVideo, onInfo }: {
   conversation: Conversation;
   infoOpen?: boolean;
+  compactTools?: boolean;
   onBack: () => void;
   onAudio: () => void;
   onVideo: () => void;
@@ -64,6 +65,19 @@ export function ConversationHeader({ conversation, infoOpen,
         </div>
       </div>
       <div className="sk-chat-head-actions">
+        {compactTools ? (
+          <Menu placement="bottom" actions={[
+            ...(!conversation.selfDirect ? [
+              { id: 'chat.call-audio', label: t('conv.callAudio'), onActivate: onAudio },
+              { id: 'chat.call-video', label: t('conv.callVideo'), onActivate: onVideo },
+            ] : []),
+            { id: 'chat.open-info', label: t('conv.info'), onActivate: onInfo },
+          ]}>
+            <IconButton iconId="more-horizontal" iconSize={19} label={t('session.moreActions')}
+              actionId="chat.tools" density="comfortable" emphasis="quiet" />
+          </Menu>
+        ) : (
+        <>
         {/* Calls are peer chrome: never offered on the self-direct conversation. */}
         {!conversation.selfDirect && (
           <>
@@ -79,6 +93,8 @@ export function ConversationHeader({ conversation, infoOpen,
           actionId="chat.open-info"
           density="comfortable" emphasis="quiet" className={`sk-head-action${infoOpen ? ' is-active' : ''}`}
           aria-expanded={infoOpen} onActivate={onInfo} />
+        </>
+        )}
       </div>
     </header>
   );
@@ -101,11 +117,12 @@ const permissionKeys = (role: GroupRole): { title: TranslationKey; body: Transla
   return { title: 'profile.permissionMemberTitle', body: 'profile.permissionMemberBody' };
 };
 
-export function DetailSheet({ conversation, messages, people, onClose, onTogglePin, onToggleMute,
+export function DetailSheet({ conversation, messages, people, active = true, onClose, onTogglePin, onToggleMute,
   onSearchMessages, onClearHistory, onDeleteConversation, onSimulateIncoming, onRenameConversation,
   onSetGroupAvatar, onSetMyNickname, onSetChatBackground, onAddGroupMembers, onRemoveGroupMember,
   onSetGroupMemberRole, onDissolve, onLeave, onLocateMessage }: {
   conversation: Conversation;
+  active?: boolean;
   messages: ChatMessage[];
   people: { id?: string; name: string; tone: string }[];
   onClose: () => void;
@@ -146,7 +163,7 @@ export function DetailSheet({ conversation, messages, people, onClose, onToggleP
   // popover. The info ⓘ trigger is excluded so toggling never reopens it,
   // and portaled dialogs launched from the sheet are part of its scope
   // (their scrim must close the dialog only, not the sheet behind it).
-  useDismissOutside(sheetRef, true, onClose, [
+  useDismissOutside(sheetRef, active, onClose, [
     "[data-action-id='chat.open-info']",
     '.pt-modal-layer',
   ]);
@@ -779,30 +796,26 @@ export function MessageSearchDialog({ open, messages, conversationName, onClose,
 
 /* ── Thread sheet ─────────────────────────────────────── */
 
-export function ThreadSheet({ root, peerName, initialReplies, onClose, onReply }: {
+export function ThreadSheet({ root, peerName, replies, draft, onDraftChange: setDraft, active = true, onClose, onReply }: {
   root: ChatMessage;
   peerName: string;
-  initialReplies: ThreadReply[];
+  replies: ThreadReply[];
+  draft: string;
+  onDraftChange: (text: string) => void;
+  active?: boolean;
   onClose: () => void;
   onReply: (text: string) => void;
 }) {
-  const { t, locale } = useT();
-  const [replies, setReplies] = useState<ThreadReply[]>(initialReplies);
-  const [draft, setDraft] = useState('');
+  const { t } = useT();
   const sheetRef = useRef<HTMLElement>(null);
 
   // Outside-scope press hides the thread sheet; the "查看话题" entry that
   // opens it is ignored so it acts as a plain toggle.
-  useDismissOutside(sheetRef, true, onClose, '[data-thread-for]');
+  useDismissOutside(sheetRef, active, onClose, '[data-thread-for]');
 
   const send = () => {
     const text = draft.trim();
     if (!text) return;
-    const reply: ThreadReply = {
-      id: `local-${Date.now()}`, from: 'me',
-      at: new Date().toLocaleTimeString(locTag(locale), { hour: '2-digit', minute: '2-digit' }), text,
-    };
-    setReplies(list => [...list, reply]);
     setDraft('');
     onReply(text);
   };

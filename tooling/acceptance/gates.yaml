@@ -738,6 +738,17 @@
       "description": "Run three isolated actors across Native Desktop and iOS on federated Stations; prove audio/video RTP progress, native controls, late join, member/device/session withdrawal, consumed-token replay denial, restart and media release."
     },
     "chat-native-current-profile-two-client-e2e": {
+      "e2e": {
+        "journeys": [
+          {"id": "current-profile-direct", "uses": ["tooling/acceptance/gates/chat/native_two_client_runner.py#NativeTwoClientGate.run"]},
+          {"id": "drawer-pressure-controls", "uses": ["tooling/acceptance/gates/chat/drawer_layout.py#prove_drawer_layout"]}
+        ],
+        "implementations": [
+          {"ref": "tooling/acceptance/gates/chat/native_two_client_runner.py#NativeTwoClientGate.run", "purpose": "Reuse the canonical isolated two-client authentication, Direct delivery, restart and cleanup lifecycle", "lifetime": "scenario", "dependsOn": ["tooling/acceptance/gates/chat/native_two_client_runner.py#NativeTwoClientGate.start_client"], "invalidatedBy": ["source", "oracle", "action-plan"]},
+          {"ref": "tooling/acceptance/gates/chat/native_two_client_runner.py#NativeTwoClientGate.start_client", "purpose": "Borrow the current-source Native client and actor login boundary", "lifetime": "suite", "dependsOn": [], "invalidatedBy": ["source", "environment", "fixture", "client", "session"]},
+          {"ref": "tooling/acceptance/gates/chat/drawer_layout.py#prove_drawer_layout", "purpose": "Exercise compressed catalogue pointer and keyboard input, real window sizing, complete controls, Back and draft retention in the existing client", "lifetime": "scenario", "dependsOn": ["tooling/acceptance/gates/chat/native_two_client_runner.py#NativeTwoClientGate.start_client"], "invalidatedBy": ["source", "oracle", "action-plan"]}
+        ]
+      },
       "argv": ["python3", "-m", "tooling.acceptance.gates.chat.native_current_profile_two_client_entry"],
       "ephemeralCapabilities": ["chat.runtime-account-login"],
       "timeout_seconds": 1800,
@@ -745,9 +756,22 @@
       "provisioner": "native-tauri-current-profile",
       "requiredRuntimeCells": ["desktop-macos-native"],
       "tier": "env-evidence",
-      "description": "Build the selected source once, create run-scoped Alice and Bob clients through the active Profile without resetting existing Station actors, and prove bidirectional Direct plaintext, DELIVERED receipts, visible message geometry, avatars, native restart continuity and final cleanup."
+      "description": "Build the selected source once, create run-scoped Alice and Bob clients through the active Profile without resetting existing Station actors, and prove bidirectional Direct plaintext, DELIVERED receipts, compressed drawer input and complete controls, Back/draft retention, visible message geometry, avatars, native restart continuity and final cleanup."
     },
     "chat-native-submitted-command-recovery-e2e": {
+      "e2e": {
+        "journeys": [
+          {"id": "submitted-command-recovery", "uses": ["tooling/acceptance/gates/chat/native_two_client_runner.py#NativeTwoClientGate.run"]},
+          {"id": "committed-message-retry", "uses": ["tooling/acceptance/gates/chat/native_two_client_runner.py#NativeTwoClientGate.prove_committed_message_retry"]}
+        ],
+        "implementations": [
+          {"ref": "tooling/acceptance/gates/chat/native_two_client_runner.py#NativeTwoClientGate.run", "purpose": "Reuse the native two-client lifecycle, real UI send, exact submitted crash state, restart and receiver-visible delivery assertions", "lifetime": "scenario", "dependsOn": ["tooling/acceptance/gates/chat/native_two_client_runner.py#NativeTwoClientGate.start_client", "tooling/acceptance/gates/chat/native_two_client_runner.py#NativeTwoClientGate.prove_committed_message_retry"], "invalidatedBy": ["source", "oracle", "action-plan"]},
+          {"ref": "tooling/acceptance/gates/chat/native_two_client_runner.py#NativeTwoClientGate.prove_committed_message_retry", "purpose": "Open the restored conversation, click the expired unconfirmed message retry control and verify committed identity without another draft", "lifetime": "scenario", "dependsOn": ["tooling/acceptance/gates/chat/native_support.py#enter_chat_page", "tooling/acceptance/core/harness.py#call_async_harness"], "invalidatedBy": ["source", "oracle", "action-plan"]},
+          {"ref": "tooling/acceptance/gates/chat/native_two_client_runner.py#NativeTwoClientGate.start_client", "purpose": "Reuse source-bound isolated native client launch and canonical account login", "lifetime": "suite", "dependsOn": ["tooling/acceptance/core/harness.py#call_async_harness"], "invalidatedBy": ["source", "environment", "fixture", "client", "session"]},
+          {"ref": "tooling/acceptance/gates/chat/native_support.py#enter_chat_page", "purpose": "Reuse the existing native Chat navigation action", "lifetime": "implementation", "dependsOn": [], "invalidatedBy": ["source", "toolchain"]},
+          {"ref": "tooling/acceptance/core/harness.py#call_async_harness", "purpose": "Reuse the existing asynchronous production Harness boundary", "lifetime": "implementation", "dependsOn": [], "invalidatedBy": ["source", "toolchain"]}
+        ]
+      },
       "argv": ["python3", "-m", "tooling.acceptance.gates.chat.native_submitted_command_recovery_entry"],
       "ephemeralCapabilities": ["chat.runtime-account-login"],
       "timeout_seconds": 1800,
@@ -755,7 +779,7 @@
       "provisioner": "native-tauri-current-profile",
       "requiredRuntimeCells": ["desktop-macos-native"],
       "tier": "env-evidence",
-      "description": "Create a real UI message in run-scoped Native clients, inject exact submitted-command crash state, restart the Native process and prove canonical convergence plus receiver-visible plaintext with the original command bytes and message identity."
+      "description": "Create a real UI message in run-scoped Native clients, inject exact submitted-command crash state, restart and prove canonical convergence; then retry the unconfirmed committed message through its visible control after pending-intent cleanup and prove original identity, receiver plaintext and sender DELIVERED receipt."
     },
     "chat-native-interactions-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.native_interactions_runner",

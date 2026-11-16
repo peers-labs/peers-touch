@@ -44,7 +44,8 @@
     {"type": "desktop-native", "client": "alice"},
     {"type": "desktop-native", "client": "bob"},
     {"type": "desktop-dom", "selector": "[data-message-ulid]"},
-    {"type": "desktop-dom", "selector": "[data-message-receipt]"}
+    {"type": "desktop-dom", "selector": "[data-message-receipt]"},
+    {"type": "desktop-dom", "selector": "[data-message-retry]"}
   ],
   "required_gates": [
     "station-messaging-unit",
@@ -68,12 +69,14 @@
       "a committed recipient read cursor preserves monotonic delivered state without fabricating a device receipt",
       "typed Conversation interaction failures preserve their stable code and safe details at the HTTP boundary",
       "a retained submitted command converges to accepted, failed, or superseded canonical truth before new Native sends",
-      "NOT_FOUND retries the exact command identity and bytes; a later stale delivery plan supersedes only that transport attempt while preserving the logical message identity"
+      "NOT_FOUND retries the exact command identity and bytes; a later stale delivery plan supersedes only that transport attempt while preserving the logical message identity",
+      "manual retry after authority commit and pending-intent cleanup redrives the committed command without creating a draft or changing command bytes, event or message identity"
     ],
     "visible": [
       "Alice sends one Direct message and Bob renders the exact plaintext",
       "Alice's native message row advances from sent to delivered after Bob decrypts",
-      "the same journey works in the reverse Bob-to-Alice direction"
+      "the same journey works in the reverse Bob-to-Alice direction",
+      "a sender retries an unconfirmed committed message after the 24-hour horizon through its visible retry control, and the original message advances to delivered when the receiver resumes"
     ]
   },
   "negative": [
@@ -89,6 +92,8 @@
     "static or gateway evidence must not replace two native Desktop clients",
     "receipt evidence must not expose plaintext, credentials, tokens, or key material",
     "NOT_FOUND submitted-command recovery must not mint a replacement command or message identity",
-    "stale-delivery-plan recovery must not reuse stale ciphertext or replace the logical message identity"
+    "stale-delivery-plan recovery must not reuse stale ciphertext or replace the logical message identity",
+    "pending-intent cleanup must not make a retained committed message unavailable for manual retry",
+    "committed retry must not create another command, event, message or pending draft"
   ]
 }

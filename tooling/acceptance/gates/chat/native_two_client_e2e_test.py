@@ -35,6 +35,7 @@ from tooling.acceptance.gates.chat.native_two_client_runner import (
     SUBMITTED_COMMAND_RECOVERY_REQUIRED_ASSERTIONS,
     avatar_evidence_is_valid,
     is_current_profile_gate,
+    message_geometry_is_unobscured,
     reconciled_command_snapshot_outcome,
     submitted_command_snapshot_is_exact,
 )
@@ -54,6 +55,45 @@ def load_module() -> Any:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+class NativeMessageContentGeometryTest(unittest.TestCase):
+    def geometry(self) -> dict[str, Any]:
+        return {
+            "row": {"bottom": 178},
+            "content": {"top": 99, "bottom": 164},
+            "composer": {"top": 708},
+            "viewport": {"bottom": 708},
+            "sentinel": {"top": 178},
+            "timelineFlexShrink": "0",
+        }
+
+    def test_row_padding_is_already_clearance(self) -> None:
+        self.assertTrue(message_geometry_is_unobscured(self.geometry()))
+
+    def test_overflowing_content_or_retry_cannot_use_row_padding_as_proof(self) -> None:
+        value = self.geometry()
+        value["content"]["bottom"] = 701
+        value["sentinel"]["top"] = 715
+        self.assertFalse(message_geometry_is_unobscured(value))
+
+    def test_content_must_clear_its_own_viewport(self) -> None:
+        value = self.geometry()
+        value["viewport"]["bottom"] = 171
+        self.assertFalse(message_geometry_is_unobscured(value))
+
+    def test_tail_anchor_must_clear_all_rendered_content(self) -> None:
+        value = self.geometry()
+        value["sentinel"]["top"] = 171
+        self.assertFalse(message_geometry_is_unobscured(value))
+
+    def test_missing_content_and_shrinking_timeline_never_pass(self) -> None:
+        value = self.geometry()
+        value["content"] = None
+        self.assertFalse(message_geometry_is_unobscured(value))
+        value = self.geometry()
+        value["timelineFlexShrink"] = "1"
+        self.assertFalse(message_geometry_is_unobscured(value))
 
 
 class SyntheticRuntimeBinding:
@@ -558,15 +598,35 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             "accepted",
         )
         snapshot["commandLedger"][0]["draftState"] = ""
-        self.assertEqual(
-            reconciled_command_snapshot_outcome(
-                snapshot,
-                "command-1",
-                "message-1",
-                "a" * 64,
-            ),
-            "accepted",
-        )
+        snapshot["intent"] = None
+        # commit_public_event retains the exact command and an "accepted"
+        # projection while deleting its draft, before any recipient receipt.
+        for state in ("accepted", "delivered", "read", "consumed"):
+            with self.subTest(delivery_state=state):
+                snapshot["projection"]["deliveryState"] = state
+                self.assertEqual(
+                    reconciled_command_snapshot_outcome(
+                        snapshot, "command-1", "message-1", "a" * 64,
+                    ),
+                    "accepted",
+                )
+        for state in ("sent", "pending", "undeliverable_suspected", ""):
+            with self.subTest(non_authority_state=state):
+                snapshot["projection"]["deliveryState"] = state
+                self.assertIsNone(reconciled_command_snapshot_outcome(
+                    snapshot, "command-1", "message-1", "a" * 64,
+                ))
+        snapshot["projection"]["deliveryState"] = "accepted"
+        for field in ("attemptState", "localState", "outboxState"):
+            with self.subTest(uncommitted_ledger=field):
+                snapshot["commandLedger"][0][field] = "submitted"
+                self.assertIsNone(reconciled_command_snapshot_outcome(
+                    snapshot, "command-1", "message-1", "a" * 64,
+                ))
+                snapshot["commandLedger"][0][field] = "committed"
+        self.assertIsNone(reconciled_command_snapshot_outcome(
+            snapshot, "command-1", "message-1", "b" * 64,
+        ))
         snapshot["projection"] = None
         snapshot["intent"] = None
         snapshot["outbox"].update(
@@ -1224,9 +1284,12 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         gate.clients["alice"].invoke_app_result.return_value = {
             "ok": True, "data": {"paused": True},
         }
-        gate.clients["bob"].invoke_app_result.return_value = {
-            "ok": True, "data": {"paused": True},
-        }
+        gate.clients["bob"].invoke_app_result.side_effect = [
+            {"ok": True, "data": {"paused": True}},
+            {"ok": True, "data": {
+                "message_id": "message-one", "command_id": "command-one", "state": "pending",
+            }},
+        ]
         gate.ptids = {"alice": "ptid:alice", "bob": "ptid:bob"}
         prepared_row = {
             "messageId": "message-one", "commandId": "command-one",
@@ -1258,9 +1321,14 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         })
         send.assert_called_once()
         self.assertIs(send.call_args.args[0], gate.clients["bob"])
-        gate.clients["bob"].invoke_app_result.assert_called_once_with(
+        self.assertEqual(gate.clients["bob"].invoke_app_result.call_count, 2)
+        gate.clients["bob"].invoke_app_result.assert_any_call(
             "messaging_acceptance_pause_lifecycle",
             {"input": {"expected_actor_ptid": "ptid:bob"}},
+        )
+        gate.clients["bob"].invoke_app_result.assert_called_with(
+            "messaging_retry_message",
+            {"input": {"conversation_id": "conversation-one", "message_id": "message-one"}},
         )
         gate.clients["alice"].invoke_app_result.assert_called_once_with(
             "messaging_acceptance_pause_lifecycle",
@@ -1276,6 +1344,90 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             {},
         )
         self.assertEqual(harness.call_args.args[2]["commandId"], "command-one")
+
+    def test_submitted_fixture_rejects_unprepared_or_foreign_retry_identity(self) -> None:
+        for result in (
+            {"ok": False, "data": None},
+            {"ok": True, "data": {
+                "message_id": "message-one", "command_id": "", "state": "retrying",
+            }},
+            {"ok": True, "data": {
+                "message_id": "another-message", "command_id": "command-one", "state": "pending",
+            }},
+        ):
+            with self.subTest(result=result):
+                gate = NativeTwoClientGate(
+                    manifest=self.valid_report()["manifest"],
+                    actor_manifest={"actors": [
+                        {"role": actor, "ptid": f"ptid:{actor}"}
+                        for actor in ("alice", "bob")
+                    ]},
+                    runtime_binding=SyntheticRuntimeBinding(),
+                    gate_id=SUBMITTED_COMMAND_RECOVERY_GATE_ID,
+                    allow_existing_fixture=True,
+                )
+                gate.clients = {"alice": Mock(), "bob": Mock()}
+                gate.clients["alice"].invoke_app_result.return_value = {
+                    "ok": True, "data": {"paused": True},
+                }
+                gate.clients["bob"].invoke_app_result.side_effect = [
+                    {"ok": True, "data": {"paused": True}}, result,
+                ]
+                gate.ptids = {"alice": "ptid:alice", "bob": "ptid:bob"}
+                with (
+                    patch("tooling.acceptance.gates.chat.native_two_client_runner.send_text",
+                          return_value={"messageUlid": "message-one"}),
+                    patch("tooling.acceptance.gates.chat.native_two_client_runner.async_harness")
+                    as harness,
+                    self.assertRaisesRegex(GateError, "did not prepare its exact command"),
+                ):
+                    gate.prepare_submitted_command_target("conversation-one")
+                harness.assert_not_called()
+                self.assertIsNone(gate.expected_reconciliation_target())
+
+    def test_submitted_convergence_timeout_retains_last_real_command_state(self) -> None:
+        gate = NativeTwoClientGate(
+            manifest=self.valid_report()["manifest"],
+            actor_manifest={"actors": [
+                {"role": actor, "ptid": f"ptid:{actor}"}
+                for actor in ("alice", "bob")
+            ]},
+            runtime_binding=SyntheticRuntimeBinding(),
+            gate_id=SUBMITTED_COMMAND_RECOVERY_GATE_ID,
+            allow_existing_fixture=True,
+        )
+        gate.clients = {"alice": Mock(), "bob": Mock()}
+        gate.ptids = {"alice": "ptid:alice", "bob": "ptid:bob"}
+        gate._reconciliation_target = {
+            "actor": "bob", "conversationId": "conversation-one",
+            "messageId": "message-one", "commandId": "command-one", "outcome": "accepted",
+        }
+        initial = {
+            "messageId": "message-one", "projection": None,
+            "outbox": {"state": "submitted", "commandSha256": "e" * 64},
+            "commandLedger": [{"messageId": "message-one", "commandId": "command-one"}],
+        }
+        observed = {
+            **initial,
+            "lifecycleWorkerActive": False,
+            "outbox": {**initial["outbox"], "state": "failed", "lastErrorCode": "http_403"},
+        }
+
+        def expired(predicate, description):
+            self.assertIsNone(predicate())
+            raise GateError(f"timed out waiting for {description}")
+
+        with (
+            patch("tooling.acceptance.gates.chat.native_two_client_runner.async_harness",
+                  return_value=observed),
+            patch("tooling.acceptance.gates.chat.native_two_client_runner.wait_until",
+                  side_effect=expired),
+            self.assertRaisesRegex(GateError, "historical submitted command convergence"),
+        ):
+            gate.prove_expected_command_reconciliation(initial)
+        self.assertEqual(gate.report.runtime["submittedCommandLastObservation"], observed)
+        self.assertNotIn("submittedCommandReconciliation", gate.report.runtime)
+        self.assertNotIn("committedMessageRetry", gate.report.runtime)
 
     def test_client_readiness_requires_active_station_device(self) -> None:
         runner_source = (
@@ -1633,7 +1785,8 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         self.assertIn("timelineFlexShrink", runner)
         self.assertIn("renderedMessageIds", runner)
         self.assertIn("scrollHeight", runner)
-        self.assertIn("row[\"bottom\"] <= composer[\"top\"] - 8", runner)
+        self.assertIn("content[\"bottom\"] <= composer[\"top\"] - 8", runner)
+        self.assertIn("row.querySelectorAll('*')", runner)
         self.assertIn("def prove_demo_avatar_sources(", runner)
         self.assertIn('"avatar.bundled"', runner)
         self.assertIn('"message.layout"', runner)
@@ -1655,17 +1808,15 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         )
         self.assertIn("data-chat-message-timeline", timeline)
         self.assertIn("chatMessageTimelineContainerStyle", timeline)
-        self.assertIn("behavior: 'auto'", timeline_policy)
+        self.assertIn("chatMessageTailScrollTop", timeline_policy)
         self.assertIn("useLayoutEffect", message_area)
         self.assertIn("new ResizeObserver", message_area)
         self.assertIn("isChatMessageTailPinned(container)", message_area)
         self.assertIn("chatMessageTailScrollTop(container)", message_area)
         self.assertIn("onTimelineMeasured={handleTimelineMeasured}", message_area)
         self.assertIn("onTimelineMeasured();", timeline)
-        self.assertIn(
-            "scrollIntoView(chatMessageTailScrollOptions())",
-            message_area,
-        )
+        self.assertIn("container.scrollTop = chatMessageTailScrollTop(container)", message_area)
+        self.assertNotIn("scrollIntoView(", message_area)
         self.assertIn("../../services/avatarAssets", avatar)
         self.assertIn("RETIRED_GENERATED_AVATAR_PREFIX", avatar_assets)
         self.assertIn("inlineAvatarSource", avatar)

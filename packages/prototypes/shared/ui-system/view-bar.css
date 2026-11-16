@@ -1,10 +1,16 @@
 /* Shared, always-visible view switcher for Frontend Eles.
    Stays reachable inside the Portal's fixed-height preview pane (which
    scrolls internally), in both embedded and fullscreen views. */
-.ui-view-provider { min-width: 0; }
+.ui-view-provider { min-width: 0; height: 100%; }
 .ui-view-shell { display: flex; flex-direction: column; min-height: 100%; min-width: 0; }
+.ui-view-shell[data-current-view='desktop'] { height: 100%; min-height: 0; }
+.ui-view-shell[data-current-view='desktop'] .ui-view-body {
+  min-height: 0; display: flex; overflow: hidden;
+}
+.ui-view-shell[data-current-view='desktop'] .ui-view-body > .sk-page { flex: 1; }
 .ui-view-bar {
   position: sticky; top: 0; z-index: 20;
+  flex-shrink: 0;
   display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
   padding: 10px 16px;
   background: color-mix(in srgb, var(--pt-surface) 88%, transparent);

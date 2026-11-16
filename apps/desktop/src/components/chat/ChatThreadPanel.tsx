@@ -207,7 +207,7 @@ function ThreadMessageItem({
   );
 }
 
-export function ChatThreadPanel() {
+export function ChatThreadPanel({ rootUlid }: { rootUlid?: string } = {}) {
   const { t } = useTranslation('chat');
   const {
     activeTab,
@@ -219,7 +219,7 @@ export function ChatThreadPanel() {
     threadHasMore,
     threadNextCursor,
     currentUserPtid,
-    openThreadRootUlid,
+    openThreadRootUlid: requestedRootUlid,
     closeThread,
     loadThreadMessages,
     refreshThreadCounts,
@@ -258,6 +258,8 @@ export function ChatThreadPanel() {
     getIMConversations: s.getIMConversations,
     getIMSenderProfile: s.getIMSenderProfile,
   }));
+  // Retain the current task through its closing travel and while parked.
+  const openThreadRootUlid = rootUlid ?? requestedRootUlid;
   const [sending, setSending] = useState(false);
   const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ChatMessage | null>(null);

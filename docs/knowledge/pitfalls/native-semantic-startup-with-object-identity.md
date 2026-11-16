@@ -72,12 +72,28 @@ confirmation, unique filename row through AXSelectedRows and OKButton remain the
 semantic selection owner. Unknown action outcomes are never replayed. Parent
 still verifies the actual callback path and unchanged file bytes.
 
+Search `AXConfirm` failure must preserve its original action error. A global
+Return-key fallback targets the operator's foreground application, not the
+process-owned native Search field, and can repeat an already committed action.
+The selector must never post that key. The confirmation regression injects
+failed/unknown AX replies and requires exactly one process-scoped action.
+
 The depth walk starts from all exact-PID owner windows together. Completing a
 deep walk of the first window before checking the second can exhaust the read
 budget or hit an unrelated unreadable subtree before an available OpenPanel
 control. The first verified panel path ends the observation; later unrelated
 windows cannot invalidate that presence. If no earlier target exists, read
 failures still propagate and cannot supply absent-panel evidence.
+
+An attached panel's document window can expose its `OKButton` while also
+containing a WKWebView. Returning that window as the selection root walks
+unrelated content and can fail on `AXChildren` before finding the panel's
+sidebar. The shared finder verifies the owner's actual `AXSheets` first
+and retains the sheet containing the native confirmation control. Failed
+sheet reads remain terminal; sheet counts alone never establish presence.
+A synthetic unreadable WebView sibling reproduces the old scope error and
+requires balanced sheet/button ownership. Real AppKit sheet selection and the
+same current-source Native Cell Journey remain separate required evidence.
 
 A real `chooser-open` attempt exhausted its AX observation budget while reading
 `AXIdentifier`; the reported `focusDeadlineExceeded` is also used for AX read-cap
@@ -106,6 +122,20 @@ NoValue/Unsupported represents optional absence; required windows reject null,
 empty or failed reads as appropriate. Preserve OS status, returned-value
 presence, read duration, original failure function/line and actual queried PID.
 All focus attributes use the original one-second deadline, including startup.
+Cold child imports previously initialized Acceptance Core and the parent macOS
+adapter, followed by Python AppKit on the first frontmost query. Measured
+imports alone could exceed that focus deadline before an otherwise successful
+AX read returned. The scope now imports a lean child protocol and AX reader;
+Driver package exports load their owners lazily. Shared pure control conversion
+preserves every original identity field. Typed Objective-C calls query the
+same NSWorkspace API with a balanced autorelease pool and fresh application
+state. A subprocess import guard rejects Acceptance Core, parent adapters and
+Python AppKit in the child dependency graph. Startup still consumes the same
+deadline, and the original Cell remains the required product verification.
+Expiry between focus samples additionally retains the completed sample count,
+the focus time remaining on child entry and the actual frontmost-query duration.
+These local timings distinguish startup consumption from an unstable sequence;
+they cannot establish an unobserved historical cause or extend any deadline.
 The parent binds that deadline separately from the enclosing original
 three-second observation deadline. Panel reads use their original AX read cap
 and the remaining observation time; they cannot extend focus or scope. General

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Badge, Button, IconButton } from '@peers-touch/ui';
+import { Badge, Button, IconButton, geometry } from '@peers-touch/ui';
 import { NotificationBell } from './NotificationBell';
 import { WindowDragRegion } from './shell/WindowDragRegion';
 import { UserProfilePopover, useUserAvatar } from './UserProfilePopover';
@@ -127,9 +127,9 @@ export function AppSideNav({ page, navigation }: AppSideNavProps) {
   return (
     <WindowDragRegion><nav className="ds-rail" aria-label={t('layout.nav.primary')}>
       <UserProfilePopover>
-        <Button actionId="rail.open-self" emphasis="quiet" className="ds-rail-avatar"
+        <Button actionId="rail.open-self" emphasis="quiet" appearance="identity" className="ds-rail-avatar"
           aria-label={t('layout.user.viewProfile')} aria-haspopup="dialog">
-          <UserSquareAvatar remoteUrl={userAvatar.url} name={userAvatar.name} size={44} radius={12} />
+          <UserSquareAvatar remoteUrl={userAvatar.url} name={userAvatar.name} {...geometry.avatar.navigation} />
         </Button>
       </UserProfilePopover>
 

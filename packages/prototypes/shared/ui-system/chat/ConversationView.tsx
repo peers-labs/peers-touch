@@ -5,11 +5,11 @@
  * action bar, and the rich composer. Thread/detail/search sheets and the
  * call overlay stay one level up in this file.
  */
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { Bookmark, Check, Copy, CornerUpRight, EyeOff, Link as LinkIcon, Pin, Undo2, X } from 'lucide-react';
 import { Avatar, Button, Empty } from '@peers-touch/ui';
-import type { ChatMessage, Conversation, ThreadReply } from './chat-data';
-import { SEED_THREADS, VIEWER_NAME, VIEWER_TONE } from './chat-data';
+import type { ChatMessage, Conversation } from './chat-data';
+import { VIEWER_NAME, VIEWER_TONE } from './chat-data';
 import { ConversationHeader, DetailSheet, MessageSearchDialog, ThreadSheet } from './ConversationPanels';
 import {
   DeliveryMeta, ForwardDialog, HideConfirm, isEmojiOnly, MessageActionBar,
@@ -23,6 +23,8 @@ import { CallOverlay, type CallKind } from './CallOverlay';
 import { ChatAvatarTrigger } from './ChatIdentity';
 import { useT } from '../prefs';
 import type { ReactionKind } from '../../chat-domain';
+import type { DrawerLeaf, resolveDrawerAssembly } from '@peers-touch/ui';
+import type { ConversationWorkingState } from './conversation-working-state';
 
 const MENTION_RE = new RegExp('(@[\\u4e00-\\u9fa5\\w·]+)', 'g');
 
@@ -34,6 +36,7 @@ function renderRichText(text: string) {
 }
 
 export function ConversationView({ conversation, messages, call, peerTyping, onEndCall, onSimulateIncoming,
+  working, presentation, leaf, leafContent, leafProgress, onLeafChange,
   onSend, onTogglePin, onToggleMute, onReact, onEditMessage, onRecallMessage, onPinMessage,
   onMarkMessageForLater: markForLater,
   onRetryMessage, onHideMessages, onForwardMessages, onStartCall, onBack, conversations, people,
@@ -43,6 +46,12 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
   onDissolveGroup, onLeaveGroup,
   onOpenMomentsProfile, onOpenMoment }: {
   conversation: Conversation;
+  working: ConversationWorkingState;
+  presentation: ReturnType<typeof resolveDrawerAssembly>;
+  leaf: DrawerLeaf | null;
+  leafContent: DrawerLeaf | null;
+  leafProgress: number;
+  onLeafChange: (leaf: DrawerLeaf | null) => void;
   messages: ChatMessage[];
   call: { conversationId: string; kind: CallKind; direction: 'in' | 'out'; multi?: boolean } | null;
   peerTyping?: boolean;
@@ -80,12 +89,18 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
   onOpenMomentsProfile?: (name: string) => void;
   onOpenMoment?: (momentId: string) => void;
 }) {
-  const [infoOpen, setInfoOpen] = useState(false);
+  const infoOpen = leaf?.kind === 'detail';
+  const setInfoOpen = (next: boolean) => onLeafChange(next ? { kind: 'detail' } : null);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [threadId, setThreadId] = useState<string | null>(null);
-  const [threads, setThreads] = useState<Record<string, ThreadReply[]>>(SEED_THREADS);
-  const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
-  const [editTarget, setEditTarget] = useState<ChatMessage | null>(null);
+  const threadId = leafContent?.kind === 'thread' ? leafContent.messageId : null;
+  const setThreadId = (id: string | null) => onLeafChange(id ? { kind: 'thread', messageId: id } : null);
+  const threads = useSyncExternalStore(working.subscribe, () => working.snapshot.threads);
+  const threadDrafts = useSyncExternalStore(working.subscribe, () => working.snapshot.threadDrafts);
+  const controls = useSyncExternalStore(working.subscribe, () => working.snapshot.controls);
+  const replyTarget = controls.reply;
+  const editTarget = controls.edit;
+  const setReplyTarget = (reply: ChatMessage | null) => working.patchControls({ reply });
+  const setEditTarget = (edit: ChatMessage | null) => working.patchControls({ edit });
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [forwardTargets, setForwardTargets] = useState<ChatMessage[]>([]);
   const [hideTargetIds, setHideTargetIds] = useState<string[] | null>(null);
@@ -96,21 +111,44 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [toast, setToast] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
+  const leafRef = useRef<HTMLDivElement>(null);
   const { t, locale } = useT();
+  useLayoutEffect(() => {
+    if (!leaf) return;
+    if (leafProgress === 1) {
+      leafRef.current?.querySelector<HTMLElement>('button, input, textarea')?.focus({ preventScroll: true });
+    } else if (leafProgress === 0) {
+      sectionRef.current?.focus({ preventScroll: true });
+    }
+  }, [leaf?.kind, leafProgress]);
   // Squared-square avatar geometry: group senders keep the 8px tile, direct
   // chats the skin radius — applies to both peers and the viewer.
   const avatarRadius: string | number = conversation.kind === 'group' ? 8 : 'var(--sk-avatar-radius)';
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length, conversation.id, peerTyping]);
+    if (!el) return;
+    const restore = () => {
+      const anchor = working.reading;
+      if (anchor.atTail) el.scrollTop = el.scrollHeight;
+      else {
+        const row = [...el.querySelectorAll<HTMLElement>('[data-message-id]')]
+          .find(item => item.dataset.messageId === anchor.messageId);
+        if (row) el.scrollTop += row.getBoundingClientRect().top - el.getBoundingClientRect().top - anchor.offset;
+        else el.scrollTop = anchor.top;
+      }
+    };
+    restore();
+    // Width, height and composer growth change the same reading viewport.
+    const observer = new ResizeObserver(restore);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [working, messages.length, conversation.id, peerTyping, presentation.workWidth]);
 
   useEffect(() => {
     setInfoOpen(false);
     setThreadId(null);
-    setReplyTarget(null);
-    setEditTarget(null);
     exitSelectMode();
   }, [conversation.id]);
 
@@ -142,8 +180,6 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   function enterSelectMode(seedId: string) {
-    setReplyTarget(null);
-    setEditTarget(null);
     setSelectMode(true);
     setSelectedIds([seedId]);
   }
@@ -183,7 +219,9 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
         flash(t('msg.copied'));
         break;
       case 'multiselect': enterSelectMode(message.id); break;
-      case 'edit': setReplyTarget(null); setEditTarget(message); break;
+      case 'edit':
+        working.patchComposer({ editText: message.text, caret: { start: message.text.length, end: message.text.length } });
+        setReplyTarget(null); setEditTarget(message); break;
       case 'recall': onRecallMessage(conversation.id, message.id); flash(t('msg.recalled')); break;
       case 'report': setReportTarget(message); break;
       case 'mark-later':
@@ -205,26 +243,48 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
   const threadMessage = messages.find(m => m.id === threadId) ?? null;
   const replyInThread = (text: string) => {
     if (!threadId) return;
-    setThreads(map => ({ ...map, [threadId]: [...(map[threadId] ?? []), {
+    working.replyInThread(threadId, {
       id: `local-${Date.now()}`, from: 'me', text, at: t('time.justNow'),
-    }] }));
+    });
   };
 
   return (
-    <section className="sk-conv-view" aria-label={t('conv.aria', { name: conversation.name })}
+    <section ref={sectionRef} tabIndex={-1} className="sk-conv-view" aria-label={t('conv.aria', { name: conversation.name })}
       data-chat-background={conversation.backgroundImage ? 'image' : (conversation.background ?? 'default')}
       data-select-mode={selectMode ? 'true' : 'false'}
       style={conversation.backgroundImage
         ? { '--sk-chat-bg-image': `url("${conversation.backgroundImage}")` } as CSSProperties
-        : undefined}>
+        : undefined}
+      onKeyDown={event => {
+        if (event.key === 'Escape' && !event.defaultPrevented &&
+            !(event.target as HTMLElement).closest('.pt-modal-layer')) {
+          event.preventDefault();
+          if (leaf) onLeafChange(null); else onBack();
+        }
+      }}>
+      <div className="sk-work-task" inert={!!leaf || leafProgress > 0} aria-hidden={!!leaf || leafProgress > 0}
+        style={{ '--sk-composer-budget': `${presentation.composerBudget}px` } as CSSProperties}>
       <ConversationHeader conversation={conversation}
         infoOpen={infoOpen}
+        compactTools={presentation.workToolsCompact}
         onBack={onBack}
         onAudio={() => onStartCall('audio')}
         onVideo={() => onStartCall('video')}
-        onInfo={() => setInfoOpen(value => !value)} />
+        onInfo={() => setInfoOpen(!infoOpen)} />
 
-      <div className="sk-msg-stream" ref={scrollRef}>
+      <div className="sk-msg-stream" ref={scrollRef} onScroll={() => {
+        const el = scrollRef.current;
+        if (!el) return;
+        const top = el.getBoundingClientRect().top;
+        const row = [...el.querySelectorAll<HTMLElement>('[data-message-id]')]
+          .find(item => item.getBoundingClientRect().bottom > top);
+        working.reading = {
+          messageId: row?.dataset.messageId ?? null,
+          offset: row ? row.getBoundingClientRect().top - top : 0,
+          top: el.scrollTop,
+          atTail: el.scrollHeight - el.clientHeight - el.scrollTop <= 4,
+        };
+      }}>
         {messages.length === 0 && (
           <Empty className="sk-conversation-empty"
             description={conversation.selfDirect ? t('conv.emptySelf') : t('conv.empty')} />
@@ -425,8 +485,10 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
             leading={<X size={14} />} label={t('select.cancel')}
             onActivate={exitSelectMode} />
         </div>
-      ) : (
-        <ChatComposer key={conversation.id} groupMembers={conversation.members}
+      ) : null}
+      <div className="sk-working-composer" hidden={selectMode}>
+        <ChatComposer working={working} budget={presentation.composerBudget}
+          compactTools={presentation.workToolsCompact} groupMembers={conversation.members}
           replyTarget={replyTarget ? {
             who: replyTarget.from === 'me' ? t('common.me') : (replyTarget.senderName ?? conversation.name),
             text: replyTarget.text,
@@ -438,19 +500,23 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
           onCancelReply={() => setReplyTarget(null)}
           onCancelEdit={() => setEditTarget(null)}
           onSend={submit} />
-      )}
+      </div>
+      </div>
 
       {toast && <div className="sk-chat-toast" role="status">{toast}</div>}
 
-      {infoOpen && (
-        <DetailSheet conversation={conversation} messages={messages} people={people}
+      <div ref={leafRef} className="sk-leaf-guide" data-drawn={!!leaf || leafProgress > 0}
+        data-leaf-kind={leafContent?.kind} inert={!leaf || leafProgress < 1} aria-hidden={!leaf}>
+      {leafContent?.kind === 'detail' && (
+        <DetailSheet key={`detail-${conversation.id}`} active={infoOpen}
+          conversation={conversation} messages={messages} people={people}
           onClose={() => setInfoOpen(false)}
           onLocateMessage={(id) => {
             setInfoOpen(false);
             requestAnimationFrame(() => {
-              document.querySelector<HTMLElement>(`[data-message-id="${id}"]`)?.scrollIntoView({
-                behavior: 'smooth', block: 'center',
-              });
+              const row = scrollRef.current?.querySelector<HTMLElement>(`[data-message-id="${id}"]`);
+              if (row && scrollRef.current) scrollRef.current.scrollTop +=
+                row.getBoundingClientRect().top - scrollRef.current.getBoundingClientRect().top;
             });
           }}
           onTogglePin={() => onTogglePin(conversation.id)}
@@ -469,22 +535,25 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
           onLeave={() => onLeaveGroup(conversation.id)}
           onSimulateIncoming={conversation.kind === 'person' && !conversation.selfDirect ? onSimulateIncoming : undefined} />
       )}
-      {threadId && threadMessage && (
-        <ThreadSheet root={threadMessage}
+      {leafContent?.kind === 'thread' && threadId && threadMessage && (
+        <ThreadSheet key={`${conversation.id}-${threadId}`} active={leaf?.kind === 'thread'} root={threadMessage}
           peerName={conversation.selfDirect ? t('contacts.savedMessages') : conversation.name}
-          initialReplies={threads[threadId] ?? []}
+          replies={threads[threadId] ?? []}
+          draft={threadDrafts[threadId] ?? ''}
+          onDraftChange={text => working.setThreadDraft(threadId, text)}
           onClose={() => setThreadId(null)}
           onReply={replyInThread} />
       )}
+      </div>
       <MessageSearchDialog open={searchOpen} messages={messages}
         conversationName={conversation.selfDirect ? t('contacts.savedMessages') : conversation.name}
         onClose={() => setSearchOpen(false)}
         onLocate={message => {
           // Scroll the located row into view (same owner as bookmark locate).
           requestAnimationFrame(() => {
-            document.querySelector<HTMLElement>(`[data-message-id="${message.id}"]`)?.scrollIntoView({
-              behavior: 'smooth', block: 'center',
-            });
+            const row = scrollRef.current?.querySelector<HTMLElement>(`[data-message-id="${message.id}"]`);
+            if (row && scrollRef.current) scrollRef.current.scrollTop +=
+              row.getBoundingClientRect().top - scrollRef.current.getBoundingClientRect().top;
           });
         }} />
 

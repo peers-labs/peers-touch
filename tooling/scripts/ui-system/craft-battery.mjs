@@ -52,6 +52,18 @@ export function craftBatterySource(rootSelector) {
       if (slash) return parseFloat(slash[1]);
       return rgbaAlpha(value);
     };
+    // Identity images are the whole control, never padded button cards.
+    root.querySelectorAll('button[data-appearance="identity"]').forEach(el => {
+      if (!visible(el)) return;
+      const s = cs(el), r = box(el);
+      if (Math.abs(r.width - 36) > .5 || Math.abs(r.height - 36) > .5 ||
+          parseFloat(s.borderTopLeftRadius) !== 6 ||
+          ['paddingLeft','paddingRight','paddingTop','paddingBottom',
+           'borderTopWidth','borderRightWidth','borderBottomWidth','borderLeftWidth']
+            .some(prop => parseFloat(s[prop]) !== 0) || s.boxShadow !== 'none') {
+        flag('identity-control-geometry', describe(el));
+      }
+    });
     // Shared search motion never moves the field; focus tint is UI-owned.
     root.querySelectorAll('[data-appearance="search"]').forEach(el => {
       if (!visible(el)) return;

@@ -13,7 +13,7 @@ import {
   Trash2, UserPlus, Users,
 } from 'lucide-react';
 import {
-  Alert, Avatar, Button, Dialog, Empty, IconButton, Menu, Segmented, Tag, TextField,
+  Alert, Avatar, Button, Dialog, Empty, IconButton, Menu, Segmented, Tag, TextField, geometry,
 } from '@peers-touch/ui';
 import type { Conversation, Person } from './chat-data';
 import { SELF_DIRECT_ID, VIEWER_NAME, VIEWER_TONE } from './chat-data';
@@ -91,9 +91,9 @@ function SessionRows({ sessions, selectedId, onSelect, onTogglePin, onToggleMute
               onClick={() => onSelect(c.id)}>
               <span className="sk-conv-avatar">
                 {c.kind === 'group'
-                  ? <GroupAvatarComposite members={c.members ?? []} label={c.name} size={40} imageUrl={c.avatarImage} />
-                  : <Avatar name={c.selfDirect ? VIEWER_NAME : c.name} background={c.tone} size={40}
-                      style={{ borderRadius: 'var(--sk-avatar-radius)' }} aria-label={c.selfDirect ? t('contacts.savedMessages') : c.name} />}
+                  ? <GroupAvatarComposite members={c.members ?? []} label={c.name} {...geometry.avatar.catalog} imageUrl={c.avatarImage} />
+                  : <Avatar name={c.selfDirect ? VIEWER_NAME : c.name} background={c.tone} {...geometry.avatar.catalog}
+                      aria-label={c.selfDirect ? t('contacts.savedMessages') : c.name} />}
                 {c.kind === 'person' && !c.selfDirect && (
                   <span className={`sk-presence-dot ${c.online ? 'is-online' : 'is-offline'}`}
                     data-presence={c.online ? 'online' : 'offline'} aria-hidden />
@@ -201,8 +201,7 @@ function RequestCard({ request, failed, onAccept, onReject, onCancel, onDeleteRe
     <div className={`sk-request-card${outgoing ? ' is-outgoing' : ''}${settled ? ' is-history' : ''}`}
       data-request-id={request.id}
       data-request-state={request.state} data-request-direction={outgoing ? 'outgoing' : 'in'}>
-      <Avatar name={request.name} background={request.tone} size={40}
-        style={{ borderRadius: 'var(--sk-avatar-radius)' }} />
+      <Avatar name={request.name} background={request.tone} {...geometry.avatar.catalog} />
       <div className="sk-request-id">
         <div className="sk-request-name">
           <strong>{request.name}</strong>
@@ -331,7 +330,7 @@ export function ContactsPane({ requests, friends, groups, selectedContactId, fai
         className={`sk-conv-row${selectedContactId === group.id ? ' is-selected' : ''}`}
         onActivate={() => onOpenGroup(group.id)}>
         <GroupAvatarComposite members={(group.members ?? []).map(m => ({ name: m.name, tone: m.tone }))}
-          label={group.name} size={38} imageUrl={group.avatarImage} />
+          label={group.name} {...geometry.avatar.catalog} imageUrl={group.avatarImage} />
         <span className="sk-conv-meta">
           <span className="sk-conv-name-line"><strong>{group.name}</strong></span>
           <span className="sk-conv-preview"><span className="sk-conv-last">
@@ -353,8 +352,7 @@ export function ContactsPane({ requests, friends, groups, selectedContactId, fai
         aria-label={person.name} title={person.name}
         className={`sk-conv-row${selectedContactId === person.id ? ' is-selected' : ''}`}
         onClick={() => onSelectContact(person)}>
-        <Avatar name={person.name} background={person.tone} size={38}
-          style={{ borderRadius: 'var(--sk-avatar-radius)' }} />
+        <Avatar name={person.name} background={person.tone} {...geometry.avatar.catalog} />
         <span className="sk-conv-meta">
           <span className="sk-conv-name-line"><strong>{person.name}</strong></span>
           <span className="sk-conv-preview"><span className="sk-conv-last">{person.bio}</span></span>
@@ -387,8 +385,7 @@ export function ContactsPane({ requests, friends, groups, selectedContactId, fai
           aria-label={t('contacts.savedMessages')} title={t('contacts.savedMessages')}
           className={`sk-conv-row${selfSelectedId ? ' is-selected' : ''}`}
           onActivate={onOpenSelf}>
-          <Avatar name={VIEWER_NAME} background={VIEWER_TONE} size={38}
-            style={{ borderRadius: 'var(--sk-avatar-radius)' }}
+          <Avatar name={VIEWER_NAME} background={VIEWER_TONE} {...geometry.avatar.catalog}
             aria-label={t('contacts.savedMessages')} />
           <span className="sk-conv-meta">
             <span className="sk-conv-name-line"><strong>{t('contacts.savedMessages')}</strong></span>
@@ -552,7 +549,7 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, people, onSel
                 onClear={() => setQuery('')} autoFocus
                 aria-label={t('rail.search')} placeholder={t('rail.searchPlaceholder')}
                 value={query} onValueChange={setQuery} data-rail-search-value={query}
-                onKeyDown={event => { if (event.key === 'Escape') closeSearch(); }} />
+                onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); closeSearch(); } }} />
             </span>
             <IconButton actionId="sk.rail-search-close" iconId="close" iconSize={15} density="compact"
               className="sk-rail-new" label={t('rail.cancelSearch')} emphasis="quiet"
@@ -579,8 +576,8 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, people, onSel
               <Segmented<'chats' | 'contacts'> className="sk-chat-subnav" aria-label="chat-subnav"
                 density="compact" fullWidth
                 options={[
-                  { value: 'chats', label: <span className="sk-subnav-label"><MessageCircle size={13} />{t('tab.chats')}</span> },
-                  { value: 'contacts', label: <span className="sk-subnav-label"><Users size={13} />{t('tab.contacts')}</span> },
+                  { value: 'chats', label: t('tab.chats'), leading: <MessageCircle size={13} /> },
+                  { value: 'contacts', label: t('tab.contacts'), leading: <Users size={13} /> },
                 ]}
                 value={tab} onValueChange={value => onTabChange(value ?? 'chats')} />
             </div>
@@ -618,8 +615,7 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, people, onSel
                     <Button actionId={`contact.search-open.${person.id}`} emphasis="quiet" density="normal"
                       className="sk-conv-row sk-conv-contact-row"
                       onActivate={() => { closeSearch(); onSelectContact(person); }}>
-                      <Avatar name={person.name} background={person.tone} size={40}
-                        style={{ borderRadius: 'var(--sk-avatar-radius)' }} />
+                      <Avatar name={person.name} background={person.tone} {...geometry.avatar.catalog} />
                       <span className="sk-conv-meta">
                         <span className="sk-conv-name-line"><strong>{person.name}</strong></span>
                         <span className="sk-conv-preview"><span className="sk-conv-last">

@@ -2,9 +2,8 @@
 
 from typing import TYPE_CHECKING, Any
 
-from tooling.acceptance.core.drivers.base import BaseDriver, DomDriver
-
 if TYPE_CHECKING:
+    from tooling.acceptance.core.drivers.base import BaseDriver, DomDriver
     from tooling.acceptance.drivers.chrome import ChromeDriver
     from tooling.acceptance.drivers.tauri import TauriDriver
 
@@ -12,6 +11,10 @@ __all__ = ["BaseDriver", "DomDriver", "TauriDriver", "ChromeDriver"]
 
 
 def __getattr__(name: str) -> Any:
+    if name in {"BaseDriver", "DomDriver"}:
+        from tooling.acceptance.core.drivers import base
+
+        return getattr(base, name)
     if name == "TauriDriver":
         from tooling.acceptance.drivers.tauri import TauriDriver
 

@@ -49,6 +49,31 @@ Rules:
 
 ## 3. Color Roles
 
+The approved A · 矿灰纸白 structure has three dedicated roles:
+`--pt-frame` for L1 and the whole perimeter, `--pt-catalog` for L2 object
+navigation, and `--pt-reading` for L3 content/header/writing paper.
+Their concrete values have one owner,
+`packages/ui/tokens/src/structural-surfaces.ts`, shared by Native tokens and
+prototype skins. Control wells (`subtle`) and floating material (`raised`)
+remain independent. The decision and light values are recorded in
+[the structural color constitution](../../../architecture/platform/client/ui-system/prototype/north-star-frame.md#a--矿灰纸白结构底色宪法已确认).
+
+The persistent frame drawer consumes `geometry.chatRail` and
+`geometry.drawer` through one shared assembly. Resize applies the current
+space allocation before paint; pointer movement follows continuously,
+pointerup settles and persists, cancellation restores the previous preference.
+`motion.navigation` and `motion.drawer` govern cancellable guide travel.
+See [the allocation contract](../../../architecture/platform/client/ui-system/prototype/drawer-assembly.md).
+
+`geometry.frame.inset=1` keeps the perimeter thin. Navigation and catalogue
+avatars consume `geometry.avatar.navigation/catalog` (36px size, 6px radius);
+the identity Button adds no border or padding around that image.
+`geometry.chatRail.rowHeight=56` is the shared catalogue rhythm.
+Its `rowsMinWidth=200` restores left-aligned names and direct header controls
+as soon as they fit, independently of the 240px stable drag endpoint.
+Segmented measures its own label budget; avatar radius never changes the
+global control radius.
+
 | Role               | Meaning                      | Usage                                   |
 | ------------------ | ---------------------------- | --------------------------------------- |
 | `surface.canvas`   | application background       | inset stage and page background         |
@@ -193,6 +218,7 @@ Rules:
 | `motion.fast`    | hover, press, small state  | 100ms              | `motionDurationFast`  |
 | `motion.normal`  | panel, popover, tab switch | 200ms              | `motionDurationMid`   |
 | `motion.slow`    | major route transition     | 300ms              | `motionDurationSlow`  |
+| `motion.navigation` | full-pane push / pop   | 420ms              | —                     |
 
 Easing curves (reference values are the antd v6 seed; use the matching
 antd token where one exists, never a hand-written cubic-bezier in component
@@ -201,6 +227,7 @@ code):
 | Role                | Curve                              | Use                                        |
 | ------------------- | ---------------------------------- | ------------------------------------------ |
 | `motion.ease.standard` | `cubic-bezier(0.645, 0.045, 0.355, 1)` | default enter/exit and continuous state reveal (`motionEaseInOut`) |
+| `motion.ease.drawer` | `cubic-bezier(.25,.25,.5,1)` | full-pane lateral travel, steady initial movement and a gradual stop without overshoot |
 | `motion.ease.out`      | `cubic-bezier(0.215, 0.61, 0.355, 1)`  | elements entering / progress arriving (`motionEaseOut`) |
 | `motion.ease.emphasized` | `cubic-bezier(0.78, 0.14, 0.15, 0.86)` | deliberate, high-attention transitions only (`motionEaseInOutCirc`) |
 | `motion.ease.overshoot` | `cubic-bezier(0.12, 0.4, 0.29, 1.46)` | rare spring/overshoot affordance; never for dismissal or data (`motionEaseOutBack`) |
@@ -213,6 +240,12 @@ Rules:
   `motion.fast` linear interpolation between samples; it is not an enter/exit
   transition. See [patterns/optimistic-commit.md](./patterns/optimistic-commit.md).
 - Social reading surfaces should avoid decorative motion.
+- Narrow conversation navigation uses `motion.navigation` with
+  `motion.ease.drawer` in both directions, preserving visible travel across
+  the pane. The animated DOM root must survive selection-state changes, and
+  its clipped stage must not scroll with offscreen focus or message anchoring.
+- Reduced motion resets every numeric duration role, including navigation,
+  to zero; easing roles retain their value.
 - Loading and optimistic updates must be understandable even if motion is disabled.
 - Focus and keyboard transitions must not depend on animation.
 

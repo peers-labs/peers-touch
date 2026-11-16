@@ -78,6 +78,22 @@ next identical defect had to be noticed by a human again.
 
 ## How to detect a recurrence
 
+### Identity controls and catalogue presentation
+
+The 2026-11-16 comparison with WeChat exposed a 44px self tile plus private
+button chrome, 40px catalogue avatars, and centred avatar-only rows despite
+208px of exposed paper. Stable drag preference was incorrectly used as the
+row-presentation threshold, with another threshold hiding all header tools.
+
+The frame contract now separates preference from presentation. Shared avatar
+roles and `Button appearance="identity"` own the complete contour; app CSS
+only positions the control. Avatar radius must never override the general
+control radius. Verify real exposure just below/at/above 200px, both tab
+glyphs plus search/new, label restoration, identity hover/keyboard activation,
+and the current native screenshot. A browser pass is not OS-resize proof.
+See [the frame contract](../../architecture/platform/client/ui-system/prototype/north-star-frame.md)
+for the current values.
+
 ### Embedded writing insets and expanded bounds
 
 The 2026-11-15 Desktop composer put its caret against the curved upper-left

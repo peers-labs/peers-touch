@@ -207,7 +207,7 @@ export function DeliveryVerdictMeta({
 
   return (
     <>
-      <Tooltip label={details || label}>
+      <Tooltip className="sc-msg-verdict-details" label={details || label}>
         <span
           className={compact ? 'sc-verdict sc-verdict--compact' : 'sc-verdict'}
           data-message-delivery-state={verdict.kind}

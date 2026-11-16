@@ -650,12 +650,16 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
 
     def test_scope_support_defers_native_reads_until_a_deadline_bound_request(self) -> None:
         library = Mock()
+        workspace = SimpleNamespace(frontmost_pid=Mock(return_value=41))
         namespace = {}
-        with patch("ctypes.CDLL", return_value=library), patch.object(
+        with patch("ctypes.CDLL", return_value=library), patch.dict(
+            sys.modules, {"tooling.acceptance.drivers.native.macos_workspace": workspace},
+        ), patch.object(
             sys, "argv", ["probe", "observation-scope"],
         ):
             exec(_NATIVE_AX_SUPPORT, namespace)
         library.AXUIElementCreateSystemWide.assert_not_called()
+        workspace.frontmost_pid.assert_not_called()
         self.assertIsNone(namespace["reads"])
         reads = Mock()
         namespace["reads"] = reads
@@ -688,18 +692,14 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         library.CFArrayGetCount.return_value = 0
         library.CGEventCreate.return_value = 1
         library.CGEventGetLocation.return_value = SimpleNamespace(x=100.0, y=200.0)
-        application = Mock(spec=["processIdentifier"])
-        application.processIdentifier.return_value = 41
-        workspace = Mock(spec=["frontmostApplication"])
-        workspace.frontmostApplication.return_value = application
-        appkit = SimpleNamespace(NSWorkspace=SimpleNamespace(
-            sharedWorkspace=lambda: workspace,
-        ))
+        workspace = SimpleNamespace(frontmost_pid=Mock(return_value=41))
         for mode, process_id in (("control", 42), ("pointer", 0)):
             with self.subTest(mode=mode):
                 output = io.StringIO()
                 with patch("ctypes.CDLL", return_value=library), patch.dict(
-                    sys.modules, {"AppKit": appkit},
+                    sys.modules, {
+                        "tooling.acceptance.drivers.native.macos_workspace": workspace,
+                    },
                 ), patch.object(sys, "argv", [
                     "probe", mode, str(process_id), str(time.monotonic() + 1.0), "0.05",
                 ]), redirect_stdout(output):

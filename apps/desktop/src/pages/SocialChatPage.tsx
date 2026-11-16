@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { normalizeChatRailWidth } from '@peers-touch/ui';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Empty, Icon, useDrawerAssembly } from '@peers-touch/ui';
 import { ChatSessionList, type ChatRailTab } from '../components/chat/ChatSessionList';
 import { ChatContactsPanel } from '../components/chat/ChatContactsPanel';
 import { ChatMessageArea } from '../components/chat/ChatMessageArea';
 import { ChatRailResizer } from '../components/chat/ChatRailResizer';
 import {
   CHAT_RAIL_DEFAULT_WIDTH,
-  CHAT_RAIL_MIN_WIDTH,
   persistChatRailWidth,
   readStoredChatRailWidth,
 } from '../components/chat/chatRailWidth';
@@ -29,7 +29,6 @@ import { presentError } from '../services/errorPresenter';
 import { imServiceV1 } from '../services/im-service';
 import { scheduleIdle } from '../kernel/boot';
 import { useActiveSocialChatSlice } from '../components/chat/useActiveSocialChatStore';
-import { NARROW_MEDIA_QUERY, useMediaQuery } from '../hooks/useMediaQuery';
 import { currentAuthenticatedActorPtid } from '../store/session';
 import { log } from '../utils/logger';
 import { readFeatureFlags } from '../modules/settings/featureFlags';
@@ -56,12 +55,14 @@ interface OwnedContactSelection {
 //     docs/client/desktop/runtime-projections.md.
 
 export function SocialChatPage() {
+  const { t } = useTranslation('chat');
   const {
     showDetail,
     openThreadRootUlid,
     setFriendP2pStatus,
     conversationMembers,
     activeSessionUlid,
+    activeGroupUlid,
     activeTab,
     currentUserPtid,
     getIMConversations,
@@ -69,12 +70,15 @@ export function SocialChatPage() {
     restoreConversation,
     selectGroup,
     selectSession,
+    closeThread,
+    setShowDetail,
   } = useActiveSocialChatSlice((state) => ({
     showDetail: state.showDetail,
     openThreadRootUlid: state.openThreadRootUlid,
     setFriendP2pStatus: state.setFriendP2pStatus,
     conversationMembers: state.conversationMembers,
     activeSessionUlid: state.activeSessionUlid,
+    activeGroupUlid: state.activeGroupUlid,
     activeTab: state.activeTab,
     currentUserPtid: state.currentUserPtid,
     getIMConversations: state.getIMConversations,
@@ -82,6 +86,8 @@ export function SocialChatPage() {
     restoreConversation: state.restoreConversation,
     selectGroup: state.selectGroup,
     selectSession: state.selectSession,
+    closeThread: state.closeThread,
+    setShowDetail: state.setShowDetail,
   }));
 
   // --- Refs for values used inside effects without re-triggering subscriptions ---
@@ -121,37 +127,36 @@ export function SocialChatPage() {
     setDirectOpenIntent(null);
   }, []);
 
-  // Narrow single-pane navigation (WeChat-style push): below 720px the catalog
-  // rail owns the stage until a conversation opens; the conversation slides in
-  // from the right and the header back control pops it back out. The motion is
-  // CSS-driven via data-narrow-open (transform/visibility), this state only
-  // decides whether the conversation layer is active.
-  const isNarrow = useMediaQuery(NARROW_MEDIA_QUERY);
-  const narrowOpen = isNarrow && (!!activeSessionUlid || !!directOpenIntent);
-  const backToCatalog = useCallback(() => {
-    cancelDirectOpenIntent();
-    selectSession('');
-  }, [cancelDirectOpenIntent, selectSession]);
-
-  // Manually resizable catalog rail (wide surfaces only). The numeric width
-  // feeds a CSS custom property; the rail's width declaration stays in
-  // chat.css so the 720px media query can still override it. Drag previews
-  // update state only, pointer drop / keyboard actions commit to localStorage.
-  const [railWidth, setRailWidth] = useState<number>(() =>
-    readStoredChatRailWidth(window.localStorage));
-  const previewRailWidth = useCallback(
-    (next: number) => setRailWidth(normalizeChatRailWidth(next)),
-    [],
-  );
-  const commitRailWidth = useCallback((next: number) => {
-    setRailWidth(persistChatRailWidth(next, window.localStorage));
-  }, []);
-  const resetRailWidth = useCallback(() => {
-    setRailWidth(
-      persistChatRailWidth(CHAT_RAIL_DEFAULT_WIDTH, window.localStorage),
-    );
-  }, []);
-  const compactRail = !isNarrow && railWidth === CHAT_RAIL_MIN_WIDTH;
+  // Presentation owns geometry/navigation only. Runtime selection stays alive
+  // on Back, so the same composer, attachments and reading position survive.
+  const [initialRailWidth] = useState(() => readStoredChatRailWidth(window.localStorage));
+  const assembly = useDrawerAssembly({
+    initialPreference: initialRailWidth,
+    onPreferenceCommit: (width) => { persistChatRailWidth(width, window.localStorage); },
+  });
+  const { pose } = assembly;
+  const selectedObject = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
+  const taskIdentity = selectedObject ? `${activeTab}:${selectedObject}` : directOpenIntent?.peerPtid ?? '';
+  const previousTask = useRef('');
+  useLayoutEffect(() => {
+    if (previousTask.current === taskIdentity) return;
+    previousTask.current = taskIdentity;
+    if (taskIdentity) { assembly.dismissLeaf(); assembly.reveal(); }
+    else assembly.retireTask();
+  }, [taskIdentity]); // The controller reads its current guide poses.
+  useLayoutEffect(() => {
+    if (openThreadRootUlid) assembly.setLeaf({ kind: 'thread', messageId: openThreadRootUlid });
+    else assembly.setLeaf(showDetail ? { kind: 'detail' } : null);
+  }, [openThreadRootUlid, showDetail, assembly.navigation, taskIdentity]);
+  const backToCatalog = () => {
+    if (assembly.leaf) { closeThread(); setShowDetail(false); }
+    assembly.back();
+  };
+  const resetRailWidth = () => {
+    assembly.back();
+    assembly.setCatalog(CHAT_RAIL_DEFAULT_WIDTH);
+  };
+  const compactRail = pose.catalogRowsCompact;
 
   const openDirectConversation = useCallback((contact: FriendContactSelection) => {
     const requestGeneration = ++directOpenGenerationRef.current;
@@ -294,21 +299,45 @@ export function SocialChatPage() {
 
   return (
     <div
+      ref={assembly.surface}
       className="sc-chat"
       data-social-chat-layout
-      data-narrow={isNarrow ? 'true' : 'false'}
-      data-narrow-open={narrowOpen ? 'true' : 'false'}
+      data-drawer-assembly="shared"
+      data-compressed={pose.compressed}
+      data-work-compact={pose.workToolsCompact}
+      data-preferred-width={assembly.preferred}
+      data-catalog-exposure={pose.exposure}
+      data-navigation-progress={assembly.navigation}
+      data-leaf-progress={assembly.leafProgress}
       data-chat-active-peer-ptid={activePeerDid ?? ''}
       data-chat-side-panel-open={openThreadRootUlid || showDetail ? 'true' : 'false'}
-      style={{ '--pt-chat-rail-width': `${railWidth}px` } as React.CSSProperties}
+      style={{
+        '--pt-chat-rail-width': `${pose.paper}px`,
+        '--sc-catalog-visible': `${pose.visibleCatalog}px`,
+        '--sc-catalog-exposure': `${pose.exposure}px`,
+        '--sc-work-width': `${pose.workWidth}px`,
+        '--sc-work-x': `${pose.mainX}px`,
+        '--sc-leaf-width': `${pose.leafWidth}px`,
+        '--sc-leaf-x': `${pose.leafX}px`,
+        '--sc-composer-budget': `${pose.composerBudget}px`,
+      } as React.CSSProperties}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && !event.defaultPrevented && assembly.open) {
+          event.preventDefault();
+          backToCatalog();
+        }
+      }}
     >
       {/* Unified 300px rail: Segmented 消息/联系人 header lives inside
           ChatSessionList; contacts render in the same rail and open
           conversations directly. */}
+      <div className="sc-catalog-guide" data-drawer-catalog data-drawn={pose.catalogInteractive}
+        inert={!pose.catalogInteractive || !!assembly.leaf || assembly.leafProgress > 0 || (assembly.open && assembly.navigation < 1)}
+        aria-hidden={!pose.catalogInteractive || !!assembly.leaf || assembly.leafProgress > 0 || (assembly.open && assembly.navigation < 1)}>
       <ChatSessionList
         compact={compactRail}
         onExpandRail={resetRailWidth}
-        onConversationSelected={cancelDirectOpenIntent}
+        onConversationSelected={() => { cancelDirectOpenIntent(); assembly.reveal(); }}
         onOpenDirect={openDirectConversation}
         tab={subPage}
         onTabChange={(next) => {
@@ -332,24 +361,40 @@ export function SocialChatPage() {
           />
         ) : null}
       />
+      </div>
 
       {/* The conversation stage is always present; selecting a contact flips
           the rail back to 消息 and opens the conversation here. */}
-      {!isNarrow && (
-        <ChatRailResizer
-          width={railWidth}
-          onPreview={previewRailWidth}
-          onCommit={commitRailWidth}
-          onReset={resetRailWidth}
-        />
-      )}
+      <ChatRailResizer assembly={assembly} />
       <AttachmentDetailHost />
+      <div className="sc-chat-work" data-drawer-work
+        data-visible={assembly.open || assembly.navigation > 0}
+        inert={!assembly.open || assembly.navigation < 1}
+        aria-hidden={!assembly.open || assembly.navigation < 1}>
+      <div className="sc-chat-work__body"
+        inert={!!assembly.leaf || assembly.leafProgress > 0}
+        aria-hidden={!!assembly.leaf || assembly.leafProgress > 0}>
       <ChatMessageArea
         directOpenIntent={directOpenIntent}
-        narrow={isNarrow}
-        onNarrowBack={backToCatalog}
+        compressed={pose.compressed}
+        compactTools={pose.workToolsCompact}
+        onBack={backToCatalog}
       />
-      {openThreadRootUlid ? <ChatThreadPanel /> : showDetail && <ChatDetailPanel />}
+      </div>
+      <div className="sc-chat-leaf" data-visible={!!assembly.leaf || assembly.leafProgress > 0}
+        inert={!assembly.leaf || assembly.leafProgress < 1}
+        aria-hidden={!assembly.leaf || assembly.leafProgress < 1}>
+        {assembly.leafContent?.kind === 'thread'
+          ? <ChatThreadPanel rootUlid={assembly.leafContent.messageId} />
+          : assembly.leafContent?.kind === 'detail' && <ChatDetailPanel />}
+      </div>
+      </div>
+      {!assembly.open && assembly.navigation === 0 && (
+        <div className="sc-chat-rest-placeholder" aria-hidden="true">
+          <Empty icon={<Icon iconId="inbox" size={40} />}
+            description={t('chat.social.messageArea.selectConversation')} />
+        </div>
+      )}
 
       {/* Voice / video call surface — page-level so a ringing call
           stays visible regardless of which conversation is open. */}

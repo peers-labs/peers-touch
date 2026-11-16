@@ -1819,6 +1819,12 @@ focus or HID delivery.
   Python module. Focus must stabilize within the original one-second deadline,
   including child initialization; control and full observation retain their
   two- and three-second subprocess limits respectively.
+  The child protocol and pure identity conversion are lean Driver leaves;
+  importing them or the shared AX reader must not initialize Acceptance Core,
+  runtime, parent adapters or Python AppKit. Package exports load their owners
+  on demand. Frontmost PID queries call the same NSWorkspace API with typed
+  Objective-C signatures and an autorelease pool; each query reads fresh state.
+  Removing cold dependency initialization never shifts or extends deadlines.
   Bootstrap binds one random scope ID, parent PID and fixed monotonic scope
   deadline, bounded by the owning operation and Cell lease. Private pipes admit
   one in-flight request, exact scope/sequence/mode/target PID and finite deadlines;
@@ -1886,8 +1892,14 @@ focus or HID delivery.
   must transition absent/present/absent; macOS can expose a panel inside the
   existing AX window without changing window or sheet counts. Unavailable
   native observation fails closed rather than reporting an absent panel.
-  After checking every owner-window identifier, the finder inspects each
-  window's actual `AXDefaultButton` and requires the same `OKButton` identifier.
+  After checking every owner-window identifier, the finder reads the owner's
+  actual `AXSheets` and verifies each sheet's `OKButton` before falling back
+  to document-window traversal. Selection retains the verified sheet root;
+  the document's unrelated WKWebView is outside that panel's search scope.
+  Sheet cardinality alone never proves panel presence. Unsupported or absent
+  sheets retain the window fallback; unreadable sheets remain failures.
+  The finder inspects each candidate's actual `AXDefaultButton` and requires
+  the same `OKButton` identifier.
   That direct native reference can establish panel presence without scanning
   a wide XPC file-list tree. Explicit optional absence or a different identifier
   continues the original depth walk; failed or late reads remain failures.

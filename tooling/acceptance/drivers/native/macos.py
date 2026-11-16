@@ -26,6 +26,12 @@ from tooling.acceptance.drivers.native.base import (
     NativeWindowSnapshot,
     NativeWindowStack,
 )
+from tooling.acceptance.drivers.native.macos_operator_probe import (
+    NATIVE_OBSERVATION_TIMEOUT_SECONDS,
+    OPERATOR_FOCUS_STABILITY_INTERVAL_SECONDS,
+    OPERATOR_FOCUS_STABILITY_TIMEOUT_SECONDS,
+    control_fields,
+)
 
 
 _CG_IMAGE_ALPHA_NONE = frozenset((0, 5, 6))
@@ -34,9 +40,6 @@ _CG_IMAGE_ALPHA_LAST = frozenset((1, 3))
 _CG_IMAGE_ALPHA_ONLY = 7
 _CG_BITMAP_BYTE_ORDER_MASK = 0x7000
 _CG_BITMAP_BYTE_ORDER_32_LITTLE = 0x2000
-OPERATOR_FOCUS_STABILITY_TIMEOUT_SECONDS = 1.0
-OPERATOR_FOCUS_STABILITY_INTERVAL_SECONDS = 0.05
-NATIVE_OBSERVATION_TIMEOUT_SECONDS = 3.0
 
 
 def _pixel_buffer_has_visible_alpha(
@@ -359,6 +362,7 @@ from pathlib import Path
 from tooling.acceptance.drivers.native.macos_ax import (
     AXReadSession, NativeAXActionUnavailable, NativeAXReadUnavailable,
 )
+from tooling.acceptance.drivers.native.macos_workspace import frontmost_pid
 
 application_services = ctypes.CDLL(
     "/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices"
@@ -540,15 +544,19 @@ def attribute_is_settable(element, name):
 def find_path(element, predicate, path=(), depth=0, *, roots=None):
     paths = [(*path, root) for root in roots] if roots is not None else [(*path, element)]
     owned_children = []
+    traversal_phase = "predicate"
+    sibling_index = 0
     try:
         while paths:
-            for current_path in paths:
+            traversal_phase = "predicate"
+            for sibling_index, current_path in enumerate(paths):
                 if predicate(current_path[-1], current_path):
                     return tuple(core_foundation.CFRetain(item) for item in current_path)
             if depth >= 14:
                 return None
             descendants = []
-            for current_path in paths:
+            traversal_phase = "children"
+            for sibling_index, current_path in enumerate(paths):
                 children = copy_attribute(current_path[-1], "AXChildren")
                 if children:
                     owned_children.append(children)
@@ -557,6 +565,14 @@ def find_path(element, predicate, path=(), depth=0, *, roots=None):
                 )
             paths = descendants
             depth += 1
+    except NativeAXReadUnavailable as error:
+        error.observed.update({
+            "selectorTraversalPhase": traversal_phase,
+            "selectorDepth": depth,
+            "selectorSiblingIndex": sibling_index,
+            "selectorLevelWidth": len(paths),
+        })
+        raise
     finally:
         for children in owned_children:
             core_foundation.CFRelease(children)
@@ -592,45 +608,72 @@ def open_panel(application):
             observed["axReadElapsedSeconds"],
         ) from error
     elapsed = time.monotonic() - started
+    owned_sheets = []
+    lookup_phase = "window-identifier"
+    root_kind = "window"
+    root_index = 0
     try:
         windows = array_items(windows_value)
         if not windows:
             raise NativeAXWindowsUnavailable(0, True, 0, elapsed)
-        for window in windows:
+        for root_index, window in enumerate(windows):
             if copied_text(window, "AXIdentifier") in ("open-panel", "OKButton"):
                 return core_foundation.CFRetain(window)
-        # AppKit can expose the same OKButton directly on its owner window.
-        # Verify that native object before walking a wide XPC file-list tree.
-        for window in windows:
-            button = copy_attribute(window, "AXDefaultButton")
-            try:
-                if button and copied_text(button, "AXIdentifier") == "OKButton":
-                    return core_foundation.CFRetain(window)
-            finally:
-                if button:
-                    core_foundation.CFRelease(button)
-        target = find_path(
-            None,
-            lambda element, path: (
-                len(path) > 1 and copied_text(element, "AXIdentifier") == "OKButton"
-            ),
-            roots=windows,
-        )
-        if target is None:
-            return None
-        try:
-            return core_foundation.CFRetain(target[0])
-        finally:
-            release_path(target)
+        # An attached NSOpenPanel belongs to AXSheets. Returning its document
+        # window makes selection walk the unrelated WKWebView as well. Keep
+        # the actual sheet root after verifying its native OKButton.
+        sheets = []
+        lookup_phase = "sheets"
+        for root_index, window in enumerate(windows):
+            value = copy_attribute(window, "AXSheets")
+            if value:
+                owned_sheets.append(value)
+                sheets.extend(array_items(value))
+        for roots in (sheets, windows):
+            if not roots:
+                continue
+            root_kind = "sheet" if roots is sheets else "window"
+            lookup_phase = "root-identifier"
+            for root_index, root in enumerate(roots):
+                if copied_text(root, "AXIdentifier") in ("open-panel", "OKButton"):
+                    return core_foundation.CFRetain(root)
+            # AppKit can expose the same OKButton directly on the panel.
+            # Verify that native object before walking a wide XPC file list.
+            lookup_phase = "default-button"
+            for root_index, root in enumerate(roots):
+                button = copy_attribute(root, "AXDefaultButton")
+                try:
+                    if button and copied_text(button, "AXIdentifier") == "OKButton":
+                        return core_foundation.CFRetain(root)
+                finally:
+                    if button:
+                        core_foundation.CFRelease(button)
+            lookup_phase = "control-tree"
+            target = find_path(
+                None,
+                lambda element, path: (
+                    len(path) > 1 and copied_text(element, "AXIdentifier") == "OKButton"
+                ),
+                roots=roots,
+            )
+            if target is not None:
+                try:
+                    return core_foundation.CFRetain(target[0])
+                finally:
+                    release_path(target)
+        return None
+    except NativeAXReadUnavailable as error:
+        error.observed.update({
+            "selectorLookupPhase": lookup_phase,
+            "selectorRootKind": root_kind,
+            "selectorRootIndex": root_index,
+        })
+        raise
     finally:
+        for value in owned_sheets:
+            core_foundation.CFRelease(value)
         if windows_value:
             core_foundation.CFRelease(windows_value)
-
-
-def frontmost_pid():
-    import AppKit
-    application = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
-    return int(application.processIdentifier()) if application else -1
 
 
 def pointer_location():
@@ -921,37 +964,10 @@ def collect_panel_paths(predicate, depth_limit=14):
 
 
 def commit_search_field(search_element):
-    # Preferred path: the Search field's own AXConfirm action commits the
-    # query without synthesizing global input. Some AppKit/remote-desktop
-    # configurations do not expose AXConfirm on the field and fail it with
-    # kAXErrorCannotComplete (-25204); in that case post the equivalent
-    # Return key to the still-focused Search field. Exact single-row
-    # matching downstream still guards against selecting the wrong file.
-    try:
-        perform_action(search_element, "AXConfirm")
-        return
-    except RuntimeError as error:
-        if "AX error -25204" not in str(error):
-            raise
-    graphics = ctypes.CDLL(
-        "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
-    )
-    graphics.CGEventCreateKeyboardEvent.argtypes = [
-        CFRef, ctypes.c_uint16, ctypes.c_bool,
-    ]
-    graphics.CGEventCreateKeyboardEvent.restype = CFRef
-    graphics.CGEventPost.argtypes = [ctypes.c_uint32, CFRef]
-    graphics.CGEventPost.restype = None
-    # kVK_Return; kCGHIDEventTap == 0
-    key_code = 0x24
-    for pressed in (True, False):
-        event = graphics.CGEventCreateKeyboardEvent(None, key_code, pressed)
-        if not event:
-            raise RuntimeError("CoreGraphics failed to create Return key event")
-        try:
-            graphics.CGEventPost(0, event)
-        finally:
-            core_foundation.CFRelease(event)
+    # Confirmation targets this process-owned Search field once. A missing
+    # reply is an unknown action outcome, not permission to replay it or send
+    # Return to the operator's foreground application.
+    perform_action(search_element, "AXConfirm")
 
 
 def select_file_via_search(filename):
@@ -1135,8 +1151,26 @@ except ListSelectionUnsupported:
         )
         raise SystemExit(0)
 except Exception as error:
+    failure_frames = []
+    failure = error.__traceback__
+    while failure is not None:
+        failure_frames.append({
+            "function": failure.tb_frame.f_code.co_name,
+            "line": failure.tb_lineno,
+        })
+        failure = failure.tb_next
     core_foundation.CFRelease(application)
-    raise SystemExit(f"{type(error).__name__}: {error}")
+    raise SystemExit(json.dumps({
+        "errorType": type(error).__name__,
+        "message": str(error),
+        "targetProcessId": process_id,
+        "failureFrames": failure_frames,
+        "observed": (
+            error.observed
+            if isinstance(error, (NativeAXReadUnavailable, NativeAXActionUnavailable))
+            else {}
+        ),
+    }, sort_keys=True))
 
 core_foundation.CFRelease(application)
 sys.stdout.write(
@@ -1253,10 +1287,6 @@ _MOUSE_EVENT_TYPES = {
     MouseAction.LEFT_UP: 2,
     MouseAction.MOVE: 5,
     MouseAction.LEFT_DRAG: 6,
-}
-_CONTROL_KINDS = {
-    "AXList": "list",
-    "AXTextField": "text-field",
 }
 _MEDIA_PERMISSION_ALLOW_BUTTON_IDENTIFIER = "action-button-1"
 
@@ -2126,28 +2156,7 @@ class MacOSNativeDesktopAdapter(NativeDesktopAdapter):
 
     @staticmethod
     def _control_snapshot(value: dict[str, object]) -> NativeControlSnapshot:
-        if not isinstance(value, dict):
-            raise ValueError("invalid AX response")
-        role = str(value.get("role") or "")
-        subrole = str(value.get("subrole") or "")
-        kind = (
-            "application-dialog"
-            if subrole == "AXApplicationDialog"
-            else _CONTROL_KINDS.get(role, "other" if role else "unknown")
-        )
-        return NativeControlSnapshot(
-            kind=kind,
-            title=str(value.get("title") or ""),
-            value=str(value.get("value") or ""),
-            window_count=int(value.get("windowCount") or 0),
-            dialog_count=int(value.get("sheetCount") or 0),
-            frontmost=bool(value.get("frontmost")),
-            main_window=bool(value.get("mainWindow")),
-            focused_window=bool(value.get("focusedWindow")),
-            actual_frontmost_pid=int(value.get("actualFrontmostPid") or -1),
-            platform_role=role,
-            platform_subrole=subrole,
-        )
+        return NativeControlSnapshot(**control_fields(value))
 
     def window_stack_at_point(
         self,

@@ -138,6 +138,10 @@ Rules:
 
 - Every person avatar uses the shared platform avatar primitive and rounded-square geometry.
 - Avatar radius is derived from size and remains visibly below half the avatar dimension.
+- Navigation and catalogue use the shared 36px / 6px role. An identity action
+  uses `Button appearance="identity"`; its image fills the whole control
+  without extra padding, border or shadow. Profile and feed roles retain their
+  own size-derived geometry.
 - The same canonical actor identity must project the same display name, avatar asset, and deterministic fallback color across feeds, comments, chat, contacts, and notifications.
 - Feature code may supply a DTO fallback, but it must not create a second avatar primitive or display a raw PTID when a canonical profile is available.
 - Native profile cards pass avatar resource references through the shared avatar

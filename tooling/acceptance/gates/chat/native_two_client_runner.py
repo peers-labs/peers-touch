@@ -273,7 +273,7 @@ def reconciled_command_snapshot_outcome(
         and bool(projection.get("eventId"))
         and int(projection.get("eventSequence") or 0) > 0
         and projection.get("deliveryState")
-        in {"sent", "delivered", "read", "consumed"}
+        in {"accepted", "delivered", "read", "consumed"}
         and intent_matches
         and (
             intent is None
@@ -425,8 +425,18 @@ def message_composer_geometry(
             height: value.height,
           } : null;
         };
+        // Row padding owns inter-message rhythm, not readable content.
+        // Include every rendered descendant so metadata, avatars and an
+        // overflowing Retry control remain part of the clearance check.
+        const contentRects = row ? Array.from(row.querySelectorAll('*'))
+          .filter(element => getComputedStyle(element).visibility !== 'hidden')
+          .map(rect).filter(value => value.width > 0 && value.height > 0) : [];
         return composer && viewport && timeline && sentinel ? {
           row: rect(row),
+          content: contentRects.length ? {
+            top: Math.min(...contentRects.map(value => value.top)),
+            bottom: Math.max(...contentRects.map(value => value.bottom)),
+          } : null,
           composer: rect(composer),
           viewport: rect(viewport),
           timeline: rect(timeline),
@@ -445,6 +455,20 @@ def message_composer_geometry(
         message_id,
     )
     return value if isinstance(value, dict) else None
+
+
+def message_geometry_is_unobscured(geometry: dict[str, Any]) -> bool:
+    content, composer, viewport, sentinel = (
+        geometry.get(key) for key in ("content", "composer", "viewport", "sentinel")
+    )
+    if not all(isinstance(item, dict) for item in (content, composer, viewport, sentinel)):
+        return False
+    return (
+        geometry.get("timelineFlexShrink") == "0"
+        and content["bottom"] <= composer["top"] - 8
+        and content["bottom"] <= viewport["bottom"] - 8
+        and sentinel["top"] >= content["bottom"] + 8
+    )
 
 
 def is_bundled_square_avatar(source: str) -> bool:
@@ -1054,12 +1078,7 @@ class NativeTwoClientGate(AcceptanceGate):
                 for item in (row, composer, viewport, sentinel)
             ):
                 return None
-            return geometry if (
-                geometry.get("timelineFlexShrink") == "0"
-                and row["bottom"] <= composer["top"] - 8
-                and row["bottom"] <= viewport["bottom"] - 8
-                and sentinel["top"] >= row["bottom"] + 8
-            ) else None
+            return geometry if message_geometry_is_unobscured(geometry) else None
 
         try:
             geometry = self.step(
@@ -1221,6 +1240,24 @@ class NativeTwoClientGate(AcceptanceGate):
             "command.reconciliation.ui_send", lambda: send_text(client, plaintext), actor,
         )
         message_id = str(sent.get("messageUlid") or "")
+        # MP-D33 admits only a durable draft. With dispatch paused, use the
+        # existing production retry boundary to prepare that exact draft.
+        preparation = client.invoke_app_result(
+            "messaging_retry_message",
+            {"input": {"conversation_id": conversation_id, "message_id": message_id}},
+        )
+        outcome = preparation.get("data") or {}
+        command_id = str(outcome.get("command_id") or "")
+        if (
+            preparation.get("ok") is not True
+            or outcome.get("state") != "pending"
+            or outcome.get("message_id") != message_id
+            or not command_id
+        ):
+            raise GateError(
+                "UI-admitted draft did not prepare its exact command: "
+                + json.dumps(preparation, sort_keys=True)
+            )
         snapshot = async_harness(
             client, "engineInteractionSnapshot",
             {"actorPtid": self.ptids[actor], "conversationId": conversation_id,
@@ -1233,9 +1270,8 @@ class NativeTwoClientGate(AcceptanceGate):
             and row.get("outboxState") == "pending"
             and row.get("attemptState") == "prepared"
         ]
-        if not message_id or len(rows) != 1 or not rows[0].get("commandId"):
+        if not message_id or len(rows) != 1 or rows[0].get("commandId") != command_id:
             raise GateError("UI send did not create one exact durable prepared command")
-        command_id = str(rows[0]["commandId"])
         exact_prepared = async_harness(
             client, "engineInteractionSnapshot",
             {"actorPtid": self.ptids[actor], "conversationId": conversation_id,
@@ -1260,6 +1296,7 @@ class NativeTwoClientGate(AcceptanceGate):
             **target,
             "plaintext": plaintext,
             "plaintextSha256": hashlib.sha256(plaintext.encode()).hexdigest(),
+            "draftPreparation": outcome,
             "preparedSnapshot": exact_prepared,
         }
         prepared = async_harness(
@@ -1303,6 +1340,9 @@ class NativeTwoClientGate(AcceptanceGate):
                 raise GateError(
                     "historical command snapshot returned invalid evidence"
                 )
+            # Keep the last real read in the final report even when convergence
+            # times out; a failed wait must not discard the command's state.
+            self.report.runtime["submittedCommandLastObservation"] = value
             return value
 
         original_rows = [
@@ -1478,6 +1518,11 @@ class NativeTwoClientGate(AcceptanceGate):
         client = self.clients[target["actor"]]
         if before.get("projection") is None:
             raise GateError("Committed retry requires the authority message projection")
+        enter_chat_page(client)
+        async_harness(
+            client, "syncFriendSession",
+            {"sessionUlid": target["conversationId"]},
+        )
         paused = client.invoke_app_result(
             "messaging_acceptance_pause_lifecycle",
             {"input": {"expected_actor_ptid": self.ptids[target["actor"]]}},

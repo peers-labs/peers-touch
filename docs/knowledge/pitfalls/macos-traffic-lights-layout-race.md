@@ -49,9 +49,10 @@ not only Accessibility bounds or an Acceptance build that bypasses chrome.
 Deleting the left border left the top/upper-left corner painted with L2
 `subtle` while L1 used a white translucent gradient. This produced two
 different materials around the native lights and the rest of the perimeter.
-L1 and the shell background/border must all consume the existing `--pt-surface`
-color. The reference governs frame geometry, not a new palette: preserve the
-product's existing three-level colors.
+L1 and the shell background/border must all consume `--pt-frame`.
+The user-approved A palette supersedes the earlier surface-color constraint;
+L2 consumes `--pt-catalog`, L3 consumes `--pt-reading`. The values and decision
+remain in the structural color constitution, not in this pitfall.
 Inset stage corners expose that same base; prototype wallpaper/background
 layers must be inset and rounded too, or they paint over the base.
 

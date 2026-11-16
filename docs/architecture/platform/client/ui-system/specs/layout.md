@@ -16,6 +16,21 @@
 - [ScrollArea](#ui.spec.scrollarea)
 - [Card](#ui.spec.card)
 
+<a id="ui.spec.drawerassembly"></a>
+## DrawerAssembly / DrawerRailResizer
+
+Shared behavior is implemented by `useDrawerAssembly`, `resolveDrawerAssembly`
+and `DrawerRailResizer`; it is exercised inside its real Chat host, not as a
+disconnected slider. The [frame assembly contract](../prototype/drawer-assembly.md)
+owns allocation, admission, reversal, cancellation, element budgets and
+retained working state. The host provides content, business intent, localized
+separator label and preference persistence. UI owns observer/RAF cleanup.
+Both Desktop and canonical prototype consume this implementation.
+Catalogue presentation restores left-aligned names and direct tab/search/new
+controls at 200px exposure; Segmented owns the measured label fit. That
+budget is independent of the stable 240px drag endpoint.
+Native physical-window and assistive-technology proof remains UNPROVEN.
+
 <a id="ui.spec.block"></a>
 ## Surface
 
@@ -951,4 +966,3 @@ entityId/role/title/meta/content/navigation/actionViews/recoveryView。这是语
 反例至少包括本项所有禁止组合；极端数据使用本项边界，再叠加总入口的主题、文字放大、RTL、输入模式和 reduced-motion 条件。生命周期验证本项资源释放与身份切换，不只验证默认截图。
 
 specimen 当前为 **NOT_BUILT**；规范结构检查不等于视觉、交互、原生或业务 Journey PASS。业务事实与 receiver 侧结果仍需对应业务 Gate。
-

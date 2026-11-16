@@ -25,6 +25,13 @@ open/select/close and exact file readback before Binding admits it. Window,
 status-item and exclusive permission actions retain their own contracts.
 
 `macos_operator.py` owns one read-only child per operator observation scope.
+`macos_operator_probe.py` owns its lean child protocol, identity conversion and
+original deadlines. Driver package exports load on demand so importing the
+probe or AX reader does not initialize Acceptance Core, runtime or adapters.
+`macos_workspace.py` queries the same NSWorkspace frontmost application through
+typed Objective-C calls and an autorelease pool, without importing Python
+AppKit or retaining an application sample. Child startup remains inside the
+original focus deadline.
 Fresh reads compare retained AX control/window references with CFEqual; title,
 value, counts and hashes cannot substitute for object equality. Core retains
 the four-field frozen baseline and sticky failure. Bootstrap and every bounded

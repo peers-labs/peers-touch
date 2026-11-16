@@ -3,23 +3,21 @@ from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING, Any
 
-from tooling.acceptance.core.errors import DriverError
-from tooling.acceptance.drivers.native.base import (
-    MouseAction,
-    NativeInputIsolation,
-    NativeControlSnapshot,
-    NativeDesktopAdapter,
-    NativeInputMode,
-    NativeKey,
-    NativeModifier,
-    NativeWindowBounds,
-    NativeWindowSnapshot,
-    NativeWindowStack,
-    admit_local_native_input_mode,
-    resolve_native_input_mode,
-)
-
 if TYPE_CHECKING:
+    from tooling.acceptance.drivers.native.base import (
+        MouseAction,
+        NativeInputIsolation,
+        NativeControlSnapshot,
+        NativeDesktopAdapter,
+        NativeInputMode,
+        NativeKey,
+        NativeModifier,
+        NativeWindowBounds,
+        NativeWindowSnapshot,
+        NativeWindowStack,
+        admit_local_native_input_mode,
+        resolve_native_input_mode,
+    )
     from tooling.acceptance.drivers.native.runtime import (
         NativeDesktopRuntimeBinding,
         NativeLaunchOptions,
@@ -50,6 +48,8 @@ __all__ = [
 def create_native_desktop_adapter(
     platform_name: str | None = None,
 ) -> NativeDesktopAdapter:
+    from tooling.acceptance.core.errors import DriverError
+
     resolved_platform = platform_name or sys.platform
     if resolved_platform == "darwin":
         from tooling.acceptance.drivers.native.macos import (
@@ -75,6 +75,15 @@ def create_native_desktop_adapter(
 
 
 def __getattr__(name: str) -> Any:
+    if name in {
+        "MouseAction", "NativeInputIsolation", "NativeControlSnapshot",
+        "NativeDesktopAdapter", "NativeInputMode", "NativeKey", "NativeModifier",
+        "NativeWindowBounds", "NativeWindowSnapshot", "NativeWindowStack",
+        "admit_local_native_input_mode", "resolve_native_input_mode",
+    }:
+        from tooling.acceptance.drivers.native import base
+
+        return getattr(base, name)
     if name in {
         "NativeDesktopRuntimeBinding",
         "NativeLaunchOptions",

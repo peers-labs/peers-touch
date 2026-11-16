@@ -1,4 +1,6 @@
-export const CHAT_SESSION_ROW_HEIGHT = 64;
+import { geometry } from '@peers-touch/ui';
+
+export const CHAT_SESSION_ROW_HEIGHT = geometry.chatRail.rowHeight;
 export const CHAT_MESSAGE_METADATA_RAIL_HEIGHT = 24;
 export const CHAT_MESSAGE_REACTION_CHIP_HEIGHT = 20;
 // Main-surface item spacing mirrors the prototype .sk-msg-stream gap (14px);

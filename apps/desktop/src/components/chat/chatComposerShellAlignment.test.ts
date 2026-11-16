@@ -123,7 +123,9 @@ describe('composer expand toggle and frame inset', () => {
     // The parent re-anchors the stream tail on this signal so a growing
     // composer pushes the last message up instead of covering it.
     expect(composerSource).toContain('onComposerGeometryChange?: () => void');
-    expect(composerSource).toContain('dataset.composerHeight');
+    expect(composerSource).toContain('new ResizeObserver');
+    expect(composerSource).toContain('autoGrow');
+    expect(composerSource).not.toContain('element.style.height');
     expect(composerSource).toContain('onGeometryChangeRef.current?.()');
   });
 

@@ -9,6 +9,7 @@ import {
   IconButton,
   Spin as PtSpin,
   Tag as PtTag,
+  geometry,
   type MenuAction,
   type Tone,
 } from '@peers-touch/ui';
@@ -390,7 +391,7 @@ export function ChatContactsPanel({
     const directionTone: Tone = isOutgoing ? 'neutral' : 'info';
     // Settled history rows compress to one line: the repeated-attempt count is
     // secondary metadata and moves into the hover tooltip instead of wrapping
-    // into a third tag row that would outgrow the 40px avatar.
+    // into a third tag row that would outgrow the catalogue avatar.
     const attemptsLabel = attemptCount > 1
       ? t('chat.social.contacts.requestAttempts', { count: attemptCount })
       : '';
@@ -425,7 +426,7 @@ export function ChatContactsPanel({
           selectRequestActor();
         }}
       >
-        <UserSquareAvatar remoteUrl={resolvedAvatar} actorPtid={peerPtid} name={peerLabel} size={40} />
+        <UserSquareAvatar remoteUrl={resolvedAvatar} actorPtid={peerPtid} name={peerLabel} {...geometry.avatar.catalog} />
         <div className="sc-request-card__body">
           <div className="sc-request-card__name-row">
             <strong className="sc-request-card__name">{peerLabel}</strong>
@@ -526,7 +527,7 @@ export function ChatContactsPanel({
         remoteUrl={selfIdentity.avatarUrl}
         actorPtid={myDid}
         name={t('chat.social.contacts.savedMessages')}
-        size={38}
+        {...geometry.avatar.catalog}
       />
       <span className="sc-contact-row__body">
         <strong className="sc-contact-row__name">{t('chat.social.contacts.savedMessages')}</strong>
@@ -578,7 +579,7 @@ export function ChatContactsPanel({
           remoteUrl={conversation.avatar}
           actorPtid={conversation.peerPtid || null}
           name={displayName}
-          size={38}
+          {...geometry.avatar.catalog}
         />
         <span className="sc-contact-row__body">
           <strong className="sc-contact-row__name">{displayName}</strong>
@@ -623,7 +624,8 @@ export function ChatContactsPanel({
       >
         <ChatActorIdentityRow
           identity={friend}
-          avatarSize={38}
+          avatarSize={geometry.avatar.catalog.size}
+          avatarRadius={geometry.avatar.catalog.radius}
         />
       </button>
     );
@@ -640,21 +642,24 @@ export function ChatContactsPanel({
       data-contact-section={key}
       data-collapsed={collapsed.includes(key) ? 'true' : 'false'}
     >
-      {compact ? (
+      {/* Compact groups/history/friends have no independent destination.
+          Keep the real avatar rows and the single current-tab menu instead
+          of repeating an expand-rail action for every category. Pending
+          request queues retain their labelled attention affordance. */}
+      {compact ? (key === 'incoming' || key === 'outgoing' ? (
         <IconButton
           actionId={`contacts.section.${key}`}
           className="sc-contact-section__compact"
           density="compact"
           emphasis="quiet"
-          iconId={key === 'groups' ? 'users-round' : key === 'friends' ? 'users'
-            : key === 'history' ? 'history' : key === 'incoming' ? 'user-plus' : 'undo-2'}
+          iconId={key === 'incoming' ? 'user-plus' : 'undo-2'}
           label={label}
           onActivate={() => {
             onExpandRail?.();
             setCollapsed((current) => current.filter((sectionKey) => sectionKey !== key));
           }}
         />
-      ) : <Button
+      ) : null) : <Button
         actionId={`contacts.section.${key}`}
         className="sc-contact-section__toggle"
         emphasis="quiet"

@@ -15,6 +15,8 @@
  * Primary CTA stays neutral ink. Hairlines are translucent neutral, never
  * tinted green. Semantic colors stay independent of the brand accent.
  */
+import { structuralSurfaces } from './structural-surfaces';
+
 export const northStarTheme = {
   id: 'north-star-pine-glass',
   status: 'candidate',
@@ -23,6 +25,7 @@ export const northStarTheme = {
 } as const;
 
 const light = {
+  ...structuralSurfaces.light,
   // Neutral paper container (a bare whisper of warmth, no hue cast).
   canvas: '#f4f5f4',
   surface: '#ffffff',
@@ -64,6 +67,7 @@ const light = {
 };
 
 const dark: typeof light = {
+  ...structuralSurfaces.dark,
   canvas: '#141615',
   surface: '#1b1d1c',
   subtle: '#222524',

@@ -30,7 +30,8 @@ export function RenderSuspension({active,children}: {active:boolean;children:Rea
 const MotionContext=createContext<'system'|'reduced'|'full'>('system');
 export function MotionPolicy({preference='system',children}: {preference?:'system'|'reduced'|'full';children:ReactNode}) {
   return <MotionContext.Provider value={preference}><div data-pt-motion={preference}
-    style={preference==='reduced'?{'--pt-motion-fast':'0ms','--pt-motion-normal':'0ms','--pt-motion-slow':'0ms'} as React.CSSProperties:undefined}>{children}</div></MotionContext.Provider>;
+    style={preference==='reduced'?Object.fromEntries(Object.entries(geometry.motion)
+      .filter(([,value])=>typeof value==='number').map(([key])=>[`--pt-motion-${key}`,'0ms'])) as React.CSSProperties:undefined}>{children}</div></MotionContext.Provider>;
 }
 export function useMotionPolicy() {return {preference:useContext(MotionContext),durations:geometry.motion};}
 export interface FontAsset {id:string;family:string;source:string;license:string;weight?:string;}

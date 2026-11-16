@@ -180,13 +180,15 @@
       "features": ["desktop-chat-surface"],
       "required_gates": [
         "desktop-check",
-        "chat-contact-message-resilience-e2e"
+        "chat-contact-message-resilience-e2e",
+        "chat-native-current-profile-two-client-e2e"
       ],
       "synthetic_paths": [
         "apps/desktop/src/pages/SocialChatPage.tsx",
         "apps/desktop/src/components/chat/ChatSessionList.tsx",
         "apps/desktop/src/components/chat/ChatMessageArea.tsx",
-        "apps/desktop/src/store/socialChat.ts"
+        "apps/desktop/src/store/socialChat.ts",
+        "tooling/acceptance/gates/chat/drawer_layout.py"
       ],
       "evidence": {
         "truth_sources": [
@@ -200,7 +202,8 @@
         ],
         "proven_by": [
           "desktop-check",
-          "chat-contact-message-resilience-e2e"
+          "chat-contact-message-resilience-e2e",
+          "chat-native-current-profile-two-client-e2e"
         ],
         "proven_scope": [
           "Desktop chat pages, components, store and service APIs type-check together",

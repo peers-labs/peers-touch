@@ -111,7 +111,10 @@ export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(function 
       floor * lineHeight + padding,
       Number.parseFloat(computed.minHeight) || 0,
     );
-    const maximumHeight = Math.max(minimumHeight, ceiling * lineHeight + padding);
+    const maximumHeight = Math.max(minimumHeight, Math.min(
+      ceiling * lineHeight + padding,
+      Number.parseFloat(computed.maxHeight) || Number.POSITIVE_INFINITY,
+    ));
     element.style.height = 'auto';
     const height = Math.min(Math.max(element.scrollHeight, minimumHeight), maximumHeight);
     element.style.height = `${height}px`;
@@ -124,7 +127,7 @@ export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(function 
     let measurementKey = '';
     const observer = new ResizeObserver(() => {
       const computed = getComputedStyle(element);
-      const nextKey = `${element.clientWidth}:${computed.lineHeight}:${computed.paddingTop}:${computed.paddingBottom}:${computed.minHeight}`;
+      const nextKey = `${element.clientWidth}:${computed.lineHeight}:${computed.paddingTop}:${computed.paddingBottom}:${computed.minHeight}:${computed.maxHeight}`;
       if (nextKey !== measurementKey) { measurementKey = nextKey; grow(); }
     });
     observer.observe(element);

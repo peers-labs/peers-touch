@@ -1787,6 +1787,14 @@ pub fn messaging_acceptance_interaction_snapshot(
         );
     };
     snapshot_object.insert("actorPtid".to_string(), json!(actor_ptid));
+    let worker_active = match state
+        .messaging_engines
+        .profile_worker_token(&session.account_id)
+    {
+        Ok(token) => token.is_some(),
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
+    snapshot_object.insert("lifecycleWorkerActive".to_string(), json!(worker_active));
     AppResult::success(snapshot)
 }
 
@@ -2399,7 +2407,13 @@ pub async fn messaging_retry_message(
         }
     };
     if let Err(error) = state.messaging_engines.wake_profile(&account_id) {
-        return Ok(AppResult::fail(ErrorCode::InternalError, error, None));
+        // Retry has already durably prepared or redriven this message.
+        // A missing worker cannot turn that completed transition into failure.
+        tracing::warn!(
+            account_id = %account_id,
+            error = %error,
+            "messaging retry lifecycle wake deferred after durable preparation"
+        );
     }
     Ok(AppResult::success(json!({
         "command_id": outcome.command_id.unwrap_or_default(),
