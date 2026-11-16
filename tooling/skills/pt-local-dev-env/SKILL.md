@@ -85,6 +85,17 @@ seeding, the single-session rotation rule, and the headless-vs-GUI boundary —
 is in
 [`references/two-desktop-same-station-test-accounts.md`](references/two-desktop-same-station-test-accounts.md).
 
+## iOS Resources
+
+Use the existing [resource owner contract](../../../docs/architecture/engineering/local-dev/integration.md#9-resource-dependency-cutover).
+Discover readable device names, model/runtime, shared Profiles, contents and
+holders. Resolve the user's count, purpose or name internally; never ask them
+to supply UUIDs. Create only an explicitly requested count and preparation ID.
+Use `resource-inspect` and `make mobile RESOURCE='<name-or-purpose>'`.
+Mobile is Station connect-only. Both Make/pnpm entries hold the same slot and
+physical UUID. Conflicting content requires that operation's notice and
+force/decline decision; lease conflicts cannot be forced.
+
 ## Workflow
 
 1. Confirm the exact canonical worktree, then inspect current authority:

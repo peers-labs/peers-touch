@@ -31,7 +31,16 @@ import {
   WorkspaceLifecycleLockError,
   withWorkspaceLifecycleLockSync,
 } from './workspace-lifecycle-lock.mjs';
+import {
+  canonicalProviderId,
+  iosRequirement,
+  profileResourceRequirements,
+  readResourceState,
+} from './machine-dev-resource-contract.mjs';
+import { MachineDevError, canonicalize, fail } from './machine-dev-primitives.mjs';
+import { inspectGitWorkspace } from './git-workspace.mjs';
 
+export { MachineDevError, canonicalize, fail } from './machine-dev-primitives.mjs';
 export const MACHINE_REGISTRY_KIND = 'peers-touch-machine-dev-registry';
 export const MACHINE_REGISTRY_AUTHORITY = 'machine-control-plane';
 export const MACHINE_REGISTRY_SCHEMA_VERSION = 1;
@@ -42,6 +51,7 @@ export const STATION_CAPABILITIES = new Set([
 ]);
 export const LEASE_RESOURCE_KINDS = new Set([
   'local.slot',
+  'simulator.ios',
   'station.deploy',
   'station.reset',
 ]);
@@ -83,31 +93,8 @@ const AUTHORITATIVE_REGISTRY_KEYS = new Set([
   'acceptanceEvidenceMigration',
 ]);
 
-export class MachineDevError extends Error {
-  constructor(code, message, detail = {}) {
-    super(message);
-    this.name = 'MachineDevError';
-    this.code = code;
-    this.detail = detail;
-  }
-}
-
-export function fail(code, message, detail = {}) {
-  throw new MachineDevError(code, message, detail);
-}
-
 function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-export function canonicalize(value) {
-  if (Array.isArray(value)) return value.map(canonicalize);
-  if (!isObject(value)) return value;
-  return Object.fromEntries(
-    Object.keys(value)
-      .sort()
-      .map((key) => [key, canonicalize(value[key])]),
-  );
 }
 
 function requiredText(value, field, maxLength = 1024) {
@@ -610,6 +597,7 @@ export function resolveProfileDefinition(options) {
     stationDeployEnvironment: deployEnvironment,
     stationDeployFile: deploy?.file ?? null,
     stationDeployHost: deploy?.values.PT_DEPLOY_HOST?.trim() || null,
+    resourceRequirements: profileResourceRequirements(values),
     [PROFILE_VALUES]: values,
   };
 }
@@ -1006,7 +994,7 @@ function syncDirectory(directory) {
   }
 }
 
-function writeRegistryAtomic(file, registry) {
+export function writeMachineDocumentAtomic(file, registry) {
   mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   const temp = path.join(
     path.dirname(file),
@@ -1039,12 +1027,31 @@ function mutateRegistryUnderFence(options, mutation) {
     const output = mutation(registry, now);
     registry.updatedAt = now.toISOString();
     validateRegistry(registry);
-    writeRegistryAtomic(file, registry);
+    writeMachineDocumentAtomic(file, registry);
     const readback = readRegistry(file);
     return { output, registry: readback };
   } finally {
     release();
   }
+}
+
+// Resource persistence shares the existing lifecycle/registry lock ordering.
+export function mutateMachineResources(options, mutation) {
+  const workspace = captureWorkspace(options.workspaceRoot ?? repoRoot);
+  return withWorkspaceLifecycleLockSync({
+    home: options.home,
+    workspaceRoot: workspace.canonicalRoot,
+    workspaceId: workspace.workspaceId,
+    lifecycleLease: options.lifecycleLease,
+  }, () => {
+    const release = acquireRegistryLock(machineRegistryLockPath(options.home), options.lockTimeoutMs);
+    try {
+      const resolved = checkWorkspace({ ...options, [REGISTRY_LOCK_HELD]: true });
+      return mutation(resolved);
+    } finally {
+      release();
+    }
+  });
 }
 
 function mutateRegistry(options, mutation) {
@@ -1560,7 +1567,7 @@ export function prepareLease(options) {
   const resourceId = requiredIdentifier(options.resourceId, 'resourceId');
   const budgetSeconds = requiredBudget(options.budgetSeconds);
   const requiredCapabilities =
-    resourceKind === 'local.slot'
+    ['local.slot', 'simulator.ios'].includes(resourceKind)
       ? []
       : resourceKind === 'station.deploy'
         ? ['station.connect', 'station.deploy']
@@ -1570,6 +1577,29 @@ export function prepareLease(options) {
     capabilities: requiredCapabilities,
     budgetSeconds,
   });
+  if (resourceKind === 'simulator.ios') {
+    const snapshot = inspectGitWorkspace(resolved.binding.canonicalRoot, {
+      excludePaths: ['apps/mobile/src-tauri/gen/apple/assets'],
+    });
+    if (!snapshot.stable) fail('RUNTIME_IDENTITY_MISMATCH', 'workspace source changed during preparation');
+    resolved.source.workspaceDigest = snapshot.workspaceDigest;
+    if (options.expectedWorkspaceDigest && options.expectedWorkspaceDigest !== snapshot.workspaceDigest) {
+      fail('RUNTIME_IDENTITY_MISMATCH', 'workspace bytes changed after operation preparation');
+    }
+    const providerId = canonicalProviderId(resourceId);
+    if (providerId !== resourceId) {
+      fail('RESOURCE_ID_INVALID', 'physical lease UUID must be canonical');
+    }
+    const state = readResourceState(options);
+    iosRequirement(resolved.profile);
+    const instance = state.instances.find((item) => item.providerId === providerId);
+    const assignment = state.assignments.find((item) => item.profile === resolved.profile.profile);
+    if (!instance || assignment?.profileSource !== resolved.profile.profileFile ||
+        !assignment?.resources.some((item) => item.id === instance.id) ||
+        !['present', 'cleanup-failed', 'removing'].includes(instance.progress)) {
+      fail('WORKSPACE_BINDING_MISSING', 'physical device is not assigned to the operation Profile');
+    }
+  }
   if (
     options.expectedBranch !== undefined &&
     requiredText(options.expectedBranch, 'expectedBranch') !==
@@ -1701,13 +1731,15 @@ export function verifyHeldLease(options) {
   const workspace = captureWorkspace(options.workspaceRoot ?? repoRoot);
   const resourceKind = requiredText(options.resourceKind, 'resourceKind', 64);
   const resourceId = requiredIdentifier(options.resourceId, 'resourceId');
+  const frame = JSON.parse(process.env.PT_MACHINE_LEASE_STACK_JSON ?? '[]')
+    .find((item) => item.kind === resourceKind && item.resourceId === resourceId);
   const heldProfile = process.env.PT_MACHINE_LEASE_TARGET_PROFILE;
   if (heldProfile && options.targetProfile && heldProfile !== options.targetProfile) {
     fail('RUNTIME_IDENTITY_MISMATCH', 'inherited lease targets a different Profile');
   }
   const leaseFd = Number(
     requiredText(
-      options.leaseFd ?? process.env.PT_MACHINE_LEASE_FD,
+      options.leaseFd ?? (frame ? String(frame.fd) : process.env.PT_MACHINE_LEASE_FD),
       'PT_MACHINE_LEASE_FD',
       16,
     ),
@@ -1719,7 +1751,7 @@ export function verifyHeldLease(options) {
     );
   }
   const leaseId = requiredText(
-    options.leaseId ?? process.env.PT_MACHINE_LEASE_ID,
+    options.leaseId ?? frame?.leaseId ?? process.env.PT_MACHINE_LEASE_ID,
     'PT_MACHINE_LEASE_ID',
     128,
   );
@@ -1765,6 +1797,9 @@ export function verifyHeldLease(options) {
       expectedHead:
         options.expectedHead ??
         process.env.PT_MACHINE_LEASE_SOURCE_HEAD,
+      expectedWorkspaceDigest:
+        options.expectedWorkspaceDigest ??
+        process.env.PT_MACHINE_LEASE_SOURCE_WORKSPACE_DIGEST,
       resetScope:
         options.resetScope ??
         process.env.PT_MACHINE_LEASE_RESET_SCOPE,
@@ -1891,6 +1926,9 @@ export function buildLeaseCommand(options) {
     '--expected-head',
     request.source.head,
   );
+  if (request.source.workspaceDigest) {
+    validationCommand.push('--expected-workspace-digest', request.source.workspaceDigest);
+  }
   const arguments_ = [
     leaseHelperPath(),
     'run',
@@ -1913,6 +1951,9 @@ export function buildLeaseCommand(options) {
   ];
   if (request.targetProfile) {
     arguments_.push('--target-profile', request.targetProfile);
+  }
+  if (request.source.workspaceDigest) {
+    arguments_.push('--expected-workspace-digest', request.source.workspaceDigest);
   }
   if (options.resetScope) {
     arguments_.push(

@@ -1,0 +1,42 @@
+{
+  "id": "mobile-profile-resource-dependencies",
+  "status": "active",
+  "product_area": "mobile",
+  "owners": [
+    "tooling/scripts/local-dev/machine-dev-resource-*.mjs",
+    "tooling/scripts/local-dev/machine-dev-ios-provider.mjs",
+    "tooling/scripts/local-dev/fixtures/resource-native-boundary.mjs",
+    "tooling/scripts/local-dev/mobile-ios-sim.sh",
+    "apps/mobile/scripts/ios-dev-sim.sh",
+    "tooling/acceptance/provisioners/mobile_ios_resources.py",
+    "tooling/acceptance/provisioners/profile_ios_fixture.py",
+    "tooling/acceptance/gates/mobile/resource_dependencies*.py"
+  ],
+  "truth_sources": [
+    "docs/architecture/engineering/local-dev/design.md",
+    "docs/architecture/engineering/local-dev/data-model.md",
+    "Canonical Machine Dev resource document",
+    "CoreSimulator inventory and installed native application",
+    "Rust secure storage owner and scoped Keychain row"
+  ],
+  "visible_surfaces": [{"type": "cli", "route": "machine-dev resource discovery, assignment and overwrite notice"}],
+  "required_gates": [
+    "machine-dev-registry-self",
+    "profile-resource-id-sharing-native-e2e",
+    "profile-resource-overwrite-native-e2e"
+  ],
+  "acceptance": {
+    "product_assertions": ["LDCP-R01", "LDCP-R02", "LDCP-R03", "LDCP-R04", "LDCP-R05", "LDCP-R06", "LDCP-R07", "LDCP-R08", "LDCP-R09", "LDCP-R10"],
+    "visible": [
+      "Requested counts, readable names and purposes resolve stable identities; shared Profiles see the same current native installation.",
+      "An exact overwrite notice precedes force; refusal and stale decisions preserve app data and Keychain.",
+      "Physical locks exclude other callers, release and detach retain content, and explicit fixture deletion verifies the provider and directory."
+    ]
+  },
+  "negative": [
+    "No hidden allocation, fixed role/count, or raw UUID memorization requirement",
+    "No Station deployment or restart from Mobile startup",
+    "No foreign device adoption, blanket force, silent Keychain reset or source-only native proof",
+    "No second machine owner under an evidence directory"
+  ]
+}

@@ -30,29 +30,31 @@ machine-global Simulator devices across independent runs, so application
 uninstall was not a storage-isolation boundary.
 
 Suite-scoped client reuse remains valid within one declared Suite Runtime.
-Independent Provisioner runs, however, must not share a Simulator whose secure
-storage can outlive application uninstall.
+Independent runs may explicitly share a resource ID, but must not describe its
+retained storage as fresh.
 
 ## Mitigation
 
 ### What was done in code
 
-- `MobileSimulatorProvisioner` now creates a fresh Simulator for every iOS
-  client in each Provisioner run.
-- Base, selected-client, and layout Provisioners share the same creation path.
-- Cleanup shuts down and deletes every owned Simulator; the fixed-device
-  discovery path was removed.
+- Base, selected-client and layout Provisioners consume explicit Profile
+  assignments through the canonical Machine Dev owner.
+- A Profile's fresh-data requirement rejects previously used or unknown devices.
+  Explicit creation produces an empty device; exact reset requires its own
+  impact/decision and actual provider/data readback.
+- Installation preserves app data and Keychain. Suite cleanup releases sessions
+  and locks while retaining devices and contents. Detach is not deletion.
 
 ### What guards against regression
 
-`MobileSimulatorProvisionerTests` requires per-client `simctl create`, forbids
-fixed-device inventory selection, and verifies shutdown-before-delete cleanup
-for both primary and peer Simulators.
+`MobileSimulatorProvisionerTests` forbids direct per-run creation and uninstall,
+and requires shared-content projections and release-only cleanup. Native/data
+proof separately verifies preserved Keychain and explicit reset effects.
 
 ## How to detect a recurrence
 
 ```bash
-rg -n '_ready_ios_simulator|simctl", "list", "--json"' \
+rg -n '_create_isolated_ios|simctl", "(create|delete|uninstall)"' \
   tooling/acceptance/provisioners/mobile_simulator.py
 ```
 
@@ -64,9 +66,9 @@ PATH="$PWD/.local/acceptance/python-venv/bin:$PATH" \
   tooling.acceptance.tests.test_mobile_simulator_provisioner
 ```
 
-Then run two Mobile identity Gates sequentially. Their Runtime Manifests must
-bind different Simulator UDIDs, and both cleanup reports must prove deletion of
-their owned devices.
+Run the selected resource native Gate. Its provider/data oracle must distinguish
+retained sharing, explicit fresh creation/reset and physical deletion. A released
+lease or a missing app container does not prove Keychain erasure.
 
 ## Crosswalks
 

@@ -1,4 +1,4 @@
-"""Concrete inputs of the unchanged MachineDev self-check command."""
+"""Concrete inputs of the MachineDev self-check command."""
 
 from __future__ import annotations
 
@@ -21,6 +21,10 @@ GATE_ID = "machine-dev-registry-self"
 OWNER_ID = "machine-dev-toolchain"
 COMMAND = (
     "node --test tooling/scripts/local-dev/machine-dev.test.mjs "
+    "tooling/scripts/local-dev/machine-dev-resources.test.mjs "
+    "tooling/scripts/local-dev/machine-dev-resource-overwrite.test.mjs "
+    "tooling/scripts/local-dev/machine-dev-resource-lock.test.mjs "
+    "tooling/scripts/local-dev/machine-dev-mobile-entry.test.mjs "
     "tooling/devctl/test/desktop.test.mjs tooling/devctl/test/process-adapter.test.mjs "
     "tooling/devctl/test/profile.test.mjs tooling/devctl/test/station.test.mjs"
 )

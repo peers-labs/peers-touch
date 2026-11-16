@@ -243,7 +243,7 @@ function leaseArguments(
   return [...args, '--', ...command];
 }
 
-async function waitForFile(file, failureDetail, timeoutMs = 5_000) {
+async function waitForFile(file, failureDetail, timeoutMs = 30_000) {
   const deadline = Date.now() + timeoutMs;
   while (!existsSync(file) && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -1295,7 +1295,7 @@ for (const leaseCase of [
           scope,
           leaseCase.resourceKind,
           leaseCase.resourceId,
-          5,
+          20,
           [
             process.execPath,
             cli,

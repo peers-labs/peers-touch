@@ -259,7 +259,8 @@ Search 当前真源：[封闭域 Search](./architecture/domains/search/README.md
   `architecture/platform/runtime/node-connectivity/relay-attachment/README.md`
   （active；定义 Relay Operator 永久邀请/撤销与 Station Operator
   接受/迁移/卸载的双边挂载闭环；不引入第三角色或自研 mount wire）
-- 本机多 worktree 开发控制面：`architecture/engineering/local-dev/README.md`
+- 本机多 worktree 开发控制面：[Local Dev](./architecture/engineering/local-dev/README.md)
+  （含 Profile 的 Station/Simulator 同级依赖、按 ID 分配共享与覆盖确认）
   （active；定义 `~/.peers-touch/dev/` 机器级注册表、独立 worktree 绑定、slot 与
   Station capability lease，当前仅有 observed snapshot，尚未接管运行时）
 - 开发工作流控制面：`architecture/engineering/development-workflow/README.md`

@@ -253,7 +253,7 @@ desktop-restart:
 	@$(DEVCTL) desktop restart
 
 mobile:
-	@bash $(LOCAL_DEV_SCRIPTS)/mobile-ios-sim.sh
+	@PT_IOS_RESOURCE="$(RESOURCE)" PT_IOS_OPERATION_ID="$(OPERATION)" bash $(LOCAL_DEV_SCRIPTS)/mobile-ios-sim.sh
 
 mobile-stop:
 	@bash $(LOCAL_DEV_SCRIPTS)/stop.sh mobile

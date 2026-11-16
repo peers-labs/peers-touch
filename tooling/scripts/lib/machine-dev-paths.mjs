@@ -58,6 +58,10 @@ export function machineRegistryLockPath(home) {
   return path.join(machineDevRoot(home), 'registry.lock');
 }
 
+export function machineResourcesPath(home) {
+  return path.join(machineDevRoot(home), 'resources.json');
+}
+
 export function machineLeaseRoot(home) {
   return path.join(machineDevRoot(home), 'leases');
 }
@@ -66,7 +70,7 @@ export function machineWorkspacesPath(home) {
   return path.join(machineDevRoot(home), 'workspaces');
 }
 
-export function machineLeasePath(resourceKind, resourceId, home = homedir()) {
+export function machineLeasePath(resourceKind, resourceId, home) {
   const kind = requireIdentifier(resourceKind, 'lease resource kind');
   const id = requireIdentifier(resourceId, 'lease resource id');
   return path.join(machineLeaseRoot(home), `${kind.replaceAll('.', '-')}-${id}.lock`);

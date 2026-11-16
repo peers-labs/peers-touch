@@ -181,6 +181,15 @@ original build lock through deletion; never remove a live `.cargo-lock`.
 - Global Go, Cargo, pnpm, Xcode, and simulator caches are report-only unless a
   dedicated owner-specific cleanup rule authorizes them.
 
+Simulator device data follows the [Local Dev resource owner](../../../docs/architecture/engineering/local-dev/integration.md#9-resource-dependency-cutover).
+Inspect readable names, shared Profile references, current contents and holders
+before proposing any operation. Lease release, Profile detach and physical
+delete are separate. Never sweep CoreSimulator devices as compiler cache or
+delete a shared device because one Suite ended. Exact reset/delete consumes its
+own impact and force/decline decision through Machine Dev, then requires
+provider and associated-directory readback. Unknown/user-retained devices
+remain protected without that concrete operation.
+
 ## Output
 
 The JSON report must include:

@@ -12,6 +12,7 @@
     "mobile-social-product",
     "mobile-social-cross-platform-interoperability",
     "mobile-native-quality",
+    "mobile-profile-resource-dependencies",
     "release-mobile-ios-desktop-operation-analysis"
   ],
   "validation_gate_id": "mobile-domain-validation"

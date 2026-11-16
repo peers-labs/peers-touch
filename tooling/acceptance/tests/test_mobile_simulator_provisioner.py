@@ -4036,6 +4036,49 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
         self.assertTrue(handler.close().closed)
 
 
+class FakeIOSResources:
+    """A consumer contract fixture, never native resource proof."""
+
+    def __init__(self, executor, env):
+        self.executor = executor
+        self.env = env
+        self.bindings = {}
+
+    def acquire(self, clients):
+        for index, client in enumerate(clients):
+            device_name = IOS_PEER_DEVICE_NAME if client.endswith("peer") else IOS_DEVICE_NAME
+            if client in IOS_LAYOUT_CLIENTS:
+                device_name = IOS_LAYOUT_CLIENTS[client][0]
+            self.bindings[client] = {
+                "id": f"fixture-resource-{client}", "providerId": f"fixture-udid-{client}",
+                "udid": f"fixture-udid-{client}", "name": device_name, "runtime": IOS_RUNTIME,
+                "sharedProfiles": [{"profile": "fixture-profile", "purpose": client}],
+            }
+        return self.bindings
+
+    def boot(self, client):
+        udid = self.bindings[client]["providerId"]
+        for command in (("xcrun", "simctl", "boot", udid), ("xcrun", "simctl", "bootstatus", udid, "-b")):
+            result = self.executor.run(command, cwd=self.executor.repo_root, env=self.env, timeout=180)
+            if result.returncode:
+                raise BlockedError(reason="fixture boot failed", resource="mobile-simulator:physical-device")
+
+    def build_source(self):
+        return getattr(self.executor, "ios_resource_source", {"head": "a" * 40, "workspaceDigest": "sha256:" + "b" * 64})
+
+    def child_environment(self):
+        return {"PT_MACHINE_LEASE_STACK_JSON": "[]"}
+
+    def install(self, udid, artifact, bundle_id, target_file):
+        result = self.executor.run(("xcrun", "simctl", "install", udid, artifact),
+                                   cwd=self.executor.repo_root, env=self.env, timeout=180)
+        if result.returncode:
+            raise BlockedError(reason="fixture install failed", resource="mobile-simulator:ios-install")
+
+    def release(self):
+        self.executor.events.append("release:ios-physical-leases")
+
+
 class MobileSimulatorProvisionerTests(unittest.TestCase):
     driver_bytes = b"synthetic chromedriver executable\n"
     driver_version = "124.0.6367.82"
@@ -4074,6 +4117,12 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
         )
         self.environment.start()
         self.executor = FakeCommandExecutor(self.repo_root)
+        resource_caller = patch.object(
+            mobile_simulator_module.MobileIOSResources, "from_environment",
+            side_effect=lambda root, env: FakeIOSResources(self.executor, env),
+        )
+        resource_caller.start()
+        self.addCleanup(resource_caller.stop)
         self.contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / "mobile-simulator.yaml"
         )
@@ -4207,14 +4256,8 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
             for command in self.executor.commands
             if command[:3] == ("xcrun", "simctl", "create")
         ]
-        self.assertEqual(len(create_commands), 2)
-        self.assertEqual(
-            {command[4] for command in create_commands},
-            {IOS_DEVICE_NAME, IOS_PEER_DEVICE_NAME},
-        )
-        self.assertTrue(
-            all(command[5] == IOS_RUNTIME for command in create_commands)
-        )
+        self.assertEqual(create_commands, [])
+        self.assertTrue(all(client["sharedProfiles"] for client in resources["clients"].values()))
         self.assertNotIn(
             ("xcrun", "simctl", "list", "--json"),
             self.executor.commands,
@@ -4235,10 +4278,8 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
                 udid,
                 resources["applications"]["ios"]["artifact"],
             )
-            self.assertLess(
-                self.executor.commands.index(uninstall),
-                self.executor.commands.index(install),
-            )
+            self.assertNotIn(uninstall, self.executor.commands)
+            self.assertIn(install, self.executor.commands)
         self.assertFalse(
             any(
                 "physical-device" in " ".join(command)
@@ -4534,36 +4575,9 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
         self.assertFalse(
             (self.repo_root / IOS_WEB_ASSETS_RELATIVE_PATH).exists()
         )
-        self.assertLess(
-            completed.index("appium-process"),
-            completed.index(
-                f"application-uninstall:ios:{peer_udid}:"
-                "com.peers.touch.mobile"
-            ),
-        )
-        self.assertLess(
-            completed.index(
-                f"application-uninstall:ios:{peer_udid}:"
-                "com.peers.touch.mobile"
-            ),
-            completed.index(
-                f"simulator-shutdown:sim-ios-peer:{peer_udid}"
-            ),
-        )
-        self.assertLess(
-            completed.index(
-                f"simulator-shutdown:sim-ios-peer:{peer_udid}"
-            ),
-            completed.index(f"simulator-delete:sim-ios-peer:{peer_udid}"),
-        )
-        self.assertLess(
-            completed.index(f"simulator-delete:sim-ios-peer:{peer_udid}"),
-            completed.index(f"simulator-shutdown:sim-ios:{primary_udid}"),
-        )
-        self.assertLess(
-            completed.index(f"simulator-shutdown:sim-ios:{primary_udid}"),
-            completed.index(f"simulator-delete:sim-ios:{primary_udid}"),
-        )
+        self.assertLess(completed.index("appium-process"), completed.index("machine-resources:ios-leases"))
+        self.assertFalse(any(item.startswith(("application-uninstall:ios:", "simulator-shutdown:", "simulator-delete:")) for item in completed))
+        self.assertIn("release:ios-physical-leases", self.executor.events)
         self.assertEqual(
             completed[-1],
             "environment-lease:mobile-simulator",
@@ -4693,39 +4707,18 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
             {"sim-ios", "sim-ios-peer"},
         )
 
-    def test_ios_create_failure_blocks_before_build(
+    def test_ios_selection_failure_blocks_before_build(
         self,
     ) -> None:
-        original_run = self.executor.run
-
-        def fail_ios_create(
-            command: tuple[str, ...] | list[str],
-            *,
-            cwd: Path,
-            env: dict[str, str],
-            timeout: float,
-        ) -> CommandResult:
-            if tuple(command)[:3] == ("xcrun", "simctl", "create"):
-                return CommandResult(
-                    1,
-                    stderr="Invalid runtime",
-                )
-            return original_run(
-                command,
-                cwd=cwd,
-                env=env,
-                timeout=timeout,
-            )
-
-        self.executor.run = fail_ios_create  # type: ignore[method-assign]
-        manifest = self.provisioner.provision(
-            "mobile-simulator-access-e2e"
-        )
+        with patch.object(FakeIOSResources, "acquire", side_effect=BlockedError(
+            reason="explicit readable selection is missing", resource="mobile-simulator:resource-selection"
+        )):
+            manifest = self.provisioner.provision("mobile-simulator-access-e2e")
 
         self.assertEqual(manifest.state, ProvisioningState.BLOCKED)
         self.assertEqual(
             manifest.blocked_resource,
-            "mobile-simulator:ios-create:sim-ios",
+            "mobile-simulator:resource-selection",
         )
         self.assertFalse(
             any(
@@ -4990,6 +4983,7 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
             sleep=lambda _: None,
         )
 
+        self.executor.ios_resource_source = {"head": runtime_source_commit, "workspaceDigest": "clean"}
         manifest = provisioner.provision("sc-dj-mobile-matrix")
 
         self.assertEqual(manifest.state, ProvisioningState.FIXTURE_READY)
@@ -5055,18 +5049,8 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
             completed.index("appium-process"),
             completed.index("storage:mobile-simulator"),
         )
-        self.assertTrue(
-            any(
-                item.startswith("simulator-shutdown:ios_alice:")
-                for item in completed
-            )
-        )
-        self.assertTrue(
-            any(
-                item.startswith("simulator-delete:ios_alice:")
-                for item in completed
-            )
-        )
+        self.assertIn("machine-resources:ios-leases", completed)
+        self.assertFalse(any(item.startswith(("simulator-shutdown:", "simulator-delete:")) for item in completed))
         self.assertTrue(
             any(
                 item.startswith("emulator-process:android_bob:")
@@ -5080,6 +5064,12 @@ class MobileIOSLayoutSimulatorProvisionerTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
         self.executor = FakeCommandExecutor(self.root)
+        resource_caller = patch.object(
+            mobile_simulator_module.MobileIOSResources, "from_environment",
+            side_effect=lambda root, env: FakeIOSResources(self.executor, env),
+        )
+        resource_caller.start()
+        self.addCleanup(resource_caller.stop)
         self.contract_path = (
             ENVIRONMENTS_DIR / "mobile-ios-layout-simulator.yaml"
         )
@@ -5149,16 +5139,10 @@ class MobileIOSLayoutSimulatorProvisionerTests(unittest.TestCase):
                 item.startswith("application-uninstall:ios:")
                 for item in completed
             ),
-            1,
+            0,
         )
-        self.assertIn(
-            f"simulator-shutdown:sim-ios-current:{device_id}",
-            completed,
-        )
-        self.assertIn(
-            f"simulator-delete:sim-ios-current:{device_id}",
-            completed,
-        )
+        self.assertIn("machine-resources:ios-leases", completed)
+        self.assertFalse(any(item.startswith(("simulator-shutdown:", "simulator-delete:")) for item in completed))
 
 
 class MobileNativeOutputCaptureTests(unittest.TestCase):
