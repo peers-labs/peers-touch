@@ -969,8 +969,9 @@ class PublicFeedNativeEntryTest(unittest.TestCase):
 
     def test_original_run_binds_runner_workspace_digest_before_fixture_work(self):
         current = source_identity(ROOT)
+        dirty_digest = "b" * 64
         for workspace_digest, expected in (
-            (current["workspaceDigest"], current["workspaceDigest"].removeprefix("sha256:")),
+            (f"sha256:{dirty_digest}", dirty_digest),
             ("clean", current["commit"]),
         ):
             with self.subTest(workspace_digest=workspace_digest):
