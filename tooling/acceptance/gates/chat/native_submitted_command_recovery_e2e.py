@@ -85,7 +85,7 @@ def validate_submitted_command_recovery(report: dict) -> None:
     retry = runtime.get("committedMessageRetry")
     require(isinstance(retry, dict), "Committed message retry evidence is required")
     before, after = retry.get("before"), retry.get("after")
-    outcome, delivered = retry.get("retryOutcome"), retry.get("senderDelivered")
+    action, delivered = retry.get("retryAction"), retry.get("senderDelivered")
     require(
         isinstance(before, dict) and isinstance(after, dict)
         and before.get("projection") is not None
@@ -94,10 +94,10 @@ def validate_submitted_command_recovery(report: dict) -> None:
         and after.get("outbox") == before.get("outbox")
         and (before.get("outbox") or {}).get("state") == "committed"
         and retry.get("visibleRetryClicked") is True
-        and isinstance(outcome, dict)
-        and outcome.get("state") == "redriving"
-        and outcome.get("command_id") == target["commandId"]
-        and outcome.get("message_id") == target["messageId"]
+        and isinstance(action, dict)
+        and action.get("execution") == "succeeded"
+        and action.get("messageId") == target["messageId"]
+        and action.get("label") in {"Retry requested", "已请求重试"}
         and isinstance(delivered, dict)
         and delivered.get("messageUlid") == target["messageId"]
         and delivered.get("receipt") in {"delivered", "read"},

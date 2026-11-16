@@ -4,7 +4,7 @@
 // `--pt-chat-rail-width`); shared UI geometry owns the supported widths and
 // this adapter owns the localStorage round-trip.
 
-import { geometry, settleCatalog } from '@peers-touch/ui';
+import { geometry, expandedCatalogWidth } from '@peers-touch/ui';
 
 export const CHAT_RAIL_DEFAULT_WIDTH = geometry.chatRail.defaultWidth;
 export const CHAT_RAIL_MIN_WIDTH = geometry.chatRail.minWidth;
@@ -23,7 +23,7 @@ export function readStoredChatRailWidth(storage: Storage): number {
     if (!Number.isFinite(parsed) || parsed <= 0) {
       return CHAT_RAIL_DEFAULT_WIDTH;
     }
-    return settleCatalog(parsed);
+    return expandedCatalogWidth(parsed);
   } catch {
     return CHAT_RAIL_DEFAULT_WIDTH;
   }
@@ -31,7 +31,7 @@ export function readStoredChatRailWidth(storage: Storage): number {
 
 /** Commit only a stable width to storage. */
 export function persistChatRailWidth(width: number, storage: Storage): number {
-  const normalized = settleCatalog(width);
+  const normalized = expandedCatalogWidth(width);
   try {
     storage.setItem(CHAT_RAIL_WIDTH_STORAGE_KEY, String(normalized));
   } catch {

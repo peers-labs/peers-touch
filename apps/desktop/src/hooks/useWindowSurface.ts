@@ -13,15 +13,25 @@ const VEIL_FADE_MS = 160;
 // the user is never trapped behind an opaque surface.
 const VEIL_FORCE_RELEASE_MS = 2000;
 
-// Node-based vitest runs have no rAF; fall back to a macrotask so the hook is
-// still drivable under fake timers.
+// WebKit may suspend rAF in an occluded native window without changing the
+// page's visibility state. A paint opportunity must not block native surface
+// application; keep each barrier bounded and retire its unused callback.
+const FRAME_OPPORTUNITY_MS = 100;
+
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => {
-    if (typeof requestAnimationFrame === 'function') {
-      requestAnimationFrame(() => resolve());
-    } else {
+    if (typeof requestAnimationFrame !== 'function') {
       setTimeout(resolve, 0);
+      return;
     }
+    let frameId: number | undefined;
+    const finish = () => {
+      clearTimeout(timer);
+      if (frameId !== undefined) cancelAnimationFrame(frameId);
+      resolve();
+    };
+    const timer = setTimeout(finish, FRAME_OPPORTUNITY_MS);
+    frameId = requestAnimationFrame(finish);
   });
 }
 
@@ -102,6 +112,7 @@ export function useWindowSurface(viewState: AppState): WindowSurfaceTransition {
     void (async () => {
       // Let the veil paint an opaque frame before any native geometry work.
       await nextFrame();
+      if (cancelled || epoch !== epochRef.current) return;
       try {
         if (targetSurface === 'ready') {
           await api.nativeWindowApplyReadySurface();

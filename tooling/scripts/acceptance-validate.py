@@ -32,6 +32,7 @@ from tooling.acceptance.core import (
     validate_external_output_path,
 )
 from tooling.acceptance.core.errors import EvidenceManifestInvalid, ProvisioningError
+from tooling.acceptance.core.runtime_cell import parse_runtime_cell_capabilities
 from tooling.acceptance.finalizers import (
     load_strict_json_object,
     loads_strict_json_value,
@@ -2212,7 +2213,13 @@ def validate_gate_launch(gate_id: str, gate: dict[str, Any]) -> None:
     try:
         validate_execution_inputs(gate_id, gate)
         validate_e2e_definition(gate_id, gate)
-    except ExecutionBudgetError as error:
+        if "runtimeCellCapabilities" in gate:
+            require(
+                bool(gate.get("requiredRuntimeCells")),
+                f"{gate_id}: runtimeCellCapabilities requires requiredRuntimeCells",
+            )
+            parse_runtime_cell_capabilities(gate_id, gate["runtimeCellCapabilities"])
+    except (ExecutionBudgetError, ProvisioningError) as error:
         raise RuntimeError(f"STRUCTURAL_GAP: {error}") from error
     if "judgment" in gate:
         require(

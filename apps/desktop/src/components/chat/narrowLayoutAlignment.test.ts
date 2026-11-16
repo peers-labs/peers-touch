@@ -1,10 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { catalogPreferenceForBoundary, drawerEase, drawerPolicy, resolveDrawerAssembly, northStarVariables } from '@peers-touch/ui';
+import { catalogBounds, catalogRestAfterFrame, drawerEase, drawerPolicy, resolveDrawerAssembly, northStarVariables } from '@peers-touch/ui';
 import { tokenVariables } from '../../../../../packages/ui/tokens/src/index';
 
 const page = readFileSync(new URL('../../pages/SocialChatPage.tsx', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../../ui/chat.css', import.meta.url), 'utf8');
+const resizer = readFileSync(new URL('../../../../../packages/ui/web/src/drawer-resizer.tsx', import.meta.url), 'utf8');
+const prototypeCss = readFileSync(new URL('../../../../../packages/prototypes/shared/ui-system/chat/chat.css', import.meta.url), 'utf8');
 
 describe('continuous drawer frame allocation', () => {
   it('conserves the stage, bounds catalogue exposure and restores preference without a breakpoint jump', () => {
@@ -38,7 +40,7 @@ describe('continuous drawer frame allocation', () => {
       const pose = resolveDrawerAssembly(stage, 300, 1, 0);
       expect(pose.visibleCatalog).toBeGreaterThanOrEqual(drawerPolicy.catalog.rows);
       expect(pose.catalogRowsCompact).toBe(false);
-      expect(pose.catalogResizeMax).toBeGreaterThan(pose.visibleCatalog);
+      expect(pose.catalogResizeMax).toBeGreaterThanOrEqual(pose.visibleCatalog);
       expect(pose.workWidth).toBeGreaterThanOrEqual(drawerPolicy.work.minimum);
     }
     for (let stage = 64; stage <= 1600; stage++) {
@@ -52,11 +54,29 @@ describe('continuous drawer frame allocation', () => {
         const pose = resolveDrawerAssembly(stage, 300, navigation, 0);
         for (const delta of [-32, -1, 0, 1, 32]) {
           const boundary = Math.max(pose.catalogResizeMin, Math.min(pose.catalogResizeMax, pose.visibleCatalog + delta));
-          const preference = catalogPreferenceForBoundary(stage, boundary, navigation);
-          expect(resolveDrawerAssembly(stage, preference, navigation, 0).visibleCatalog).toBeCloseTo(boundary);
+          expect(resolveDrawerAssembly(stage, boundary, navigation, 0).visibleCatalog).toBeCloseTo(boundary);
         }
       }
     }
+  });
+
+  it('uses all reachable catalogue space and restores collapse only after expanded paper fits', () => {
+    expect(resolveDrawerAssembly(299, 300, 1, 0).visibleCatalog).toBe(99);
+    expect(resolveDrawerAssembly(493, 300, 1, 0).visibleCatalog).toBe(293);
+    expect(catalogRestAfterFrame('compact', 299, 300, 300, 1)).toBe('compact');
+    expect(catalogRestAfterFrame('compact', 299, 905, 300, 1)).toBe('expanded');
+    expect(catalogRestAfterFrame('compact', 905, 900, 300, 1)).toBe('compact');
+    expect(catalogBounds(299, 1)).toEqual({ min: 64, max: 99 });
+  });
+
+  it('releases identity and tool groups by independent complete-element budgets', () => {
+    const row = resolveDrawerAssembly(299, 150, 0, 0);
+    expect(row.catalogRowsCompact).toBe(false);
+    expect(row.catalogToolsCompact).toBe(true);
+    const tools = resolveDrawerAssembly(299, 170, 0, 0);
+    expect(tools.catalogRowsCompact).toBe(false);
+    expect(tools.catalogToolsCompact).toBe(false);
+    expect(resolveDrawerAssembly(299, 100, 0, 0).catalogRowsCompact).toBe(true);
   });
 
   it('opens an inner task inside its parent without reflowing messages', () => {
@@ -108,6 +128,23 @@ describe('native host admission', () => {
     expect(css).not.toContain("data-narrow='true'");
     expect(css).not.toContain('@media (max-width: 960px)');
     expect(css).toContain("data-available='false'");
+  });
+
+  it('keeps the resize indicator to one line and owns pointer/keyboard focus modality', () => {
+    // A box-shaped ring on the full-height 10px hit strip reads as two
+    // parallel full-height lines; neither host may paint one.
+    const resizerBlock = css.slice(css.indexOf('.sc-chat-rail-resizer {'), css.indexOf('.sc-sessions__toolbar'));
+    expect(resizerBlock).toContain("data-keyboard-focus='true'] .sc-chat-rail-resizer__line");
+    expect(resizerBlock).not.toContain(':focus-visible .sc-chat-rail-resizer__line');
+    expect(resizerBlock).not.toMatch(/box-shadow:[^;]*inset/);
+    expect(resizerBlock).toContain(".sc-chat-rail-resizer[data-chat-rail-resize]:focus-visible");
+    expect(prototypeCss).toContain("data-keyboard-focus='true'] .sk-chat-rail-resizer-line");
+    expect(prototypeCss).not.toContain(':focus-visible .sk-chat-rail-resizer-line');
+    // The shared component distinguishes pointer-silent focus from keyboard
+    // focus explicitly; a blur() workaround would lose keyboard Escape/arrows.
+    expect(resizer).toContain('data-keyboard-focus={keyboardFocus}');
+    expect(resizer).toContain('pointerFocused');
+    expect(resizer).not.toContain('.blur()');
   });
 });
 

@@ -151,6 +151,7 @@ export type ChatRailTab = 'chats' | 'contacts';
 
 interface ChatSessionListProps {
   compact?: boolean;
+  toolsCompact?: boolean;
   onExpandRail?: () => void;
   onConversationSelected: () => void;
   onOpenDirect: (contact: FriendContactSelection) => void;
@@ -163,6 +164,7 @@ interface ChatSessionListProps {
 
 export function ChatSessionList({
   compact = false,
+  toolsCompact = false,
   onExpandRail,
   onConversationSelected,
   onOpenDirect,
@@ -493,7 +495,7 @@ export function ChatSessionList({
     const actions: MenuAction[] = [
       {
         id: 'pin',
-        iconId: 'pin',
+        iconId: isPinned ? 'pin-off' : 'pin',
         label: isPinned ? t('chat.social.contextMenu.unpin') : t('chat.social.contextMenu.pin'),
         onActivate: () => void applyLocal({ sticky: !isPinned }),
       },
@@ -556,6 +558,7 @@ export function ChatSessionList({
         data-chat-conversation-pane
         data-rail-tab={tab}
         data-rail-compact={compact ? 'true' : 'false'}
+        data-rail-tools-compact={toolsCompact ? 'true' : 'false'}
         data-rail-search={visibleSearch ? 'active' : 'idle'}
       >
         {/* Rail header — one fixed-height band. The search tile expands and
@@ -597,7 +600,7 @@ export function ChatSessionList({
                 onClick={closeSearch}
               />
             </>
-          ) : compact ? (
+          ) : toolsCompact ? (
             <Menu actions={compactMenuItems} placement="bottom"
               label={t('chat.social.sessionList.newMenu')}>
               <IconButton
@@ -845,56 +848,31 @@ export function ChatSessionList({
                               </span>
                             )}
                             <span className="sc-session-row__name-text">{name}</span>
-                            {localState?.sticky ? (
-                              <span className="sc-session-row__pin" aria-label={t('chat.social.detail.stateSticky')}>
-                                <Icon iconId="pin" size={11} />
-                              </span>
-                            ) : null}
-                            {localState?.muted || localState?.alertEnabled === false ? (
-                              <span className="sc-session-row__muted" aria-label={t('chat.social.detail.stateMuted')}>
-                                <Icon iconId="bell-off" size={11} />
-                              </span>
-                            ) : null}
                           </span>
                           <span className="sc-session-row__time">{timeStr}</span>
                         </span>
                         <span className="sc-session-row__sub">
                           <span className="sc-session-row__preview">{subtitle}</span>
+                          {/* Status tags own the bottom-right corner at rest. */}
+                          {(localState?.sticky || localState?.muted || localState?.alertEnabled === false) && (
+                            <span className="sc-session-row__flags">
+                              {localState?.sticky ? (
+                                <span className="sc-session-row__flag sc-session-row__flag--pin" aria-label={t('chat.social.detail.stateSticky')}>
+                                  <Icon iconId="pin" size={11} />
+                                </span>
+                              ) : null}
+                              {localState?.muted || localState?.alertEnabled === false ? (
+                                <span className="sc-session-row__flag sc-session-row__flag--mute" aria-label={t('chat.social.detail.stateMuted')}>
+                                  <Icon iconId="bell-off" size={11} />
+                                </span>
+                              ) : null}
+                            </span>
+                          )}
                         </span>
                       </span>
-                      {/* Hover quick actions (prototype sk-conv-actions
-                          parity): mute / pin toggle + the full action menu. */}
+                      {/* One hover entry point: the three-dot menu owns every
+                          row action (pin / mute / mark read / hide / delete). */}
                       <span className="sc-session-row__actions">
-                        <IconButton
-                          className="sc-session-state"
-                          actionId={`session.mute-${c.id}`}
-                          iconId={localState?.muted ? 'volume-2' : 'bell-off'}
-                          iconSize={11}
-                          emphasis="quiet"
-                          density="compact"
-                          label={localState?.muted
-                            ? t('chat.social.contextMenu.unmute')
-                            : t('chat.social.contextMenu.mute')}
-                          onClick={event => {
-                            event.stopPropagation();
-                            buildContextActions(c).find(action => action.id === 'mute')?.onActivate();
-                          }}
-                        />
-                        <IconButton
-                          className="sc-session-state"
-                          actionId={`session.pin-${c.id}`}
-                          iconId="pin"
-                          iconSize={11}
-                          emphasis="quiet"
-                          density="compact"
-                          label={localState?.sticky
-                            ? t('chat.social.contextMenu.unpin')
-                            : t('chat.social.contextMenu.pin')}
-                          onClick={event => {
-                            event.stopPropagation();
-                            buildContextActions(c).find(action => action.id === 'pin')?.onActivate();
-                          }}
-                        />
                         <Menu actions={buildContextActions(c)} placement="bottom">
                           <IconButton
                             className="sc-session-state"

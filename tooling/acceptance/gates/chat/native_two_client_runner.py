@@ -1543,16 +1543,23 @@ class NativeTwoClientGate(AcceptanceGate):
             )
             self.save_screenshot(client, "committed-retry-unconfirmed")
             retry.click()
-            # Corroborate the visible action with an idempotent repeat at the
-            # same production boundary; neither invocation may mint a draft.
-            response = client.invoke_app_result(
-                "messaging_retry_message",
-                {"input": {
-                    "conversation_id": target["conversationId"],
-                    "message_id": target["messageId"],
-                }},
+            # The visible control must await the real command. A second API
+            # invocation would conceal a disconnected or failed UI handler.
+            action = wait_until(
+                lambda: client.execute_script(
+                    """
+                    const control = document.querySelector(arguments[0]);
+                    return control?.dataset.execution === 'succeeded'
+                      ? {execution: control.dataset.execution,
+                         messageId: control.dataset.messageRetry,
+                         label: control.textContent.trim()}
+                      : null;
+                    """,
+                    f'[data-message-retry="{target["messageId"]}"]',
+                ),
+                "committed retry visible command completion",
             )
-            outcome = response.get("data") or {}
+            self.save_screenshot(client, "committed-retry-requested")
             after = async_harness(
                 client, "engineInteractionSnapshot",
                 {"actorPtid": self.ptids[target["actor"]],
@@ -1563,14 +1570,13 @@ class NativeTwoClientGate(AcceptanceGate):
             page_text = client.execute_script("return document.body.innerText;")
             evidence = {
                 "target": target, "before": before, "after": after,
-                "retryOutcome": outcome, "visibleRetryClicked": True,
+                "retryAction": action, "visibleRetryClicked": True,
             }
             self.assert_condition(
                 "committed_message_retry_identity",
-                response.get("ok") is True
-                and outcome.get("state") == "redriving"
-                and outcome.get("command_id") == target["commandId"]
-                and outcome.get("message_id") == target["messageId"]
+                action.get("execution") == "succeeded"
+                and action.get("messageId") == target["messageId"]
+                and action.get("label") in {"Retry requested", "已请求重试"}
                 and isinstance(after, dict)
                 and after.get("projection") == before.get("projection")
                 and after.get("commandLedger") == before.get("commandLedger")

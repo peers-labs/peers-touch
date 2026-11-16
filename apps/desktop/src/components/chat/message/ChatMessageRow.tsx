@@ -9,8 +9,6 @@ import {
 } from '@peers-touch/ui';
 import { countHiddenEarlierChatThreadReplies } from '@peers-touch/client-chat-core';
 import {
-  Check,
-  CheckCheck,
   MessagesSquare,
   Pin,
   RotateCcw,
@@ -26,7 +24,6 @@ import {
   CHAT_MESSAGE_REACTION_CHIP_HEIGHT,
   CHAT_MESSAGE_SPACING,
 } from '../chatGeometry';
-import { MessageStatus } from '../../../gen/proto/domain/chat/chat_pb';
 import type { DesktopIMSenderProfileProjection } from '../../../store/socialProjection';
 import { actorDisplayName } from '../../../store/socialProfileProjection';
 import { ChatMessageContent } from './ChatMessageContent';
@@ -72,7 +69,7 @@ interface ChatMessageRowProps {
   onOpenThread: (rootUlid: string) => void;
   onPin: (message: ChatMessage) => void;
   onReact: (message: ChatMessage, emoji: string) => void;
-  onRetryMessage: (message: ChatMessage) => void;
+  onRetryMessage: (message: ChatMessage) => Promise<void>;
   onRetryReaction: (message: ChatMessage) => void;
   reactionMutationEmoji?: string;
   reactionMutationPhase?: 'pending' | 'awaiting-projection' | 'error';
@@ -91,25 +88,6 @@ function formatMsgTime(sentAtMs: number): string {
   if (sentAtMs <= 0) return '';
   const d = new Date(sentAtMs);
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-function ReadReceipt({ status }: { status: MessageStatus }) {
-  // North-star .sk-msg-status grammar: 11px ticks, color owned by the
-  // .sc-msg-status.is-* wrapper state class, never inline.
-  if (status === MessageStatus.READ || status === MessageStatus.DELIVERED) {
-    return <CheckCheck size={11} />;
-  }
-  if (status === MessageStatus.SENT) {
-    return <Check size={11} />;
-  }
-  return null;
-}
-
-function receiptEvidenceStatus(status: MessageStatus): string {
-  if (status === MessageStatus.READ) return 'read';
-  if (status === MessageStatus.DELIVERED) return 'delivered';
-  if (status === MessageStatus.SENT) return 'sent';
-  return 'unknown';
 }
 
 function ReplyBlock({
@@ -710,14 +688,6 @@ export const ChatMessageRow = memo(function ChatMessageRow({
             {isOwn && isGroup && readByPtids.length > 0 && !isRecalled && (
               <span data-message-read-state="read" className="sc-msg-readby">
                 {t('chat.social.messageArea.readByCount', { count: readByPtids.length })}
-              </span>
-            )}
-            {isOwn && isFriendMessage(message) && !isRecalled && (
-              <span
-                className={`sc-msg-status is-${receiptEvidenceStatus(message.status as MessageStatus)}`}
-                data-message-receipt={receiptEvidenceStatus(message.status as MessageStatus)}
-              >
-                <ReadReceipt status={message.status as MessageStatus} />
               </span>
             )}
             {showDeliveryVerdict && (

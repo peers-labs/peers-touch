@@ -57,6 +57,7 @@ class RuntimeCellLifecycle(Protocol):
         gate_id: str,
         *,
         artifact_kind: str = "acceptance-binary",
+        required_capabilities: tuple[str, ...] | None = None,
     ) -> RuntimeCellEvidence: ...
 
     def status(self) -> dict[str, Any]: ...
@@ -76,6 +77,7 @@ _SUPPORTED_DESKTOP_INPUT_MODES = (
 )
 _POINTER_STABILITY_TOLERANCE_POINTS = 0.5
 _FORBIDDEN_SESSION_TYPES = ("xvfb",)
+_OPTIONAL_RUNTIME_CELL_CAPABILITIES = ("file-chooser",)
 _SLUG_MAX = 128
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _GEOMETRY_PATTERN = re.compile(r"^[1-9][0-9]*x[1-9][0-9]*$")
@@ -106,6 +108,39 @@ def runtime_source_matches(
             )
         )
     )
+
+
+def parse_runtime_cell_capabilities(gate_id: str, value: object) -> tuple[str, ...]:
+    """An explicit empty list requests only the mandatory platform probes."""
+    if (
+        not isinstance(value, list)
+        or any(
+            not isinstance(item, str) or item not in _OPTIONAL_RUNTIME_CELL_CAPABILITIES
+            for item in value
+        )
+        or len(set(value)) != len(value)
+    ):
+        raise ProvisioningError(
+            f"{gate_id}: runtimeCellCapabilities must be a unique list of "
+            f"supported capabilities: {_OPTIONAL_RUNTIME_CELL_CAPABILITIES}"
+        )
+    return tuple(value)
+
+
+def require_runtime_cell_capabilities(
+    manifest: dict[str, Any], required: tuple[str, ...],
+) -> None:
+    """Required optional capabilities must have original source-bound evidence."""
+    if "file-chooser" in required:
+        adapter = manifest.get("nativeAdapter")
+        if not isinstance(adapter, dict):
+            raise ProvisioningError("Runtime Cell has no native adapter evidence")
+        CellFileChooserIdentity.from_dict(
+            adapter.get("fileChooser"),
+        ).validate(
+            cell_id=manifest["cellId"], run_id=manifest["runId"],
+            source=manifest["source"],
+        )
 
 
 def _is_slug(value: object) -> bool:

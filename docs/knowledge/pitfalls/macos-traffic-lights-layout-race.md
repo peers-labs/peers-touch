@@ -4,6 +4,9 @@ title: macOS traffic lights must share AppKit's title-bar layout pass
 status: active
 owns:
   - apps/desktop/src-tauri/src/application/traffic_lights.rs
+  - apps/desktop/src-tauri/src/interface/tauri_commands/native_surface.rs
+  - apps/desktop/src/pages/login/authSurfaceAlignment.test.ts
+  - apps/desktop/src/hooks/useWindowSurface.ts
   - apps/desktop/src-tauri/tauri.conf.json
   - apps/desktop/src/ui/northstar.css
   - apps/desktop/src/ui/chat.css
@@ -42,7 +45,22 @@ center to the accepted painted diameter. Assign absolute drawing bounds so
 repeated surface changes do not accumulate scaling. Do not use a layer
 transform: AppKit owns and rewrites the view's layer transform during layout.
 Verify the colored circle's pixel bounds in a normal development NSWindow,
-not only Accessibility bounds or an Acceptance build that bypasses chrome.
+not only Accessibility bounds. Diagnostic builds must retain the same native
+Auth/Ready visibility transition; only their window geometry is harness-owned.
+Skipping the Ready chrome update left the two secondary lights hidden after
+login even though the Chat shell was already visible.
+
+Reproduce in the feature-enabled development NSWindow: enter Ready, apply
+Auth then Ready through the original native surface commands, and inspect the
+actual title-bar pixels. Auth must paint one circle; Ready must paint all three,
+at narrow and wide sizes. `authSurfaceAlignment.test.ts` rejects a build-feature
+guard in the chrome owner; it does not replace this native visual check.
+WebKit may suspend animation frames in an occluded window while the document
+still reports visible. The surface coordinator's paint barriers must settle
+within a bounded task opportunity, and interrupted transitions must check
+their epoch before invoking the native command. Otherwise the force-release
+veil can reveal Ready content while the native window still has Auth chrome.
+Verify a cold background launch as well as explicit surface command calls.
 
 ## How to detect perimeter material recurrence
 

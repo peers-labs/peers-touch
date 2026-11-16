@@ -11,8 +11,8 @@ export const geometry = {
   control: { compact: 28, searchCompact: 34, row: 30, menu: 30, normal: 36, comfortable: 44 },
   frame: { inset: 1 },
   avatar: { navigation: { size: 36, radius: 6 }, catalog: { size: 36, radius: 6 } },
-  composer: { radius: 8, inset: 6, outerInset: 3, inputPadding: '12px 16px 8px', collapsedRows: 1, expandedRows: 4, maximumRows: 10 },
-  chatRail: { defaultWidth: 300, minWidth: 64, expandedMinWidth: 240, rowsMinWidth: 200, rowHeight: 56, maxWidth: 360, keyboardStep: 16 },
+  composer: { radius: 8, inset: 6, outerInset: 8, inputPadding: '12px 16px 8px', collapsedRows: 1, expandedRows: 4, maximumRows: 10 },
+  chatRail: { defaultWidth: 300, minWidth: 64, rowsMinWidth: 144, toolsMinWidth: 160, rowHeight: 48, maxWidth: 360, keyboardStep: 16, resizeHitWidth: 10 },
   drawer: { work: { minimum: 200, usable: 280, reading: 480, compactTools: 400, sideActionRail: 720 }, leaf: { width: 320 } },
   icon: { compact: 16, normal: 18, comfortable: 20 },
   font: {

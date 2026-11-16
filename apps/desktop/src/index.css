@@ -74,6 +74,15 @@ input, textarea, [contenteditable="true"] {
    Layout reservation is owned by `scrollbar-gutter` on each scroll container
    (see .sc-settings-* / .sc-provider-detail), not by this visual skin, so the
    content right edge stays constant whether or not a thumb is shown. */
+@supports selector(::-webkit-scrollbar) {
+  /* Non-auto standard properties override the inset WebKit thumb. Neutralize
+     the component-library reset inside the shell; explicit hidden bars remain
+     owned by their controls. */
+  .ds-shell, .ds-shell * {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
+}
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;

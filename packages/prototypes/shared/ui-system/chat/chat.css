@@ -24,11 +24,12 @@
 }
 .sk-catalog-guide .sk-conv-row {
   width: min(100%, calc(var(--sk-catalog-visible) - 4px));
-  gap: 10px; padding-left: 10px; padding-right: 10px;
+  gap: 10px; padding: var(--pt-space-xxs) var(--pt-space-xs);
+  border-radius: var(--pt-radius-sm);
   height: var(--pt-chat-session-row-height); box-sizing: border-box;
 }
 .sk-catalog-guide .sk-conv-avatar { flex: 0 0 var(--pt-avatar-catalog-size); }
-.sk-chat-feature[data-catalog-rows='compact'] .sk-rail-header {
+.sk-chat-feature[data-catalog-tools='compact'] .sk-rail-header {
   justify-content: center; padding-left: 0; padding-right: 0;
 }
 .sk-chat-feature[data-catalog-rows='compact'] .sk-conv-actions,
@@ -39,7 +40,12 @@
 }
 .sk-chat-feature[data-catalog-rows='compact'] .sk-conv-title { visibility: hidden; }
 .sk-chat-feature[data-catalog-rows='compact'] .sk-conv-meta { display: none; }
-.sk-chat-feature[data-catalog-rows='compact'] .sk-conv-row { justify-content: center; }
+.sk-chat-feature[data-catalog-rows='compact'] .sk-conv-row {
+  justify-content: center;
+  width: var(--pt-chat-session-row-height);
+  margin-inline: auto;
+  padding: 0;
+}
 .sk-chat-feature[data-catalog-rows='compact'] .sk-section-compact {
   align-self: flex-start; margin-left: 14px;
 }
@@ -60,15 +66,18 @@
 }
 .sk-chat-rail-resizer {
   position: absolute; top: 0; bottom: 0;
-  left: var(--sk-catalog-visible); width: 10px; margin-left: -5px;
   z-index: 3; cursor: col-resize; touch-action: none;
 }
 .sk-chat-rail-resizer-line {
-  position: absolute; top: 0; bottom: 0; left: 50%; width: 1px;
+  position: absolute; top: 0; bottom: 0; width: 1px;
 }
 .sk-chat-rail-resizer:hover .sk-chat-rail-resizer-line,
-.sk-chat-rail-resizer:focus-visible .sk-chat-rail-resizer-line,
+.sk-chat-rail-resizer[data-keyboard-focus='true'] .sk-chat-rail-resizer-line,
 .sk-chat-rail-resizer[data-dragging='true'] .sk-chat-rail-resizer-line { background: var(--sk-accent); }
+/* Same contract as the native host: the one separator line is the only focus
+   indicator; a box ring on the full-height hit strip would paint double lines. */
+.sk-chat-rail-resizer[data-chat-rail-resize]:focus,
+.sk-chat-rail-resizer[data-chat-rail-resize]:focus-visible { outline: none; box-shadow: none; }
 .sk-chat-rail-resizer[data-available='false'] { visibility: hidden; pointer-events: none; }
 
 /* Rail header: one slim row — 消息/联系人 segmented, an in-rail search tile
@@ -135,14 +144,18 @@
 /* session row extensions */
 .sk-conv-row .sk-conv-avatar { display: inline-flex; flex-shrink: 0; position: relative; }
 .sk-conv-name-line {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  display: flex; align-items: center; gap: 8px;
   line-height: 18px;
 }
-.sk-conv-flags { display: inline-flex; align-items: center; gap: 4px; color: var(--sk-text-3); flex-shrink: 0; }
 .sk-conv-preview {
   display: flex; align-items: center; gap: 6px; min-width: 0;
   line-height: 16px;
 }
+/* Status tags (pin/mute) rest at the bottom-right of the row on the preview
+   line, ahead of the time; they yield the corner to the three-dot action. */
+.sk-conv-flags { display: inline-flex; align-items: center; gap: 4px; color: var(--sk-text-3); flex-shrink: 0; }
+.sk-conv-item:hover .sk-conv-flags,
+.sk-conv-item:focus-within .sk-conv-flags { display: none; }
 .sk-conv-last {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1;
 }
@@ -175,9 +188,11 @@
   position: absolute; right: 10px; bottom: 8px; display: flex; gap: 2px;
   background: color-mix(in srgb, var(--sk-overlay) 92%, transparent);
   border-radius: 8px; padding: 2px; opacity: 0; transition: opacity .12s;
+  /* Hidden buttons must not swallow row clicks or hold focus. */
+  pointer-events: none;
 }
 .sk-conv-item:hover .sk-conv-actions,
-.sk-conv-item:focus-within .sk-conv-actions { opacity: 1; }
+.sk-conv-item:focus-within .sk-conv-actions { opacity: 1; pointer-events: auto; }
 .sk-conv-state {
   border: 0; background: transparent; padding: 3px; line-height: 0; cursor: pointer;
   color: var(--sk-text-3); border-radius: 6px; flex-shrink: 0;
@@ -185,7 +200,17 @@
 }
 .sk-conv-state:hover { color: var(--sk-primary); background: color-mix(in srgb, var(--sk-primary) 10%, transparent); }
 .sk-conv-preview time { font-size: 10.5px; color: var(--sk-text-3); flex-shrink: 0; }
-.sk-conv-item:hover .sk-conv-preview time { visibility: hidden; }
+/* The action pill owns the bottom-right corner on either input modality:
+   the time leaves and the preview truncates before reaching the pill, so the
+   two never overlap even at the 160px minimum usable rail. */
+.sk-conv-item:hover .sk-conv-preview time,
+.sk-conv-item:focus-within .sk-conv-preview time { visibility: hidden; }
+.sk-conv-item:hover .sk-conv-preview,
+.sk-conv-item:focus-within .sk-conv-preview {
+  /* Yield the corner to the single three-dot tile:
+     24px tile + 4px pill padding + 2px offset + 6px gap ≈ 36px. */
+  margin-right: 36px;
+}
 
 /* contacts: collapsible sections + request cards + list */
 .sk-contacts { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
@@ -1480,12 +1505,6 @@
 }
 .sk-msg-status.is-read { color: var(--sk-primary); }
 .sk-msg-status.is-failed { color: #b0413a; }
-.sk-msg-retry {
-  display: inline-flex; align-items: center; gap: 3px;
-  border: 0; background: transparent; padding: 0; cursor: pointer;
-  font: inherit; font-size: 11px; color: #b0413a;
-}
-.sk-msg-retry:hover { text-decoration: underline; }
 .sk-msg-pinned-chip {
   display: inline-flex; align-items: center; gap: 3px;
   font-size: 11px; font-weight: 600; color: var(--sk-primary);

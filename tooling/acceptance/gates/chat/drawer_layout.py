@@ -29,6 +29,8 @@ const controls = [...root.querySelectorAll('.sc-rail-header button,.sc-chat-head
     disabled: e.disabled || e.getAttribute('aria-disabled') === 'true'}));
 return {stage: box(root), catalog: box(cat), handle: box(handle),
   preference: Number(root.dataset.preferredWidth), exposure: Number(root.dataset.catalogExposure),
+  rest: root.dataset.catalogRest, phase: root.dataset.catalogPhase,
+  minimum: Number(handle.getAttribute('aria-valuemin')), maximum: Number(handle.getAttribute('aria-valuemax')),
   navigation: Number(root.dataset.navigationProgress), available: handle.dataset.available,
   paper: root.querySelector('.sc-sessions').getBoundingClientRect().width,
   compact: root.querySelector('.sc-sessions').dataset.railCompact, controls};
@@ -41,7 +43,8 @@ def drawer_geometry_valid(value: Any) -> bool:
     stage, cat, handle = (value[key] for key in ("stage", "catalog", "handle"))
     return (
         cat["width"] >= 64 and value["available"] == "true"
-        and abs(handle["x"] + handle["width"] / 2 - cat["right"]) < .75
+        and handle["left"] >= stage["left"] - .75 and handle["right"] <= stage["right"] + .75
+        and handle["left"] <= cat["right"] + .75 and handle["right"] >= cat["right"] - .75
         and all(
             (control["hit"] or control["disabled"])
             and control["box"]["left"] >= stage["left"] - .75
@@ -68,8 +71,8 @@ def prove_drawer_layout(gate: Any) -> None:
 
     def settled():
         return wait_until(
-            lambda: v if (v := snapshot()) and abs(v["paper"] - v["preference"]) < .1 else None,
-            "native drawer guide at its intended paper width", timeout=10, interval=.05,
+            lambda: v if (v := snapshot()) and v["phase"] == "idle" else None,
+            "native drawer guide at its resting stop", timeout=10, interval=.05,
         )
 
     def resize(width: int, height: int):
@@ -78,7 +81,7 @@ def prove_drawer_layout(gate: Any) -> None:
             lambda: client.execute_script("return innerWidth === arguments[0] && innerHeight === arguments[1];", width, height),
             f"native {width}x{height} viewport", timeout=10, interval=.05,
         )
-        return wait_until(lambda: v if drawer_geometry_valid(v := snapshot()) else None,
+        return wait_until(lambda: v if drawer_geometry_valid(v := snapshot()) and v["phase"] == "idle" else None,
                           "native drawer frame and complete controls", timeout=10, interval=.05)
 
     try:
@@ -94,10 +97,26 @@ def prove_drawer_layout(gate: Any) -> None:
                                   f"{width}px window: {v}")
             gate.save_screenshot(client, f"drawer-{width}")
         handle = client.find_element("[data-chat-rail-resize]")
+        preferred = snapshot()["preference"]
         handle.send_keys(Keys.HOME)
-        gate.assert_condition("drawer_cancel_and_keyboard", settled()["preference"] == 64)
+        collapsed = settled()
+        gate.assert_condition("drawer_cancel_and_keyboard",
+                              collapsed["rest"] == "compact" and collapsed["catalog"]["width"] == 64
+                              and collapsed["preference"] == preferred)
+        # The first arrow out of compact jumps the unsittable 64..160 gap to
+        # the smallest usable rest; the next arrow keeps an exact free-band width.
         handle.send_keys(Keys.ARROW_RIGHT)
-        gate.assert_condition("drawer_cancel_and_keyboard", settled()["preference"] == 240)
+        smallestUsable = settled()
+        gate.assert_condition("drawer_cancel_and_keyboard",
+                              smallestUsable["rest"] == "expanded"
+                              and abs(smallestUsable["catalog"]["width"] - 160) < .75
+                              and abs(smallestUsable["preference"] - 160) < .75)
+        handle.send_keys(Keys.ARROW_RIGHT)
+        stepped = settled()
+        gate.assert_condition("drawer_cancel_and_keyboard",
+                              stepped["rest"] == "expanded"
+                              and abs(stepped["catalog"]["width"] - 176) < .75
+                              and abs(stepped["preference"] - 176) < .75)
         ActionChains(driver).double_click(handle).perform()
         settled()
         editor = client.find_element("[data-drawer-work] textarea")
@@ -167,6 +186,43 @@ def prove_drawer_layout(gate: Any) -> None:
             gate.assert_condition("drawer_cancel_and_keyboard",
                                   restored["preference"] == v["preference"]
                                   and abs(restored["catalog"]["width"] - v["catalog"]["width"]) < .75)
+            # A release inside the usable band keeps the exact drawn width
+            # instead of snapping to the maximum stop.
+            ActionChains(driver, duration=0).move_to_element(handle).click_and_hold().move_by_offset(-16, 0).release().perform()
+            freeBand = settled()
+            gate.assert_condition("drawer_cancel_and_keyboard",
+                                  freeBand["rest"] == "expanded"
+                                  and abs(freeBand["catalog"]["width"] - (v["catalog"]["width"] - 16)) < .75
+                                  and abs(freeBand["preference"] - freeBand["catalog"]["width"]) < .75)
+            # Only the 64..160 gap snaps, and only toward the gesture's direction.
+            handle.send_keys(Keys.HOME)
+            settled()
+            ActionChains(driver, duration=0).move_to_element(handle).click_and_hold().move_by_offset(16, 0).release().perform()
+            smallestUsable = settled()
+            gate.assert_condition("drawer_cancel_and_keyboard",
+                                  smallestUsable["rest"] == "expanded"
+                                  and abs(smallestUsable["catalog"]["width"] - 160) < .75)
+            ActionChains(driver, duration=0).move_to_element(handle).click_and_hold().move_by_offset(-16, 0).release().perform()
+            collapsed = settled()
+            gate.assert_condition("drawer_cancel_and_keyboard",
+                                  collapsed["rest"] == "compact"
+                                  and abs(collapsed["catalog"]["width"] - collapsed["minimum"]) < .75)
+            # End reaches the finite maximum, but a short pull releases at the
+            # exact free-band width rather than being pulled back to the stop.
+            handle.send_keys(Keys.END)
+            settled()
+            ActionChains(driver, duration=0).move_to_element(handle).click_and_hold().move_by_offset(-16, 0).move_by_offset(1, 0).release().perform()
+            expanded = settled()
+            gate.assert_condition("drawer_cancel_and_keyboard",
+                                  expanded["rest"] == "expanded"
+                                  and abs(expanded["catalog"]["width"] - (expanded["maximum"] - 15)) < .75
+                                  and abs(expanded["preference"] - expanded["catalog"]["width"]) < .75)
+        handle.send_keys(Keys.HOME)
+        settled()
+        wide = resize(1200, 672)
+        gate.assert_condition("drawer_reported_widths_usable",
+                              wide["rest"] == "expanded"
+                              and abs(wide["catalog"]["width"] - wide["preference"]) < .75)
     finally:
         driver.set_window_rect(**original)
         wait_until(

@@ -11,6 +11,10 @@ const composerSource = readFileSync(
   'utf8',
 );
 const chatCss = readFileSync(new URL('../../ui/chat.css', import.meta.url), 'utf8');
+const textAreaPrimitiveSource = readFileSync(
+  new URL('../../../../../packages/ui/web/src/fields.tsx', import.meta.url),
+  'utf8',
+);
 
 function rule(selector: string): string {
   const stripped = chatCss.replace(/\/\*[\s\S]*?\*\//g, '');
@@ -97,6 +101,23 @@ describe('composer expand toggle and frame inset', () => {
     expect(composerSource).toContain("'--sc-composer-input-max-height': cssLength(inputMaxHeight)");
     expect(composerSource).not.toContain('`${inputMinHeight}px`');
     expect(composerSource).not.toContain('`${inputMaxHeight}px`');
+  });
+
+  it('re-measures auto-grow when CSS height constraints change without a box resize', () => {
+    // Regression guard for "can expand but cannot collapse": the desktop
+    // composer drives expand/collapse through min/max-height CSS vars while
+    // row props stay fixed. ResizeObserver alone misses a constraint change
+    // when the inline height keeps the border box unchanged, so the primitive
+    // must track the computed constraint signature and re-run grow().
+    expect(textAreaPrimitiveSource).toContain('constraintKeyRef');
+    expect(textAreaPrimitiveSource).toMatch(
+      /useLayoutEffect\([\s\S]*?constraintKey !== constraintKeyRef\.current[\s\S]*?grow\(\)/,
+    );
+    // The signature must be built from the effective computed constraints.
+    expect(textAreaPrimitiveSource).toContain('computed.minHeight');
+    expect(textAreaPrimitiveSource).toContain('computed.maxHeight');
+    // The effect re-runs when the caller passes a new style object on toggle.
+    expect(textAreaPrimitiveSource).toMatch(/\}, \[autoGrow, grow, style\]\);/);
   });
 
   it('frames the main composer with the shared parent inset', () => {

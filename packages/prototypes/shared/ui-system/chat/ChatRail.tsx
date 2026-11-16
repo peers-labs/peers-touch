@@ -9,7 +9,7 @@
  */
 import { useMemo, useState, type ReactNode } from 'react';
 import {
-  BellOff, CheckCheck, ChevronDown, EyeOff, MessageCircle, MoreHorizontal, Pin, Search,
+  BellOff, CheckCheck, ChevronDown, EyeOff, MessageCircle, MoreHorizontal, Pin, PinOff, Search,
   Trash2, UserPlus, Users,
 } from 'lucide-react';
 import {
@@ -50,7 +50,8 @@ function SessionRows({ sessions, selectedId, onSelect, onTogglePin, onToggleMute
   const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
 
   const menuFor = (c: Conversation) => [
-    { id: 'pin', label: c.pinned ? t('session.unpin') : t('session.pin'), leading: <Pin size={14} /> },
+    { id: 'pin', label: c.pinned ? t('session.unpin') : t('session.pin'),
+      leading: c.pinned ? <PinOff size={14} /> : <Pin size={14} /> },
     { id: 'mute', label: c.muted ? t('session.unmute') : t('session.mute'), leading: <BellOff size={14} /> },
     { id: 'read', label: t('session.markRead'), leading: <CheckCheck size={14} />,
       availability: c.unread > 0 ? undefined : { kind: 'disabled' as const, reason: t('session.noUnread') } },
@@ -107,30 +108,21 @@ function SessionRows({ sessions, selectedId, onSelect, onTogglePin, onToggleMute
               <span className="sk-conv-meta">
                 <span className="sk-conv-name-line">
                   <strong>{c.selfDirect ? t('contacts.savedMessages') : c.name}</strong>
-                  <span className="sk-conv-flags">
-                    {c.pinned && <Pin size={11} aria-label={t('session.pinnedFlag')} />}
-                    {c.muted && <BellOff size={11} aria-label={t('session.mutedFlag')} />}
-                  </span>
                 </span>
                 <span className="sk-conv-preview">
                   <span className="sk-conv-last">{c.selfDirect && !c.last ? t('contacts.savedMessagesHint') : c.last}</span>
+                  {/* Status tags rest at the bottom-right, ahead of the time. */}
+                  {(c.pinned || c.muted) && (
+                    <span className="sk-conv-flags">
+                      {c.pinned && <Pin size={11} aria-label={t('session.pinnedFlag')} />}
+                      {c.muted && <BellOff size={11} aria-label={t('session.mutedFlag')} />}
+                    </span>
+                  )}
                   <time>{relativeTime(c.lastTs, t) || c.lastAt}</time>
                 </span>
               </span>
             </button>
             <span className="sk-conv-actions">
-              <button type="button" className="sk-conv-state"
-                aria-label={c.muted ? t('session.unmute') : t('session.mute')}
-                data-row-action="mute"
-                onClick={() => onToggleMute(c.id)}>
-                <BellOff size={11} />
-              </button>
-              <button type="button" className="sk-conv-state"
-                aria-label={c.pinned ? t('session.unpin') : t('session.pin')}
-                data-row-action="pin"
-                onClick={() => onTogglePin(c.id)}>
-                <Pin size={11} />
-              </button>
               <Menu
                 open={openMenu?.id === c.id}
                 onOpenChange={open => { if (!open) setOpenMenu(null); }}
@@ -476,7 +468,7 @@ export function ContactsPane({ requests, friends, groups, selectedContactId, fai
 
 /* ── Rail shell ────────────────────────────────────────── */
 
-export function ChatRail({ tab, onTabChange, sessions, selectedId, people, onSelect, onTogglePin, onToggleMute, compact, onExpandRail,
+export function ChatRail({ tab, onTabChange, sessions, selectedId, people, onSelect, onTogglePin, onToggleMute, compact, toolsCompact, onExpandRail,
   onMarkRead, onHide, onDelete,
   requests, friends, groups, selectedContactId, failedRequestIds, onAccept, onReject, onCancelRequest,
   onDeleteRequestRecord, onRemoveContact, onSelectContact, onOpenGroup,
@@ -484,6 +476,7 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, people, onSel
   tab: 'chats' | 'contacts';
   onTabChange: (tab: 'chats' | 'contacts') => void;
   compact: boolean;
+  toolsCompact: boolean;
   onExpandRail: () => void;
   sessions: Conversation[];
   selectedId: string | null;
@@ -555,7 +548,7 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, people, onSel
               className="sk-rail-new" label={t('rail.cancelSearch')} emphasis="quiet"
               onActivate={closeSearch} />
           </>
-        ) : compact ? (
+        ) : toolsCompact ? (
           <Menu placement="bottom" label={t('rail.new')} actions={[
             { id: 'sk.rail-tab.chats', label: t('tab.chats'), leading: <MessageCircle size={14} />,
               onActivate: () => onTabChange('chats') },

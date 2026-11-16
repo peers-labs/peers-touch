@@ -358,11 +358,14 @@ describe('auth surface polish', () => {
     expect(nativeSurfaceRs).toContain('fn apply_traffic_light_mode');
     expect(nativeSurfaceRs).toContain('TrafficLightMode::Auth');
     expect(nativeSurfaceRs).toContain('TrafficLightMode::Ready');
-    // Chrome switching is inert under the acceptance build so harness chrome
-    // stays governed by setup and harness window placement.
-    expect(nativeSurfaceRs).toMatch(
-      /fn apply_traffic_light_mode[\s\S]*?cfg!\(feature = "acceptance-webdriver"\)/,
+    // Harness geometry remains separate from product chrome: the actual
+    // Ready surface must restore every light in diagnostic builds too.
+    const chromeApply = nativeSurfaceRs.slice(
+      nativeSurfaceRs.indexOf('fn apply_traffic_light_mode'),
+      nativeSurfaceRs.indexOf('#[derive(Debug, Deserialize)]'),
     );
+    expect(chromeApply).toContain('TrafficLightState::apply(window, state, mode)');
+    expect(chromeApply).not.toContain('acceptance-webdriver');
 
     // The icon rail keeps its fixed 60px column; the native light cluster sits
     // in the shared overlay title-bar strip above it, so it never collides with
@@ -405,9 +408,9 @@ describe('auth surface polish', () => {
     const rail = northstar.match(/\.ds-rail\s*\{([^}]*)\}/)?.[1] ?? '';
     const stage = northstar.match(/\.ds-stage\s*\{([^}]*)\}/)?.[1] ?? '';
     expect(shell).toContain('border-width: var(--pt-frame-inset) var(--pt-frame-inset) var(--pt-frame-inset) 0');
-    expect(shell).toContain('border-color: var(--pt-surface)');
-    expect(shell).toContain('background: var(--pt-surface)');
-    expect(rail).toContain('background: var(--pt-surface)');
+    expect(shell).toContain('border-color: var(--pt-frame)');
+    expect(shell).toContain('background: var(--pt-frame)');
+    expect(rail).toContain('background: var(--pt-frame)');
     expect(rail).not.toContain('linear-gradient');
     expect(rail).not.toContain('backdrop-filter');
     expect(stage).toContain('border-radius: max(0px, calc(var(--pt-window-radius) - var(--pt-frame-inset)))');

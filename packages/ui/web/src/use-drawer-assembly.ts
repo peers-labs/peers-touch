@@ -3,39 +3,51 @@ import { flushSync } from 'react-dom';
 import { geometry } from '@peers-touch/ui-tokens';
 import { useMotionPolicy } from './runtime';
 import {
-  bounded, catalogPreferenceForBoundary, drawerEase, drawerPolicy, resolveDrawerAssembly, settleCatalog,
-  type DrawerLeaf, type ForceDirection,
+  bounded, catalogBounds, catalogRestAfterFrame, drawerEase, drawerPolicy,
+  expandedCatalogWidth, resolveDrawerAssembly, settleCatalogBoundary,
+  type CatalogRest, type DrawerLeaf, type ForceDirection,
 } from './drawer-assembly';
 
 /** One cancellable scalar. Retargeting starts from the currently drawn pose. */
 function useGuide(initial: number) {
   const { preference } = useMotionPolicy();
   const [value, setValue] = useState(initial);
+  const [phase, setPhase] = useState<'idle' | 'settling'>('idle');
   const live = useRef(initial);
   const destination = useRef(initial);
   const frame = useRef<number | null>(null);
+  const deadline = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const motion = useRef(preference);
+  motion.current = preference;
   const stop = () => {
     if (frame.current !== null) cancelAnimationFrame(frame.current);
+    if (deadline.current !== null) clearTimeout(deadline.current);
     frame.current = null;
+    deadline.current = null;
+    setPhase('idle');
   };
   const draw = (next: number) => { live.current = next; setValue(next); };
   const move = (next: number, direct = false) => {
     stop();
     destination.current = next;
-    if (direct || preference === 'reduced' ||
-        (preference === 'system' && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+    if (direct || next === live.current || motion.current === 'reduced' ||
+        (motion.current === 'system' && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) {
       draw(next);
       return;
     }
     const from = live.current;
     const start = performance.now();
+    setPhase('settling');
+    const finish = () => { stop(); draw(next); };
     const tick = (now: number) => {
       const progress = Math.min(1, (now - start) / geometry.motion.navigation);
       draw(from + (next - from) * drawerEase(progress));
       if (progress < 1) frame.current = requestAnimationFrame(tick);
-      else { draw(next); frame.current = null; }
+      else finish();
     };
     frame.current = requestAnimationFrame(tick);
+    // The same terminal action also closes a journey whose RAF was suspended.
+    deadline.current = setTimeout(finish, geometry.motion.navigation);
   };
   useLayoutEffect(() => {
     const media = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -50,7 +62,7 @@ function useGuide(initial: number) {
     return () => media.removeEventListener('change', settleReduced);
   }, [preference]);
   useLayoutEffect(() => stop, []);
-  return { value, live, move, stop };
+  return { value, live, destination, move, stop, phase };
 }
 
 /** Owns frame measurement, intent, preference and all guide poses. */
@@ -59,7 +71,7 @@ export function useDrawerAssembly(options: {
   onPreferenceCommit?: (width: number) => void;
   focus?: { catalog: string; work: string; parent: string };
 } = {}) {
-  const initial = settleCatalog(options.initialPreference ?? drawerPolicy.catalog.default);
+  const initial = expandedCatalogWidth(options.initialPreference ?? drawerPolicy.catalog.default);
   const commit = useRef(options.onPreferenceCommit);
   const focus = options.focus ?? {
     catalog: '[data-drawer-catalog] button, [data-drawer-catalog] [tabindex="0"]',
@@ -71,6 +83,8 @@ export function useDrawerAssembly(options: {
   const [stage, setStage] = useState(0);
   const [stageHeight, setStageHeight] = useState(0);
   const [preferred, setPreferred] = useState<number>(initial);
+  const [catalogRest, setCatalogRest] = useState<CatalogRest>('expanded');
+  const resting = useRef({ preferred: initial, stop: 'expanded' as CatalogRest });
   const [open, setOpen] = useState(false);
   const [leaf, setLeaf] = useState<DrawerLeaf | null>(null);
   const [leafContent, setLeafContent] = useState<DrawerLeaf | null>(null);
@@ -78,16 +92,35 @@ export function useDrawerAssembly(options: {
   const catalog = useGuide(initial);
   const work = useGuide(0);
   const inner = useGuide(0);
-  const drag = useRef<{ restore: number; start: number; x: number; lastX: number; direction: ForceDirection } | null>(null);
+  const drag = useRef<{ restore: typeof resting.current; start: number; x: number; lastX: number; direction: ForceDirection } | null>(null);
   const returnTarget = useRef<HTMLElement | null>(null);
   const leafTarget = useRef<HTMLElement | null>(null);
   const pendingFocus = useRef<'work' | 'catalog' | 'parent' | null>(null);
 
   const cancelDrag = () => {
     if (!drag.current) return;
-    catalog.move(drag.current.restore, true);
+    const restore = drag.current.restore;
+    resting.current = restore;
+    setCatalogRest(restore.stop);
+    catalog.move(restore.stop === 'compact' ? drawerPolicy.catalog.compact : restore.preferred);
     drag.current = null;
     setDragging(false);
+  };
+  const onFrame = useRef<(previous: number, next: number) => void>(() => {});
+  const measureFrame = useRef<() => boolean>(() => false);
+  onFrame.current = (previous, next) => {
+    const interrupted = drag.current !== null;
+    const restore = drag.current?.restore ?? resting.current;
+    drag.current = null;
+    setDragging(false);
+    const stop = catalogRestAfterFrame(restore.stop, previous, next, restore.preferred, work.live.current);
+    resting.current = { ...restore, stop };
+    setCatalogRest(stop);
+    const target = stop === 'compact' ? drawerPolicy.catalog.compact : restore.preferred;
+    if (!interrupted && stop === restore.stop && catalog.destination.current === target) return;
+    // Only releasing a compact stop has its own travel. Pressure geometry
+    // itself responds before paint, including cancellation of pending travel.
+    catalog.move(target, stop === restore.stop);
   };
   useLayoutEffect(() => {
     const node = surface.current;
@@ -96,11 +129,14 @@ export function useDrawerAssembly(options: {
     const measure = () => {
       const bounds = node.getBoundingClientRect();
       const next = bounds.width;
-      if (measured >= 0 && Math.abs(measured - next) > .01) cancelDrag();
+      const changed = measured >= 0 && Math.abs(measured - next) > .01;
+      if (changed) onFrame.current(measured, next);
       measured = next;
       setStage(old => Math.abs(old - next) < .01 ? old : next);
       setStageHeight(old => Math.abs(old - bounds.height) < .01 ? old : bounds.height);
+      return changed;
     };
+    measureFrame.current = measure;
     measure();
     // ResizeObserver runs before paint. Publish the entire snapshot there,
     // rather than painting new CSS bounds with yesterday's React geometry.
@@ -121,8 +157,15 @@ export function useDrawerAssembly(options: {
     setLeaf(next);
     inner.move(next ? 1 : 0);
   };
+  const restoreCatalogRest = (direct = false) => {
+    const target = resting.current.stop === 'compact'
+      ? drawerPolicy.catalog.compact : resting.current.preferred;
+    if (catalog.destination.current !== target) catalog.move(target, direct);
+  };
   const reveal = () => {
     if (!open) {
+      cancelDrag();
+      restoreCatalogRest();
       returnTarget.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       pendingFocus.current = 'work';
       setOpen(true);
@@ -131,6 +174,8 @@ export function useDrawerAssembly(options: {
   };
   const back = () => {
     if (leaf) { setLeafIntent(null); return; }
+    cancelDrag();
+    restoreCatalogRest();
     // If the inner guide is still returning, finish its stop before moving
     // the parent; do not let a spammed Back leave a child floating behind.
     inner.move(0, true);
@@ -140,6 +185,7 @@ export function useDrawerAssembly(options: {
   };
   const retireTask = () => {
     cancelDrag();
+    restoreCatalogRest(true);
     pendingFocus.current = 'catalog';
     setLeaf(null);
     setLeafContent(null);
@@ -154,14 +200,28 @@ export function useDrawerAssembly(options: {
   };
   const setCatalog = (next: number) => {
     cancelDrag();
-    const intent = settleCatalog(next);
+    const intent = expandedCatalogWidth(next);
+    resting.current = { preferred: intent, stop: 'expanded' };
+    setCatalogRest('expanded');
     setPreferred(intent);
     commit.current?.(intent);
     catalog.move(intent);
   };
   const pose = resolveDrawerAssembly(stage, catalog.value, work.value, inner.value, stageHeight);
   const setCatalogBoundary = (boundary: number, direction: ForceDirection = 0) => {
-    setCatalog(settleCatalog(catalogPreferenceForBoundary(stage, boundary, work.live.current), direction));
+    cancelDrag();
+    const range = catalogBounds(stage, work.live.current);
+    const { rest: stop, width: next } = settleCatalogBoundary(boundary, range, direction);
+    // Only a width that clears the usable minimum becomes a remembered
+    // preference. A frame-compressed stop can be smaller transiently without
+    // overwriting the width the user chose on a roomy frame.
+    const remember = stop === 'expanded' && next >= drawerPolicy.catalog.usableMin;
+    const intent = remember ? expandedCatalogWidth(next) : resting.current.preferred;
+    resting.current = { preferred: intent, stop };
+    setCatalogRest(stop);
+    setPreferred(intent);
+    if (remember) commit.current?.(intent);
+    catalog.move(next);
   };
   useLayoutEffect(() => {
     const root = surface.current;
@@ -199,15 +259,18 @@ export function useDrawerAssembly(options: {
     return () => { if (frame !== null) cancelAnimationFrame(frame); };
   }, [open, leaf, work.value, inner.value, stage, catalog.value]);
   return {
-    surface, pose, preferred, open, leaf, leafContent, dragging,
+    surface, pose, preferred, open, leaf, leafContent, dragging, catalogRest,
+    catalogPhase: dragging ? 'dragging' as const : catalog.phase,
     navigation: work.value, leafProgress: inner.value,
     reveal, back, retireTask, dismissLeaf, setLeaf: setLeafIntent, setCatalog, setCatalogBoundary,
     beginDrag: (x: number) => {
       catalog.stop();
-      drag.current = { restore: preferred, start: pose.visibleCatalog, x, lastX: x, direction: 0 };
+      drag.current = { restore: { ...resting.current }, start: pose.visibleCatalog, x, lastX: x, direction: 0 };
+      catalog.move(pose.visibleCatalog, true);
       setDragging(true);
     },
     moveDrag: (x: number) => {
+      if (measureFrame.current()) return;
       const state = drag.current;
       if (!state) return;
       if (x !== state.lastX) {
@@ -215,18 +278,16 @@ export function useDrawerAssembly(options: {
         state.lastX = x;
       }
       const boundary = bounded(state.start + x - state.x, pose.catalogResizeMin, pose.catalogResizeMax);
-      catalog.move(catalogPreferenceForBoundary(stage, boundary, work.live.current), true);
+      catalog.move(boundary, true);
     },
     finishDrag: () => {
+      if (measureFrame.current()) return;
       const state = drag.current;
       if (!state) return;
       if (state.direction === 0) { cancelDrag(); return; }
-      const next = settleCatalog(catalog.live.current, state.direction);
       drag.current = null;
       setDragging(false);
-      setPreferred(next);
-      commit.current?.(next);
-      catalog.move(next);
+      setCatalogBoundary(catalog.live.current, state.direction);
     },
     cancelDrag,
   };

@@ -28,7 +28,8 @@ separator label and preference persistence. UI owns observer/RAF cleanup.
 Both Desktop and canonical prototype consume this implementation.
 Catalogue presentation restores left-aligned names and direct tab/search/new
 controls at 200px exposure; Segmented owns the measured label fit. That
-budget is independent of the stable 240px drag endpoint.
+budget is independent of the stable drag width, which can be any value in
+the 160..360 usable band.
 Native physical-window and assistive-technology proof remains UNPROVEN.
 
 <a id="ui.spec.block"></a>

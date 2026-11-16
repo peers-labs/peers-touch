@@ -306,6 +306,8 @@ export function SocialChatPage() {
       data-compressed={pose.compressed}
       data-work-compact={pose.workToolsCompact}
       data-preferred-width={assembly.preferred}
+      data-catalog-rest={assembly.catalogRest}
+      data-catalog-phase={assembly.catalogPhase}
       data-catalog-exposure={pose.exposure}
       data-navigation-progress={assembly.navigation}
       data-leaf-progress={assembly.leafProgress}
@@ -336,6 +338,7 @@ export function SocialChatPage() {
         aria-hidden={!pose.catalogInteractive || !!assembly.leaf || assembly.leafProgress > 0 || (assembly.open && assembly.navigation < 1)}>
       <ChatSessionList
         compact={compactRail}
+        toolsCompact={pose.catalogToolsCompact}
         onExpandRail={resetRailWidth}
         onConversationSelected={() => { cancelDirectOpenIntent(); assembly.reveal(); }}
         onOpenDirect={openDirectConversation}

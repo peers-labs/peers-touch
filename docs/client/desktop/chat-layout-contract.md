@@ -39,6 +39,25 @@ Rules:
 
 Desktop supports hover, right-click, keyboard, and explicit overflow actions.
 
+Retry is an asynchronous command action in the message's metadata row. The
+shared IconButton projects `pending` while its original command is in flight,
+`succeeded` with an accessible “Retry requested” label for 2.5 seconds after
+completion, or `failed` when the command rejects. Failed or delivery-unconfirmed
+messages show one retry glyph beside the timestamp, with details only on hover.
+They do not also show a sent checkmark or a persistent Retry/explanation block.
+The same verdict renderer owns the mutually exclusive receipt/recovery display.
+Repeated activation while pending submits nothing.
+Unmount invalidates late action completions and releases confirmation timers.
+The command owner reports errors; the control must not turn a rejection into
+a success by losing the Promise along the row/timeline callback path.
+
+This is transient interaction feedback. MP-D34 remains authoritative for
+delivery: an accepted message with no receipt remains unconfirmed, and Retry
+retains its original message, command, outbox and encryption identities. The
+original `chat-native-submitted-command-recovery-e2e` must observe completion
+from the visible control, verify those identities and prove receiver delivery.
+A separate API invocation cannot corroborate a disconnected visible action.
+
 Legal action patterns:
 
 - Hover action bar outside the readable message body.
@@ -88,6 +107,13 @@ Desktop may use virtualized message lists, but virtualization must preserve the 
 Desktop composer requirements:
 
 - Composer is fixed to `ConversationPaneRect` bottom.
+- Main and thread writing shells consume the shared 8px outer inset on all
+  sides, including the bottom corners. The 8px shell radius and internal
+  writing padding are separate geometry.
+- Conversation and thread scroll hosts consume the shell's quiet scrollbar
+  grammar: a 4px painted neutral thumb inside a transparent lane. They must
+  not define a white thumb or standard properties that override the WebKit
+  inset styling.
 - Reply/edit context rows are reserved above the input.
 - Keyboard shortcuts MUST not steal focus from message text selection.
 - Send, attach, emoji, mention, and voice/file affordances must be keyboard reachable when present.
@@ -102,14 +128,21 @@ Desktop composer requirements:
   [drawer-assembly.md](../../architecture/platform/client/ui-system/prototype/drawer-assembly.md).
   Catalogue paper stays finite; exposure retracts beneath the main guide.
   The 480px reading ideal is soft: catalogue and work share compression
-  against complete 64px catalogue / 200px work minima and the 280px usable
-  work budget. The visible separator remains draggable under pressure;
-  pointer and keyboard inputs invert the same allocation, and Back restores
+  against complete 64px catalogue / 200px work minima, releasing catalogue
+  space before sending excess width to work. The visible separator remains draggable under pressure;
+  pointer and keyboard inputs address that visible boundary, and Back restores
   the finite catalogue with its handle at the restored edge.
-  At 200px exposure, left-aligned identity rows and both tabs/search/new are
-  restored; Segmented measures whether labels fit. This presentation budget
-  is independent of the 240px stable preference. Catalogue avatars are 36px
-  with 6px radius, and session rows consume the shared 56px height.
+  At 144px exposure, identity rows are left aligned; at 160px both tabs/search/new
+  are restored. Segmented measures whether labels fit. These independent
+  complete-element budgets do not depend on the expanded preference.
+  Expanded preference and temporary collapse are separate; a larger frame
+  releases collapse when remembered expanded paper fits. Drag release keeps
+  the exact drawn width anywhere in the 160..360 usable band; only the 64..160
+  gap snaps directionally to 64 or 160. Cancellation
+  restores the pre-gesture rest without persisting pressure. Catalogue avatars are 36px
+  with 6px radius, and session rows consume the shared 48px height with
+  4px vertical padding. Compact rows use a centered 48px square selection
+  surface, compact-control radius and a 1px selected marker.
   No-selection, direct-open intent and selected-conversation branches share
   a persistent guide and the same `WindowDragRegion > div` content root.
   Presentation Back preserves business selection, composer, attachments and

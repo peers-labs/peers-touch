@@ -45,11 +45,22 @@ harness bar beside a thin product bar reads as two competing languages):
 
 Both scopes:
 
-- `scrollbar-width: thin` + `scrollbar-color` for the Firefox channel.
+- `scrollbar-width: thin` + `scrollbar-color` only for the standard fallback
+  channel (`@supports not selector(::-webkit-scrollbar)`).
 - WebKit channel: 10px transparent gutter, transparent track/corner,
   thumb painted as a 4px neutral pill inside the gutter
   (`border: 3px solid transparent; background-clip: padding-box`),
   resting alpha .16, hover .30, full pill radius. No arrows, no track fill.
+
+Modern WebKit/Chromium can support both channels. Non-auto standard properties
+override the inset pseudo-element skin, producing a wider solid thumb even
+when computed pseudo styles report a thin pill. Both prototype scopes set the
+standard properties to `auto` when WebKit pseudo-elements are supported.
+Desktop does the same inside `.ds-shell` to neutralize the component-library
+universal `thin` reset. Main conversation and thread scroll hosts must not
+override the shared grammar with `--pt-subtle` white thumbs. Verify native
+pixels as well as computed styles; the pseudo style alone cannot prove which
+channel paints.
 
 Horizontal: the preview host is `overflow-x: hidden`, and content surfaces
 must REFLOW rather than rely on a fixed-width floor. `.sk-chat-feature` is

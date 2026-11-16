@@ -38,7 +38,7 @@
   gap: 8px;
   height: 48px;
   box-sizing: border-box;
-  padding: 6px 16px;
+  padding: 6px 8px;
   flex-shrink: 0;
   overflow: hidden;
 }
@@ -174,9 +174,8 @@
   border-right: 0;
 }
 
-/* Avatar-only rows apply below the readable-paper budget. The header tools
-   have a separate budget, so 240..299px still keeps names and previews. */
-.sc-sessions[data-rail-compact='true'] .sc-rail-header {
+/* Row text and header controls consume independent footprint budgets. */
+.sc-sessions[data-rail-tools-compact='true'] .sc-rail-header {
   justify-content: center;
   padding: 6px 2px;
 }
@@ -195,9 +194,6 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  left: var(--sc-catalog-visible);
-  width: 10px;
-  margin-left: -5px;
   z-index: 3;
   cursor: col-resize;
   touch-action: none;
@@ -207,7 +203,6 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 50%;
   width: 1px;
   margin-left: -0.5px;
   background: transparent;
@@ -215,11 +210,17 @@
 }
 .sc-chat-rail-resizer:hover .sc-chat-rail-resizer__line,
 .sc-chat-rail-resizer[data-dragging='true'] .sc-chat-rail-resizer__line,
-.sc-chat-rail-resizer:focus-visible .sc-chat-rail-resizer__line {
+.sc-chat-rail-resizer[data-keyboard-focus='true'] .sc-chat-rail-resizer__line {
   background: var(--pt-accent);
 }
-.sc-chat-rail-resizer:focus-visible {
-  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--pt-accent) 35%, transparent);
+/* The 10px full-height hit strip must never render a box-shaped focus ring:
+   an outline/inset shadow on it reads as two parallel full-height lines.
+   The single separator line above is the only focus indicator. This beats
+   the global .pt-ui [tabindex]:focus-visible outline (specificity 0,2,0). */
+.sc-chat-rail-resizer[data-chat-rail-resize]:focus,
+.sc-chat-rail-resizer[data-chat-rail-resize]:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 .sc-chat-rail-resizer[data-available='false'] { visibility: hidden; pointer-events: none; }
 /* While dragging, the col-resize cursor and text-selection lock apply
@@ -262,15 +263,20 @@ body:has([data-chat-rail-resize][data-dragging='true']) {
   box-sizing: border-box;
   height: var(--pt-chat-session-row-height);
   min-height: var(--pt-chat-session-row-height);
-  padding: 10px 8px;
+  padding: var(--pt-space-xxs) var(--pt-space-xs);
   overflow: visible;
-  border-radius: var(--pt-radius-md);
+  border-radius: var(--pt-radius-sm);
   cursor: pointer;
   background: transparent;
   /* Prototype .sk-conv-row hover is instant — no background transition. */
 }
 .sc-session-row:hover { background: color-mix(in srgb, var(--pt-text) 4%, transparent); }
-.sc-sessions[data-rail-compact='true'] .sc-session-row { justify-content: center; padding: 10px 0; }
+.sc-sessions[data-rail-compact='true'] .sc-session-row {
+  justify-content: center;
+  width: var(--pt-chat-session-row-height);
+  margin-inline: auto;
+  padding: 0;
+}
 /* Pinned rows carry a quiet tile wash even at rest (prototype
    sk-conv-row.is-pinned-row parity). */
 .sc-session-row.is-pinned-row {
@@ -280,7 +286,7 @@ body:has([data-chat-rail-resize][data-dragging='true']) {
    sk-conv-row.is-selected parity), never the green-tile fill. */
 .sc-session-row.is-active {
   background: var(--pt-surface);
-  box-shadow: inset 2.5px 0 0 var(--pt-accent);
+  box-shadow: inset 1px 0 0 var(--pt-accent);
 }
 .sc-session-avatar { position: relative; display: inline-flex; flex-shrink: 0; }
 .sc-session-presence {
@@ -339,6 +345,7 @@ body:has([data-chat-rail-resize][data-dragging='true']) {
 .sc-session-row__sub {
   display: flex;
   align-items: center;
+  gap: 6px;
   height: 20px;
   min-width: 0;
 }
@@ -353,8 +360,20 @@ body:has([data-chat-rail-resize][data-dragging='true']) {
   text-overflow: ellipsis;
 }
 .sc-session-row__group-glyph { color: var(--pt-secondary); flex-shrink: 0; display: inline-flex; }
-.sc-session-row__pin { color: var(--pt-accent); flex-shrink: 0; display: inline-flex; }
-.sc-session-row__muted { color: var(--pt-muted); flex-shrink: 0; display: inline-flex; }
+/* Status tags (pin/mute) rest at the bottom-right of the row, never on the
+   name line. They yield the corner to the three-dot action on hover/focus. */
+.sc-session-row__flags {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--pt-muted);
+}
+.sc-session-row__flag { display: inline-flex; align-items: center; }
+.sc-session-row__flag--pin { color: var(--pt-accent); }
+.sc-session-row__flag--mute { color: var(--pt-muted); }
+.sc-session-row:hover .sc-session-row__flags,
+.sc-session-row:focus-within .sc-session-row__flags { display: none; }
 
 /* Hover quick actions: overlay the preview line at the bottom-right and fade
    in; the time collapses on hover (prototype sk-conv-actions parity). */
@@ -379,6 +398,11 @@ body:has([data-chat-rail-resize][data-dragging='true']) {
 }
 .sc-session-row:hover .sc-session-row__time,
 .sc-session-row:focus-within .sc-session-row__time { visibility: hidden; }
+/* The single three-dot tile owns the bottom-right corner while visible; shrink
+   the preview line so its text ellipsizes before the tile instead of sliding
+   under it. tile 24px + 4px pill padding + 2px offset delta + 6px gap ≈ 36px. */
+.sc-session-row:hover .sc-session-row__preview,
+.sc-session-row:focus-within .sc-session-row__preview { margin-right: 36px; }
 .sc-session-row__actions .sc-session-state {
   width: 24px;
   height: 24px;
@@ -2872,11 +2896,7 @@ body:has([data-chat-rail-resize][data-dragging='true']) {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--pt-subtle) transparent;
 }
-.sc-thread__scroll::-webkit-scrollbar { width: 6px; height: 0; }
-.sc-thread__scroll::-webkit-scrollbar-thumb { background: var(--pt-subtle); border-radius: 999px; }
 
 /* Unified neutral card hosting the root message and every reply. The panel
    chrome stays white; the content surface uses the shared subtle well with a
@@ -3837,15 +3857,7 @@ body:has([data-chat-rail-resize][data-dragging='true']) {
   /* Tight 12px horizontal inset shared with the composer so bubble edges line
      up with the input shell (WeChat parity); 12px below the header band. */
   padding: 12px 12px 6px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--pt-subtle) transparent;
 }
-.sc-conversation__stream::-webkit-scrollbar { width: 6px; height: 0; }
-.sc-conversation__stream::-webkit-scrollbar-thumb {
-  background: var(--pt-subtle);
-  border-radius: 999px;
-}
-.sc-conversation__stream::-webkit-scrollbar-track { background: transparent; }
 .sc-conversation__bot-bar {
   display: flex;
   align-items: center;

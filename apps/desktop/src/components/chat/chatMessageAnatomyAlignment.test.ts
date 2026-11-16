@@ -82,11 +82,21 @@ describe('link preview card (north-star .sk-link-card parity)', () => {
 
 describe('delivery receipt ticks (north-star .sk-msg-status parity)', () => {
   it('renders 11px ticks with state owned by the wrapper class, not inline color', () => {
-    expect(rowSource).toContain('<CheckCheck size={11} />');
-    expect(rowSource).toContain('<Check size={11} />');
+    expect(verdictSource).toContain('<CheckCheck size={11} />');
+    expect(verdictSource).toContain('<Check size={11} />');
     expect(rowSource).not.toContain("style={{ color: 'var(--pt-primary)' }}");
-    expect(rowSource).toContain('className={`sc-msg-status is-${receiptEvidenceStatus');
-    expect(rowSource).toContain('data-message-receipt=');
+    expect(verdictSource).toContain('className={`sc-msg-status is-${receipt}');
+    expect(verdictSource).toContain('data-message-receipt=');
+    expect(rowSource).not.toContain('data-message-receipt=');
+  });
+
+  it('renders one icon for recovery instead of a receipt plus visible Retry text', () => {
+    const recovery = verdictSource.slice(verdictSource.indexOf('if (canRetry)'), verdictSource.lastIndexOf('return ('));
+    expect(recovery).toContain('<IconButton');
+    expect(recovery).toContain('iconId="rotate-ccw"');
+    expect(recovery).not.toContain('<DirectReceipt');
+    expect(recovery).not.toMatch(/>\s*\{retryActionLabel\}\s*</);
+    expect(recovery).toContain('label={retryActionLabel}');
   });
 
   it('paints the ticks muted by default and pine for the read state', () => {
@@ -116,7 +126,7 @@ describe('message stream rhythm (north-star .sk-msg-stream / .sk-msg parity)', (
   it('keeps the message reading inset while the composer hugs its parent', () => {
     expect(rule('.sc-conversation__stream')).toContain('padding: 12px 12px 6px');
     const main = desktopChatLayoutForSurface('desktop-main');
-    expect(main.composerOuterPadding).toBe('3px');
+    expect(main.composerOuterPadding).toBe('8px');
   });
 
   it('sets bubble→meta 6px with 6px meta item gap (.sk-msg-under)', () => {

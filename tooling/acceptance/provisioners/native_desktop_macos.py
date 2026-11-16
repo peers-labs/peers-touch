@@ -33,7 +33,10 @@ from tooling.acceptance.core import (
     RuntimeCellManifest,
     RuntimeCellState,
 )
-from tooling.acceptance.core.runtime_cell import CellFileChooserIdentity
+from tooling.acceptance.core.runtime_cell import (
+    CellFileChooserIdentity, parse_runtime_cell_capabilities,
+    require_runtime_cell_capabilities,
+)
 from tooling.acceptance.core.errors import (
     BlockedError,
     DriverError,
@@ -151,6 +154,7 @@ class NativeDesktopMacOSProvisioner:
             )
         self.source_root = source_root.resolve()
         self._acceptance_binary: Path | None = None
+        self._required_capabilities: tuple[str, ...] | None = None
         root = state_root or (
             REPO_ROOT / ".local" / "acceptance" / "runtime-cells"
         )
@@ -161,7 +165,12 @@ class NativeDesktopMacOSProvisioner:
         gate_id: str = "runtime-cell-preflight",
         *,
         artifact_kind: str = "acceptance-binary",
+        required_capabilities: tuple[str, ...] | None = None,
     ) -> RuntimeCellManifest:
+        self._required_capabilities = (
+            parse_runtime_cell_capabilities(gate_id, list(required_capabilities))
+            if required_capabilities is not None else None
+        )
         if artifact_kind != "acceptance-binary":
             raise BlockedError(
                 reason=(
@@ -242,6 +251,10 @@ class NativeDesktopMacOSProvisioner:
                 cleanup_resources=self.contract.cleanup_resources,
             )
             manifest.validate(self.contract)
+            if self._required_capabilities is not None:
+                require_runtime_cell_capabilities(
+                    manifest.to_dict(), self._required_capabilities,
+                )
             self._write_state(
                 {
                     "cellId": self.contract.cell_id,
@@ -449,20 +462,28 @@ class NativeDesktopMacOSProvisioner:
                     screenshot,
                     operator=operator,
                 )
-                chooser = self._probe_file_chooser(session, adapter, operator)
+                required = self._required_capabilities
+                chooser = (
+                    self._probe_file_chooser(session, adapter, operator)
+                    if required is None or "file-chooser" in required else None
+                )
                 log_path = session.log_path
+                process_id = session.process_id
                 cleanup_errors = session.stop()
                 session_stopped = True
                 if cleanup_errors:
                     raise ProvisioningError("Native qualifier cleanup failed")
                 non_interference = operator.sample(
-                    "owned-stop", target_process_id=chooser.target_process_id,
+                    "owned-stop", target_process_id=process_id,
                 )
-                chooser = replace(
-                    chooser, cell_id=self.contract.cell_id, run_id=run_id,
-                    source_commit=source.commit, workspace_digest=source.workspace_digest,
-                    binary_sha256=source.binary_sha256,
-                    observations=tuple(operator.observations.values()),
+                chooser = (
+                    replace(
+                        chooser, cell_id=self.contract.cell_id, run_id=run_id,
+                        source_commit=source.commit, workspace_digest=source.workspace_digest,
+                        binary_sha256=source.binary_sha256,
+                        observations=tuple(operator.observations.values()),
+                    )
+                    if chooser is not None else None
                 )
                 non_interference_probe = non_interference.unchanged()
                 probes = CellAdapterIdentity(

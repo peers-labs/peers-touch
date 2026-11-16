@@ -44,8 +44,10 @@ window with empty space. Geometry is owned by the native shell
   remembered ready size. Logging out shrinks the window back to 360×640.
 - The hard window floor stays 320×440; persisted geometry below it or outside a
   sane maximum is discarded in favor of the default.
-- The feature is inert under the `acceptance-webdriver` build, where harness
-  window placement remains the single authority.
+- Window geometry is inert under the `acceptance-webdriver` build, where
+  harness window placement remains the single authority. Native button
+  visibility still follows the real Auth/Ready surface: Auth shows Close only;
+  Ready restores Close, Minimize and Zoom, including diagnostic builds.
 - macOS chrome uses `titleBarStyle: "Overlay"` with `hiddenTitle: true` and
   decorations retained. The web content fills the title bar, so the in-window
   headers rise into that band instead of leaving an empty strip. Geometry is

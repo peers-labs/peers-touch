@@ -42,7 +42,16 @@ class MobileRuntimeCellLifecycle:
         self.provisioner = provisioner
         self._attached = False
 
-    def ready(self, gate_id: str) -> MobileCellEvidence:
+    def ready(
+        self, gate_id: str, *,
+        artifact_kind: str = "acceptance-binary",
+        required_capabilities: tuple[str, ...] | None = None,
+    ) -> MobileCellEvidence:
+        if artifact_kind != "acceptance-binary" or required_capabilities:
+            raise BlockedError(
+                reason="Mobile cell has no qualification for the requested artifact/capabilities",
+                resource=self.cell_id,
+            )
         owner = self.provisioner
         if not isinstance(owner, MobileNativeProvisioner):
             raise BlockedError(

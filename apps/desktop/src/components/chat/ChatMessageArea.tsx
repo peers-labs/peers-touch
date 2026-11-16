@@ -934,6 +934,7 @@ export function ChatMessageArea({
         error,
       });
       notifyError(t('chat.social.messageArea.retryFailed'));
+      throw error;
     }
   }, [retryMessage, t]);
 

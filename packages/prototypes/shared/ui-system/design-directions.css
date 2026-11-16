@@ -126,10 +126,17 @@
    solid gray track+thumb that shouts over the content. Here the gutter is
    transparent and the thumb is a thin neutral pill (4px painted inside a
    10px gutter), warming only on hover. No track, no corner, no arrows. */
-.sk-theme,
-.sk-theme * {
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--sk-text) 22%, transparent) transparent;
+@supports selector(::-webkit-scrollbar) {
+  .sk-theme, .sk-theme * {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
+}
+@supports not selector(::-webkit-scrollbar) {
+  .sk-theme, .sk-theme * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--sk-text) 22%, transparent) transparent;
+  }
 }
 .sk-theme ::-webkit-scrollbar { width: 10px; height: 10px; }
 .sk-theme ::-webkit-scrollbar-track,
@@ -311,7 +318,7 @@
 .sk-conv-row:hover { background: color-mix(in srgb, var(--sk-surface) 60%, transparent); }
 .sk-conv-row.is-selected {
   background: color-mix(in srgb, var(--sk-surface) 85%, transparent);
-  box-shadow: inset 2.5px 0 0 var(--sk-accent);
+  box-shadow: inset 1px 0 0 var(--sk-accent);
 }
 .sk-conv-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .sk-conv-meta strong { font-size: 13px; color: var(--sk-text); }

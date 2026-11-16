@@ -69,8 +69,9 @@ See [the allocation contract](../../../architecture/platform/client/ui-system/pr
 avatars consume `geometry.avatar.navigation/catalog` (36px size, 6px radius);
 the identity Button adds no border or padding around that image.
 `geometry.chatRail.rowHeight=56` is the shared catalogue rhythm.
-Its `rowsMinWidth=200` restores left-aligned names and direct header controls
-as soon as they fit, independently of the 240px stable drag endpoint.
+Its `rowsMinWidth=144` restores left-aligned names and direct header controls
+as soon as they fit, independently of the stable drag width (any value in the
+160..360 usable band).
 Segmented measures its own label budget; avatar radius never changes the
 global control radius.
 

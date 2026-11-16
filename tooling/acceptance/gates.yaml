@@ -778,6 +778,7 @@
       "environment": "native-tauri-current-profile",
       "provisioner": "native-tauri-current-profile",
       "requiredRuntimeCells": ["desktop-macos-native"],
+      "runtimeCellCapabilities": [],
       "tier": "env-evidence",
       "description": "Create a real UI message in run-scoped Native clients, inject exact submitted-command crash state, restart and prove canonical convergence; then retry the unconfirmed committed message through its visible control after pending-intent cleanup and prove original identity, receiver plaintext and sender DELIVERED receipt."
     },

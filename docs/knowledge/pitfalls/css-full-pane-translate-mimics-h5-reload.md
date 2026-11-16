@@ -38,9 +38,12 @@ At 676/554px native windows, reserving the soft reading ideal as a hard floor
 left only 135/13px of catalogue. The separator also disabled itself whenever
 pressure existed. Merely enabling it would still start dragging from the
 hidden preferred paper, and its closed position remained at the old exposure.
-The shared allocator now exposes an invertible pressure share; the controller
-maps pointer/keyboard boundaries through it and the handle follows visible
-paper. Keep controls whole, cancellation noncommitting, and the complete
+The shared allocator now gives the catalogue the reachable space after the
+work minimum; the controller directly addresses visible boundaries. Expanded
+preference is separate from temporary collapse. A frame that grows enough
+releases collapse, and pointer release settles to the reachable minimum or
+maximum by last direction. Row and header footprints are independently
+budgeted. Keep controls whole, cancellation noncommitting, and the complete
 catalogue restored on Back. Values and allocation remain in the drawer contract.
 The original current-profile two-client Native Gate borrows its authenticated
 client for `drawer_layout.prove_drawer_layout`; no second login/runtime is

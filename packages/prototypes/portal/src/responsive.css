@@ -79,9 +79,17 @@
    OUTSIDE .sk-theme, so without this rule the harness falls back to the UA
    default thick track, which reads as a second, louder scrollbar language
    painted right beside the product list. Neutral ink (no skin token here). */
-.prototype-portal-preview-body {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(60, 64, 67, .22) transparent;
+@supports selector(::-webkit-scrollbar) {
+  .prototype-portal-preview-body {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
+}
+@supports not selector(::-webkit-scrollbar) {
+  .prototype-portal-preview-body {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(60, 64, 67, .22) transparent;
+  }
 }
 .prototype-portal-preview-body::-webkit-scrollbar { width: 10px; height: 10px; }
 .prototype-portal-preview-body::-webkit-scrollbar-track,

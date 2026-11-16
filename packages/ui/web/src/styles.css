@@ -356,9 +356,17 @@ button.pt-link:hover:not(:disabled){background:var(--pt-subtle)}
    flex-wrap:wrap fallback because they cannot collapse. */
 .pt-segmented[data-crampable='true']{flex-wrap:nowrap}
 /* Spatial squeeze: labels collapse to leading icons. The span (not the icon)
-   is hidden so the control keeps its squircle tile and centered glyph. */
+   is hidden so the control keeps its squircle tile and centered glyph.
+   The tiles then keep a FIXED compact footprint and the island slides
+   horizontally instead of continuously squashing the icons — squeeze must
+   step (labelled → fixed icon tiles → host compact menu), never distort. */
+.pt-segmented[data-icon-only='true']{flex-wrap:nowrap;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none}
+.pt-segmented[data-icon-only='true']::-webkit-scrollbar{display:none}
 .pt-segmented[data-icon-only='true'] .pt-segmented__label{display:none}
-.pt-segmented[data-icon-only='true']>.pt-button{justify-content:center;gap:0}
+.pt-segmented[data-icon-only='true']>.pt-button{
+  justify-content:center;gap:0;
+  flex:0 0 auto;width:var(--pt-control-compact);min-width:var(--pt-control-compact);padding:0;
+}
 /* Scrollable island: never wraps; the group scrolls in one line and keeps
    peer elements' relative positions under spatial squeeze. Options keep
    intrinsic width; the scroll gutter is invisible, clipping at the pill edge. */

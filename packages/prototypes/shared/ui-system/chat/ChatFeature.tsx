@@ -428,11 +428,13 @@ export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal,
       data-work-compact={pose.workToolsCompact}
       data-message-tools={pose.messageToolsBelow ? 'below' : 'beside'}
       data-preferred-width={assembly.preferred}
+      data-catalog-rest={assembly.catalogRest}
+      data-catalog-phase={assembly.catalogPhase}
+      data-catalog-tools={pose.catalogToolsCompact ? 'compact' : 'full'}
       data-catalog-exposure={pose.exposure}
       data-navigation-progress={assembly.navigation}
       data-main-open={assembly.open}
       data-catalog-rows={pose.catalogRowsCompact ? 'compact' : 'full'}
-      data-catalog-compact-preference={assembly.preferred === drawerPolicy.catalog.compact}
       data-message-layout={prefs.messageLayout}
       data-hide-own-avatar={prefs.messageLayout === 'sides' && prefs.hideOwnAvatarInSides ? 'true' : 'false'}
       data-locale={prefs.locale}
@@ -449,6 +451,7 @@ export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal,
         style={{ width: pose.visibleCatalog }}>
       <ChatRail
         compact={pose.catalogRowsCompact}
+        toolsCompact={pose.catalogToolsCompact}
         onExpandRail={expandCatalog}
         tab={tab} onTabChange={setTab}
         sessions={sessions} selectedId={selectedId}

@@ -9,8 +9,11 @@ export const drawerPolicy = {
   catalog: {
     default: geometry.chatRail.defaultWidth,
     compact: geometry.chatRail.minWidth,
-    readable: geometry.chatRail.expandedMinWidth,
+    // The smallest stable rest is the width that still fits the complete rail
+    // header tool group. The band below it down to compact has no stable rest.
+    usableMin: geometry.chatRail.toolsMinWidth,
     rows: geometry.chatRail.rowsMinWidth,
+    tools: geometry.chatRail.toolsMinWidth,
     stop: geometry.chatRail.maxWidth,
     step: geometry.chatRail.keyboardStep,
   },
@@ -20,40 +23,58 @@ export const drawerPolicy = {
 
 export type DrawerLeaf = { kind: 'detail' } | { kind: 'thread'; messageId: string };
 export type ForceDirection = -1 | 0 | 1;
+export type CatalogRest = 'compact' | 'expanded';
 export const bounded = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
 
-export function settleCatalog(raw: number, direction: ForceDirection = 0): number {
-  const { compact, readable, stop } = drawerPolicy.catalog;
-  if (!Number.isFinite(raw)) return drawerPolicy.catalog.default;
-  const x = bounded(raw, compact, stop);
-  if (x >= readable || x === compact) return Math.round(x);
-  if (direction < 0) return compact;
-  if (direction > 0) return readable;
-  return x < (compact + readable) / 2 ? compact : readable;
+/** Persistence describes any stable expanded paper, never temporary pressure/collapse. */
+export function expandedCatalogWidth(raw: number): number {
+  const { usableMin, stop, default: fallback } = drawerPolicy.catalog;
+  return Number.isFinite(raw) && raw >= usableMin
+    ? Math.round(bounded(raw, usableMin, stop)) : fallback;
 }
 
-/** Both rails yield under pressure; the reading ideal is not a reservation.
- * A fixed envelope makes the visible boundary invertible during a gesture.
- */
-function catalogShare(stage: number) {
-  const { compact, stop } = drawerPolicy.catalog;
-  const { minimum, usable } = drawerPolicy.work;
-  return bounded((stage - compact - minimum) / (stop - compact + usable - minimum), 0, 1);
+/** Reachable stops are screen coordinates, not a hidden paper inverse. */
+export function catalogBounds(stage: number, navigation: number) {
+  const width = Math.max(0, stage);
+  const min = Math.min(width, drawerPolicy.catalog.compact);
+  const paperMax = Math.min(width, drawerPolicy.catalog.stop);
+  const openMax = Math.min(paperMax, Math.max(min, width - drawerPolicy.work.minimum));
+  return { min, max: paperMax + bounded(navigation, 0, 1) * (openMax - paperMax) };
 }
 
 function catalogExposure(stage: number, paper: number) {
-  const compact = Math.min(stage, drawerPolicy.catalog.compact);
-  return Math.min(stage, compact + (paper - compact) * catalogShare(stage));
+  return Math.min(paper, catalogBounds(stage, 1).max);
 }
 
-/** Convert a drawn, reachable boundary back into the user's paper intent. */
-export function catalogPreferenceForBoundary(stage: number, boundary: number, navigation: number) {
-  if (navigation === 0) return bounded(boundary, drawerPolicy.catalog.compact, drawerPolicy.catalog.stop);
-  const share = catalogShare(Math.max(0, stage));
-  return share > 0
-    ? bounded(drawerPolicy.catalog.compact + (boundary - drawerPolicy.catalog.compact) / share,
-      drawerPolicy.catalog.compact, drawerPolicy.catalog.stop)
-    : drawerPolicy.catalog.compact;
+export type CatalogSettlement = { rest: CatalogRest; width: number };
+
+/**
+ * Release settlement.
+ * The usable band [usableMin, stop] keeps every exact released width: a user
+ * who likes a 172px rail gets a 172px rail. Only the gap between the compact
+ * stop and the usable minimum has no stable rest, and there the gesture's
+ * final direction picks which side of the gap to settle on.
+ */
+export function settleCatalogBoundary(
+  boundary: number,
+  range: { min: number; max: number },
+  direction: ForceDirection,
+): CatalogSettlement {
+  const { usableMin } = drawerPolicy.catalog;
+  const wanted = bounded(boundary, range.min, range.max);
+  if (wanted >= usableMin) return { rest: 'expanded', width: wanted };
+  // A compressed frame may cap the reachable edge below the nominal floor.
+  const reachableUsableMin = Math.min(usableMin, range.max);
+  const towardCompact = direction < 0
+    || (direction === 0 && wanted < (range.min + reachableUsableMin) / 2);
+  return towardCompact
+    ? { rest: 'compact', width: range.min }
+    : { rest: 'expanded', width: reachableUsableMin };
+}
+
+/** A larger frame releases collapse once remembered paper fits completely. */
+export function catalogRestAfterFrame(rest: CatalogRest, previous: number, next: number, expanded: number, navigation: number): CatalogRest {
+  return next > previous && catalogBounds(next, navigation).max >= expanded ? 'expanded' : rest;
 }
 
 /** All rectangles derive from this snapshot; no viewport/media-query mode. */
@@ -69,14 +90,14 @@ export function resolveDrawerAssembly(stage: number, preferred: number, navigati
   const parkedX = Math.max(paper, exposure + pressure * workWidth);
   const mainX = exposure + (1 - navigation) * (parkedX - exposure);
   const visibleCatalog = Math.min(paper, mainX);
-  const maxPaper = Math.min(width, drawerPolicy.catalog.stop);
   return {
     width, height: Math.max(0, stageHeight), paper, exposure, workWidth, pressure, mainX,
-    catalogResizeMin: Math.min(width, drawerPolicy.catalog.compact),
-    catalogResizeMax: navigation === 0 ? maxPaper : catalogExposure(width, drawerPolicy.catalog.stop),
+    catalogResizeMin: catalogBounds(width, navigation).min,
+    catalogResizeMax: catalogBounds(width, navigation).max,
     composerBudget: Math.min(280, Math.max(96, (stageHeight - 52) * .58)),
     visibleCatalog,
     catalogRowsCompact: visibleCatalog < drawerPolicy.catalog.rows,
+    catalogToolsCompact: visibleCatalog < drawerPolicy.catalog.tools,
     catalogInteractive: visibleCatalog >= drawerPolicy.catalog.compact,
     workToolsCompact: workWidth < drawerPolicy.work.compactTools,
     messageToolsBelow: workWidth < drawerPolicy.work.sideActionRail,

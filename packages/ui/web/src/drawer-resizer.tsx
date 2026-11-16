@@ -1,5 +1,6 @@
-import { useLayoutEffect, useRef } from 'react';
-import { drawerPolicy } from './drawer-assembly';
+import { useLayoutEffect, useRef, useState } from 'react';
+import { geometry } from '@peers-touch/ui-tokens';
+import { bounded, drawerPolicy } from './drawer-assembly';
 import type { DrawerAssemblyController } from './use-drawer-assembly';
 
 /** This handle supplies intent only. The assembly owns all drawn geometry. */
@@ -12,7 +13,14 @@ export function DrawerRailResizer({ assembly, label, className, lineClassName, .
 }) {
   const pointer = useRef<number | null>(null);
   const handle = useRef<HTMLDivElement>(null);
+  // Programmatic focus() on pointerdown makes :focus-visible match in both
+  // Chromium and WebKit, so the hit strip must own input modality explicitly:
+  // pointer focus stays visually silent, keyboard focus lights the one line.
+  const pointerFocused = useRef(false);
+  const [keyboardFocus, setKeyboardFocus] = useState(false);
   const { catalog } = drawerPolicy;
+  const hitWidth = geometry.chatRail.resizeHitWidth;
+  const hitX = bounded(assembly.pose.visibleCatalog - hitWidth / 2, 0, Math.max(0, assembly.pose.width - hitWidth));
   // Pressure changes the drawn range, not the right to pull its visible edge.
   const available = assembly.pose.catalogInteractive &&
     assembly.pose.catalogResizeMax > assembly.pose.catalogResizeMin &&
@@ -32,14 +40,26 @@ export function DrawerRailResizer({ assembly, label, className, lineClassName, .
   };
   return (
     <div {...attributes} ref={handle} className={className} role="separator"
+      style={{ left: hitX, width: hitWidth, marginLeft: 0 }}
       aria-label={label} title={label} aria-orientation="vertical"
       aria-valuemin={Math.round(assembly.pose.catalogResizeMin)} aria-valuemax={Math.round(assembly.pose.catalogResizeMax)}
       aria-valuenow={Math.round(assembly.pose.visibleCatalog)}
       aria-disabled={!available} tabIndex={available ? 0 : -1}
       data-chat-rail-resize data-dragging={assembly.dragging} data-available={available}
+      data-keyboard-focus={keyboardFocus}
+      onFocus={() => {
+        setKeyboardFocus(!pointerFocused.current);
+        pointerFocused.current = false;
+      }}
+      onBlur={() => {
+        pointerFocused.current = false;
+        setKeyboardFocus(false);
+      }}
       onPointerDown={event => {
         if (!available || event.button !== 0 || pointer.current !== null) return;
         event.preventDefault();
+        pointerFocused.current = true;
+        setKeyboardFocus(false);
         event.currentTarget.focus({ preventScroll: true });
         pointer.current = event.pointerId;
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -65,6 +85,9 @@ export function DrawerRailResizer({ assembly, label, className, lineClassName, .
           return;
         }
         if (!available) return;
+        // Any non-Escape key means keyboard now owns this handle, even if the
+        // focus itself arrived through a prior pointer gesture.
+        setKeyboardFocus(true);
         const width = assembly.pose.visibleCatalog;
         let next: number;
         if (event.key === 'Home') next = assembly.pose.catalogResizeMin;
@@ -75,7 +98,8 @@ export function DrawerRailResizer({ assembly, label, className, lineClassName, .
         event.preventDefault();
         assembly.setCatalogBoundary(next, event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0);
       }}>
-      <span className={lineClassName} />
+      <span className={lineClassName}
+        style={{ left: Math.min(hitWidth - 1, assembly.pose.visibleCatalog - hitX) }} />
     </div>
   );
 }

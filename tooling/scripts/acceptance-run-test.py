@@ -54,6 +54,45 @@ def load_module() -> Any:
 
 
 class AcceptanceRunTest(unittest.TestCase):
+    def test_runtime_capability_selection_is_frozen_and_cannot_omit_file_proof(self) -> None:
+        module = load_module()
+        definition = {
+            "argv": ["python3", "synthetic.py"],
+            "requiredRuntimeCells": ["desktop-macos-native"],
+            "runtimeCellCapabilities": [],
+        }
+        gate = module.gate_from_definition("synthetic", definition)
+        self.assertEqual(gate["runtimeCellCapabilities"], [])
+        with self.assertRaisesRegex(SystemExit, "stale or conflicting"):
+            module.plan_gate_from_entry(
+                {"id": "synthetic", "runtimeCellCapabilities": ["file-chooser"]},
+                {"synthetic": definition},
+            )
+        for value in (None, "file-chooser", ["unknown"], ["file-chooser"] * 2):
+            with self.subTest(value=value), self.assertRaises(SystemExit):
+                module.gate_from_definition(
+                    "synthetic", {**definition, "runtimeCellCapabilities": value},
+                )
+        with self.assertRaisesRegex(SystemExit, "requires requiredRuntimeCells"):
+            module.gate_from_definition(
+                "synthetic", {**definition, "requiredRuntimeCells": []},
+            )
+        lifecycle = mock.Mock()
+        lifecycle.ready.return_value.to_dict.return_value = {"nativeAdapter": {}}
+        with mock.patch(
+            "tooling.acceptance.provisioners.get_runtime_cell_lifecycle",
+            return_value=lifecycle,
+        ), self.assertRaisesRegex(Exception, "[Ff]ile chooser"):
+            module.provision_runtime_cell(
+                cell_id="desktop-macos-native", gate_id="synthetic",
+                gate_run=mock.Mock(), required_capabilities=("file-chooser",),
+            )
+        lifecycle.ready.assert_called_once_with(
+            "synthetic", artifact_kind="acceptance-binary",
+            required_capabilities=("file-chooser",),
+        )
+        lifecycle.stop.assert_called_once()
+
     def test_allocates_a_preflight_run_id_without_creating_evidence(self) -> None:
         module = load_module()
         output = io.StringIO()
