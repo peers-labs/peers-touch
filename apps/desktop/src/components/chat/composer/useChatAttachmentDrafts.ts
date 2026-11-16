@@ -8,6 +8,7 @@ import {
 import { imServiceV1 } from '../../../services/im-service';
 import type { MessagingLocalAttachmentIntent } from '../../../services/im-service-contract';
 import { log } from '../../../utils/logger';
+import type { LocalAttachmentDraft } from '../../../messaging/optimisticOutbound';
 
 export type ChatDraftStatus = Exclude<ChatMediaTransferStatus, 'queued'>;
 
@@ -190,6 +191,36 @@ export function useChatAttachmentDrafts({
     });
   }, [disabled, editing, fallbackName, stageDraft]);
 
+  // Snapshot local descriptors for an optimistic message. Blob ownership moves
+  // to the optimistic row, so these URLs must not be revoked by the composer.
+  const describeDrafts = useCallback((): LocalAttachmentDraft[] => {
+    return draftsRef.current.map((item) => ({
+      localId: item.id,
+      previewUrl: item.previewUrl,
+      ownsPreviewUrl: item.ownsPreviewUrl,
+      filename: item.name,
+      mimeType: item.mimeType,
+      size: item.size,
+      isImage: chatMediaKindFromMimeFilename(item.mimeType, item.name) === 'image',
+      durationSeconds: item.durationSeconds,
+    }));
+  }, []);
+
+  // Resolve every current draft to a sendable intent, staging raw File picks in
+  // the background. Already-staged intents resolve immediately.
+  const stageAll = useCallback(async (): Promise<MessagingLocalAttachmentIntent[]> => {
+    await Promise.all(draftsRef.current.map((item) => stageDraft(item)));
+    return draftsRef.current
+      .map((item) => item.attachment)
+      .filter((item): item is MessagingLocalAttachmentIntent => Boolean(item));
+  }, [stageDraft]);
+
+  // Drop composer draft state without revoking previews or discarding staged
+  // sources; ownership has moved to the optimistic outbound message.
+  const detachDrafts = useCallback(() => {
+    setDrafts([]);
+  }, []);
+
   const appendReadyAttachment = useCallback((attachment: MessagingLocalAttachmentIntent) => {
     setDrafts((prev) => [
       ...prev,
@@ -271,5 +302,8 @@ export function useChatAttachmentDrafts({
     clearDrafts,
     removeDraft,
     retryDraft,
+    describeDrafts,
+    stageAll,
+    detachDrafts,
   };
 }
