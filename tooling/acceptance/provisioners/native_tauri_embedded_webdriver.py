@@ -746,7 +746,9 @@ class CrossStationSocialNativeProvisioner(
     def _station_equipment_options(
         self, manifest: RuntimeManifest, service_id: str, profile_name: str,
     ) -> dict[str, object]:
-        if manifest.gate_id != "social-public-feed-native-e2e":
+        if manifest.gate_id not in {
+            "social-public-feed-native-e2e", "social-cross-station-native-e2e",
+        }:
             return {}
         receiver = next(client for client in self.contract.clients if client.id == "bob")
         if service_id != receiver.service_bindings["station"].service_id:
@@ -919,9 +921,13 @@ class CrossStationSocialNativeProvisioner(
             source_station=source.runtime_identity, receiver_station=receiver.runtime_identity,
             receiver_origin=receiver.endpoint,
             receiver_actor=actors["bob"]["ptid"], outsider_actor=actors["eve"]["ptid"],
+            receiver_profile=self._required_station_profiles()[receiver_id],
         )
 
         def clear_delivery() -> None:
+            # The control file belongs to the original receiver container.
+            # Restore an interrupted outage before attempting its removal.
+            restore()
             result = delivery_handler.close()
             if not result.closed or not result.secrets_zeroized:
                 raise BlockedError(

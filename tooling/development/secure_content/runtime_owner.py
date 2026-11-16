@@ -1626,6 +1626,84 @@ def restart_social_receiver_station(
     return {"stop": dict(stopped), "start": dict(restored)}
 
 
+def _commit_private_receiver_outage(
+    capability_client: EphemeralGateClient, *,
+    publish: Callable[[], Mapping[str, Any]],
+    observe: Callable[[str, str], dict[str, Any]],
+    deployment_environment: str, source_commit: str, provisioning_run_id: str,
+) -> dict[str, Any]:
+    """CSS-D10 stays online until one original Post/outbox has committed."""
+    pending = {"REMOTE_DELIVERY_PENDING", "REMOTE_DELIVERY_RETRYING"}
+    def require_pending(value: Mapping[str, Any], post_id: str | None = None) -> str:
+        actual = value.get("transientPostId")
+        if value.get("state") not in pending or not actual or (post_id and actual != post_id):
+            raise RuntimeOwnerBlocked(
+                "CLIENT_RUNTIME_UNAVAILABLE",
+                f"AS21 original publication was not pending (state={value.get('state')!r})",
+                resource="client:cross-station-social-alice",
+            )
+        return str(actual)
+    def require_outbox(value: Mapping[str, Any], frame_hash: str | None = None) -> None:
+        if (value.get("outboxRows") != 1
+                or value.get("outboxState") not in {"pending", "leased", "retry_wait"}
+                or (frame_hash and value.get("originalFrameSha256") != frame_hash)):
+            raise RuntimeOwnerBlocked(
+                "CLIENT_RUNTIME_UNAVAILABLE", "AS21 did not retain one original pending outbox frame",
+                resource="station:cross-station-social-alice",
+            )
+    def release() -> None:
+        capability_client.invoke("social-private-delivery", "release", {}, timeout_seconds=45)
+    with _runtime_cleanup_scope(ExitStack()) as cleanup:
+        # Retain release before arming, including an unknown arm response.
+        cleanup.callback(release)
+        capability_client.invoke("social-private-delivery", "hold", {}, timeout_seconds=45)
+        committed = publish()
+        post_id = require_pending(committed)
+        committed_outbox = observe("outbox", post_id)
+        require_outbox(committed_outbox)
+        def observe_held_frame() -> Mapping[str, Any] | None:
+            value = capability_client.invoke(
+                "social-private-delivery", "read-hold", {}, timeout_seconds=45,
+            )
+            if value.get("expired"):
+                raise RuntimeOwnerBlocked(
+                    "FIXTURE_OWNER_UNAVAILABLE", "AS21 receiver hold expired before outage",
+                    resource="fixture:social-private-delivery",
+                )
+            return value if value.get("effectCount", 0) > 0 else None
+        held_frame = wait_until(observe_held_frame, "AS21 original held frame", timeout=45)
+        before_delivery = observe("snapshot", post_id)
+        if (
+            held_frame.get("sourceCommit") != source_commit
+            or held_frame.get("runId") != provisioning_run_id
+            or held_frame.get("frameSha256") != committed_outbox.get("originalFrameSha256")
+            or before_delivery["projections"]["social_remote_private_resources"]["rows"] != 0
+        ):
+            raise RuntimeOwnerBlocked(
+                "CLIENT_RUNTIME_UNAVAILABLE", "AS21 did not commit one undelivered original frame before outage",
+                resource="station:cross-station-social-alice",
+            )
+        publications, outboxes = [], []
+        def publish_during_outage(stopped: Mapping[str, Any]) -> None:
+            for _ in range(2):
+                value = publish()
+                require_pending(value, post_id)
+                outbox = observe("outbox", post_id)
+                require_outbox(outbox, committed_outbox["originalFrameSha256"])
+                publications.append(value)
+                outboxes.append(outbox)
+        restart = restart_social_receiver_station(
+            capability_client, deployment_environment=deployment_environment,
+            source_commit=source_commit, during_outage=publish_during_outage,
+        )
+    return {
+        "postId": post_id, "committedPublication": committed,
+        "committedOutbox": committed_outbox, "heldFrame": held_frame,
+        "beforeDelivery": before_delivery, "stationOutage": restart,
+        "outagePublications": publications, "outageOutbox": outboxes,
+    }
+
+
 def _chat_harness(
     client: FoundationRuntimeClient,
     method: str,
@@ -8060,39 +8138,14 @@ class W7RuntimeOwner:
                     "CLIENT_RUNTIME_UNAVAILABLE", "AS21 did not prepare its exact retained draft",
                     resource="client:cross-station-social-alice",
                 )
-            outage_publications: list[Mapping[str, Any]] = []
-            outage_outbox: list[dict[str, Any]] = []
-            def publish_during_outage(stopped: Mapping[str, Any]) -> None:
-                for _ in range(2):
-                    published = _moments_harness(alice, "publishPrivateDraft")
-                    if (published.get("state") not in {
-                        "REMOTE_DELIVERY_PENDING", "REMOTE_DELIVERY_RETRYING",
-                    } or not published.get("transientPostId")):
-                        raise RuntimeOwnerBlocked(
-                            "CLIENT_RUNTIME_UNAVAILABLE",
-                            f"AS21 source did not commit while receiver was stopped (state={published.get('state')!r})",
-                            resource="client:cross-station-social-alice",
-                        )
-                    outage_publications.append(published)
-                    outbox = delivery_observation("outbox", published["transientPostId"])
-                    if outbox.get("outboxRows") != 1 or outbox.get("outboxState") not in {
-                        "pending", "leased", "retry_wait",
-                    }:
-                        raise RuntimeOwnerBlocked(
-                            "CLIENT_RUNTIME_UNAVAILABLE", "AS21 did not retain exactly one durable pending outbox row",
-                            resource="station:cross-station-social-alice",
-                        )
-                    outage_outbox.append(outbox)
-                if outage_publications[0]["transientPostId"] != outage_publications[1]["transientPostId"]:
-                    raise RuntimeOwnerBlocked(
-                        "CLIENT_RUNTIME_UNAVAILABLE", "AS21 exact retry created another Post",
-                        resource="client:cross-station-social-alice",
-                    )
-            as21_restart = restart_social_receiver_station(
-                capability_client, deployment_environment=secondary_attestation.deployment_environment,
-                source_commit=control_commit, during_outage=publish_during_outage,
+            outage = _commit_private_receiver_outage(
+                capability_client,
+                publish=lambda: _moments_harness(alice, "publishPrivateDraft"),
+                observe=delivery_observation,
+                deployment_environment=secondary_attestation.deployment_environment,
+                source_commit=control_commit, provisioning_run_id=prepared.manifest["runId"],
             )
-            as21_post = outage_publications[0]["transientPostId"]
+            as21_post = outage["postId"]
             def observe_settled_publication() -> Mapping[str, Any] | None:
                 value = _moments_harness(alice, "publishPrivateDraft")
                 if value.get("state") not in PRIVATE_PUBLISH_RECONCILING_STATES | {"PUBLISHED"}:
@@ -8124,7 +8177,9 @@ class W7RuntimeOwner:
             if (
                 settled_outbox.get("outboxRows") != 1
                 or settled_outbox.get("outboxState") != "delivered"
-                or len({value["originalFrameSha256"] for value in [*outage_outbox, settled_outbox]}) != 1
+                or len({value["originalFrameSha256"] for value in [
+                    outage["committedOutbox"], *outage["outageOutbox"], settled_outbox,
+                ]}) != 1
                 or delivered_rows["projections"]["social_remote_private_resources"]["rows"] != 1
             ):
                 raise RuntimeOwnerBlocked(
@@ -8144,10 +8199,14 @@ class W7RuntimeOwner:
                 observations={
                     "contentReady": as21_read.get("state") == "CONTENT_READY",
                     "rendererReloaded": True,
-                    "stationOutage": as21_restart,
+                    "stationOutage": outage["stationOutage"],
                     "admission": admission,
-                    "outagePublications": outage_publications,
-                    "outageOutbox": outage_outbox,
+                    "committedPublication": outage["committedPublication"],
+                    "committedOutbox": outage["committedOutbox"],
+                    "heldFrame": outage["heldFrame"],
+                    "beforeDelivery": outage["beforeDelivery"],
+                    "outagePublications": outage["outagePublications"],
+                    "outageOutbox": outage["outageOutbox"],
                     "settledOutbox": settled_outbox,
                     "receiverRows": delivered_rows,
                     "settledPublication": settled,

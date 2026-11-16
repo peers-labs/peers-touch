@@ -194,6 +194,21 @@ class PrivateSocialNativeProvisionerTest(unittest.TestCase):
                 "four", COMMIT, repo_root=REPO_ROOT, recreate_runtime=True,
             )
 
+    def test_private_receiver_alone_gets_bounded_acceptance_runtime(self):
+        self.manifest.gate_id = "social-cross-station-native-e2e"
+        with mock.patch.object(self.provisioner, "register_cleanup") as register:
+            self.assertEqual({}, self.provisioner._station_equipment_options(
+                self.manifest, "station-four", "fiveArm",
+            ))
+            register.assert_not_called()
+            self.assertEqual(
+                {"social_notification_run_id": self.manifest.run_id},
+                self.provisioner._station_equipment_options(
+                    self.manifest, "station-five-arm", "four",
+                ),
+            )
+            register.assert_called_once()
+
     def test_other_social_gate_preserves_its_original_preparation_owner(self) -> None:
         self.manifest.gate_id = "social-public-desktop-e2e"
         self.assertEqual(self.services, self.provisioner._provision_station_services(self.manifest))
@@ -364,9 +379,15 @@ class PrivateSocialNativeProvisionerTest(unittest.TestCase):
             delivery.prepare.assert_called_once_with()
             self.assertEqual(delivery_factory.call_args.kwargs["receiver_actor"], "ptid:bob")
             self.assertEqual(delivery_factory.call_args.kwargs["outsider_actor"], "ptid:eve")
+            self.assertEqual(delivery_factory.call_args.kwargs["receiver_profile"], "four")
             self.assertEqual(delivery_factory.call_args.kwargs["source_station"],
                              self.services["station-four"].runtime_identity)
             handler.invoke.assert_not_called()
+            delivery.close.assert_not_called()
+            register.call_args_list[1].args[1]()
+            handler.close.assert_called_once()
+            delivery.close.assert_called_once()
+            handler.close.reset_mock()
             name, restore = register.call_args_list[0].args
             self.assertEqual(name, "private-social-station-outage")
             restore()

@@ -20,6 +20,34 @@ PACKAGES = (
 )
 COMMANDS = (
     SourceCommand(
+        name="delivery-acceptance-controller",
+        argv=("go", "test", "-v", "-race", "-tags", "social_acceptance",
+              "./app/subserver/social", "-run", "^Test(NotificationControl|PrivateAcceptance)", "-count=1"),
+        cwd="apps/station", timeout_seconds=300,
+        required_output_pattern=r"--- PASS: TestPrivateAcceptance",
+    ),
+    SourceCommand(
+        name="delivery-ordinary-receiver",
+        argv=("go", "test", "-v", "./app/subserver/social",
+              "-run", "^TestPrivateAcceptanceOrdinaryBuildPreservesReceiver$", "-count=1"),
+        cwd="apps/station", timeout_seconds=300,
+        required_output_pattern=r"--- PASS: TestPrivateAcceptanceOrdinaryBuildPreservesReceiver",
+    ),
+    SourceCommand(
+        name="delivery-parent-ordering",
+        argv=("python3", "-m", "unittest",
+              "tooling.acceptance.tests.test_social_private_delivery",
+              "tooling.acceptance.tests.test_private_social_native_provisioner",
+              "tooling.acceptance.gates.social.test_cross_station_support",
+              "tooling.development.secure_content.test_runtime_owner.RuntimeOwnerTest."
+              "test_private_outage_commits_before_stop_and_releases_after_restore",
+              "tooling.development.secure_content.test_runtime_owner.RuntimeOwnerTest."
+              "test_private_outage_rejects_uncommitted_or_delivered_frame_before_stop",
+              "tooling.development.secure_content.test_runtime_owner.RuntimeOwnerTest."
+              "test_private_outage_restores_then_releases_without_masking_retry_failure"),
+        timeout_seconds=180,
+    ),
+    SourceCommand(
         name="delivery-test-discovery",
         argv=("go", "test", *PACKAGES, "-list", TEST_PATTERN),
         cwd="apps/station",

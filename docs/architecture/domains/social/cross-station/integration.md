@@ -248,14 +248,20 @@ unsupported-PUBLIC-base probe retains the existing prepare and local-durable-row
 rejection counters. These actions do not by themselves prove the separate
 cross-Federation, unresolved-recipient or per-slot deduplication obligations.
 
-AS21 admits the exact retained text draft through the existing Native `admit`
-owner while the receiver is online. The parent then stops that same receiver
-container. Two original publication attempts must report remote pending/retrying
-with the same committed Post ID. After fail-safe restoration, the original
-durable command must settle to that same Post before receiver readback and the
-existing renderer-reload checks. This is a real receiver outage around source
-commit, not a source process restart or a new preparation. A failed publication
-still restores the receiver and retains its original failure.
+AS21 admits and commits the exact retained text draft while the receiver is
+online, preserving CSS-D10's authoritative PreKey revalidation before commit.
+The explicitly opt-in `social_acceptance` receiver returns a standard retryable
+result for one parent-bound private Post frame under a source/run/Profile/
+Station/actor-bound lease of at most 90 seconds. The parent proves one original
+pending outbox, the held frame's exact wire hash, and zero receiver resource rows
+before stopping that same receiver container. Two publication retries during
+the genuine outage must retain the original Post and frame. After fail-safe
+restoration and hold release, the unchanged domain receiver validates and
+persists that frame; the durable command settles before receiver readback and
+renderer-reload checks. Release is retained before arming and runs on failure.
+Ordinary builds have no controller or control-file reader; invalidations always
+delegate unchanged. The two rule schemas share only their bounded, same-euid,
+no-follow, flock-protected atomic file owner.
 
 The Suite-owned `social-private-delivery` capability installs a digest-bound
 probe once in each existing PostgreSQL container. AS21 observes one original

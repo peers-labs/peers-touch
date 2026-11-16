@@ -168,6 +168,105 @@ def fixture_payload() -> dict[str, object]:
 
 
 class RuntimeOwnerTest(unittest.TestCase):
+    def test_private_outage_commits_before_stop_and_releases_after_restore(self):
+        events = []
+        commit, epoch, frame = "a" * 40, "b" * 16, "c" * 64
+        stopped = {
+            "stopped": True, "deploymentEnvironment": "receiver",
+            "containerId": "original", "runtimeOwner": "owner", "beforeProcessIds": [11],
+            "sourceCommit": commit, "buildCommit": commit,
+        }
+        def invoke(capability, operation, payload, **options):
+            events.append(operation)
+            if operation == "read-hold":
+                return {"sourceCommit": commit, "runId": epoch, "frameSha256": frame,
+                        "effectCount": 1, "expired": False}
+            if operation == "stop":
+                return stopped
+            if operation == "start":
+                return {**stopped, "restored": True, "afterProcessIds": [22]}
+            return {}
+        def publish():
+            events.append("publish")
+            return {"state": "REMOTE_DELIVERY_PENDING", "transientPostId": "original"}
+        def observe(operation, post):
+            self.assertEqual(post, "original")
+            events.append(operation)
+            if operation == "snapshot":
+                return {"projections": {"social_remote_private_resources": {"rows": 0}}}
+            return {"outboxRows": 1, "outboxState": "retry_wait", "originalFrameSha256": frame}
+        outcome = runtime_owner_module._commit_private_receiver_outage(
+            MagicMock(invoke=invoke), publish=publish, observe=observe,
+            deployment_environment="receiver", source_commit=commit, provisioning_run_id=epoch,
+        )
+        self.assertEqual(events, [
+            "hold", "publish", "outbox", "read-hold", "snapshot", "stop",
+            "publish", "outbox", "publish", "outbox", "start", "release",
+        ])
+        self.assertEqual(outcome["postId"], "original")
+        self.assertEqual(len(outcome["outagePublications"]), 2)
+
+    def test_private_outage_rejects_uncommitted_or_delivered_frame_before_stop(self):
+        for failure_at in ("arm", "commit", "hash", "receiver-row", "expiry"):
+            with self.subTest(failure_at=failure_at):
+                capability = MagicMock()
+                primary = RuntimeError("unknown arm outcome")
+                def invoke(cap, operation, payload, **options):
+                    if operation == "hold" and failure_at == "arm":
+                        raise primary
+                    return {"sourceCommit": "a" * 40, "runId": "b" * 16,
+                            "frameSha256": ("d" if failure_at == "hash" else "c") * 64,
+                            "effectCount": 1, "expired": failure_at == "expiry"}
+                capability.invoke.side_effect = invoke
+                publish = MagicMock(return_value={
+                    "state": "RECIPIENT_KEY_UNAVAILABLE" if failure_at == "commit" else "REMOTE_DELIVERY_PENDING",
+                    "transientPostId": "original",
+                })
+                observe = MagicMock(side_effect=[
+                    {"outboxRows": 1, "outboxState": "pending", "originalFrameSha256": "c" * 64},
+                    {"projections": {"social_remote_private_resources": {
+                        "rows": 1 if failure_at == "receiver-row" else 0,
+                    }}},
+                ])
+                with self.assertRaises((RuntimeOwnerBlocked, RuntimeError)):
+                    runtime_owner_module._commit_private_receiver_outage(
+                        capability, publish=publish, observe=observe,
+                        deployment_environment="receiver", source_commit="a" * 40,
+                        provisioning_run_id="b" * 16,
+                    )
+                operations = [item.args[1] for item in capability.invoke.call_args_list]
+                self.assertNotIn("stop", operations)
+                self.assertEqual(operations[-1], "release")
+
+    def test_private_outage_restores_then_releases_without_masking_retry_failure(self):
+        capability = MagicMock()
+        primary, cleanup_error = RuntimeError("original retry failure"), RuntimeError("release failure")
+        def invoke(cap, operation, payload, **options):
+            if operation == "read-hold":
+                return {"sourceCommit": "a" * 40, "runId": "b" * 16,
+                        "frameSha256": "c" * 64, "effectCount": 1, "expired": False}
+            if operation == "release":
+                raise cleanup_error
+            return {"stopped": True, "restored": True}
+        capability.invoke.side_effect = invoke
+        publish = MagicMock(side_effect=[
+            {"state": "REMOTE_DELIVERY_PENDING", "transientPostId": "original"}, primary,
+        ])
+        observe = MagicMock(side_effect=[
+            {"outboxRows": 1, "outboxState": "pending", "originalFrameSha256": "c" * 64},
+            {"projections": {"social_remote_private_resources": {"rows": 0}}},
+        ])
+        with self.assertRaises(RuntimeError) as raised:
+            runtime_owner_module._commit_private_receiver_outage(
+                capability, publish=publish, observe=observe,
+                deployment_environment="receiver", source_commit="a" * 40,
+                provisioning_run_id="b" * 16,
+            )
+        self.assertIs(raised.exception, primary)
+        self.assertEqual([item.args[1] for item in capability.invoke.call_args_list],
+                         ["hold", "read-hold", "stop", "start", "release"])
+        self.assertTrue(primary.secondary_cleanup_failures)
+
     def test_receiver_station_restart_requires_original_container_source_and_new_process(self):
         commit = "a" * 40
         stopped = {
