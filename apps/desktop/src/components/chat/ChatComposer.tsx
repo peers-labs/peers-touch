@@ -51,6 +51,7 @@ import { log } from '../../utils/logger';
 import { imServiceV1 } from '../../services/im-service';
 import { RustCommandException } from '../../services/desktop_api';
 import type { MessagingLocalAttachmentIntent } from '../../services/im-service-contract';
+import type { LocalAttachmentDraft } from '../../messaging/optimisticOutbound';
 import {
   useChatAttachmentDrafts,
   type ChatDraftAttachment,
@@ -90,6 +91,14 @@ export interface ChatComposerDraft {
   text: string;
   attachments: MessagingLocalAttachmentIntent[];
   messageType?: number;
+  /**
+   * Local, immediately renderable attachment descriptors. Populated even while
+   * staging is still in flight so the caller can show an optimistic message
+   * from the on-device blob instead of waiting for upload.
+   */
+  localAttachments?: LocalAttachmentDraft[];
+  /** Background resolver that finishes staging and returns sendable intents. */
+  resolveAttachments?: () => Promise<MessagingLocalAttachmentIntent[]>;
 }
 
 interface ChatComposerProps {
@@ -259,6 +268,9 @@ export function ChatComposer({
     clearDrafts,
     removeDraft,
     retryDraft,
+    describeDrafts,
+    stageAll,
+    detachDrafts,
   } = useChatAttachmentDrafts({
     conversationId: activeConversationId,
     disabled,
@@ -336,15 +348,17 @@ export function ChatComposer({
     ),
   });
 
+  // Uploads no longer block sending: a picked attachment is shown from its
+  // local blob immediately and staging continues in the background. A hard
+  // failure still blocks until the user retries or removes the bad draft.
   const canSend = !disabled
     && !sending
     && !voiceSending
     && !recordedVoice
-    && !uploading
     && !failed
     && canSubmitChatComposerDraft({
       text: value,
-      attachmentCount: readyAttachments.length,
+      attachmentCount: drafts.length,
       capabilities: activeCapabilities,
     });
   const composerShellBorder = dragging ? '1px solid var(--pt-borderStrong)' : '1px solid var(--pt-border)';
@@ -455,19 +469,27 @@ export function ChatComposer({
 
   const submit = async () => {
     if (!canSend) return;
+    const localAttachments = describeDrafts();
     const messageType = chatMessageTypeForAttachments(readyAttachments);
     const previousOutcomeRevision = useSocialChatStore.getState()
       .sendOutcomes[activeConversationId]?.revision ?? 0;
     // The parent owns send/edit side effects and decides whether the
-    // draft text survives (it returns false on failure).
+    // draft text survives (it returns false on failure). Local descriptors
+    // and the staging resolver let it show an optimistic message immediately.
     const sent = await onSend({
       text: value.trim(),
       attachments: readyAttachments,
       messageType,
+      localAttachments,
+      resolveAttachments: stageAll,
     });
     if (sent === false) return;
     commitValue('');
-    if (
+    if (localAttachments.length > 0) {
+      // Ownership of previews/staged sources moves to the optimistic row, so
+      // the composer must not revoke them; just drop its draft state.
+      detachDrafts();
+    } else if (
       readyAttachments.length === 0
       || didQueueExpectedChatAttachments(
         previousOutcomeRevision,

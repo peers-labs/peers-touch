@@ -43,6 +43,7 @@ import { newSendIntentId } from '../../utils/messagingSendIntent';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
 import { errorMessage, presentError } from '../../services/errorPresenter';
 import { ChatComposer, type ChatComposerDraft } from './ChatComposer';
+import { createOptimisticMessage } from '../../messaging/optimisticOutbound';
 import { TypingIndicator } from './message/TypingIndicator';
 import {
   DESKTOP_CHAT_COMPOSER_CAPABILITIES_MAIN,
@@ -53,6 +54,7 @@ import {
   replyPreviewForMessage,
 } from './message/chatMessageModel';
 import { ChatMessageTimeline } from './message/ChatMessageTimeline';
+import { OptimisticOutboundStack } from './message/OptimisticOutboundStack';
 import {
   chatMessageTailScrollTop,
   isChatMessageTailPinned,
@@ -121,6 +123,10 @@ export function ChatMessageArea({
     pinnedMessages,
     reactToMessage,
     pinMessage,
+    addOptimisticOutbound,
+    patchOptimisticOutbound,
+    reconcileOptimisticOutbound,
+    getOptimisticOutbound,
   } = useActiveSocialChatSlice((s) => ({
     activeTab: s.activeTab,
     activeSessionUlid: s.activeSessionUlid,
@@ -160,6 +166,10 @@ export function ChatMessageArea({
     pinnedMessages: s.pinnedMessages,
     reactToMessage: s.reactToMessage,
     pinMessage: s.pinMessage,
+    addOptimisticOutbound: s.addOptimisticOutbound,
+    patchOptimisticOutbound: s.patchOptimisticOutbound,
+    reconcileOptimisticOutbound: s.reconcileOptimisticOutbound,
+    getOptimisticOutbound: s.getOptimisticOutbound,
   }));
   const actorStationEntries = useActiveChatFederationSlice(
     (state) => state.actorStationEntries,
@@ -250,6 +260,19 @@ export function ChatMessageArea({
   const mainTimelineMessages = useMemo(
     () => currentMessages.filter((message) => !messageThreadRootUlid(message)),
     [currentMessages],
+  );
+  // Drop optimistic rows whose admitted messageId now exists in the projected
+  // timeline. Runs on every projection change; the store no-ops when nothing
+  // reconciled, so this cannot cause a render loop.
+  useEffect(() => {
+    const visibleIds = new Set(currentMessages.map((message) => message.ulid));
+    reconcileOptimisticOutbound(visibleIds);
+  }, [currentMessages, reconcileOptimisticOutbound]);
+  const optimisticOutbound = useActiveSocialChatSlice((s) => s.optimisticOutbound);
+  const visibleOptimistic = useMemo(
+    () => getOptimisticOutbound(activeTab, activeUlid ?? ''),
+    // Re-derive whenever the global optimistic slice or the active surface changes.
+    [getOptimisticOutbound, activeTab, activeUlid, optimisticOutbound],
   );
   const pinnedMessageUlids = useMemo(
     () => new Set(Object.keys(pinnedMessages).filter((ulid) => Boolean(pinnedMessages[ulid]))),
@@ -691,7 +714,10 @@ export function ChatMessageArea({
   }, [fireTyping]);
 
   const handleSend = async (draft: ChatComposerDraft): Promise<boolean> => {
-    if ((!draft.text && draft.attachments.length === 0) || !activeUlid) return false;
+    const hasLocalAttachments = (draft.localAttachments?.length ?? 0) > 0;
+    if ((!draft.text && draft.attachments.length === 0 && !hasLocalAttachments) || !activeUlid) {
+      return false;
+    }
     const content = draft.text;
     const replyRef = replyToUlid || undefined;
     const editTarget = editingUlid;
@@ -727,6 +753,64 @@ export function ChatMessageArea({
         setReplyToUlid(null);
         setEditingUlid(null);
         setSending(false);
+        return true;
+      }
+      if (hasLocalAttachments) {
+        // Optimistic path: commit a sender-only row from the on-device blobs
+        // immediately, then stage and send in the background without blocking
+        // the composer. Reconciliation removes the row once the durable
+        // message projects back with the admitted messageId.
+        const sendIntentId = newSendIntentId();
+        const localId = `opt-${sendIntentId}`;
+        const optimistic = createOptimisticMessage({
+          localId,
+          sendIntentId,
+          conversationUlid: activeUlid,
+          kind: activeTab,
+          text: content,
+          drafts: draft.localAttachments ?? [],
+        });
+        addOptimisticOutbound(optimistic);
+        setReplyToUlid(null);
+        setSending(false);
+        void (async () => {
+          try {
+            const intents = draft.resolveAttachments
+              ? await draft.resolveAttachments()
+              : draft.attachments;
+            patchOptimisticOutbound(localId, { status: 'sending' });
+            const outcome = activeTab === 'friend'
+              ? await sendFriendMessage(
+                activeUlid,
+                activeConversation?.peerPtid || '',
+                content,
+                draft.messageType,
+                replyRef,
+                intents.length > 0 ? intents : undefined,
+                undefined,
+                sendIntentId,
+              )
+              : await sendGroupMessage(
+                activeUlid,
+                content,
+                draft.messageType,
+                replyRef,
+                intents.length > 0 ? intents : undefined,
+                undefined,
+                sendIntentId,
+              );
+            patchOptimisticOutbound(localId, {
+              status: 'sent',
+              reconciledMessageId: outcome.messageId,
+            });
+          } catch (error) {
+            log.error('chat', 'optimistic attachment send failed', error);
+            patchOptimisticOutbound(localId, {
+              status: 'failed',
+              errorCode: errorMessage(error),
+            });
+          }
+        })();
         return true;
       }
       if (activeTab === 'friend') {
@@ -1311,7 +1395,7 @@ export function ChatMessageArea({
             <PtSpin size="small" />
           </div>
         )}
-        {mainTimelineMessages.length === 0 ? (
+        {mainTimelineMessages.length === 0 && visibleOptimistic.length === 0 ? (
           <div className="sc-conversation__center">
             <PtEmpty
               icon={<Icon iconId="message-circle" size={36} className="sc-conversation-empty__icon" />}
@@ -1355,6 +1439,7 @@ export function ChatMessageArea({
             threadCounts={threadCounts}
           />
         )}
+        <OptimisticOutboundStack messages={visibleOptimistic} />
         {peerIsTyping && !isAutomatedConversation && (
           <TypingIndicator
             kind={activeKind}
