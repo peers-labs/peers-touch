@@ -268,6 +268,11 @@ probe once in each existing PostgreSQL container. AS21 observes one original
 outbox frame during both pending attempts, then the same delivered frame and
 one actual receiver resource row. The probe reads credentials and the existing
 Station key inside the container; it cannot create, rotate or export keys.
+Its standalone replay composition installs the unchanged canonical
+`federation.RegisterPeerScopes` policies before constructing the production
+HTTP transport. Conflicting registrations fail closed. The delivery source
+Gate exercises real HTTP token minting from a fresh registry, immutable frame
+transmission and repeated initialization after registry sealing.
 
 AS24 sends the original duplicate plus signed late, expired, hash-conflicted,
 untrusted-source, wrong-Station and wrong-actor frames through the original

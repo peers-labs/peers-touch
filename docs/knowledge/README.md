@@ -193,6 +193,7 @@ Pick one based on intent:
 ### Pitfalls
 
 - [`pitfalls/private-outage-must-follow-source-commit.md`](pitfalls/private-outage-must-follow-source-commit.md) — private delivery outage starts after an online commit and an observed original undelivered frame.
+- [`pitfalls/standalone-federation-probe-scope-initialization.md`](pitfalls/standalone-federation-probe-scope-initialization.md) — standalone replay probes install canonical peer scopes before real HTTP token minting.
 - [`pitfalls/private-audience-fixture-must-exclude-author.md`](pitfalls/private-audience-fixture-must-exclude-author.md) — explicit recipient fixtures exclude the author while retaining its original implicit-grant readback.
 - [`pitfalls/private-followers-remote-subscription.md`](pitfalls/private-followers-remote-subscription.md) — private follower preparation and current reads consume the authenticated remote subscription with Home and revision fences.
 - [`pitfalls/comment-revalidation-must-preserve-ui-intent.md`](pitfalls/comment-revalidation-must-preserve-ui-intent.md) — acquired empty threads, collapse choices and confirmed comment mutations survive background reads and return to an alive page.

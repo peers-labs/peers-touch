@@ -83,6 +83,16 @@ func (r fixedRoute) ResolveActiveStationURL(context.Context, string) (string, er
 	return string(r), nil
 }
 
+func newReplayTransport(client *http.Client, store authfed.KeyStore, issuer, origin string) (*federation.HTTPTransport, error) {
+	// This standalone probe does not run Station composition, which normally
+	// installs the canonical peer policies before any transport can mint.
+	if err := federation.RegisterPeerScopes(); err != nil {
+		return nil, errors.New("fixture Federation scope initialization failed")
+	}
+	return federation.NewHTTPTransport(client, authfed.NewKeyCache(store),
+		issuer, fixedRoute(origin), nil)
+}
+
 func openDB(ctx context.Context) (*gorm.DB, error) {
 	user, database := os.Getenv("POSTGRES_USER"), os.Getenv("POSTGRES_DB")
 	if user == "" || database == "" {
@@ -262,8 +272,7 @@ func run(s scope) (map[string]any, error) {
 	}
 	client := &http.Client{Timeout: 10 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	transport, err := federation.NewHTTPTransport(client, authfed.NewKeyCache(store),
-		issuer, fixedRoute(s.ReceiverOrigin), nil)
+	transport, err := newReplayTransport(client, store, issuer, s.ReceiverOrigin)
 	if err != nil {
 		return nil, err
 	}

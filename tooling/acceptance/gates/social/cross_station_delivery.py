@@ -20,6 +20,15 @@ PACKAGES = (
 )
 COMMANDS = (
     SourceCommand(
+        name="delivery-standalone-replay-transport",
+        argv=("go", "test", "-v", "-race",
+              "../../../tooling/acceptance/fixtures/social_private_delivery_probe.go",
+              "../../../tooling/acceptance/fixtures/social_private_delivery_probe_test.go",
+              "-run", "^TestPrivateDeliveryReplayTransport", "-count=1"),
+        cwd="apps/station/frame", timeout_seconds=300,
+        required_output_pattern=r"--- PASS: TestPrivateDeliveryReplayTransportMintsFromFreshRegistry",
+    ),
+    SourceCommand(
         name="delivery-acceptance-controller",
         argv=("go", "test", "-v", "-race", "-tags", "social_acceptance",
               "./app/subserver/social", "-run", "^Test(NotificationControl|PrivateAcceptance)", "-count=1"),
