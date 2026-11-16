@@ -658,6 +658,13 @@ Promise.race([check, new Promise(resolve => setTimeout(
                 journey_id=artifacts.run_id[-12:],
             )
             journey_result["scenario"] = self.scenario
+            journey_result["nativeText"] = self.run_chat_native_text(
+                artifacts=artifacts,
+                sender_session=sessions["sim-ios"],
+                receiver_session=sessions["sim-ios-peer"],
+                conversations=journey_result,
+                journey_id=artifacts.run_id[-12:],
+            )
             if self.scenario == "chat":
                 artifacts.write_json(
                     "mobile-simulator-social/chat/messaging-before-media.json",
@@ -4772,6 +4779,93 @@ return input && input.value === '' && !input.closest('[data-navigation-frame]').
         self._require_drafts(snapshot, expected)
         return {"action": "restore", "durableDraftsPreserved": True}
 
+    def run_chat_native_text(
+        self, *, artifacts: ArtifactSession, sender_session: Any,
+        receiver_session: Any, conversations: Mapping[str, Any],
+        journey_id: str,
+    ) -> dict[str, Any]:
+        """Send through mounted composers and require the same receiver DOM ID."""
+        if sender_session.platform != "ios" or receiver_session.platform != "ios":
+            raise GateError("Chat native text requires two owned iOS Simulators")
+        result: dict[str, Any] = {}
+        for kind in ("direct", "group"):
+            conversation = self._mapping(conversations.get(kind), f"{kind} Chat journey")
+            conversation_id = self._text(
+                conversation.get("conversationId"), f"{kind} conversation ID",
+            )
+            for session in (sender_session, receiver_session):
+                self._open_chat_conversation(session, conversation_id, kind=kind)
+            directions = {}
+            for direction, sender, receiver in (
+                ("forward", sender_session, receiver_session),
+                ("reverse", receiver_session, sender_session),
+            ):
+                text = f"native-text-{journey_id}-{kind}-{direction}"
+                draft = f"unsent-{journey_id}-{kind}-{direction}"
+                self._write_chat_composer_draft(receiver, draft)
+                self._write_chat_composer_draft(sender, text)
+                self._click_ui(
+                    sender, '[data-action-id="chat.send-message"]',
+                    f"{kind} {direction} visible text send",
+                )
+
+                def sent_row() -> dict[str, Any] | None:
+                    rows = sender.execute_script(
+                        """
+const visible = node => !node.closest('[hidden], [inert]')
+  && node.getClientRects().length > 0
+  && getComputedStyle(node).visibility !== 'hidden';
+return Array.from(document.querySelectorAll('[data-message-ulid]'))
+  .filter(row => visible(row) && row.querySelector('.message-text')?.textContent === arguments[0])
+  .map(row => ({messageId: row.getAttribute('data-message-ulid')}));
+""",
+                        text,
+                    )
+                    if not isinstance(rows, list):
+                        raise GateError("Chat sender DOM did not return message rows")
+                    if len(rows) > 1:
+                        raise GateError("The native Chat text was rendered more than once")
+                    return self._mapping(rows[0], "Chat sender row") if rows else None
+
+                message_id = self._text(
+                    self._wait_for_value(sent_row, f"{kind} {direction} sender text")["messageId"],
+                    "Native Chat text message ID",
+                )
+                sender_ui = self._wait_for_chat_ui_state(
+                    sender, message_id=message_id, message_text=text, draft_text="",
+                    label=f"{kind} {direction} sender message and cleared composer",
+                )
+                receiver_ui = self._wait_for_chat_ui_state(
+                    receiver, message_id=message_id, message_text=text, draft_text=draft,
+                    label=f"{kind} {direction} receiver plaintext and preserved draft",
+                )
+                receipt = self._wait_for_value(
+                    lambda: sender.execute_script(
+                        """
+const row = Array.from(document.querySelectorAll('[data-message-ulid]')).find(
+  node => node.getAttribute('data-message-ulid') === arguments[0]
+    && !node.closest('[hidden], [inert]') && node.getClientRects().length > 0
+);
+const marker = row?.querySelector('[data-message-delivery]');
+if (!marker || marker.getClientRects().length === 0 || getComputedStyle(marker).visibility === 'hidden') return null;
+const state = marker.getAttribute('data-message-delivery');
+return state === 'delivered' || state === 'read' ? state : null;
+""",
+                        message_id,
+                    ),
+                    f"{kind} {direction} sender delivered/read receipt",
+                )
+                capture_id = f"{journey_id}-{kind}-{direction}-text"
+                directions[direction] = {
+                    "conversationId": conversation_id, "messageId": message_id,
+                    "plaintext": text, "senderUi": sender_ui, "receiverUi": receiver_ui,
+                    "senderReceipt": receipt, "harnessSendUsed": False,
+                    "senderCapture": self._capture_client(artifacts, sender, f"{capture_id}-sender"),
+                    "receiverCapture": self._capture_client(artifacts, receiver, f"{capture_id}-receiver"),
+                }
+            result[kind] = directions
+        return result
+
     def _run_chat_native_media(
         self, *, artifacts: ArtifactSession, sender_session: Any,
         receiver_session: Any, conversations: Mapping[str, Any],
@@ -6744,6 +6838,26 @@ return {
                     "passed": journey_result.get("directScope") == "local",
                 }
             )
+        if scenario in {"chat", "chat-contacts"}:
+            native_text = journey_result.get("nativeText", {})
+            for kind in ("direct", "group"):
+                directions = native_text.get(kind, {}) if isinstance(native_text, Mapping) else {}
+                for direction in ("forward", "reverse"):
+                    text = directions.get(direction, {}) if isinstance(directions, Mapping) else {}
+                    assertions.append({
+                        "name": f"{scenario}:{kind}:{direction}:visible-text-receipt-and-draft",
+                        "passed": (
+                            text.get("harnessSendUsed") is False
+                            and bool(text.get("messageId"))
+                            and text.get("senderUi", {}).get("messageVisible") is True
+                            and text.get("senderUi", {}).get("draftVisible") is True
+                            and text.get("receiverUi", {}).get("messageVisible") is True
+                            and text.get("receiverUi", {}).get("draftVisible") is True
+                            and text.get("senderReceipt") in {"delivered", "read"}
+                            and bool(text.get("receiverCapture", {}).get("dom", {}).get("path"))
+                            and bool(text.get("receiverCapture", {}).get("screenshot", {}).get("path"))
+                        ),
+                    })
         if scenario == "chat":
             native_media = journey_result.get("nativeMedia", {})
             for kind in ("direct", "group"):

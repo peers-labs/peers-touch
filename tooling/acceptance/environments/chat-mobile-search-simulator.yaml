@@ -78,7 +78,8 @@
   },
   "cleanup": {
     "resources": [
-      "appium-process", "app-installations", "ports", "storage", "simulator-boot",
+      "appium-process", "owned-appium-sessions", "android-app-installations",
+      "ports", "storage", "android-emulator-process", "machine-resource-leases",
       "signed-desktop-author-process", "signed-desktop-author-storage",
       "station-process-state", "actor-fixture", "profile-leases", "deployment-leases"
     ],

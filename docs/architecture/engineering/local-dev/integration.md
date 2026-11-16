@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Integration
 
 > **Status**: active
-> **Version**: v1.4
-> **Created**: 2026-09-13 | **Updated**: 2026-10-15
+> **Version**: v2.1
+> **Created**: 2026-09-13 | **Updated**: 2026-11-15
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -33,10 +33,12 @@ permanent dual-read precedence between global registry and `.local/dev/active`.
 ├── README.md
 ├── registry.json
 ├── registry.lock
+├── resources.json
 ├── acceptance/
 │   └── <workspaceId>/<gateId>/<runId>/
 ├── leases/
 │   ├── local-slot-<n>.lock
+│   ├── simulator-ios-<provider-UUID>.lock
 │   ├── station-deploy-<environment>.lock
 │   └── station-reset-<station-fixture>.lock
 └── workspaces/
@@ -287,3 +289,106 @@ docs, skills, and the live machine registry. During migration it must report the
 remaining owners. After closure it must return zero. Closed ADRs, immutable
 migration receipts, and historical execution plans may retain audit context but
 cannot be imported or executed as current runtime policy.
+
+## 9. Resource Dependency Cutover
+
+LDCP-D23/D25/D26/D27 extend the existing owners. The Node owner and both Mobile
+entries are implemented; base/selected/layout iOS Provisioners use the same
+explicit assignment/physical lease caller. Source regression checks pass.
+Native/source/data proof remains a separate closure obligation. Documents do
+not alter live Profile assignments or Station processes.
+
+| Existing consumer/owner | Target responsibility |
+|-------------------------|-----------------------|
+| Existing Profile parser + sibling env definitions | Project same-level Station and Simulator requirements from reviewed Profile source; keep machine identity out of shared definitions |
+| `machine-dev-registry.mjs` | User-directed Profile-to-ID assignments, visible sharing, overwrite admission, source fencing and observed status |
+| `machine-dev-lease.py` | Actual physical-device and slot locks, bounded process supervision |
+| `machine-dev.mjs` | Common request/binding/status/release composition |
+| `tooling/scripts/local-dev/mobile-ios-sim.sh` | Request a Profile-selected ID, retain slot and physical lease, enforce Station connect-only |
+| `apps/mobile/scripts/ios-dev-sim.sh` | Consume verified provider binding; no independent device selector/allocation |
+| `MobileSimulatorProvisioner`, selected and layout subclasses | Consume common allocation; retain business Fixture/Harness/evidence responsibilities |
+| Platform adapter within Local Dev | Provider create/inspect/boot/install/stop/delete |
+| Space-clean Skill | Audit classified usage and call the owner; never sweep provider devices independently |
+
+### 9.1 Single Request And Partial Acquisition
+
+Resolve current workspace, reviewed Profile, selected resource ID, operation,
+provider state and data scope once. Node/Python callers consume the same
+validated binding and sharing projection. Slot
+exclusivity does not replace physical UUID locking. Acquire related resources
+in stable order, revalidate after locking and unwind partial holds on failure.
+An inherited marker alone never proves possession.
+
+Mobile connect-only must bypass the current `# Ensure Station` deploy branch.
+An unavailable Station does not grant deployment permission. Acceptance
+Station equipment retains its original explicit operation and lease ordering;
+these contracts do not authorize deploying four during this work.
+
+The old Station equipment branch and independent simulator create/boot/
+uninstall/delete callbacks are removed from these consumers. Manual Xcode
+builds target `id=<held UUID>` through the generated Tauri build phase, followed
+by admitted installation and provider digest readback. Web changes reload;
+native changes require a new entry invocation rather than Tauri's fuzzy
+device-name dev selector.
+
+### 9.2 Data, Handoff And Consumer Inventory
+
+Users specify count/purpose or readable device names. Agent/control plane
+queries inventory and assignments, shows names/model/runtime/state/shared
+Profiles and resolves IDs internally. Users do not have to enumerate UUIDs.
+Profile scenarios choose from the resolved assignments freely. Shared IDs resolve one provider, and
+each Profile sees other references, actual contents and holders.
+No consumer silently chooses another ID from a count or fixed client role.
+
+Manual handoff records device identity, purpose and installed source as retained.
+An idle port slot does not authorize replacement. Before a conflicting install,
+binding change, data reset or session interruption, the canonical owner gives
+the readable device/Profile/content notice and asks whether to force.
+Refusal preserves state. Force is operation-specific and checked again under
+the physical lock; it is not a permanently enabled flag. App uninstall does not
+by itself remove iOS keychain; the original credential/Fixture owner must prove
+the actual data effect.
+
+All iOS creation consumers in `mobile_simulator.py` (base, selected and layout)
+and both launch scripts cut over to the common owner. Remove their independent
+creation/selection/cleanup logic; retain actual provider commands only inside
+the adapter. Shared Provisioner cleanup must expose failure without losing the
+machine-owned retry record.
+
+### 9.3 Atomicity And Verification
+
+The common owner may land internally before consumers. Each consumer cutover
+must be complete for that entrypoint; never keep a runtime fallback that
+directly allocates devices. Existing unaffected Android paths retain their
+owner, but cannot be reported as satisfying the iOS resource contract.
+Rollback uses VCS revert of the atomic cut, not a compatibility allocator.
+
+Native proof uses the existing simulator build/Harness and direct simctl/
+filesystem readback. LDCP-R01 to R10 require readable discovery, exact ID assignment, visible shared
+references, physical contention, crash recovery, data/retention protection,
+connect-only, truthful cleanup, explicit overwrite and post-confirmation races.
+
+Count-only requests must reach discovery/matching rather than fail for missing
+raw IDs. Duplicate display names, renamed labels and stale list positions must
+not change the internally selected resource. Human notices show device names
+and Profile impact; exact UUIDs/source digests remain available as details.
+New Gate IDs must be registered before execution; requirement IDs are not Gates.
+Fixtures use private owned roots and declared local requirements. They cannot
+redirect machine-global identity or locks through an artifact-root override.
+
+Tracked sibling env changes remain a separately explicit source scope.
+If a real Profile lacks a declared compatible simulator requirement, report it
+as unavailable; do not invent remote topology or mutate shared env implicitly.
+Historical device adoption and deletion are separate operations.
+
+Detach/release preserves other Profile references and current contents.
+No cleanup callback may delete a shared device because one Suite or Profile
+has finished. Physical delete reports all affected references and uses the
+explicit resource owner, authorization and provider readback.
+
+### 9.4 Downstream Documentation
+
+At runtime cutover, update `docs/global/local-dev-environment.md` and canonical
+`pt-local-dev-env`, `pt-dev-runtime-handoff`, `pt-dev-workflow` and
+`pt-debug-space-clean` references. They consume this architecture without
+copying schemas or introducing another runtime permission owner.

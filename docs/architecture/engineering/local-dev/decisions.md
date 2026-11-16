@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Architecture Decisions
 
 > **Status**: active
-> **Version**: v1.4
-> **Created**: 2026-09-13 | **Updated**: 2026-10-15
+> **Version**: v2.1
+> **Created**: 2026-09-13 | **Updated**: 2026-11-15
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -34,6 +34,11 @@
 | LDCP-D20 | Unregister environments only through coordinated Development close | superseded by DWF-D46 |
 | LDCP-D21 | Let reviewed Profiles authorize development operations and protect only the stable suffix | accepted |
 | LDCP-D22 | Use one Desktop install orchestrator with platform adapters | accepted |
+| LDCP-D23 | Declare peer Profile resource dependencies under the existing Machine Dev owner | accepted |
+| LDCP-D24 | Reuse iOS simulators within one machine-wide capacity budget | superseded by LDCP-D26 |
+| LDCP-D25 | Recover and verify cleanup through the resource instance owner | accepted |
+| LDCP-D26 | Let users assign resource IDs per Profile, expose sharing and confirm overwrites | accepted |
+| LDCP-D27 | Discover readable resources for users and resolve IDs internally | accepted |
 
 ## LDCP-D01: Machine Control-Plane Root
 
@@ -1088,3 +1093,232 @@ platform-specific artifact and registration contracts.
 - Adapter unit tests prove path, dependency, inode and rollback semantics;
   `desktop-linux-install-native-e2e` owns installed-process and deep-link
   product evidence.
+
+## LDCP-D23: Peer Profile Resource Dependencies
+
+**Status**: accepted
+**Date**: 2026-11-14
+
+### Context
+
+LDCP-D03 separates shared environment definitions from machine allocation.
+Station has reviewed targets and capabilities; Mobile launchers and
+Provisioners prepare simulator devices independently of that machine owner.
+
+### Decision
+
+Station and Simulator are peer Profile resource requirements. Extend the
+existing Machine Dev control plane with requirements, physical instances and
+operation contracts; platform adapters execute provider operations.
+Shared Profile source owns logical needs; UUID/PID/path, possession, assignments
+and retention stay under the machine Dev root. Current source is captured and
+revalidated per operation, not made the permanent physical device identity.
+Connect-only Mobile requests never trigger Station deploy or reset.
+
+### Rationale
+
+Peer dependency declaration closes resource ownership without changing
+Station authority, Fixture data ownership or the existing definition/allocation split.
+
+### Alternatives Considered
+
+- Skill-only simulator advice: cannot fence concurrency or reconcile crashes.
+- Shared Profiles with fixed machine UUIDs: violates LDCP-D03 and portability.
+- Counts as resource identity: cannot distinguish shared IDs from unrelated devices.
+- A separate simulator control plane: creates competing allocation and status owners.
+
+### Consequences
+
+Provider adapters and durable preparation/recovery need implementation.
+Generic resource operations cannot flatten remote deployment, user data and
+disposable simulator cleanup into one destructive operation. Runtime support
+remains unproven until native/provider evidence.
+
+## LDCP-D24: One Machine-Wide Simulator Budget
+
+**Status**: superseded by LDCP-D26
+**Date**: 2026-11-14
+
+This quantity-oriented proposal was replaced by the user's explicit
+2026-11-15 ID-assignment and visible-sharing model. The following body is
+historical and does not define current defaults, roles or allocation limits.
+
+### Context
+
+An isolated device per run avoids some data collisions but allows physical
+resource growth. Per-runtime or per-Profile limits do not bound machine usage.
+
+### Decision
+
+Default managed iOS simulator capacity is at most two per machine. Ordinary
+requests allocate/reuse main; peer is requested only for a two-client scenario.
+Compatibility and safe data scope both gate reuse. All runtime/device-type,
+workspace, Profile and run partitions share this single total.
+Reservations and owned instances occupy capacity until verified removal.
+Exhaustion fails with holder/purpose/recovery information, never a hidden third device.
+Capacity expansion requires an explicit machine policy decision.
+
+### Rationale
+
+Capacity follows physical cost and real ownership, while logical compatibility
+remains a matching constraint.
+
+### Alternatives Considered
+
+- Eager main/peer per environment: wastes the second device and multiplies usage.
+- Grow on incompatibility or contention: hides the actual resource conflict.
+- Clear user data to force reuse: violates data and retention ownership.
+
+### Consequences
+
+A retained user device can block a two-client run. Waiting is an intentional
+cost; simultaneous retained/manual and multi-client demands require a reviewed
+budget, not implicit expansion. External and unknown devices are not silently
+adopted or deleted. Android capacity/cleanup is outside initial proof.
+
+## LDCP-D25: Instance-Owned Recovery And Verified Cleanup
+
+**Status**: accepted
+**Date**: 2026-11-14
+**Updated**: 2026-11-15 — aligned with user-directed ID sharing in LDCP-D26
+
+### Context
+
+Memory cleanup callbacks and lease expiry cannot prove provider deletion or
+recover creation interrupted before UUID writeback.
+
+### Decision
+
+The existing resource owner persists preparation intent/nonce before create,
+holds physical locks during mutations, and reconciles OS/provider evidence on
+retry, failure, cancellation and abnormal exit. Prefix matching alone never
+proves ownership. Ambiguous creation stays ownership-unknown.
+Releasing an operation preserves user assignments and shared contents.
+Detach does not delete another Profile's reference or physical device.
+Explicitly requested provider deletion is complete only after scoped device/
+directory absence is verified. Conflicting replacement follows LDCP-D26's
+specific user notice and force decision; unknown ownership must first be resolved.
+Cleanup failures preserve identity and failure reason. Lease release and
+instance availability/removal are separate state machines and results.
+
+### Rationale
+
+Durable instance identity and independent observation close crash recovery
+without pretending that supervision or metadata guarantees device cleanup.
+
+### Alternatives Considered
+
+- Treat lease timeout as deletion: leaves live devices or destroys retained data.
+- Delete registry records first: loses retry and ownership evidence on failure.
+- Sweep devices by name: cannot distinguish owned, external or manually retained resources.
+
+### Consequences
+
+Recovery requires persistent intentions and failure records; cleanup must be
+idempotent and bounded. Historical adoption/cleanup needs its own explicit
+classification and authorization. This decision grants none.
+
+## LDCP-D26: User-Directed Resource IDs And Explicit Overwrite
+
+**Status**: accepted
+**Date**: 2026-11-15
+**Source**: user's explicit correction in the current conversation
+**Supersedes**: LDCP-D24
+
+### Context
+
+The user specified: “由用户指定需要给每个profile分配几台，profile内自由安排。
+按id来区分，不是按数量，因为可能多profile共用，彼此知道在共用即可，
+覆盖时显式通知用户是否强制覆盖。”
+
+### Decision
+
+- Users choose each Profile's allocation through count/purpose or readable
+  device selection; Agent/control plane resolves the resulting internal ID set.
+  Profile-local purposes and labels remain freely arranged.
+- There is no default machine simulator cap, mandatory client role, or
+  count-based resource identity. A requested count is allocation input;
+  the authoritative assignment is its explicit ID set.
+- Multiple Profiles may reference the same ID. One machine-owned instance
+  resolves that ID; every Profile sees other references, current contents,
+  source/last writer and observed active holders.
+- Merely sharing/inspecting an ID needs no overwrite decision. Replacing
+  conflicting installed content, provider binding, data or active session
+  requires a readable device notice bound to the exact ID, affected Profiles, before/after contents,
+  data scope and interruption effects, then the user's explicit force decision.
+- Decline/cancel/no response preserves existing contents and references.
+  Force is specific to the confirmed operation; no blanket force default,
+  inferred approval from sharing or non-stable policy, or automatic overwrite.
+- Revalidate reference/content/binding/holder state after physical-lock
+  acquisition. Changed impact requires a fresh notice. Force cannot bypass
+  the OS lock, classify unknown resources as owned or grant Station mutation.
+  An active-user process stop requires explicit stop permission in the notice.
+- Release and detach preserve shared resources. Physical delete is a distinct
+  authorized operation with visible affected references and provider readback.
+
+### Rationale
+
+Identity and visible references express real sharing. User-directed assignment
+allows different Profile arrangements without treating an arbitrary device
+count as the ownership or conflict policy.
+
+### Alternatives Considered
+
+- Fixed machine count and automatic pool roles: rejected by the user.
+- Allocate distinct devices to every Profile: hides intentional sharing.
+- Treat a shared ID as permission to overwrite: hides effects on other Profiles.
+- Prompt on every reference/read: adds friction without an overwrite conflict.
+- Persistent force flag or bypassing live locks: loses operation scope and fencing.
+
+### Consequences
+
+Assignment and sharing are ordinary supported states. Profiles sharing an ID
+also observe its actual current contents; sharing does not imply isolated
+copies of credentials or installations. Overwrite can invalidate another
+Profile's expected source and must be projected immediately.
+Actual allocation may fail on provider compatibility or unavailable host
+resources, but not on a hardcoded simulator count. Initial proof remains iOS-only.
+
+## LDCP-D27: Readable Discovery With Internal Identity
+
+**Status**: accepted
+**Date**: 2026-11-15
+**Source**: user's explicit correction that IDs are unreadable and humans cannot remember them
+**Refines**: LDCP-D26
+
+### Context
+
+Internal IDs distinguish shared resources, but are not a usable human
+selection interface. The Agent can inspect OS inventory and canonical
+assignments; requiring a user to find/copy UUIDs transfers that work incorrectly.
+
+### Decision
+
+- User input is count, purpose, readable device name or a choice from an
+  observed list. Count-only requests are valid.
+- Agent/control plane discovers devices, presents readable name/label,
+  model/runtime, state and shared Profiles, and resolves internal IDs.
+- If selection is delegated, show selected/recommended names and shared
+  effects. Do not infer ownership from provider names or hide unknown references.
+- Duplicate names receive meaningful context or a temporary list choice
+  bound to the current inventory. Refresh cannot silently remap that choice.
+- Renaming labels never rekeys identity, assignments or physical locks.
+- Overwrite prompts name the device and affected Profiles/content. Raw UUIDs
+  are optional diagnostics; the exact ID/revision remains internally fenced.
+
+### Rationale
+
+Humans work with recognizable resources and intent; stable identifiers retain
+machine correctness independently of display names.
+
+### Alternatives Considered
+
+- Require raw UUID input: rejected by the user.
+- Make readable names identity keys: ambiguous and unstable under renaming.
+- Persist list numbers as IDs: silently changes selection after list refresh.
+
+### Consequences
+
+Discovery and readable descriptors become required entrypoint behavior.
+Unknown or ambiguous resources remain clearly identified; no extra Profile
+schema or independent allocator is introduced.

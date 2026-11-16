@@ -609,7 +609,9 @@ class SimulatorSocialGateTests(unittest.TestCase):
 
     def test_social_evidence_assertions_satisfy_core_proof_contract(self) -> None:
         gate = SimulatorSocialGate("chat-contacts")
-        evidence = self._social_evidence()
+        evidence = self._social_evidence(journey_result={
+            "conversationId": "conv-1", "nativeText": self._native_chat_text(),
+        })
         assertions = gate._assertions_from_social_evidence(
             report_base=gate._result_base("PASS"),
             source_identity=evidence["source_identity"],
@@ -1154,6 +1156,7 @@ class SimulatorSocialGateTests(unittest.TestCase):
                     patch.object(gate, "_run_contact_preferences_and_clipboard") as contacts,
                     patch.object(gate, "_run_native_profile_images") as profile,
                     patch.object(gate, "_run_chat_native_media", return_value=self._native_chat_media()) as media,
+                    patch.object(gate, "run_chat_native_text", return_value=self._native_chat_text()) as text,
                 ):
                     result = gate._run_social_journey(artifacts, manifest)
 
@@ -1171,6 +1174,76 @@ class SimulatorSocialGateTests(unittest.TestCase):
                 self.assertEqual(contacts.call_count, int(scenario == "chat-contacts"))
                 self.assertEqual(profile.call_count, int(scenario == "chat-contacts"))
                 self.assertEqual(media.call_count, int(scenario == "chat"))
+                text.assert_called_once()
+
+    @staticmethod
+    def _native_chat_text() -> dict[str, object]:
+        return {
+            kind: {
+                direction: {
+                    "messageId": f"{kind}-{direction}",
+                    "harnessSendUsed": False,
+                    "senderUi": {"messageVisible": True, "draftVisible": True},
+                    "receiverUi": {"messageVisible": True, "draftVisible": True},
+                    "senderReceipt": "read",
+                    "receiverCapture": {
+                        "dom": {"path": f"{kind}-{direction}.html"},
+                        "screenshot": {"path": f"{kind}-{direction}.png"},
+                    },
+                }
+                for direction in ("forward", "reverse")
+            }
+            for kind in ("direct", "group")
+        }
+
+    def test_native_text_uses_four_ui_sends_with_same_id_receiver_and_draft(self) -> None:
+        gate = SimulatorSocialGate("chat")
+        sender, receiver = Mock(platform="ios"), Mock(platform="ios")
+        sender.execute_script.side_effect = [
+            [{"messageId": "direct-forward"}], "read",
+            [{"messageId": "group-forward"}], "delivered",
+        ]
+        receiver.execute_script.side_effect = [
+            [{"messageId": "direct-reverse"}], "delivered",
+            [{"messageId": "group-reverse"}], "read",
+        ]
+        with (
+            patch.object(gate, "_open_chat_conversation") as navigate,
+            patch.object(gate, "_write_chat_composer_draft"),
+            patch.object(gate, "_click_ui") as click,
+            patch.object(gate, "_wait_for_chat_ui_state", return_value={
+                "messageVisible": True, "draftVisible": True,
+            }) as visible,
+            patch.object(gate, "_capture_client", return_value={
+                "dom": {"path": "text.html"}, "screenshot": {"path": "text.png"},
+            }),
+        ):
+            result = gate.run_chat_native_text(
+                artifacts=Artifacts(), sender_session=sender, receiver_session=receiver,
+                conversations={
+                    "direct": {"conversationId": "direct-id"},
+                    "group": {"conversationId": "group-id"},
+                },
+                journey_id="text-run",
+            )
+        self.assertEqual(navigate.call_count, 4)
+        self.assertEqual(click.call_count, 4)
+        self.assertEqual(visible.call_count, 8)
+        for index, (kind, direction) in enumerate(
+            (kind, direction) for kind in ("direct", "group")
+            for direction in ("forward", "reverse")
+        ):
+            message_id = f"{kind}-{direction}"
+            sender_check, receiver_check = visible.call_args_list[index * 2:index * 2 + 2]
+            self.assertEqual(sender_check.kwargs["message_id"], message_id)
+            self.assertEqual(receiver_check.kwargs["message_id"], message_id)
+            self.assertEqual(sender_check.kwargs["draft_text"], "")
+            self.assertEqual(
+                receiver_check.kwargs["draft_text"], f"unsent-text-run-{kind}-{direction}",
+            )
+            self.assertFalse(result[kind][direction]["harnessSendUsed"])
+        sender.call_action.assert_not_called()
+        receiver.call_action.assert_not_called()
 
     @staticmethod
     def _native_chat_media() -> dict[str, object]:
@@ -1334,7 +1407,9 @@ class SimulatorSocialGateTests(unittest.TestCase):
                     media["direct"]["voice"]["receiverPlayback"] = {}
                 elif missing == "microphone":
                     media["group"]["voice"]["syntheticAudioInjected"] = True
-                evidence = self._social_evidence(journey_result={"nativeMedia": media})
+                evidence = self._social_evidence(journey_result={
+                    "nativeMedia": media, "nativeText": self._native_chat_text(),
+                })
                 assertions = gate._assertions_from_social_evidence(
                     report_base=gate._result_base("PASS"), **evidence,
                 )
@@ -1343,6 +1418,31 @@ class SimulatorSocialGateTests(unittest.TestCase):
             report_base=gate._result_base("PASS"), **self._social_evidence(),
         )
         self.assertFalse(assertions_pass(assertions))
+
+    def test_native_text_proof_rejects_projection_only_missing_reverse_and_draft_loss(self) -> None:
+        for scenario in ("chat", "chat-contacts"):
+            gate = SimulatorSocialGate(scenario)
+            for missing in ("receiver-dom", "reverse", "draft", "receipt", "harness-send"):
+                with self.subTest(scenario=scenario, missing=missing):
+                    text = self._native_chat_text()
+                    row = text["group"]["reverse"]
+                    if missing == "receiver-dom":
+                        row["receiverCapture"] = {}
+                    elif missing == "reverse":
+                        del text["group"]["reverse"]
+                    elif missing == "draft":
+                        row["receiverUi"]["draftVisible"] = False
+                    elif missing == "receipt":
+                        row["senderReceipt"] = "sent"
+                    else:
+                        row["harnessSendUsed"] = True
+                    assertions = gate._assertions_from_social_evidence(
+                        report_base=gate._result_base("PASS"),
+                        **self._social_evidence(journey_result={
+                            "nativeMedia": self._native_chat_media(), "nativeText": text,
+                        }),
+                    )
+                    self.assertFalse(assertions_pass(assertions))
 
     def test_chat_group_route_uses_the_group_conversation_descriptor(self) -> None:
         session = Mock()

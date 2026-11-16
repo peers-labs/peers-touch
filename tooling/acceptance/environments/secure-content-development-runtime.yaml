@@ -416,11 +416,11 @@
     "order": [
       "appium-sessions",
       "appium-process",
-      "app-installations",
+      "android-app-installations",
       "ports",
       "storage",
       "emulator-process",
-      "simulator-boot",
+      "machine-resource-leases",
       "environment-lease"
     ],
     "deterministic": true

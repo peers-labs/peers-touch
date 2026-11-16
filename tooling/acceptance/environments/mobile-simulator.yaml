@@ -10,6 +10,7 @@
   },
   "selectors": {
     "ios": {
+      "selection_policy": "Explicit PT_IOS_RESOURCE_SELECTIONS_JSON Profile/name references; selector fields are compatibility and layout hints only",
       "preferred_runtime": "iOS 26.5",
       "preferred_device_name": "iPhone 17",
       "peer_device_name": "iPhone 17 Pro Max"
@@ -206,18 +207,18 @@
   "cleanup": {
     "resources": [
       "appium-process",
-      "app-installations",
+      "owned-appium-sessions",
       "ports",
       "storage",
-      "simulator-boot",
+      "machine-resource-leases",
       "environment-lease"
     ],
     "order": [
       "appium-process",
-      "app-installations",
+      "owned-appium-sessions",
       "ports",
       "storage",
-      "simulator-boot",
+      "machine-resource-leases",
       "environment-lease"
     ],
     "deterministic": true

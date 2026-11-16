@@ -127,10 +127,9 @@
     "resources": [
       "appium-sessions",
       "appium-process",
-      "app-installations",
+      "machine-resource-leases",
       "ports",
       "storage",
-      "simulator-boot",
       "actor-fixture",
       "profile-leases",
       "deployment-leases"

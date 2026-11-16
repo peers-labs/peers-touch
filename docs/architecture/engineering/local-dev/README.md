@@ -1,8 +1,8 @@
 # Local Dev Control Plane
 
 > **Status**: active
-> **Version**: v1.6
-> **Created**: 2026-09-13 | **Updated**: 2026-10-15
+> **Version**: v2.1
+> **Created**: 2026-09-13 | **Updated**: 2026-11-15
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -17,6 +17,8 @@
 - `~/.peers-touch/dev/` 的机器级持久化边界。
 - Acceptance Evidence Store 的开发期持久化边界。
 - 每个 worktree 独立选择 profile、slot 和 Station 使用方式的身份模型。
+- Profile 同级声明 Station 与 Simulator 依赖，以及 Machine Dev 的实例分配、
+  物理锁、可读资源选择、跨 Profile 共享、覆盖确认和回收契约（LDCP-D23/D25/D26/D27）。
 
 本文档集不定义：
 
@@ -66,6 +68,12 @@ Application Support namespace，不适合承载开发期产物；目标路径统
     Local Dev Control Plane。
 15. 现有非 stable Profile 的 reset 不要求人工授权；已有 Profile 的 deploy
     与 reset 都不得因内部能力刷新或执行边界重复询问。
+16. 用户指定数量、用途或选择可读设备名称；Agent/控制面查询设备清单并解析内部 ID。
+    Profile 内部自由安排用途，同一内部 ID 可被多个 Profile 引用，共享关系可见。
+17. 覆盖已安装内容或其他 Profile 的状态前，显式告知可读设备名称、共享方和影响，
+    由用户决定是否强制覆盖；提示主文显示设备名称，数量不用于判定身份或冲突。
+18. 原始 ID/UUID 属于内部标识和诊断细节，不能要求用户先查找、记忆或手工输入。
+    清单展示可读名称、型号/系统、状态和共享 Profile；名称重复时明确区分。
 
 ## 4. Runtime Authority
 
@@ -96,6 +104,13 @@ selection and updates it thereafter. OS-held leases under `leases/` are the
 only live owners for `local.slot`, `station.deploy`, and `station.reset`; JSON
 in a lock file is diagnostic metadata only.
 
+当前资源目标以用户 2026-11-15 明确修订的 LDCP-D26 为准：
+按资源 ID 分配与共享，取消默认整机数量限制和固定客户端角色。
+Simulator 实例、Profile 分配映射、逐操作覆盖确认及两个 Mobile 入口和全部
+iOS Provisioner 已切到 canonical machine owner；原生与数据证明仍需按选定 Gate 执行。
+`runtime.profile` 也是需求契约，不能从文档推断当前 CLI 已支持该 lease kind。
+当前运行事实与目标状态分别标注；没有原生证明时不得报告资源复用或回收 PASS。
+
 The authoritative binding deliberately excludes Git HEAD. Commands capture
 current source from Git at operation time. Lease acquisition snapshots branch
 and HEAD, then revalidates that identity with the binding after the OS lock is
@@ -115,6 +130,7 @@ host identity, and Hook output are not runtime authorization inputs.
 | [experience-contract.md](./experience-contract.md) | 环境选择、状态检查与运行时操作 Journey |
 | [product-state-model.md](./product-state-model.md) | Worktree、环境与资源可见状态 |
 | [acceptance-matrix.md](./acceptance-matrix.md) | 控制面行为与证据映射 |
+| [资源 ID 分配与共享执行计划](./execution-plans/20261115-profile-resource-id-sharing/plan.md) | 用户指定目标的垂直闭环、覆盖确认与证明要求 |
 
 Development task sequencing, Journey state and functional/Acceptance
 promotion belong to

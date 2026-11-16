@@ -131,10 +131,9 @@
       "desktop-storage",
       "appium-sessions",
       "appium-process",
-      "app-installations",
+      "machine-resource-leases",
       "simulator-ports",
       "simulator-storage",
-      "simulator-boot",
       "profile-leases",
       "deployment-leases"
     ],

@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1440 620" width="1440" height="620"
+  role="img" aria-labelledby="title-local-dev.resources.control">
+<style>
+  .canvas { fill: #111418; }
+  .headerRule { stroke: #30363d; stroke-width: 1; }
+  .title { fill: #f4f7fa; font: 600 30px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .viewpoint { fill: #8c98a4; font: 600 13px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .boundary { fill: none; stroke: #69737d; stroke-width: 1.5; stroke-dasharray: 7 6; }
+  .boundaryTitle { fill: #aeb7c0; font: 600 14px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .zone { fill: #171b20; stroke: #343b43; stroke-width: 1.4; }
+  .zone-primary { fill: #152019; stroke: #55d98d; }
+  .zone-secondary { fill: #141d25; stroke: #65b8ff; }
+  .zone-state { fill: #211d14; stroke: #e0b35a; }
+  .zone-external { fill: #191b1e; stroke: #7c8792; stroke-dasharray: 6 5; }
+  .zone-muted { fill: #14171b; stroke: #2c3239; }
+  .zoneTitle { fill: #aeb7c0; font: 600 15px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .node { fill: #1b2026; stroke: #49525c; stroke-width: 1.4; }
+  .node-primary { fill: #17231b; stroke: #55d98d; stroke-width: 1.8; }
+  .node-secondary { fill: #16212b; stroke: #65b8ff; }
+  .node-state { fill: #252116; stroke: #e0b35a; }
+  .node-external { fill: #1a1d21; stroke: #7c8792; }
+  .node-muted { fill: #161a1f; stroke: #343b43; }
+  .nodeTitle { fill: #f0f3f6; font: 600 18px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .nodeCaption { fill: #9da8b3; font: 400 13px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .edge { fill: none; stroke: #55d98d; stroke-width: 2; stroke-linejoin: round; }
+  .edge-secondary { stroke: #65b8ff; }
+  .edge-return { stroke: #a6b0ba; stroke-dasharray: 6 5; }
+  .edge-event { stroke: #e0b35a; stroke-dasharray: 3 4; }
+  .edge-feedback { stroke: #d48787; stroke-dasharray: 7 5; }
+  .edgeLabelBox { fill: #111418; stroke: #30363d; stroke-width: 1; }
+  .edgeLabel { fill: #d7dde3; font: 500 13px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .band { fill: #171b20; }
+  .band-primary { fill: #142019; }
+  .band-secondary { fill: #141d25; }
+  .band-state { fill: #201c14; }
+  .band-muted { fill: #14171b; }
+  .bandRule { stroke: #30363d; stroke-width: 1; }
+  .bandTitle { fill: #8f9aa5; font: 600 14px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .lifeline { stroke: #48515a; stroke-width: 1.3; stroke-dasharray: 5 6; }
+  .fragment { fill: #151a1f; stroke: #3b444d; stroke-width: 1; }
+  .fragment-primary { fill: #142019; stroke: #3d7555; }
+  .fragment-secondary { fill: #141d25; stroke: #416884; }
+  .fragmentLabel { fill: #aeb7c0; font: 600 12px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .matrixHead { fill: #181d22; stroke: #343b43; stroke-width: 1; }
+  .matrixCell { fill: #14181d; stroke: #2d343c; stroke-width: 1; }
+  .matrixOwner { fill: #17301f; stroke: #55d98d; stroke-width: 1.4; }
+  .matrixText { fill: #d8dee4; font: 500 14px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .matrixOwnerText { fill: #7fe7a8; font: 700 13px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .guard { fill: #151a1f; stroke: #59636e; stroke-width: 1; }
+  .guard-primary { stroke: #55d98d; }
+  .guard-secondary { stroke: #65b8ff; }
+  .guard-state { stroke: #e0b35a; }
+  .guardLine { stroke: #59636e; stroke-width: 1; stroke-dasharray: 3 4; }
+  .guardText { fill: #b4bec8; font: 500 13px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+</style>
+<defs>
+  <marker id="arrow-primary" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#55d98d"/>
+  </marker>
+  <marker id="arrow-secondary" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#65b8ff"/>
+  </marker>
+  <marker id="arrow-return" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#a6b0ba"/>
+  </marker>
+  <marker id="arrow-event" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#e0b35a"/>
+  </marker>
+  <marker id="arrow-feedback" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#d48787"/>
+  </marker>
+</defs>
+<title id="title-local-dev.resources.control">Profile 资源依赖的统一控制（目标契约）</title>
+<rect class="canvas" width="1440" height="620"/>
+<text class="title" x="44" y="48">Profile 资源依赖的统一控制（目标契约）</text>
+<text class="viewpoint" x="1396" y="46" text-anchor="end">CONTROL-PLANE</text>
+<line class="headerRule" x1="44" y1="72" x2="1396" y2="72"/>
+<path class="edge edge-primary" d="M 390 355 L 520 355" marker-end="url(#arrow-primary)"/>
+<path class="edge edge-secondary" d="M 870 355 L 935 355 L 935 230 L 1010 230" marker-end="url(#arrow-secondary)"/>
+<path class="edge edge-secondary" d="M 695 405 L 695 480 L 1010 480" marker-end="url(#arrow-secondary)"/>
+<rect class="node node-secondary" x="60" y="305" width="330" height="100" rx="6"/>
+<text class="nodeTitle" x="74" y="336">研发运行请求</text>
+<text class="nodeCaption" x="74" y="388">Profile: Station + Simulator</text>
+<rect class="node node-primary" x="520" y="305" width="350" height="100" rx="6"/>
+<text class="nodeTitle" x="534" y="336">Machine Dev 控制面</text>
+<text class="nodeCaption" x="534" y="388">按 ID 分配、共享可见、覆盖确认与回收</text>
+<rect class="node node-neutral" x="1010" y="180" width="330" height="100" rx="6"/>
+<text class="nodeTitle" x="1024" y="211">Station 资源所有者</text>
+<text class="nodeCaption" x="1024" y="263">远端共享；按 connect/deploy/reset 操作</text>
+<rect class="node node-neutral" x="1010" y="430" width="330" height="100" rx="6"/>
+<text class="nodeTitle" x="1024" y="461">Simulator 资源所有者</text>
+<text class="nodeCaption" x="1024" y="513">用户分配；跨 Profile 共享同一 ID</text>
+<path class="guardLine" d="M 695 200 L 695 252.5 L 695 252.5 L 695 305"/>
+<rect class="guard guard-primary" x="530" y="170" width="330" height="30" rx="4"/>
+<text class="guardText" x="695" y="190" text-anchor="middle">资源 ID · 物理锁 · 显式覆盖决定</text>
+</svg>

@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Data Model
 
 > **Status**: active
-> **Version**: v1.4
-> **Created**: 2026-09-13 | **Updated**: 2026-10-15
+> **Version**: v2.1
+> **Created**: 2026-09-13 | **Updated**: 2026-11-15
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -352,9 +352,9 @@ Registry mutation must:
 
 Unknown schema versions or unknown mutation variants fail closed.
 
-Plan binding creation uses a complete owner-only temporary file and atomic
-no-replace publication. An existing different tuple returns
-`WORKSPACE_PLAN_REBIND_DENIED`; no mutation or deletion follows.
+Optional task snapshots belong to Development Workflow and do not participate
+in registry atomicity or resource admission. Formal Plans are explicit inputs,
+not machine registrations or mounts (DWF-D46).
 
 ## 11. Acceptance Evidence Root
 
@@ -432,3 +432,184 @@ directory is removed and absence is verified:
 
 The completion receipt is historical evidence only. Runtime resolvers, status
 commands, and allocation logic must not read it.
+
+## 12. Resource Dependency Contract
+
+The conceptual contract below governs the concrete encoding in section 12.7.
+Consumer cutover and native proof remain separate completion obligations.
+The existing Profile parser must be the single projection owner; a second
+resource-specific Profile file or a separately maintained Python schema is forbidden.
+
+| Fact | Owner | Content |
+|------|-------|---------|
+| ResourceRequirement | Profile definition | Logical kind, requested operations, runtime/device compatibility and data requirement |
+| ProfileResourceAssignment | Machine Dev, user-directed | Canonical Profile ID to explicit resource ID set and Profile-local purpose/labels |
+| ResourceInstance | Machine Dev | Stable resource ID, provider identity, creation provenance, current content/revision, retention and recovery |
+| ResourceLease | Machine Dev + OS | Shared/exclusive possession, holder PID/start, deadline and current operation source identity |
+
+For example, Profile four references its reviewed Station and requests connect;
+an iOS requirement declares runtime/device compatibility. The user requests
+two suitable devices or chooses readable device names. Agent/control plane
+inspects inventory and resolves the assignment internally, for example
+`four -> [ios-a, ios-b]`, `other -> [ios-b]`.
+The two Profiles share `ios-b` and see that shared reference. Profile-local
+labels and client scenarios do not create extra physical devices.
+This is a semantic example, not executable Profile syntax or an env mutation.
+
+### 12.1 Instance Facts
+
+The target machine-owned record contains:
+
+- Stable internal resource ID, kind and placement owner.
+- Readable display name/label, provider name and optional Profile-local purpose.
+  Display names are not identity keys; renaming does not change IDs or locks.
+- Provider identity (iOS UUID or resolved Station target).
+- Owned creation/preparation receipt, or explicit external provenance.
+- Classified creation/data ownership, including assigned, task-disposable,
+  user-retained or external scope.
+- Runtime/device compatibility and original data-owner scope references.
+- Physical-lease reference, actual holder/purpose, retention and release condition.
+- Current provider binding and installation/source/data revision with last writer.
+- Preparation identity, lifecycle/cleanup progress and last provider observation.
+
+These are instance facts, not a duplicate WorkspaceBinding, Task, Plan or
+credential store. Profile assignments are the single owner of reference sets;
+the reverse `profileIds` view is derived, not independently persisted.
+One machine resource ID resolves one provider instance; conflicting alias IDs
+for one provider identity must not bypass the same physical UUID lock.
+Installed App source, bundle identity and artifact digest are separate from
+physical identity and rechecked before use.
+
+### 12.2 User-Directed ID Assignments
+
+LDCP-D26/D27 govern allocation. A user requests count/purpose, selects readable
+resources from discovered inventory or delegates matching to the Agent.
+Existing/shared resources and explicit creation are presented by name/context;
+Agent/control plane resolves their internal IDs. The
+authoritative result is the set of IDs, and the displayed count is its
+cardinality. A count does not choose a device, identify sharing or determine
+which Profile may overwrite it. No default global count cap or fixed role is imposed.
+
+The same ID in multiple assignment sets means one shared resource. Different
+IDs remain distinct even when Profiles have equal requested counts. Every
+Profile can see all other references, current content and observed holders.
+Runtime compatibility is checked against the selected ID rather than used to
+silently substitute another device. Shared definitions keep logical requirements;
+machine UUIDs and actual assignment are machine state under LDCP-D03.
+
+Detach removes only the named Profile-to-ID relation. Release ends one held
+operation. Delete removes the provider resource only through a separately
+authorized, observed operation. Neither detach nor release implies delete.
+
+### 12.3 Separate State Machines
+
+| Instance progress | Meaning | Can operate |
+|-------------------|---------|-------------|
+| preparing | Durable ID/preparation intent, provider result not confirmed | after recovery completes |
+| present | Provider identity and current content observed | by ID, subject to lease/overwrite admission |
+| removing | Explicit provider removal in progress | no new mutation |
+| removed | Device and scoped associated data absence confirmed | no; destroyed instance |
+| cleanup-failed | Cleanup failed or cannot be confirmed | no contradictory completion claim; reconcile first |
+| ownership-unknown | Ownership/provider match cannot be established | observe only |
+
+Profile associations, retained handoff, instance progress and lease held/released
+are separate facts. A released lock can accompany present retained contents or
+cleanup-failed progress. No count or reference record proves a live lease.
+Do not erase a record before cleanup; publish removed only after readback.
+
+The same preparation ID must recover or return its original result. Persist
+nonce and intent before OS create; match provider evidence and owned intent
+together after a crash. A device name prefix cannot establish createdBy.
+
+### 12.4 Operation And Data Scope
+
+Station uses its existing connect/deploy/reset capabilities. Simulator uses
+inspect/use/provision/reset/delete semantics defined by the same control plane.
+Concrete capability spellings and serialized fields are implementation work;
+consumers may not mint their own permission taxonomy.
+
+Simulator overwrite/reset/delete requires exact instance identity and the
+affected original data scopes. A non-stable Profile never converts another
+Profile's content into silently disposable state. Shared credentials/keychain
+and databases must not be claimed isolated merely because uninstall succeeded.
+
+### 12.5 Operation-Specific Overwrite Decision
+
+The conceptual pending operation freezes resource ID, provider identity,
+reference set, current binding/content revision, active holders, requested
+replacement and affected data/session scopes. The user receives that concrete
+notice and may decline or explicitly force the specified replacement.
+
+No response/decline/cancel performs no overwrite. Force is specific to this
+operation and impact; it is not stored as a Profile default or inferred from
+sharing. It does not bypass OS locks, unknown ownership or Station permissions.
+After physical-lock acquisition, changed references/content/holder require a
+new notice. Stopping an active user's process requires explicitly confirmed
+stop scope as part of the notice.
+
+One instance record owns actual installed content and last writer. All Profile
+projections derive from it after success or partial failure; no stale per-Profile
+copy may pretend the previously installed source remains current. Concrete
+serialization and UI/CLI spelling remain implementation work.
+
+### 12.6 Readable Selection Projection
+
+Agent/control plane derives a selection list from provider inventory and
+canonical assignments. Each item binds an internal resource/provider identity
+to readable name, model/runtime, observed state, Profile references and purpose.
+Raw UUID is diagnostic detail, not a required user input or primary label.
+
+A count/purpose request is valid: the Agent finds eligible devices and makes
+its selected/recommended names and sharing effects visible. A named selection
+or a temporary list choice resolves the same internal tuple. Duplicate names
+must be differentiated; a stale list position cannot remap to another device.
+Changing a readable label never changes identity, assignments or locks.
+Unknown assignment facts remain unknown; OS names do not prove ownership.
+Overwrite notices use these readable descriptors while fencing the exact ID/
+revision internally. This projection is not another persistent allocation store.
+
+### 12.7 Machine Dev Resource Encoding
+
+The original `resolveProfileDefinition` projects optional
+`PT_MOBILE_IOS_RUNTIME`, `PT_MOBILE_IOS_DEVICE_TYPE` and
+`PT_MOBILE_IOS_DATA=preserve|fresh`. Runtime and device type are explicit
+provider identifiers; both are required together. There is no default
+quantity, fixed role or new Profile file. Missing requirements are a typed
+Profile finding, never authority to edit sibling env source.
+
+`~/.peers-touch/dev/resources.json` is one subordinate machine document with
+`kind=peers-touch-machine-resources`, encoding `version=1`, and the closed
+collections `instances`, `assignments`, `operations`. The existing Machine Dev
+lifecycle and registry lock protect its atomic fsync/rename transactions.
+It is independent from the artifact root and does not become a controller,
+task authority, credential store or separate Profile parser.
+
+Instance IDs are random `ios-<24 hex>` identifiers. Provider UUIDs are uppercase
+and unique across all instance records. Assignments contain one canonical
+Profile ID, its original definition source and explicit ID/purpose references;
+reverse sharing is derived. Creation persists request ID, request digest,
+nonce, exact provider name, compatibility and pre-existing UUID set before
+calling the provider. Recovery matches that durable intent to provider
+observation and returns the original instance; a prefix alone proves nothing.
+
+`simulator.ios:<provider UUID>` uses the original OS lease runner. Source
+admission binds branch, HEAD and the existing `inspectGitWorkspace`
+workspace digest. Nested leases pass an explicit descriptor stack so acquiring
+a physical lock cannot drop the enclosing slot lock. Aliases cannot use
+resource IDs to select a different physical lock.
+
+Operations bind Profile/workspace/source, exact instance/provider identity,
+action, target, displayed impact and its digest. Actions are
+`use|boot|install|reset|delete`. States are
+`pending|declined|ready|running|succeeded|failed|cancelled`.
+Only the matching pending impact accepts `force`; a ready operation can be
+cancelled. `begin` verifies the actual inherited descriptor and repeats
+source, reference, content, session and artifact checks under the registry
+lock. Changed impact returns to pending and clears the decision.
+
+Install verifies the installed artifact with an independent directory digest.
+Runtime `use` records unverified intended content until provider readback can
+establish it; it cannot certify native readiness. Failed or interrupted
+mutations publish observed, unverified content. Interrupted deletion retains
+retry identity and becomes removed only after provider and associated-directory
+absence. Recovery never reuses a force decision to repeat an interrupted effect.

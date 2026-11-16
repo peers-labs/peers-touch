@@ -115,6 +115,16 @@ adapter without changing Journey or evidence semantics.
 - `make acceptance-driver-smoke`: verify native URL, DOM, global Tauri API,
   process teardown, and port release.
 
+For iOS, consume the [existing resource owner](../../../docs/architecture/engineering/local-dev/integration.md#9-resource-dependency-cutover).
+Resolve readable Profile assignments and show shared Profiles/current contents.
+Use the exact held UUID and installation readback, never a Tauri fuzzy name
+selector or a private allocator. Acceptance clients supply explicit
+Profile/readable-selector references. Release only owned sessions and locks;
+retained device contents and other Profile references survive a Suite.
+Mobile launch is Station connect-only. Web edits reload, native edits require
+rerunning the entry. Actual content changes require an operation-specific
+overwrite decision and post-lock revalidation.
+
 Restart Station when changes touch Station, schema, or generated protocol code.
 Rebuild the Acceptance binary when changes touch Desktop Rust, Desktop UI, the
 Acceptance harness, or driver feature wiring.

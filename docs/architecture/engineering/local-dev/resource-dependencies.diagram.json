@@ -1,0 +1,28 @@
+{
+  "kind": "peers-touch-architecture-diagram",
+  "schemaVersion": 3,
+  "id": "local-dev.resources.control",
+  "module": "local-dev-control-plane",
+  "viewpoint": "control-plane",
+  "layout": "control-loop",
+  "output": "resource-dependencies.svg",
+  "title": "Profile 资源依赖的统一控制（目标契约）",
+  "canvas": {"width": 1440, "height": 620},
+  "edgeMeaning": "箭头仅表示控制请求",
+  "scene": {
+    "stages": [
+      {"id": "request", "role": "stage", "x": 60, "y": 305, "width": 330, "height": 100, "title": "研发运行请求", "caption": "Profile: Station + Simulator", "tone": "secondary"},
+      {"id": "machine-dev", "role": "stage", "x": 520, "y": 305, "width": 350, "height": 100, "title": "Machine Dev 控制面", "caption": "按 ID 分配、共享可见、覆盖确认与回收", "tone": "primary"},
+      {"id": "station", "role": "stage", "x": 1010, "y": 180, "width": 330, "height": 100, "title": "Station 资源所有者", "caption": "远端共享；按 connect/deploy/reset 操作", "tone": "neutral"},
+      {"id": "simulator", "role": "stage", "x": 1010, "y": 430, "width": 330, "height": 100, "title": "Simulator 资源所有者", "caption": "用户分配；跨 Profile 共享同一 ID", "tone": "neutral"}
+    ],
+    "guards": [
+      {"title": "资源 ID · 物理锁 · 显式覆盖决定", "target": "machine-dev", "x": 530, "y": 170, "width": 330, "tone": "primary"}
+    ],
+    "relations": [
+      {"from": "request", "to": "machine-dev", "fromAnchor": "right", "toAnchor": "left", "label": null, "style": "primary", "via": []},
+      {"from": "machine-dev", "to": "station", "fromAnchor": "right", "toAnchor": "left", "label": null, "style": "secondary", "via": [{"x": 935, "y": 355}, {"x": 935, "y": 230}]},
+      {"from": "machine-dev", "to": "simulator", "fromAnchor": "bottom", "toAnchor": "left", "label": null, "style": "secondary", "via": [{"x": 695, "y": 480}]}
+    ]
+  }
+}

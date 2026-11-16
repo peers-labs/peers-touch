@@ -158,6 +158,7 @@ Pick one based on intent:
 
 ### Invariants (active)
 
+- [`invariants/profile-resources-use-machine-owner.md`](invariants/profile-resources-use-machine-owner.md) — Profile resource callers consume the existing machine owner; physical allocation, recovery and data-scope checks cannot drift into launchers.
 - [`invariants/provider-execution-owner-boundary.md`](invariants/provider-execution-owner-boundary.md) — Provider resources, grants, credentials and shared binaries preserve the requesting actor's execution boundary.
 - [`invariants/relay-readloop-discipline.md`](invariants/relay-readloop-discipline.md) — readLoop goroutines must dispatch blocking work asynchronously.
 - [`invariants/locator-publisher-symmetry.md`](invariants/locator-publisher-symmetry.md) — `PublishVisibility` callers split into "user-driven" (broadcast) and "maintenance" (no broadcast); no third category.

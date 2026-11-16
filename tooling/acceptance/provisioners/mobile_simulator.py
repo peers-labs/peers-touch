@@ -106,6 +106,7 @@ from tooling.acceptance.provisioners.mobile_service_bindings import (
     MobileServiceBinding,
     resolve_mobile_service_bindings,
 )
+from tooling.acceptance.provisioners.mobile_ios_resources import MobileIOSResources
 from tooling.acceptance.provisioners.mobile_native_build import (
     MobileNativeBuildError,
     SourceIdentity,
@@ -1017,6 +1018,7 @@ class SubprocessExecutor:
                 stderr=subprocess.STDOUT,
                 text=True,
                 start_new_session=True,
+                pass_fds=tuple(int(frame["fd"]) for frame in json.loads(env.get("PT_MACHINE_LEASE_STACK_JSON", "[]"))),
             )
         except OSError as error:
             output.close()
@@ -2408,6 +2410,7 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
         self.status_reader = status_reader or self._read_json_url
         self.sleep = sleep
         self.monotonic = monotonic
+        self._ios_resources: MobileIOSResources | None = None
 
     def _build_inputs_digest(self, platform: str) -> str:
         return canonical_build_inputs_digest(self.repo_root, platform)
@@ -2425,17 +2428,21 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
             if name in command_env
         }
         try:
+            source_commit, workspace_digest = manifest.source_commit, manifest.workspace_digest
+            if platform == "ios" and self._ios_resources is not None:
+                native_source = self._ios_resources.build_source()
+                source_commit, workspace_digest = native_source["head"], native_source["workspaceDigest"]
             return create_build_identity(
                 build_id=f"{manifest.run_id}-{platform}",
                 platform=platform,
                 source=SourceIdentity(
-                    source_commit=manifest.source_commit,
+                    source_commit=source_commit,
                     workspace_state=(
                         "clean"
-                        if manifest.workspace_digest == "clean"
+                        if workspace_digest == "clean"
                         else "dirty"
                     ),
-                    workspace_digest=manifest.workspace_digest,
+                    workspace_digest=workspace_digest,
                 ),
                 build_inputs_digest=self._build_inputs_digest(platform),
                 environment_digest=canonical_value_digest(environment),
@@ -2467,17 +2474,6 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
                 profile_name="mobile-simulator",
                 slot=0,
             )
-            build_identity = self._platform_build_identity(
-                manifest,
-                platform="ios",
-                command_env=command_env,
-            )
-            build_environment = {
-                **command_env,
-                "PT_MOBILE_BUILD_IDENTITY_JSON": canonical_json_bytes(
-                    build_identity
-                ).decode("ascii"),
-            }
             owner = f"acceptance:{gate_id}:{manifest.run_id}"
             self.acquire_profile_lease("mobile-simulator", owner)
 
@@ -2496,7 +2492,7 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
                 apple_assets_guard.restore,
             )
 
-            ios_devices = self._create_isolated_ios_simulator_definitions(
+            ios_devices = self._bind_ios_simulator_definitions(
                 spec,
                 command_env,
                 (
@@ -2506,6 +2502,17 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
             )
             ios_device = ios_devices["sim-ios"]
             peer_device = ios_devices["sim-ios-peer"]
+            build_identity = self._platform_build_identity(
+                manifest,
+                platform="ios",
+                command_env=command_env,
+            )
+            build_environment = {
+                **command_env,
+                "PT_MOBILE_BUILD_IDENTITY_JSON": canonical_json_bytes(
+                    build_identity
+                ).decode("ascii"),
+            }
             if ios_device["udid"] == peer_device["udid"]:
                 raise BlockedError(
                     reason=(
@@ -2524,13 +2531,13 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
             with ThreadPoolExecutor(max_workers=3) as executor:
                 concurrent_work = {
                     "sim-ios": executor.submit(
-                        self._boot_isolated_ios_simulator,
+                        self._boot_assigned_ios_simulator,
                         ios_device["udid"],
                         command_env,
                         client_id="sim-ios",
                     ),
                     "sim-ios-peer": executor.submit(
-                        self._boot_isolated_ios_simulator,
+                        self._boot_assigned_ios_simulator,
                         peer_device["udid"],
                         command_env,
                         client_id="sim-ios-peer",
@@ -2588,7 +2595,9 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
                     "destination": (
                         f"platform=iOS Simulator,id={ios_device['udid']}"
                     ),
-                    "ownedBoot": True,
+                    "ownedBoot": False,
+                    "resourceId": ios_device["id"],
+                    "sharedProfiles": ios_device["sharedProfiles"],
                 },
                 "sim-ios-peer": {
                     "device": peer_device["udid"],
@@ -2597,7 +2606,9 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
                     "destination": (
                         f"platform=iOS Simulator,id={peer_device['udid']}"
                     ),
-                    "ownedBoot": True,
+                    "ownedBoot": False,
+                    "resourceId": peer_device["id"],
+                    "sharedProfiles": peer_device["sharedProfiles"],
                 },
             }
             clients: list[ClientRuntime] = []
@@ -2718,33 +2729,7 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
                 diagnostic=blocked.diagnostic,
             )
 
-    def _create_isolated_ios_simulator(
-        self,
-        spec: MobileSimulatorSpec,
-        env: Mapping[str, str],
-        *,
-        client_id: str,
-        device_name: str,
-    ) -> dict[str, str]:
-        device = self._create_isolated_ios_simulator_definition(
-            spec,
-            env,
-            client_id=client_id,
-            device_name=device_name,
-        )
-        self._register_ios_simulator_cleanup(
-            client_id=client_id,
-            udid=device["udid"],
-            env=env,
-        )
-        self._boot_isolated_ios_simulator(
-            device["udid"],
-            env,
-            client_id=client_id,
-        )
-        return device
-
-    def _create_isolated_ios_simulator_definitions(
+    def _bind_ios_simulator_definitions(
         self,
         spec: MobileSimulatorSpec,
         env: Mapping[str, str],
@@ -2753,119 +2738,22 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
         if not targets:
             return {}
 
-        devices: dict[str, dict[str, str]] = {}
-        errors: dict[str, Exception] = {}
-        with ThreadPoolExecutor(max_workers=len(targets)) as executor:
-            futures = {
-                client_id: executor.submit(
-                    self._create_isolated_ios_simulator_definition,
-                    spec,
-                    env,
-                    client_id=client_id,
-                    device_name=device_name,
-                )
-                for client_id, device_name in targets
-            }
-            for client_id, _device_name in targets:
-                try:
-                    devices[client_id] = futures[client_id].result()
-                except Exception as error:
-                    errors[client_id] = error
+        if self._ios_resources is not None:
+            raise ProvisioningError("iOS resource references must be bound once per Suite")
+        self._ios_resources = MobileIOSResources.from_environment(self.repo_root, env)
+        self.register_cleanup("machine-resources:ios-leases", self._ios_resources.release)
+        return self._ios_resources.acquire([client_id for client_id, _ in targets])
 
-        for client_id, _device_name in targets:
-            device = devices.get(client_id)
-            if device is not None:
-                self._register_ios_simulator_cleanup(
-                    client_id=client_id,
-                    udid=device["udid"],
-                    env=env,
-                )
-        if errors:
-            for client_id, _device_name in targets:
-                error = errors.get(client_id)
-                if error is not None:
-                    raise error
-        return devices
-
-    def _create_isolated_ios_simulator_definition(
-        self,
-        spec: MobileSimulatorSpec,
-        env: Mapping[str, str],
-        *,
-        client_id: str,
-        device_name: str,
-    ) -> dict[str, str]:
-        instance_name = (
-            f"Peers Touch {client_id} {os.getpid()}-{secrets.token_hex(4)}"
-        )
-        result = self._run_checked(
-            (
-                "xcrun",
-                "simctl",
-                "create",
-                instance_name,
-                device_name,
-                spec.ios_runtime,
-            ),
-            env=env,
-            timeout=60,
-            resource=f"mobile-simulator:ios-create:{client_id}",
-        )
-        udid = result.stdout.strip()
-        if not udid or "\n" in udid:
-            raise BlockedError(
-                reason="simctl create returned an invalid device identity",
-                resource=f"mobile-simulator:ios-create:{client_id}",
-            )
-        return {
-            "udid": udid,
-            "name": device_name,
-            "runtime": spec.ios_runtime,
-        }
-
-    def _boot_isolated_ios_simulator(
+    def _boot_assigned_ios_simulator(
         self,
         udid: str,
         env: Mapping[str, str],
         *,
         client_id: str,
     ) -> None:
-        self._run_checked(
-            ("xcrun", "simctl", "boot", udid),
-            env=env,
-            timeout=60,
-            resource=f"mobile-simulator:ios-boot:{client_id}",
-        )
-        self._run_checked(
-            ("xcrun", "simctl", "bootstatus", udid, "-b"),
-            env=env,
-            timeout=180,
-            resource=f"mobile-simulator:ios-ready:{client_id}",
-        )
-
-    def _register_ios_simulator_cleanup(
-        self,
-        *,
-        client_id: str,
-        udid: str,
-        env: Mapping[str, str],
-    ) -> None:
-        self.register_cleanup(
-            f"simulator-delete:{client_id}:{udid}",
-            lambda: self._run_cleanup(
-                ("xcrun", "simctl", "delete", udid),
-                env=env,
-                resource=f"mobile-simulator:ios-delete:{client_id}",
-            ),
-        )
-        self.register_cleanup(
-            f"simulator-shutdown:{client_id}:{udid}",
-            lambda: self._run_cleanup(
-                ("xcrun", "simctl", "shutdown", udid),
-                env=env,
-                resource=f"mobile-simulator:ios-shutdown:{client_id}",
-            ),
-        )
+        if self._ios_resources is None or self._ios_resources.bindings[client_id]["providerId"] != udid:
+            raise ProvisioningError("iOS boot target does not match the bound resource")
+        self._ios_resources.boot(client_id)
 
     def _ready_android_emulator(
         self,
@@ -3769,11 +3657,6 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
             application_id,
             env,
         )
-        self._register_ios_application_cleanup(
-            udid=udid,
-            application_id=application_id,
-            env=env,
-        )
 
     def _deploy_ios_applications(
         self,
@@ -3786,7 +3669,6 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
         if not targets:
             return
 
-        completed: set[str] = set()
         errors: dict[str, Exception] = {}
         with ThreadPoolExecutor(max_workers=len(targets)) as executor:
             futures = {
@@ -3802,17 +3684,9 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
             for client_id, _udid in targets:
                 try:
                     futures[client_id].result()
-                    completed.add(client_id)
                 except Exception as error:
                     errors[client_id] = error
 
-        for client_id, udid in targets:
-            if client_id in completed:
-                self._register_ios_application_cleanup(
-                    udid=udid,
-                    application_id=application_id,
-                    env=env,
-                )
         if errors:
             for client_id, _udid in targets:
                 error = errors.get(client_id)
@@ -3826,39 +3700,10 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
         application_id: str,
         env: Mapping[str, str],
     ) -> None:
-        self._run_cleanup(
-            ("xcrun", "simctl", "uninstall", udid, application_id),
-            env=env,
-            resource="mobile-simulator:ios-preinstall-reset",
-        )
-        self._run_checked(
-            ("xcrun", "simctl", "install", udid, artifact),
-            env=env,
-            timeout=180,
-            resource="mobile-simulator:ios-install",
-        )
-
-    def _register_ios_application_cleanup(
-        self,
-        *,
-        udid: str,
-        application_id: str,
-        env: Mapping[str, str],
-    ) -> None:
-        self.register_cleanup(
-            f"application-uninstall:ios:{udid}:{application_id}",
-            lambda: self._run_cleanup(
-                (
-                    "xcrun",
-                    "simctl",
-                    "uninstall",
-                    udid,
-                    application_id,
-                ),
-                env=env,
-                resource="mobile-simulator:ios-uninstall",
-            ),
-        )
+        if self._ios_resources is None:
+            raise ProvisioningError("iOS install requires assigned resources")
+        target = Path(artifact).parent / f"resource-target-{udid}.json"
+        self._ios_resources.install(udid, artifact, application_id, target)
 
     def _deploy_android(
         self,
@@ -3960,6 +3805,8 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
         env: Mapping[str, str],
         runtime_root: Path,
     ) -> tuple[str, bool, str]:
+        if self._ios_resources is not None:
+            env = {**env, **self._ios_resources.child_environment()}
         process: ManagedProcess | None = None
         if spec.appium_ownership == "provisioner":
             reservation = _PortReservation()
@@ -4670,7 +4517,8 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
                     appium,
                     "serverUrl",
                     f"mobile-simulator:{client_id}:appium",
-                )
+                ),
+                timeout_seconds=SIMULATOR_CAPABILITY_TIMEOUT_SECONDS,
             ),
             client_id=client_id,
             platform=platform,
@@ -4730,14 +4578,13 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
         runtime_root: Path,
     ) -> dict[str, dict[str, Any]]:
         resources: dict[str, dict[str, Any]] = {}
+        ios_devices = self._bind_ios_simulator_definitions(
+            spec, env, [(client.id, spec.ios_device_name) for client in self.selected_clients if client.platform == "ios"]
+        )
         for client in self.selected_clients:
             if client.platform == "ios":
-                device = self._create_isolated_ios_simulator(
-                    spec,
-                    env,
-                    client_id=client.id,
-                    device_name=spec.ios_device_name,
-                )
+                device = ios_devices[client.id]
+                self._boot_assigned_ios_simulator(device["udid"], env, client_id=client.id)
                 resources[client.id] = {
                     "platform": "ios",
                     "device": device["udid"],
@@ -4746,7 +4593,9 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
                     "destination": (
                         f"platform=iOS Simulator,id={device['udid']}"
                     ),
-                    "ownedBoot": True,
+                    "ownedBoot": False,
+                    "resourceId": device["id"],
+                    "sharedProfiles": device["sharedProfiles"],
                 }
             else:
                 device = self._start_isolated_android_emulator(
@@ -4972,19 +4821,20 @@ class MobileIOSLayoutSimulatorProvisioner(MobileSimulatorProvisioner):
             )
 
             device_resources: dict[str, dict[str, str | bool]] = {}
+            ios_devices = self._bind_ios_simulator_definitions(
+                base, command_env, [(client.id, client.device_name) for client in spec.clients]
+            )
             for client in spec.clients:
-                device = self._create_isolated_ios_simulator(
-                    base,
-                    command_env,
-                    client_id=client.id,
-                    device_name=client.device_name,
-                )
+                device = ios_devices[client.id]
+                self._boot_assigned_ios_simulator(device["udid"], command_env, client_id=client.id)
                 device_resources[client.id] = {
                     "device": device["udid"],
                     "udid": device["udid"],
                     "deviceName": device["name"],
                     "runtimeName": device["runtime"],
-                    "ownedBoot": True,
+                    "ownedBoot": False,
+                    "resourceId": device["id"],
+                    "sharedProfiles": device["sharedProfiles"],
                 }
 
             first_device = device_resources[spec.clients[0].id]
