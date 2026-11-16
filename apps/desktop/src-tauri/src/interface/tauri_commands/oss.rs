@@ -212,9 +212,10 @@ pub(crate) fn safe_temp_filename(filename: &str) -> String {
 
 #[tauri::command]
 pub async fn oss_pick_local_file(window: Window) -> AppResult<StubPayload> {
-    let _ = window;
     tracing::info!("Opening local file picker for OSS");
-    let dialog = rfd::AsyncFileDialog::new().set_title("Select File");
+    let dialog = rfd::AsyncFileDialog::new()
+        .set_parent(&window)
+        .set_title("Select File");
     match dialog.pick_file().await {
         Some(handle) => {
             let path_str = handle.path().to_string_lossy().to_string();
@@ -233,9 +234,10 @@ pub async fn oss_pick_local_file(window: Window) -> AppResult<StubPayload> {
 
 #[tauri::command]
 pub async fn oss_pick_local_folder(window: Window) -> AppResult<StubPayload> {
-    let _ = window;
     tracing::info!("Opening local folder picker");
-    let dialog = rfd::AsyncFileDialog::new().set_title("Select Folder");
+    let dialog = rfd::AsyncFileDialog::new()
+        .set_parent(&window)
+        .set_title("Select Folder");
     match dialog.pick_folder().await {
         Some(handle) => {
             let path_str = handle.path().to_string_lossy().to_string();
@@ -452,6 +454,7 @@ pub async fn oss_pick_image_social(
     } as usize;
     tracing::info!(max_count, "Opening image picker dialog for Moments");
     let dialog = rfd::AsyncFileDialog::new()
+        .set_parent(&window)
         .set_title("Select Images")
         .add_filter(
             "Images",
