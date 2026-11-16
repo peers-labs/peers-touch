@@ -21,6 +21,13 @@ export type {
   SearchStatus,
   GlobalSearchSurfaceProps,
 } from './search/search.types';
+// Serializable data core + shared fixtures (mock/production anti-drift contract).
+export type {
+  SearchSurfaceData,
+  SearchGroupData,
+  SearchResultRowData,
+} from './search/search-data.types';
+export { searchFixtures } from './search/search.fixtures';
 
 // ── P2: IdentityProfileCard ─────────────────────────────────────────────
 
