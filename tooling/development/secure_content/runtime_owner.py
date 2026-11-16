@@ -7433,6 +7433,7 @@ class W7RuntimeOwner:
         fixture_epoch = prepared.manifest["runId"]
         transport_stack = ExitStack()
         transport_stack.callback(prepared.cleanup)
+        transport_stack.callback(capability_client.close)
         ledger = SuiteRuntimeLedger(
             SOCIAL_CROSS_STATION_RUNTIME_REUSE,
             suite_runtime_id=run_id,
