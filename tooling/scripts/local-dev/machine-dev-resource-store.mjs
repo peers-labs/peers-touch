@@ -458,7 +458,7 @@ export class MachineResourceOwner {
     };
     return JSON.parse(execFileSync(process.env.PT_MACHINE_DEV_PYTHON ?? 'python3', [
       '-B', '-c',
-      'import json,sys; from tooling.acceptance.provisioners.mobile_native_build import SourceIdentity,create_build_identity; v=json.load(sys.stdin); v["source"]=SourceIdentity(**v["source"]); print(json.dumps(create_build_identity(**v),sort_keys=True,separators=(",",":")))',
+      'import json,sys; from tooling.acceptance.provisioners.mobile_native_build import SourceIdentity,create_build_identity; v=json.load(sys.stdin); v["source"]=SourceIdentity(**v["source"]); sys.stdout.write(json.dumps(create_build_identity(**v),sort_keys=True,separators=(",",":"))+chr(10))',
     ], {
       cwd: resolved.binding.canonicalRoot, input: JSON.stringify(inputs),
       encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 15_000,
