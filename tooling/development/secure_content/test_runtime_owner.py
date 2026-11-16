@@ -4,6 +4,7 @@ import hashlib
 import io
 import inspect
 import json
+import os
 import re
 import shutil
 import tempfile
@@ -3409,6 +3410,12 @@ class RuntimeOwnerTest(unittest.TestCase):
                 fixture_epoch="fixture-epoch",
                 cleanup_stack=cleanup,
             )
+            self.assertEqual(
+                "station-fedlab-a,station-fedlab-b",
+                os.environ[
+                    runtime_owner_module.RESET_ENVIRONMENTS_AUTHORIZATION_ENV
+                ],
+            )
 
         self.assertEqual(expected_federation, federation_id)
         self.assertEqual(2, login.call_count)
@@ -3420,6 +3427,13 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertEqual(
             ["http://primary-transport", "http://secondary-transport"],
             [item.args[0] for item in seed.call_args_list],
+        )
+        self.assertEqual(
+            [
+                "station-fedlab-a",
+                "station-fedlab-b",
+            ],
+            [item.args[1] for item in seed.call_args_list],
         )
         self.assertEqual(
             ["primary-peer", "secondary-peer"],
@@ -3435,9 +3449,21 @@ class RuntimeOwnerTest(unittest.TestCase):
             [member.home_station_domain for member in seeded_members],
         )
         cleanup.close()
+        self.assertNotIn(
+            runtime_owner_module.RESET_ENVIRONMENTS_AUTHORIZATION_ENV,
+            os.environ,
+        )
         purge.assert_has_calls((
-            call("http://primary-transport", expected_federation),
-            call("http://secondary-transport", expected_federation),
+            call(
+                "http://primary-transport",
+                expected_federation,
+                "station-fedlab-a",
+            ),
+            call(
+                "http://secondary-transport",
+                expected_federation,
+                "station-fedlab-b",
+            ),
         ))
 
     def test_cross_station_fixture_maps_routing_failure_without_identity_leak(

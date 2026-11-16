@@ -61,6 +61,7 @@ from tooling.acceptance.fixtures.chat_native_actors import (
 )
 from tooling.acceptance.fixtures.chat_native_reset import (
     FixtureActorRecord,
+    RESET_ENVIRONMENTS_AUTHORIZATION_ENV,
     fixture_federation_id_from_station_ids,
     purge_federation_context,
     seed_federation_context,
@@ -88,7 +89,11 @@ from tooling.acceptance.provisioners.secure_content_remote_recipient import (
     W8RemoteRecipientFixtureOwner,
 )
 from tooling.acceptance.transports.ssh import SshTunnel
-from tooling.development.secure_content import runtime_manifest, schema_activation
+from tooling.development.secure_content import (
+    runtime_manifest,
+    runtime_schema,
+    schema_activation,
+)
 from tooling.development.secure_content.activation_transport import (
     ActivationTransportError,
     ReviewedSchemaActivationTransport,
@@ -2242,11 +2247,21 @@ def _prepare_social_suite_federation(
     cleanup_stack: ExitStack,
 ) -> str:
     stations = (
-        ("primary", primary_url, primary_peer_id),
-        ("secondary", secondary_url, secondary_peer_id),
+        (
+            "primary",
+            primary_url,
+            primary_peer_id,
+            runtime_schema.RUNTIME_TARGETS["fedlab-a"].deployment_environment,
+        ),
+        (
+            "secondary",
+            secondary_url,
+            secondary_peer_id,
+            runtime_schema.RUNTIME_TARGETS["fedlab-b"].deployment_environment,
+        ),
     )
     owner_actors: dict[str, str] = {}
-    for service_id, url, peer_id in stations:
+    for service_id, url, peer_id, _environment_name in stations:
         _token, actor_ptid = _station_login(
             url,
             station_peer_id=peer_id,
@@ -2254,6 +2269,23 @@ def _prepare_social_suite_federation(
             password=ACTOR_PASSWORD,
         )
         owner_actors[service_id] = actor_ptid
+
+    previous_reset_environments = os.environ.get(
+        RESET_ENVIRONMENTS_AUTHORIZATION_ENV,
+    )
+    os.environ[RESET_ENVIRONMENTS_AUTHORIZATION_ENV] = ",".join(
+        station[3] for station in stations
+    )
+
+    def restore_reset_environment_authorization() -> None:
+        if previous_reset_environments is None:
+            os.environ.pop(RESET_ENVIRONMENTS_AUTHORIZATION_ENV, None)
+        else:
+            os.environ[
+                RESET_ENVIRONMENTS_AUTHORIZATION_ENV
+            ] = previous_reset_environments
+
+    cleanup_stack.callback(restore_reset_environment_authorization)
 
     def actor_record(service_id: str, url: str, peer_id: str) -> FixtureActorRecord:
         station_domain = urllib.parse.urlparse(url).netloc
@@ -2279,10 +2311,10 @@ def _prepare_social_suite_federation(
     federation_id = fixture_federation_id_from_station_ids(
         member.home_station_peer_id for member in members
     )
-    for _service_id, url, peer_id in stations:
+    for _service_id, url, peer_id, environment_name in stations:
         seeded = seed_federation_context(
             url,
-            None,
+            environment_name,
             peer_id,
             members,
         )
@@ -2294,8 +2326,8 @@ def _prepare_social_suite_federation(
             )
 
     def purge() -> None:
-        for _service_id, url, _peer_id in stations:
-            purge_federation_context(url, federation_id)
+        for _service_id, url, _peer_id, environment_name in stations:
+            purge_federation_context(url, federation_id, environment_name)
 
     cleanup_stack.callback(purge)
     return federation_id

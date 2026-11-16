@@ -1255,9 +1255,13 @@ ON CONFLICT (federation_id, station_peer_id) DO UPDATE SET
     return federation_id
 
 
-def purge_federation_context(station_url: str, federation_id: str) -> None:
+def purge_federation_context(
+    station_url: str,
+    federation_id: str,
+    environment_name: str | None = None,
+) -> None:
     """Remove a disposable seeded Federation from one Station database."""
-    environment = acceptance_station_environment(station_url)
+    environment = acceptance_station_environment(station_url, environment_name)
     verify_disposable_station_runtime(environment)
     if environment.get("PT_ACCEPTANCE_RUNTIME_KIND") != LOCAL_SOURCE_RUNTIME:
         sql = f"""
