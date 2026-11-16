@@ -2682,6 +2682,39 @@ def _write_immutable_json(path: Path, payload: Mapping[str, Any]) -> Path:
     return path
 
 
+def _record_social_frame_replay(
+    path: Path,
+    mutation: str,
+    before: Mapping[str, Any],
+    response: Mapping[str, Any],
+    after: Mapping[str, Any],
+    expected_result: tuple[int, int],
+) -> dict[str, Any]:
+    observation = {
+        "mutation": mutation,
+        "before": dict(before),
+        "response": dict(response),
+        "after": dict(after),
+        "expectedResult": {
+            "disposition": expected_result[0],
+            "errorCode": expected_result[1],
+        },
+    }
+    # Retain the original observations even when the assertion fails. This is
+    # owner-private diagnostic evidence, not a published Scenario result.
+    _write_immutable_json(path, observation)
+    if (
+        (response.get("disposition"), response.get("errorCode")) != expected_result
+        or before["projections"] != after["projections"]
+    ):
+        raise RuntimeOwnerBlocked(
+            "CLIENT_RUNTIME_UNAVAILABLE",
+            f"AS24 {mutation} did not preserve receiver rows with its exact typed disposition",
+            resource="station:cross-station-social-bob",
+        )
+    return observation
+
+
 def _copy_immutable(path: Path, output: Path) -> tuple[dict[str, Any], dict[str, str]]:
     try:
         source = path.resolve(strict=True)
@@ -8466,15 +8499,11 @@ class W7RuntimeOwner:
                 before = delivery_observation("snapshot", target_post)
                 response = delivery_observation("replay", target_post, mutation)
                 after = delivery_observation("snapshot", target_post)
-                if (
-                    (response.get("disposition"), response.get("errorCode")) != expected_result
-                    or before["projections"] != after["projections"]
-                ):
-                    raise RuntimeOwnerBlocked(
-                        "CLIENT_RUNTIME_UNAVAILABLE",
-                        f"AS24 {mutation} did not preserve receiver rows with its exact typed disposition",
-                        resource="station:cross-station-social-bob",
-                    )
+                replay_path = owner_root / "scenarios" / "AS24" / f"frame-{mutation}.json"
+                supporting_artifacts.append(str(replay_path))
+                frame_replays.append(_record_social_frame_replay(
+                    replay_path, mutation, before, response, after, expected_result,
+                ))
                 if mutation == "reordered":
                     _wait_for_private_moment_states(
                         current_bob, post_id=as22_post,
@@ -8486,8 +8515,6 @@ class W7RuntimeOwner:
                         current_bob, post_id=as17_post,
                         expected_state="CONTENT_READY", actor_label="Bob2 valid frame target",
                     )
-                frame_replays.append({"mutation": mutation, "before": before,
-                                      "response": response, "after": after})
             record_scenario(
                 "AS24",
                 receiver=current_bob,

@@ -49,6 +49,10 @@ COMMANDS = (
               "tooling.acceptance.tests.test_private_social_native_provisioner",
               "tooling.acceptance.gates.social.test_cross_station_support",
               "tooling.development.secure_content.test_runtime_owner.RuntimeOwnerTest."
+              "test_social_frame_replay_retains_failed_original_observations",
+              "tooling.development.secure_content.test_runtime_owner.RuntimeOwnerTest."
+              "test_social_frame_replay_requires_exact_result_and_unchanged_rows",
+              "tooling.development.secure_content.test_runtime_owner.RuntimeOwnerTest."
               "test_private_outage_commits_before_stop_and_releases_after_restore",
               "tooling.development.secure_content.test_runtime_owner.RuntimeOwnerTest."
               "test_private_outage_rejects_uncommitted_or_delivered_frame_before_stop",

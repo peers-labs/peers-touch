@@ -34,6 +34,15 @@ constructing the production transport. Existing policies, signed frames and
 seven receiver replay assertions remain unchanged. A conflicting policy prevents
 construction, including when the registry already contains other scopes.
 
+The untrusted-signature mutation must also retain the real source and outer
+peer token. Changing the source alias while signing with the real Station key
+does not construct a foreign signature. The fixture now signs only the inner
+frame with a fresh in-memory Ed25519 key under the real source key ID, without
+registering or persisting it. Its regression verifies valid outer authentication
+and production `VerifyFrame` rejection. AS24 writes immutable original
+before/response/after diagnostics before checking the exact typed result and
+unchanged receiver rows; failure diagnostics never publish a partial Suite.
+
 ## How to detect a recurrence
 
 From `apps/station/frame`:
@@ -49,3 +58,8 @@ requires a source-signed token bound to the original frame, actual protobuf HTTP
 transmission and the typed duplicate result; it repeats after sealing.
 The conflicting-policy test must fail construction. Formal receiver behavior
 still requires AS24 in the original Native Suite.
+`TestPrivateDeliveryReplayTransportRejectsUntrustedFrameSignature` must prove
+the same signed wire reaches HTTP with valid peer authentication and returns
+the unauthenticated terminal result. The runtime-owner tests must retain actual
+wrong dispositions and changed row hashes/counts even when assertions fail,
+and reject overwriting those observations.

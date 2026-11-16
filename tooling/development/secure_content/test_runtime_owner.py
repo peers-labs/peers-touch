@@ -74,6 +74,7 @@ from tooling.development.secure_content.runtime_owner import (
     _continuation_run_id,
     _continuation_services,
     _copy_immutable,
+    _record_social_frame_replay,
     _error_message_with_cleanup,
     _generate_mobile_recovery_phrase,
     _make_client,
@@ -4985,6 +4986,48 @@ class RuntimeOwnerTest(unittest.TestCase):
             self.assertEqual(0o600, target.stat().st_mode & 0o777)
             with self.assertRaises(FileExistsError):
                 _copy_immutable(source, target)
+
+    def test_social_frame_replay_retains_failed_original_observations(self) -> None:
+        before = {"sourceCommit": COMMIT, "runId": "original-suite",
+                  "projections": {"resource": {"rows": 1, "sha256": "a" * 64}}}
+        valid_response = {"disposition": 4, "errorCode": 2}
+        changed_digest = {**before, "projections": {
+            "resource": {"rows": 1, "sha256": "b" * 64}}}
+        changed_count = {**before, "projections": {
+            "resource": {"rows": 2, "sha256": "a" * 64}}}
+        for response, after in (
+            ({"disposition": 4, "errorCode": 8}, before),
+            (valid_response, changed_digest),
+            (valid_response, changed_count),
+        ):
+            with self.subTest(response=response, after=after), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "AS24" / "frame-untrusted-station.json"
+                with self.assertRaisesRegex(RuntimeOwnerBlocked, "AS24 untrusted-station"):
+                    _record_social_frame_replay(
+                        path, "untrusted-station", before, response, after, (4, 2),
+                    )
+                observed = json.loads(path.read_text())
+                self.assertEqual(observed["before"], before)
+                self.assertEqual(observed["response"], response)
+                self.assertEqual(observed["after"], after)
+                self.assertEqual(observed["expectedResult"], valid_response)
+                self.assertEqual(0o600, path.stat().st_mode & 0o777)
+                with self.assertRaises(FileExistsError):
+                    _record_social_frame_replay(
+                        path, "untrusted-station", before, valid_response, before, (4, 2),
+                    )
+                self.assertEqual(json.loads(path.read_text()), observed)
+
+    def test_social_frame_replay_requires_exact_result_and_unchanged_rows(self) -> None:
+        snapshot = {"projections": {"resource": {"rows": 1, "sha256": "a" * 64}}}
+        response = {"disposition": 4, "errorCode": 2}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "frame-untrusted-station.json"
+            observed = _record_social_frame_replay(
+                path, "untrusted-station", snapshot, response, snapshot, (4, 2),
+            )
+            self.assertEqual(observed, json.loads(path.read_text()))
+            self.assertEqual(observed["response"], response)
 
     def test_continuation_evidence_is_staged_in_child_result_directory(
         self,

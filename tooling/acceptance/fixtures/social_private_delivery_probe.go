@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -184,8 +185,8 @@ func mutate(frame *delivery.Frame, s scope) (string, error) {
 		frame.FrameId += ":late"
 		frame.IdempotencyKey += ":late"
 	case "untrusted-station":
-		issuer = s.SourceStation + ":untrusted-fixture"
-		frame.SourceStationPeerId = issuer
+		// Retain the authenticated source binding; replayFrame supplies a
+		// foreign signature rather than another alias for the real key.
 	case "wrong-station":
 		frame.TargetStationPeerId = s.TargetStation + ":wrong-fixture"
 	case "wrong-actor":
@@ -211,6 +212,31 @@ func mutate(frame *delivery.Frame, s scope) (string, error) {
 		return "", errors.New("unknown frame mutation")
 	}
 	return issuer, nil
+}
+
+func replayFrame(ctx context.Context, frame *delivery.Frame, s scope, key *authfed.LocalKey) (*delivery.Frame, string, error) {
+	changed := proto.Clone(frame).(*delivery.Frame)
+	issuer, err := mutate(changed, s)
+	if err != nil {
+		return nil, "", err
+	}
+	if s.Mutation != "duplicate" {
+		frameKey := key
+		if s.Mutation == "untrusted-station" {
+			_, private, err := ed25519.GenerateKey(rand.Reader)
+			if err != nil {
+				return nil, "", errors.New("adversarial signing key unavailable")
+			}
+			defer clear(private)
+			// The receiver resolves the real source key ID, then rejects this
+			// foreign signature. Neither its key store nor outer token changes.
+			frameKey = &authfed.LocalKey{Kid: key.Kid, Priv: private}
+		}
+		if err := delivery.SignFrame(ctx, changed, delivery.DefaultFramePolicy(s.TargetStation), signer{frameKey}); err != nil {
+			return nil, "", errors.New("fixture frame signing failed")
+		}
+	}
+	return changed, issuer, nil
 }
 
 func run(s scope) (map[string]any, error) {
@@ -260,15 +286,9 @@ func run(s scope) (map[string]any, error) {
 		return nil, errors.New("existing Station key unavailable")
 	}
 	defer clear(key.Priv)
-	changed := proto.Clone(frame).(*delivery.Frame)
-	issuer, err := mutate(changed, s)
+	changed, issuer, err := replayFrame(ctx, frame, s, key)
 	if err != nil {
 		return nil, err
-	}
-	if s.Mutation != "duplicate" {
-		if err := delivery.SignFrame(ctx, changed, delivery.DefaultFramePolicy(s.TargetStation), signer{key}); err != nil {
-			return nil, errors.New("fixture frame signing failed")
-		}
 	}
 	client := &http.Client{Timeout: 10 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}

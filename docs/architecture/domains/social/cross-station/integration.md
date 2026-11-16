@@ -267,7 +267,7 @@ The Suite-owned `social-private-delivery` capability installs a digest-bound
 probe once in each existing PostgreSQL container. AS21 observes one original
 outbox frame during both pending attempts, then the same delivered frame and
 one actual receiver resource row. The probe reads credentials and the existing
-Station key inside the container; it cannot create, rotate or export keys.
+Station key inside the container; it cannot create, rotate or export Station keys.
 Its standalone replay composition installs the unchanged canonical
 `federation.RegisterPeerScopes` policies before constructing the production
 HTTP transport. Conflicting registrations fail closed. The delivery source
@@ -275,10 +275,18 @@ Gate exercises real HTTP token minting from a fresh registry, immutable frame
 transmission and repeated initialization after registry sealing.
 
 AS24 sends the original duplicate plus signed late, expired, hash-conflicted,
-untrusted-source, wrong-Station and wrong-actor frames through the original
+untrusted-signature, wrong-Station and wrong-actor frames through the original
 Federation HTTP transport and `/federation/delivery`. Each exact typed result
 is compared with before/after hashes and counts of the addressed resource,
-envelope and tombstone rows. A late original delivery after the genuine AS22
+envelope and tombstone rows. The untrusted-signature fixture retains the real
+source identity, signing key ID and valid outer peer authentication, but signs
+the inner frame with a fresh in-memory Ed25519 key. That adversarial key is
+never registered, persisted or exported and is cleared immediately after
+signing. The delivery source Gate verifies both successful outer authentication
+and rejected inner signature. Each original replay observation is persisted
+immutably in the owner-private AS24 directory before its assertion, including
+failed responses; this does not publish a partial Scenario result.
+A late original delivery after the genuine AS22
 deletion must remain denied; valid target content is reacquired and observed
 on Bob2. These observations remain unproven until the source-bound Suite passes.
 
