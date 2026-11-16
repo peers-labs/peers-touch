@@ -124,9 +124,12 @@ def current_result_proof_envelope(
         "completionStatus",
         "proofStatus",
         "cleanupStatus",
+        "verificationClass",
         "developmentRunId",
         "runManifest",
         "developmentManifest",
+        "developmentArtifact",
+        "secretScan",
     )
     return {
         "source": dict(source),
