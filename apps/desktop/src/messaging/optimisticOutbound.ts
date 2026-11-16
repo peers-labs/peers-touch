@@ -9,6 +9,8 @@
 // This module is intentionally pure: it owns the state machine shapes and
 // transition helpers so they are unit-testable without React or the store.
 
+import type { MessagingLocalAttachmentIntent } from '../services/im-service-contract';
+
 export type OptimisticTransferStatus = 'staging' | 'sending' | 'sent' | 'failed';
 
 /** A single attachment carried by an optimistic message. */
@@ -39,6 +41,16 @@ export interface OptimisticOutboundMessage {
   /** Set once the engine admits the message; equals the projected message ulid. */
   reconciledMessageId?: string;
   errorCode?: string;
+  /**
+   * Sendable intents captured once staging succeeds. They reference durable
+   * on-device file paths, so a failed send can be retried without re-picking
+   * the original File. Absent when staging itself never completed.
+   */
+  stagedIntents?: MessagingLocalAttachmentIntent[];
+  /** Message type derived from the attachments, needed to re-drive a retry. */
+  messageType?: number;
+  /** Thread/reply root the original send targeted, preserved across retries. */
+  replyToUlid?: string;
 }
 
 /** Local descriptor handed from the composer before staging completes. */
@@ -67,6 +79,8 @@ export function createOptimisticMessage(input: {
   kind: 'friend' | 'group';
   text: string;
   drafts: LocalAttachmentDraft[];
+  messageType?: number;
+  replyToUlid?: string;
   nowMs?: number;
 }): OptimisticOutboundMessage {
   const attachments: OptimisticAttachment[] = input.drafts.map((draft) => ({
@@ -89,15 +103,55 @@ export function createOptimisticMessage(input: {
     createdAtMs: input.nowMs ?? Date.now(),
     attachments,
     status: attachments.length > 0 ? 'staging' : 'sending',
+    messageType: input.messageType,
+    replyToUlid: input.replyToUlid,
   };
 }
+
+/** Fields the orchestration layer may patch while the transfer runs. */
+export type OptimisticMessagePatch = Partial<Pick<
+  OptimisticOutboundMessage,
+  'status' | 'reconciledMessageId' | 'errorCode' | 'stagedIntents' | 'sendIntentId'
+>>;
 
 /** Immutable status patch for one optimistic message. */
 export function patchOptimisticMessage(
   message: OptimisticOutboundMessage,
-  patch: Partial<Pick<OptimisticOutboundMessage, 'status' | 'reconciledMessageId' | 'errorCode'>>,
+  patch: OptimisticMessagePatch,
 ): OptimisticOutboundMessage {
   return { ...message, ...patch };
+}
+
+/**
+ * A failed optimistic row can only be retried when re-sendable payloads exist.
+ * Text-only messages always qualify; attachment messages require every picked
+ * attachment to have reached a durable staged intent (a staging-stage failure
+ * leaves no reusable payload, so the user must re-pick rather than fake-retry).
+ */
+export function canRetryOptimistic(message: OptimisticOutboundMessage): boolean {
+  if (message.status !== 'failed') return false;
+  if (message.attachments.length === 0) return true;
+  return Boolean(
+    message.stagedIntents && message.stagedIntents.length === message.attachments.length,
+  );
+}
+
+/**
+ * Begin a retry without remounting the row: keep the stable localId (and thus
+ * the React key and rendered <img>), but mint a fresh send intent because the
+ * prior intent was never admitted. Clears the error and flips to in-flight.
+ */
+export function retryOptimisticMessage(
+  message: OptimisticOutboundMessage,
+  freshSendIntentId: string,
+): OptimisticOutboundMessage {
+  return {
+    ...message,
+    sendIntentId: freshSendIntentId,
+    status: 'sending',
+    errorCode: undefined,
+    reconciledMessageId: undefined,
+  };
 }
 
 /**

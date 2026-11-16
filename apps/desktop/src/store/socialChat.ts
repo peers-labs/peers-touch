@@ -44,6 +44,8 @@ import {
   collectPreviewUrls,
   optimisticConversationKey,
   reconcileOptimisticMessages,
+  retryOptimisticMessage,
+  type OptimisticMessagePatch,
   type OptimisticOutboundMessage,
 } from '../messaging/optimisticOutbound';
 import {
@@ -723,10 +725,9 @@ interface SocialChatState {
   /** Show a sender message immediately from local assets. */
   addOptimisticOutbound: (message: OptimisticOutboundMessage) => void;
   /** Update one optimistic row's transfer status / reconciliation id. */
-  patchOptimisticOutbound: (
-    localId: string,
-    patch: Partial<Pick<OptimisticOutboundMessage, 'status' | 'reconciledMessageId' | 'errorCode'>>,
-  ) => void;
+  patchOptimisticOutbound: (localId: string, patch: OptimisticMessagePatch) => void;
+  /** Re-queue a failed optimistic row in place, keeping its stable local id. */
+  retryOptimisticOutbound: (localId: string, freshSendIntentId: string) => void;
   /** Remove a single optimistic row, revoking its owned blob URLs. */
   removeOptimisticOutbound: (localId: string) => void;
   /** Drop rows whose admitted messageId now appears in the projected list. */
@@ -2906,6 +2907,16 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     set((state) => ({
       optimisticOutbound: state.optimisticOutbound.map((row) =>
         row.localId === localId ? { ...row, ...patch } : row,
+      ),
+    }));
+  },
+
+  retryOptimisticOutbound: (localId, freshSendIntentId) => {
+    set((state) => ({
+      optimisticOutbound: state.optimisticOutbound.map((row) =>
+        row.localId === localId
+          ? retryOptimisticMessage(row, freshSendIntentId)
+          : row,
       ),
     }));
   },

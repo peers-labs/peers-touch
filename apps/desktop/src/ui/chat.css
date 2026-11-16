@@ -4612,6 +4612,13 @@ body:has([data-chat-rail-resize][data-dragging='true']) {
   font-size: 11px;
   opacity: 0.9;
 }
+.sc-optimistic-retrying {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  opacity: 0.85;
+}
 .sc-optimistic-row[data-optimistic-status='failed'] .sc-optimistic-bubble {
   outline: 1px solid var(--pt-danger, #d92d20);
 }

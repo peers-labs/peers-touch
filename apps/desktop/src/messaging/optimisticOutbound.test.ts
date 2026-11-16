@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  canRetryOptimistic,
   collectPreviewUrls,
   createOptimisticMessage,
   isOptimisticInFlight,
   optimisticConversationKey,
   patchOptimisticMessage,
   reconcileOptimisticMessages,
+  retryOptimisticMessage,
   type LocalAttachmentDraft,
 } from './optimisticOutbound';
+import type { MessagingLocalAttachmentIntent } from '../services/im-service-contract';
 
 function draft(overrides: Partial<LocalAttachmentDraft> = {}): LocalAttachmentDraft {
   return {
@@ -96,6 +99,60 @@ describe('optimistic outbound core', () => {
     const { keep, reconciled } = reconcileOptimisticMessages(rows, new Set(['other']));
     expect(keep).toHaveLength(1);
     expect(reconciled).toHaveLength(0);
+  });
+
+  const intent: MessagingLocalAttachmentIntent = {
+    filePath: '/tmp/a.png',
+    filename: 'photo.png',
+    mimeType: 'image/png',
+    contentKind: 'file',
+    durationMs: 0,
+    size: 1024,
+  };
+
+  it('retries a failed text-only message without staged intents', () => {
+    const failed = patchOptimisticMessage(
+      createOptimisticMessage({
+        localId: 't1', sendIntentId: 'old', conversationUlid: 'c', kind: 'friend',
+        text: 'hi', drafts: [],
+      }),
+      { status: 'failed', errorCode: 'network' },
+    );
+    expect(canRetryOptimistic(failed)).toBe(true);
+    const retried = retryOptimisticMessage(failed, 'fresh-intent');
+    expect(retried.status).toBe('sending');
+    expect(retried.sendIntentId).toBe('fresh-intent');
+    expect(retried.errorCode).toBeUndefined();
+    expect(retried.localId).toBe('t1');
+  });
+
+  it('retries a failed attachment message only once all intents are staged', () => {
+    const base = createOptimisticMessage({
+      localId: 'm', sendIntentId: 'old', conversationUlid: 'c', kind: 'friend',
+      text: '', drafts: [draft(), draft({ localId: 'a2' })],
+    });
+    const failedNoIntents = patchOptimisticMessage(base, { status: 'failed' });
+    expect(canRetryOptimistic(failedNoIntents)).toBe(false);
+    const failedPartial = patchOptimisticMessage(base, {
+      status: 'failed', stagedIntents: [intent],
+    });
+    expect(canRetryOptimistic(failedPartial)).toBe(false);
+    const failedReady = patchOptimisticMessage(base, {
+      status: 'failed', stagedIntents: [intent, { ...intent, filename: 'b.png' }],
+    });
+    expect(canRetryOptimistic(failedReady)).toBe(true);
+    const retried = retryOptimisticMessage(failedReady, 'fresh-2');
+    expect(retried.stagedIntents).toHaveLength(2);
+    expect(retried.reconciledMessageId).toBeUndefined();
+    expect(retried.sendIntentId).toBe('fresh-2');
+  });
+
+  it('never offers retry for a row that is not failed', () => {
+    const sending = createOptimisticMessage({
+      localId: 's', sendIntentId: 'i', conversationUlid: 'c', kind: 'friend',
+      text: '', drafts: [draft()],
+    });
+    expect(canRetryOptimistic(sending)).toBe(false);
   });
 
   it('classifies in-flight states and collects only owned blob urls', () => {
