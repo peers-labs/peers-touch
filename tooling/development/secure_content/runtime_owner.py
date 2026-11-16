@@ -59,6 +59,12 @@ from tooling.acceptance.fixtures.chat_native_actors import (
     FederationRoutingActor,
     prepare_federation_routing,
 )
+from tooling.acceptance.fixtures.chat_native_reset import (
+    FixtureActorRecord,
+    fixture_federation_id_from_station_ids,
+    purge_federation_context,
+    seed_federation_context,
+)
 from tooling.acceptance.gates.agent.foundation_runtime_client import (
     FoundationClientError,
     FoundationClientSpec,
@@ -2235,63 +2241,63 @@ def _prepare_social_suite_federation(
     fixture_epoch: str,
     cleanup_stack: ExitStack,
 ) -> str:
-    owner_tokens = {}
-    for service_id, url, peer_id in (
+    stations = (
         ("primary", primary_url, primary_peer_id),
         ("secondary", secondary_url, secondary_peer_id),
-    ):
-        owner_tokens[service_id], _ = _station_login(
+    )
+    owner_actors: dict[str, str] = {}
+    for service_id, url, peer_id in stations:
+        _token, actor_ptid = _station_login(
             url,
             station_peer_id=peer_id,
             account=ACTOR_ACCOUNTS["alice"],
             password=ACTOR_PASSWORD,
         )
-    created = _station_proto_post(
-        f"{primary_url.rstrip('/')}/sub-federation/federations",
-        _proto_bytes(1, f"CSS-09 {fixture_epoch}")
-        + _proto_bytes(2, "Suite-owned Social Federation")
-        + _proto_bytes(3, "single_admin"),
-        bearer_token=owner_tokens["primary"],
-    )
-    federation_id = _proto_first_bytes(created, 1).decode("utf-8")
-    if not federation_id:
-        raise RuntimeOwnerBlocked(
-            "FIXTURE_OWNER_UNAVAILABLE",
-            "Station owner did not create the Social Suite Federation",
-            resource="fixture:cross-station-social-federation",
+        owner_actors[service_id] = actor_ptid
+
+    def actor_record(service_id: str, url: str, peer_id: str) -> FixtureActorRecord:
+        station_domain = urllib.parse.urlparse(url).netloc
+        return FixtureActorRecord(
+            ptid=owner_actors[service_id],
+            preferred_username=ACTOR_ACCOUNTS["alice"],
+            name=f"CSS-09 {fixture_epoch} {service_id}",
+            summary="",
+            icon="",
+            image="",
+            url=primary_product_url if service_id == "primary" else url,
+            federated_handle="",
+            home_station_peer_id=peer_id,
+            home_station_domain=station_domain,
+            visibility=3,
+            locator_seq=0,
         )
 
-    def archive() -> None:
-        result = _station_proto_post(
-            f"{primary_url.rstrip('/')}/sub-federation/federations/"
-            f"{urllib.parse.quote(federation_id, safe='')}/delete",
-            _proto_bytes(1, federation_id),
-            bearer_token=owner_tokens["primary"],
+    members = (
+        actor_record("primary", primary_url, primary_peer_id),
+        actor_record("secondary", secondary_url, secondary_peer_id),
+    )
+    federation_id = fixture_federation_id_from_station_ids(
+        member.home_station_peer_id for member in members
+    )
+    for _service_id, url, peer_id in stations:
+        seeded = seed_federation_context(
+            url,
+            None,
+            peer_id,
+            members,
         )
-        if not any(
-            field == 1 and wire == 0 and value == 1
-            for field, wire, value in _proto_fields(result)
-        ):
+        if seeded != federation_id:
             raise RuntimeOwnerBlocked(
-                "CLEANUP_FAILED",
-                "Station owner did not archive the Social Suite Federation",
+                "FIXTURE_OWNER_UNAVAILABLE",
+                "Station owner did not seed the canonical Social Suite Federation",
                 resource="fixture:cross-station-social-federation",
             )
 
-    cleanup_stack.callback(archive)
-    joined = _station_proto_post(
-        f"{secondary_url.rstrip('/')}/sub-federation/federations/join",
-        _proto_bytes(1, primary_product_url)
-        + _proto_bytes(2, federation_id)
-        + _proto_bytes(3, "Suite-owned cross-Station Social"),
-        bearer_token=owner_tokens["secondary"],
-    )
-    if _proto_first_bytes(joined, 1).decode("utf-8") != "active":
-        raise RuntimeOwnerBlocked(
-            "FIXTURE_OWNER_UNAVAILABLE",
-            "Station owner did not join the Social Suite Federation",
-            resource="fixture:cross-station-social-federation",
-        )
+    def purge() -> None:
+        for _service_id, url, _peer_id in stations:
+            purge_federation_context(url, federation_id)
+
+    cleanup_stack.callback(purge)
     return federation_id
 
 

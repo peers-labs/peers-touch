@@ -124,6 +124,7 @@ SIGNED_SOCIAL_TABLES = (
     "social_feed_interaction_fanout",
     "social_feed_thread_heads",
     "social_feed_thread_entries",
+    "social_feed_poll_versions",
     "social_feed_quarantines",
     "social_public_posts",
 )
@@ -1252,6 +1253,41 @@ ON CONFLICT (federation_id, station_peer_id) DO UPDATE SET
             connection.rollback()
             raise
     return federation_id
+
+
+def purge_federation_context(station_url: str, federation_id: str) -> None:
+    """Remove a disposable seeded Federation from one Station database."""
+    environment = acceptance_station_environment(station_url)
+    verify_disposable_station_runtime(environment)
+    if environment.get("PT_ACCEPTANCE_RUNTIME_KIND") != LOCAL_SOURCE_RUNTIME:
+        sql = f"""
+BEGIN;
+DELETE FROM federation_station_membership
+WHERE federation_id = {_sql_literal(federation_id)};
+DELETE FROM federation
+WHERE federation_id = {_sql_literal(federation_id)};
+COMMIT;
+"""
+        _remote_psql(environment, sql)
+        return
+
+    database = environment["PT_ACCEPTANCE_LOCAL_DATABASE"]
+    with closing(sqlite3.connect(database, timeout=10)) as connection:
+        connection.execute("PRAGMA busy_timeout = 10000")
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            connection.execute(
+                "DELETE FROM federation_station_membership WHERE federation_id = ?",
+                (federation_id,),
+            )
+            connection.execute(
+                "DELETE FROM federation WHERE federation_id = ?",
+                (federation_id,),
+            )
+            connection.commit()
+        except BaseException:
+            connection.rollback()
+            raise
 
 
 def _accepted_friendship(

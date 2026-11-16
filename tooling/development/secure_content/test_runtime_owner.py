@@ -3374,7 +3374,12 @@ class RuntimeOwnerTest(unittest.TestCase):
             _error_message_with_cleanup(raised.exception),
         )
 
-    def test_social_suite_archives_owner_federation_when_join_fails(self) -> None:
+    def test_social_suite_seeds_canonical_federation_in_both_stations(self) -> None:
+        expected_federation = (
+            runtime_owner_module.fixture_federation_id_from_station_ids(
+                ("primary-peer", "secondary-peer"),
+            )
+        )
         with (
             patch.object(
                 runtime_owner_module,
@@ -3386,17 +3391,16 @@ class RuntimeOwnerTest(unittest.TestCase):
             ) as login,
             patch.object(
                 runtime_owner_module,
-                "_station_proto_post",
-                side_effect=(
-                    _proto_bytes(1, "suite-federation"),
-                    _proto_bytes(1, "pending"),
-                    _proto_uint(1, 1),
-                ),
-            ) as post,
-            self.assertRaises(RuntimeOwnerBlocked),
+                "seed_federation_context",
+                side_effect=(expected_federation, expected_federation),
+            ) as seed,
+            patch.object(
+                runtime_owner_module,
+                "purge_federation_context",
+            ) as purge,
             ExitStack() as cleanup,
         ):
-            runtime_owner_module._prepare_social_suite_federation(
+            federation_id = runtime_owner_module._prepare_social_suite_federation(
                 primary_url="http://primary-transport",
                 secondary_url="http://secondary-transport",
                 primary_peer_id="primary-peer",
@@ -3406,22 +3410,34 @@ class RuntimeOwnerTest(unittest.TestCase):
                 cleanup_stack=cleanup,
             )
 
+        self.assertEqual(expected_federation, federation_id)
         self.assertEqual(2, login.call_count)
         self.assertTrue(all(
             item.kwargs["account"] == runtime_owner_module.ACTOR_ACCOUNTS["alice"]
             for item in login.call_args_list
         ))
-        self.assertEqual(3, post.call_count)
-        self.assertIn(
-            (1, 2, b"https://primary-product"),
-            list(_proto_fields(post.call_args_list[1].args[1])),
+        self.assertEqual(2, seed.call_count)
+        self.assertEqual(
+            ["http://primary-transport", "http://secondary-transport"],
+            [item.args[0] for item in seed.call_args_list],
         )
         self.assertEqual(
-            "primary-owner-access",
-            post.call_args_list[2].kwargs["bearer_token"],
+            ["primary-peer", "secondary-peer"],
+            [item.args[2] for item in seed.call_args_list],
         )
-        self.assertTrue(post.call_args_list[2].args[0].endswith(
-            "/suite-federation/delete",
+        seeded_members = seed.call_args_list[0].args[3]
+        self.assertEqual(
+            ["primary-peer", "secondary-peer"],
+            [member.home_station_peer_id for member in seeded_members],
+        )
+        self.assertEqual(
+            ["primary-transport", "secondary-transport"],
+            [member.home_station_domain for member in seeded_members],
+        )
+        cleanup.close()
+        purge.assert_has_calls((
+            call("http://primary-transport", expected_federation),
+            call("http://secondary-transport", expected_federation),
         ))
 
     def test_cross_station_fixture_maps_routing_failure_without_identity_leak(
