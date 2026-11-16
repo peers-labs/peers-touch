@@ -114,6 +114,68 @@ pipeline auditor 会得到缺 `runtimeReuse` 的合同失败；该 runtime Task 
 不适用于此 source aggregate，不能据此修改冻结的 Plan Version，也不据此
 声称 runtime reuse 或产品通过。
 
+### 2026-11-16 当前事实
+
+上面的 2026-11-15 记录保留为历史证据，不代表当前源码或运行状态。
+用户已授权 checkpoint 和 rebase；原 checkpoint
+`e73856a0d01fda12c1442445a9386802a5dd2c2e` 保留在安全分支，当前分支已 rebase
+到 master `8cf3dc474309cc9ab7f938d81ad4a035a7fbec4d`，形成
+`09526dbe36105bf5cd422f75794f278be3559393`。完整双边清单为 322 个路径；
+316 个单边路径与改动来源的 blob/mode 一致，6 个重叠路径按双方意图整合。
+review freshness 保留两边新增规则，并按合并后的 governing docs 重新计算摘要。
+没有强制覆盖或推送。
+
+rebase 后发现 selected iOS session 工厂默认使用 60 秒 HTTP deadline，而原
+parent session owner 使用 180 秒。已让该入口消费原 owner 的同一 deadline，
+保留原设备身份；新增对应原 consumer 回归。112 项 consumer/session 回归、
+43 项 Machine Dev 回归及 `skill-check.sh` 通过。合码 owner 原始 24 项
+topology 回归通过。检查日志位于
+`~/.peers-touch/acceptance-artifacts/integration-review/pr170-rebase-20261116/`；
+这些是 source checks，不是完整 integration admission 或 native proof。
+独立 review 仍须绑定实际 final source 和完整原始输出。
+
+本轮 development Gate
+`20261116T121327886535Z-ad46804da676e2822d0ebc6c54602797`
+在 `ProfileIOSFixture.__init__ -> inventory` 的 `xcrun simctl list --json`
+30 秒 timeout 处失败，assertions 为零，尚未创建 fixture 或执行 WDA/Keychain。
+Xcode simctl wrapper 要求 CoreSimulator `1174.21`，当前系统为 `1174.9.2`，
+因此查询触发 `xcodebuild -runFirstLaunch` 并等待管理员授权；
+`xcodebuild -checkFirstLaunchStatus` 返回 69，非交互 sudo 返回
+`a password is required`。必须完成系统工具链初始化后再运行同一 Journey。
+不能把当前错误归为产品失败，不能把 timeout 修正当作 native 通过。
+
+four Station 当前健康。原 `mobile-simulator-chat-e2e` 已在 development policy
+下完成 `REUSE_IMPLEMENTATION` 准备；原双端 Suite 覆盖 Direct/Group、交互、
+附件、搜索、typing、回执、重启，以及真实相册选择/取消、录音和接收端解码/
+播放。尚未执行这些当前源码断言；four 原 Profile 也尚无 iOS compatibility
+声明和资源分配。后续应完成具体资源资格，再运行原 Suite，不另造 Chat driver。
+继续增强了原 Chat Suite：Direct/Group 各有正反两次真实 composer send，要求
+接收端 DOM 的同一 message ID/正文、发送端可见 delivered/read 回执以及接收端
+未发送草稿保留；双端截图和 DOM 随原 Suite 采集。67 项原 Gate 回归通过，
+并新增缺反向、缺 receiver DOM、草稿丢失、仅 sent 回执或 Harness send 的拒绝
+用例。仅扩展原 Feature/Gate 的动作与断言，不创建新 Gate 或 client。
+这些当前源码 native 文本断言仍未执行，不能记为产品通过。
+两个正式 resource Gate 未在此次 rebase 后重跑，仍为 `UNPROVEN`。
+本次 deadline 修正和报告更新尚未提交；planned section、Plan Version 和冻结
+Gate denominator 保持原样。
+
+### 2026-11-17 真机试装与 PR 范围
+
+Xcode 首次初始化已完成。基于上述源码构建的 iOS arm64 应用通过 Xcode
+build 和严格 codesign 校验；内置 Rust runtime 中的前端入口与本次 Vite
+产物一致。通过直接 USB 安装服务完成真机更新，返回 `InstallComplete`，
+并按 bundle ID 读回确认应用已安装；安装未执行卸载或数据重置。
+
+CoreDevice 的开发镜像服务启用仍超时，自动启动应用也超时。因此本次只证明
+当前源码的真机构建、签名和安装，不证明应用启动、Chat Journey、资源共享、
+Keychain 或任何正式 Gate。此前工具链初始化阻塞已经解除，但 native/formal
+proof 仍为 `UNPROVEN`。
+
+用户随后调整顺序：先提交 PR，后续在同一个 Agent 下继续测试。本轮以
+Draft PR 记录上述证据缺口，保留原资源 owner 和双端 Chat Suite，不额外
+拆分测试入口；PR 不声明
+完整 Mobile、Chat 或资源共享验收通过。
+
 ## Outcome Comparison Results
 
 ```json
@@ -121,7 +183,7 @@ pipeline auditor 会得到缺 `runtimeReuse` 的合同失败；该 runtime Task 
   "kind": "peers-touch-outcome-comparison-results",
   "schemaVersion": 1,
   "planId": "LDCP-RES-20261114",
-  "sourceIdentity": "pr170-combined@e622eb12fe1d1c6fa3cd9e5f23440602a15d401d; development run 20261115T111710998561Z-6f4e8233b472e88ad537f3b30dd8a04e; source changed after enum correction, current proof UNPROVEN",
+  "sourceIdentity": "pr170-combined@09526dbe36105bf5cd422f75794f278be3559393; development run 20261116T121327886535Z-ad46804da676e2822d0ebc6c54602797 bound workspace sha256:6e746cd4a99f71ee81406527a73835fb4a0d61e0a25c0e474a55e1b5d39b0d46; actual report updated afterward; current native/formal proof UNPROVEN",
   "items": [
     {"id": "RES-ID-O1", "status": "UNPROVEN", "actualEffect": "可读分配和覆盖决定已实现；原生观察到同名、改名和过期选择拒绝，具体 native 覆盖步骤未执行。", "evidenceRefs": ["~/.peers-touch/dev/workspaces/9c2993be5961ea8b/workflow/RES-05/artifacts/9c2993be5961ea8b/profile-resource-native-functional/20261115T111710998561Z-6f4e8233b472e88ad537f3b30dd8a04e/reports/profile-resource-native-functional.json"], "deviation": "整轮失败；修正枚举后需新原生 run，正式 Gate 仍被 dirty-source fence 阻塞。"},
     {"id": "RES-ID-O2", "status": "UNPROVEN", "actualEffect": "assignment 与共享引用已实现；真实 provider 观察到等数量不同 ID、同 ID 共享和双方可读投影。", "evidenceRefs": ["~/.peers-touch/dev/workspaces/9c2993be5961ea8b/workflow/RES-05/artifacts/9c2993be5961ea8b/profile-resource-native-functional/20261115T111710998561Z-6f4e8233b472e88ad537f3b30dd8a04e/evidence/profile-resource-native-functional-resource-provider-native-journey.json"], "deviation": "共享方 native identity 与内容变化步骤尚未执行；不将部分 provider 观察升级为正式证明。"},

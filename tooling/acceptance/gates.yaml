@@ -3271,14 +3271,20 @@
       "e2e": {
         "journeys": [{
           "id": "mobile-direct-and-group-chat",
-          "uses": ["tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.execute"]
+          "uses": ["tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.execute", "tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.run_chat_native_text"]
         }],
         "implementations": [{
           "ref": "tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.execute",
           "purpose": "Execute the original Direct and Group sender/receiver journey without profile or contact-preference extensions",
           "lifetime": "suite",
-          "dependsOn": [],
+          "dependsOn": ["tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.run_chat_native_text"],
           "invalidatedBy": ["source", "environment", "fixture", "client", "oracle"]
+        }, {
+          "ref": "tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.run_chat_native_text",
+          "purpose": "Reuse mounted composers in both Direct and Group directions, verify the same receiver DOM message ID, visible delivered/read receipt and retained receiver draft",
+          "lifetime": "suite",
+          "dependsOn": [],
+          "invalidatedBy": ["source", "client", "session", "oracle"]
         }]
       },
       "command": "python3 -m tooling.acceptance.gates.mobile.simulator_social_e2e --scenario chat",
@@ -3286,20 +3292,26 @@
       "environment": "mobile-direct-simulator",
       "provisioner": "mobile-direct-simulator",
       "tier": "env-evidence",
-      "description": "Prove same-Station Direct and Group messaging, interactions, attachments, search, receipts and restart readback on the original two-actor simulator journey."
+      "description": "Prove same-Station Direct and Group bidirectional visible composer send, receiver DOM plaintext, delivered/read receipts and retained drafts, plus interactions, native media, attachments, search and restart readback on the original two-actor simulator journey."
     },
     "mobile-simulator-chat-contacts-e2e": {
       "e2e": {
         "journeys": [{
           "id": "mobile-chat-contacts",
-          "uses": ["tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.execute"]
+          "uses": ["tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.execute", "tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.run_chat_native_text"]
         }],
         "implementations": [{
           "ref": "tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.execute",
           "purpose": "Execute the original contact, Direct and Group sender/receiver journey",
           "lifetime": "suite",
-          "dependsOn": [],
+          "dependsOn": ["tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.run_chat_native_text"],
           "invalidatedBy": ["source", "environment", "fixture", "client", "oracle"]
+        }, {
+          "ref": "tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.run_chat_native_text",
+          "purpose": "Reuse the existing two native clients for both text directions, actual receiver rendering, visible receipt and incoming-message draft retention",
+          "lifetime": "suite",
+          "dependsOn": [],
+          "invalidatedBy": ["source", "client", "session", "oracle"]
         }]
       },
       "command": "python3 -m tooling.acceptance.gates.mobile.simulator_social_e2e --scenario chat-contacts",
@@ -3307,7 +3319,7 @@
       "environment": "mobile-direct-simulator",
       "provisioner": "mobile-direct-simulator",
       "tier": "env-evidence",
-      "description": "Prove required same-Station contact, Direct, Group, interaction, attachment, search, receipt, and restart readback on simulator cells."
+      "description": "Prove required same-Station contact, Direct and Group bidirectional visible text, receiver plaintext, receipt and draft retention, plus interaction, attachment, search and restart readback on simulator cells."
     },
     "mobile-simulator-recovery-e2e": {
       "e2e": {

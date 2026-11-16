@@ -4199,6 +4199,33 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
         self.environment.stop()
         self.temporary.cleanup()
 
+    def test_resource_session_uses_owner_startup_timeout(self) -> None:
+        manifest = self.provisioner.provision("mobile-simulator-access-e2e")
+        self.assertEqual(manifest.state, ProvisioningState.FIXTURE_READY)
+        selected = TestSelectedMobileSimulatorProvisioner(
+            self.contract,
+            clients=load_mobile_simulator_spec(self.contract_path).clients,
+            runtime_source_commit="1" * 40,
+            executor=self.executor,
+            repo_root=self.repo_root,
+            contract_path=self.contract_path,
+        )
+        with patch(
+            "tooling.acceptance.gates.mobile.simulator_e2e."
+            "UrllibAppiumTransport"
+        ) as transport:
+            session = selected.create_appium_session(manifest, "sim-ios")
+
+        transport.assert_called_once_with(
+            manifest.simulator_resources["appium"]["serverUrl"],
+            timeout_seconds=SIMULATOR_CAPABILITY_TIMEOUT_SECONDS,
+        )
+        self.assertIs(session.transport, transport.return_value)
+        self.assertEqual(
+            session.device.identifier,
+            manifest.simulator_resources["clients"]["sim-ios"]["device"],
+        )
+
     def test_provision_discovers_builds_deploys_and_emits_appium_manifest(
         self,
     ) -> None:

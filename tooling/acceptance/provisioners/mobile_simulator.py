@@ -4517,7 +4517,8 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
                     appium,
                     "serverUrl",
                     f"mobile-simulator:{client_id}:appium",
-                )
+                ),
+                timeout_seconds=SIMULATOR_CAPABILITY_TIMEOUT_SECONDS,
             ),
             client_id=client_id,
             platform=platform,
