@@ -502,7 +502,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
       data-message-read-by={readByPtids.join(',')}
       data-message-authority-sequence={message.eventSequence}
       data-message-attachment-count={attachments.length}
-      className={`msg-row ${highlighted ? 'highlighted' : ''}`}
+      className={`msg-row${isOwn ? ' is-own' : ''}${highlighted ? ' highlighted' : ''}`}
       tabIndex={0}
       onMouseEnter={() => {
         if (messageActionsAvailable && messageActionAnchorRef.current) {
