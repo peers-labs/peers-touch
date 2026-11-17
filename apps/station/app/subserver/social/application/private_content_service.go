@@ -4525,56 +4525,6 @@ func decodePersistedClaim(
 	return request, response, nil
 }
 
-func privateMomentProjection(
-	kind privatecontentpb.PrivateMomentKind,
-) (string, actormodel.PostType) {
-	switch kind {
-	case privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_TEXT:
-		return privateContentPostKindText, actormodel.PostType_TEXT
-	case privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_IMAGE:
-		return privateContentPostKindImage, actormodel.PostType_IMAGE
-	case privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_VIDEO:
-		return privateContentPostKindVideo, actormodel.PostType_VIDEO
-	case privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_LINK:
-		return privateContentPostKindLink, actormodel.PostType_LINK
-	case privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_POLL:
-		return privateContentPostKindPoll, actormodel.PostType_POLL
-	case privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_REPOST:
-		return privateContentPostKindRepost, actormodel.PostType_REPOST
-	case privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_LOCATION:
-		return privateContentPostKindLocation, actormodel.PostType_LOCATION
-	default:
-		return "", actormodel.PostType_TEXT
-	}
-}
-
-func privateStoredPostType(kind string) (actormodel.PostType, error) {
-	switch kind {
-	case privateContentPostKindText:
-		return actormodel.PostType_TEXT, nil
-	case privateContentPostKindImage:
-		return actormodel.PostType_IMAGE, nil
-	case privateContentPostKindVideo:
-		return actormodel.PostType_VIDEO, nil
-	case privateContentPostKindLink:
-		return actormodel.PostType_LINK, nil
-	case privateContentPostKindPoll:
-		return actormodel.PostType_POLL, nil
-	case privateContentPostKindRepost:
-		return actormodel.PostType_REPOST, nil
-	case privateContentPostKindLocation:
-		return actormodel.PostType_LOCATION, nil
-	default:
-		return actormodel.PostType_TEXT,
-			socialdomain.NewPrivateContentError(
-				socialdomain.PrivateContentIntegrityFailed,
-				"social.private_content.read_moment",
-				"post.kind",
-				"is unsupported",
-			)
-	}
-}
-
 func deterministicPrivateID(kind string, values ...string) string {
 	digest := sha256.New()
 	_, _ = digest.Write([]byte("peers-touch:social-private:" + kind + ":v1\x00"))
