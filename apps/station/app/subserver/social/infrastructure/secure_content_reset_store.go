@@ -16,7 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	dbmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -4414,15 +4413,6 @@ func extractLegacyAttachmentKeys(postType string, raw string) ([]string, error) 
 		}
 
 		return normalizeObjectKeys(payload.ImageIDs)
-	case "POLL":
-		// The public Post converter persists this canonical request with
-		// encoding/json. Keep its schema and the strict object-shape audit.
-		var payload model.CreatePollPostRequest
-		if err := decodeStrictJSON([]byte(raw), &payload); err != nil {
-			return nil, err
-		}
-
-		return []string{}, nil
 	default:
 		return nil, fmt.Errorf("post type %q cannot carry attachment JSON", postType)
 	}

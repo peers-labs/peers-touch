@@ -23,7 +23,7 @@ type InteractionInput struct {
 }
 
 // InteractionHandler projects exactly one FeedPayload mutation variant
-// (reaction / comment / poll ballot). The projector resolves a handler from
+// (reaction / comment). The projector resolves a handler from
 // its registry instead of a closed type switch, so removing a variant only
 // deletes its handler and registration.
 type InteractionHandler interface {

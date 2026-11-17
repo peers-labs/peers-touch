@@ -28,7 +28,6 @@ const (
 	MaximumPrivateRecipientSlots         = 1000
 	MaximumPrivateObjects                = 10
 	MaximumPrivateMentionFacts           = 256
-	MaximumPrivatePollOptions            = 20
 	PrivateContentPlanLifetime           = 5 * time.Minute
 )
 
@@ -851,7 +850,6 @@ func CanonicalizePrivateMomentPrepare(
 	switch request.GetKind() {
 	case privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_TEXT,
 		privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_LINK,
-		privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_POLL,
 		privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_REPOST,
 		privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_LOCATION:
 		if request.GetObjectCount() != 0 {
@@ -946,31 +944,8 @@ func canonicalizePrivatePrepareSubtypeAuthority(
 	const operation = "social.private_content.prepare_moment"
 	emptyHash := sha256.Sum256(nil)
 	switch request.GetKind() {
-	case privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_POLL:
-		if request.GetPollAuthority() == nil ||
-			request.GetRepostAuthority() != nil {
-			return nil, [sha256.Size]byte{}, NewPrivateContentError(
-				PrivateContentInvalidArgument,
-				operation,
-				"poll_authority",
-				"POLL requires exactly one poll authority",
-			)
-		}
-		if err := ValidatePrivatePollAuthority(
-			request.GetPollAuthority(),
-			request.GetContentId(),
-			operation,
-		); err != nil {
-			return nil, [sha256.Size]byte{}, err
-		}
-		canonical, err := CanonicalProtoBytes(request.GetPollAuthority())
-		if err != nil {
-			return nil, [sha256.Size]byte{}, err
-		}
-		return canonical, sha256.Sum256(canonical), nil
 	case privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_REPOST:
-		if request.GetRepostAuthority() == nil ||
-			request.GetPollAuthority() != nil {
+		if request.GetRepostAuthority() == nil {
 			return nil, [sha256.Size]byte{}, NewPrivateContentError(
 				PrivateContentInvalidArgument,
 				operation,
@@ -990,72 +965,16 @@ func canonicalizePrivatePrepareSubtypeAuthority(
 		}
 		return canonical, sha256.Sum256(canonical), nil
 	default:
-		if request.GetPollAuthority() != nil ||
-			request.GetRepostAuthority() != nil {
+		if request.GetRepostAuthority() != nil {
 			return nil, [sha256.Size]byte{}, NewPrivateContentError(
 				PrivateContentInvalidArgument,
 				operation,
 				"subtype_authority",
-				"is allowed only for POLL or REPOST",
+				"is allowed only for REPOST",
 			)
 		}
 		return nil, emptyHash, nil
 	}
-}
-
-func ValidatePrivatePollAuthority(
-	authority *privatecontentpb.PrivatePollAuthority,
-	contentID string,
-	operation string,
-) error {
-	if authority == nil ||
-		authority.GetResource().GetOwnerDomain() !=
-			securecontentpb.SecureContentOwnerDomain_SECURE_CONTENT_OWNER_DOMAIN_SOCIAL ||
-		authority.GetResource().GetContentId() != contentID ||
-		authority.GetResource().GetGeneration() != 1 ||
-		len(authority.GetOpaqueOptionIds()) < 2 ||
-		len(authority.GetOpaqueOptionIds()) > MaximumPrivatePollOptions ||
-		authority.GetMinChoices() < 1 ||
-		authority.GetMinChoices() > authority.GetMaxChoices() ||
-		authority.GetMaxChoices() >
-			uint32(len(authority.GetOpaqueOptionIds())) ||
-		authority.GetExpiresAt() == nil ||
-		!authority.GetExpiresAt().IsValid() {
-		return NewPrivateContentError(
-			PrivateContentInvalidArgument,
-			operation,
-			"poll_authority",
-			"is incomplete or outside the supported bounds",
-		)
-	}
-	optionSetBytes := make([]byte, 0)
-	previous := []byte(nil)
-	for index, optionID := range authority.GetOpaqueOptionIds() {
-		if len(optionID) != sha256.Size ||
-			(index > 0 && bytes.Compare(previous, optionID) >= 0) {
-			return NewPrivateContentError(
-				PrivateContentInvalidArgument,
-				operation,
-				"poll_authority.opaque_option_ids",
-				"must contain ordered unique 32-byte values",
-			)
-		}
-		optionSetBytes = appendBytesField(optionSetBytes, 1, optionID)
-		previous = optionID
-	}
-	optionSetHash := sha256.Sum256(optionSetBytes)
-	if !bytes.Equal(
-		authority.GetOptionSetSha256(),
-		optionSetHash[:],
-	) {
-		return NewPrivateContentError(
-			PrivateContentIntegrityFailed,
-			operation,
-			"poll_authority.option_set_sha256",
-			"does not match the canonical option set",
-		)
-	}
-	return nil
 }
 
 func ValidatePrivateRepostAuthority(
@@ -1249,7 +1168,6 @@ func CanonicalizePrivateMomentSubmit(
 	switch kind {
 	case privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_TEXT,
 		privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_LINK,
-		privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_POLL,
 		privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_REPOST,
 		privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_LOCATION:
 		if len(request.GetObjects()) != 0 {
@@ -1279,27 +1197,8 @@ func CanonicalizePrivateMomentSubmit(
 		)
 	}
 	switch kind {
-	case privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_POLL:
-		if request.GetPollAuthority() == nil ||
-			request.GetRepostAuthority() != nil {
-			return PrivateSubmitMaterial{}, NewPrivateContentError(
-				PrivateContentInvalidArgument,
-				operation,
-				"poll_authority",
-				"POLL requires exactly one poll authority",
-			)
-		}
-		if err := ValidatePrivatePollAuthority(
-			request.GetPollAuthority(),
-			request.GetPlan().GetResource().GetContentId(),
-			operation,
-		); err != nil {
-			return PrivateSubmitMaterial{}, err
-		}
-		subtypeAuthority = request.GetPollAuthority()
 	case privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_REPOST:
-		if request.GetRepostAuthority() == nil ||
-			request.GetPollAuthority() != nil {
+		if request.GetRepostAuthority() == nil {
 			return PrivateSubmitMaterial{}, NewPrivateContentError(
 				PrivateContentInvalidArgument,
 				operation,
@@ -1315,13 +1214,12 @@ func CanonicalizePrivateMomentSubmit(
 		}
 		subtypeAuthority = request.GetRepostAuthority()
 	default:
-		if request.GetPollAuthority() != nil ||
-			request.GetRepostAuthority() != nil {
+		if request.GetRepostAuthority() != nil {
 			return PrivateSubmitMaterial{}, NewPrivateContentError(
 				PrivateContentInvalidArgument,
 				operation,
 				"subtype_authority",
-				"is allowed only for POLL or REPOST",
+				"is allowed only for REPOST",
 			)
 		}
 	}

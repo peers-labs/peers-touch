@@ -903,18 +903,6 @@ func publicRenderedSourceSnapshot(
 					wire.GetLinkPost(),
 				).(*actormodel.LinkPost),
 			}
-	case actormodel.PostType_POLL:
-		if wire.GetPollPost() == nil {
-			break
-		}
-		snapshot.Kind = privatecontentpb.
-			PrivateRenderedSourceKind_PRIVATE_RENDERED_SOURCE_KIND_POLL
-		snapshot.Body =
-			&privatecontentpb.PublicRenderedSourceSnapshot_Poll{
-				Poll: proto.Clone(
-					wire.GetPollPost(),
-				).(*actormodel.PollPost),
-			}
 	case actormodel.PostType_LOCATION:
 		if wire.GetLocationPost() == nil {
 			break

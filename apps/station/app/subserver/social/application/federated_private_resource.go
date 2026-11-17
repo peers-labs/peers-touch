@@ -277,11 +277,6 @@ func (s *PrivateContentService) enqueueFederatedPrivatePost(
 				request.GetMentionRouting(),
 			).(*privatecontentpb.SignedMentionRouting)
 		}
-		if request.GetPollAuthority() != nil {
-			verification.SubtypeAuthority = &privatecontentpb.PrivateContentVerification_PollAuthority{
-				PollAuthority: proto.Clone(request.GetPollAuthority()).(*privatecontentpb.PrivatePollAuthority),
-			}
-		}
 		deliveryID := deterministicPrivateID(
 			"federated-resource",
 			request.GetPlan().GetResource().GetContentId(),
@@ -560,8 +555,7 @@ func isFederatedPrivatePostType(kind actormodel.PostType) bool {
 	switch kind {
 	case actormodel.PostType_TEXT,
 		actormodel.PostType_IMAGE,
-		actormodel.PostType_VIDEO,
-		actormodel.PostType_POLL:
+		actormodel.PostType_VIDEO:
 		return true
 	default:
 		return false
@@ -1690,7 +1684,7 @@ func (s *PrivateContentService) validateFederatedPrivateResource(
 	switch message.GetResourceKind() {
 	case privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_POST:
 		mediaObjectCountValid :=
-			((post.GetType() == actormodel.PostType_TEXT || post.GetType() == actormodel.PostType_POLL) &&
+			(post.GetType() == actormodel.PostType_TEXT &&
 				len(message.GetObjects()) == 0) ||
 				((post.GetType() == actormodel.PostType_IMAGE ||
 					post.GetType() == actormodel.PostType_VIDEO) &&
@@ -1712,19 +1706,7 @@ func (s *PrivateContentService) validateFederatedPrivateResource(
 			)
 		}
 		var subtypeBytes []byte
-		if post.GetType() == actormodel.PostType_POLL {
-			authority := verification.GetPollAuthority()
-			if err := socialdomain.ValidatePrivatePollAuthority(authority, resource.GetContentId(), operation); err != nil {
-				return err
-			}
-			if !proto.Equal(authority.GetResource(), resource) {
-				return socialdomain.NewPrivateContentError(socialdomain.PrivateContentIntegrityFailed, operation, "poll_authority", "does not bind the original resource")
-			}
-			subtypeBytes, err = socialdomain.CanonicalProtoBytes(authority)
-			if err != nil {
-				return err
-			}
-		} else if verification.GetSubtypeAuthority() != nil {
+		if verification.GetSubtypeAuthority() != nil {
 			return socialdomain.NewPrivateContentError(socialdomain.PrivateContentIntegrityFailed, operation, "subtype_authority", "is invalid for this post type")
 		}
 		if !bytes.Equal(privateSHA256(subtypeBytes), proof.GetSubtypeAuthoritySha256()) {

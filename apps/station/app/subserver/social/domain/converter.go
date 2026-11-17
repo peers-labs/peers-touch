@@ -94,8 +94,6 @@ func (c *PostConverter) CreateRequestToDomain(
 //	           Attachments = JSON({video_id})
 //	LINK     → TextBody = req.link.text;
 //	           LinkPreview = JSON({url})  (server fetches title/desc in P3)
-//	POLL     → TextBody = req.poll.text;
-//	           Attachments = JSON(poll request body)
 //	REPOST   → TextBody = req.repost.comment;
 //	           RepostRef = original_post_id
 //	LOCATION → TextBody = req.location.text;

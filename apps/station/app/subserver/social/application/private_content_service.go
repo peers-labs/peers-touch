@@ -30,7 +30,6 @@ const (
 	privateContentPostKindImage    = "IMAGE"
 	privateContentPostKindVideo    = "VIDEO"
 	privateContentPostKindLink     = "LINK"
-	privateContentPostKindPoll     = "POLL"
 	privateContentPostKindRepost   = "REPOST"
 	privateContentPostKindLocation = "LOCATION"
 	privateContentActiveState      = "ACTIVE"
@@ -2475,8 +2474,7 @@ func allowsRemotePrivateRecipients(
 	switch material.MomentKind {
 	case privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_TEXT,
 		privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_IMAGE,
-		privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_VIDEO,
-		privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_POLL:
+		privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_VIDEO:
 		return true
 	default:
 		return false

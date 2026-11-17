@@ -425,8 +425,7 @@ func (s *PrivateContentService) routeFederatedPrivateInteraction(
 			return infrastructure.ErrPrivateContentConflict
 		}
 		if operation == privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_REACT ||
-			operation == privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_UNREACT ||
-			operation == privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_VOTE_POLL {
+			operation == privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_UNREACT {
 			if err := s.interactionStore.ValidateRemotePrivateReactionParent(ctx, federationTx,
 				authority.SourceStationPeerID, s.localStationPeerID, authority.FederationID,
 				authority.Parent, privateInteractionCommentID(request), author.Endpoint.GetActor().GetPtid(),
@@ -566,8 +565,7 @@ func (s *PrivateContentService) ReceiveFederatedPrivateInteractionCommand(
 			), nil
 		}
 		if command.GetOperation() == privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_REACT ||
-			command.GetOperation() == privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_UNREACT ||
-			command.GetOperation() == privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_VOTE_POLL {
+			command.GetOperation() == privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_UNREACT {
 			commentID, err := privateInteractionCommandCommentID(command)
 			if err != nil {
 				return federationdelivery.TerminalResult(federationdelivery.FrameErrorDomainRejected), nil
