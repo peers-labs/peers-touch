@@ -75,7 +75,17 @@ export function DeviceLinkPanel() {
                 <div className="sc-device-link-qr" data-pt-device-link-code>
                   {qrFailed ? <Text tone="danger">{label('qrFailed')}</Text> :
                     content ? <Schema.QRCode content={content} title={label('qrLabel')}
-                      onError={() => setFailedQrOffer(projection!.offerId)}
+                      onError={(qrError) => {
+                        // Preserve the encoder error code instead of collapsing
+                        // every failure to the generic label: density, style and
+                        // render failures need different remediation, and the
+                        // webview console is the only cold-start diagnostic.
+                        console.error('device-link QR encode failed', {
+                          code: qrError.code,
+                          offerId: projection!.offerId,
+                        });
+                        setFailedQrOffer(projection!.offerId);
+                      }}
                       errorLabel={label('qrFailed')}
                       constraints={{ size: qrBox, style: 'peers', maxVersion: 17, minModulePixels: 4 }} /> :
                       <Spin size="small" />}

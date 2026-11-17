@@ -100,6 +100,20 @@ export const detailDescriptors: readonly NavigationDescriptor[] = [
     keepAlive: false,
   },
   {
+    routeId: 'detail:new-friends',
+    labelKey: 'mobile.contacts.newFriends',
+    layout: 'detail',
+    ownerRuntimeId: 'social',
+    keepAlive: false,
+  },
+  {
+    routeId: 'detail:group-chats',
+    labelKey: 'mobile.contacts.groupChats',
+    layout: 'detail',
+    ownerRuntimeId: 'social',
+    keepAlive: false,
+  },
+  {
     routeId: 'detail:moment',
     labelKey: 'mobile.nav.momentDetail',
     layout: 'detail',

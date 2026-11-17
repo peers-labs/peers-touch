@@ -37,12 +37,36 @@ describe('message attachment container', () => {
     expect(thread).toContain('gap: 5px');
   });
 
-  it('keeps rich image previews responsive (contain, capped), not fixed tiles', () => {
+  it('reserves a stable image tile so decode never collapses or snaps the row', () => {
     const image = chatCss.match(/\.sc-attachment__image\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(image).toContain('position: relative');
     expect(image).toContain('max-width: min(240px, 100%)');
     expect(image).toContain('border-radius: 6px');
+    // The img fills the reserved box absolutely; the 260px cap now lives in
+    // useChatImagePreview's contain math (client-chat-core geometry cache).
     const img = chatCss.match(/\.sc-attachment__image img\s*\{([^}]*)\}/)?.[1] ?? '';
-    expect(img).toContain('max-height: 260px');
+    expect(img).toContain('position: absolute');
+    expect(img).toContain('inset: 0');
     expect(img).toContain('object-fit: contain');
+    expect(img).toContain('opacity: 0');
+    expect(chatCss).toContain('.sc-attachment__image img.is-loaded { opacity: 1; }');
+    const fallback = chatCss.match(/\.sc-attachment__image-fallback\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(fallback).toContain('position: absolute');
+    expect(fallback).toContain('inset: 0');
+  });
+
+  it('drives the reserved box from geometry memory and fades in once per decode', () => {
+    const hookSource = readFileSync(
+      new URL('./useChatImagePreview.ts', import.meta.url),
+      'utf8',
+    );
+    expect(hookSource).toContain('reserveChatImageBox');
+    expect(hookSource).toContain('recordChatImageGeometry');
+    const itemSource = readFileSync(
+      new URL('./AttachmentItem.tsx', import.meta.url),
+      'utf8',
+    );
+    expect(itemSource).toContain("className={imagePreview.loaded ? 'is-loaded' : ''}");
+    expect(itemSource).toContain('onLoad={imagePreview.handleLoad}');
   });
 });

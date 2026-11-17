@@ -355,23 +355,25 @@ class LifecycleOnboardingContractTest(unittest.TestCase):
             REPO_ROOT
             / "apps/desktop/src/components/chat/ChatContactsPanel.tsx"
         ).read_text(encoding="utf-8")
+        # The catalogue card is navigation only: it keeps the request identity
+        # hooks but must never carry the decision actions, so it stays a
+        # single-height row instead of inflating with accept/reject buttons.
         for marker in (
             "data-chat-friend-request-id",
-            'data-chat-friend-request-action="accept"',
-            'data-chat-friend-request-action="reject"',
             "data-chat-friend-request-attempt-count",
             "personContactSelection",
-            "error.chat.conversationActionFailed",
         ):
             self.assertIn(marker, source)
-        # Action failures surface through the unified floating toast; no
-        # per-row inline error hook may be reintroduced.
+        self.assertNotIn("data-chat-friend-request-action", source)
+        # No per-row inline error hook may be reintroduced.
         self.assertNotIn("data-chat-friend-request-error", source)
         detail_source = (
             REPO_ROOT
             / "apps/desktop/src/components/chat/ChatContactsDetailPanel.tsx"
         ).read_text(encoding="utf-8")
         for marker in (
+            'data-chat-friend-request-action="accept"',
+            'data-chat-friend-request-action="reject"',
             "data-chat-contact-detail-home-station-name",
             "station-peer-id",
             "actor-ptid",

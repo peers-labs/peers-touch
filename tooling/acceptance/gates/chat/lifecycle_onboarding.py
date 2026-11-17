@@ -733,16 +733,6 @@ class LifecycleOnboardingGate(NativeTwoClientGate):
                 ) || '',
               role: row.getAttribute('role') || '',
               tabIndex: row.getAttribute('tabindex') || '',
-              acceptVisible: Boolean(
-                row.querySelector(
-                  '[data-chat-friend-request-action="accept"]'
-                )
-              ),
-              rejectVisible: Boolean(
-                row.querySelector(
-                  '[data-chat-friend-request-action="reject"]'
-                )
-              ),
               visibleText: row.textContent?.trim() || '',
             };
             """,
@@ -831,7 +821,7 @@ class LifecycleOnboardingGate(NativeTwoClientGate):
         client = self.clients[receiver]
         self._open_request_section(client)
         sender_ptid = self.ptids[sender]
-        row = wait_until(
+        wait_until(
             lambda: self._request_row(
                 client,
                 peer_ptid=sender_ptid,
@@ -841,17 +831,23 @@ class LifecycleOnboardingGate(NativeTwoClientGate):
             f"{receiver} incoming pending request",
             timeout=STEP_TIMEOUT,
         )
-        if row.get("acceptVisible") is not True or row.get("rejectVisible") is not True:
-            raise GateError(
-                f"{receiver} pending request actions are unavailable: {row}"
-            )
-        selector = (
+        # Decisions live on the profile detail surface, not the compact
+        # request card: open the card first, then act on the sheet.
+        row_selector = (
             f'[data-chat-friend-request-peer-ptid={json.dumps(sender_ptid)}]'
             '[data-chat-friend-request-direction="incoming"]'
-            '[data-chat-friend-request-status="1"] '
+            '[data-chat-friend-request-status="1"]'
+        )
+        client.find_element(row_selector, 10).click()
+        detail_selector = (
+            f'[data-chat-contact-detail-peer-ptid={json.dumps(sender_ptid)}]'
+        )
+        client.find_element(detail_selector, 10)
+        action_selector = (
+            f'{detail_selector} '
             f'[data-chat-friend-request-action="{action}"]'
         )
-        client.find_element(selector, 10).click()
+        client.find_element(action_selector, 10).click()
         terminal_status = 2 if action == "accept" else 3
         terminal = wait_until(
             lambda: self._request_row(

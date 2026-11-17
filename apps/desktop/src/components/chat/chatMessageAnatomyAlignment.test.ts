@@ -143,6 +143,36 @@ describe('message stream rhythm (north-star .sk-msg-stream / .sk-msg parity)', (
   });
 });
 
+describe('own-message row ownership contract (.msg-row.is-own)', () => {
+  it('emits the is-own modifier on the row from isOwn, not only on inner bubbles', () => {
+    // Attachment right-alignment rules key on .msg-row.is-own; a previous
+    // regression left the modifier off the row, so own image/voice
+    // attachments fell back to flex-start while text bubbles still moved
+    // right via inline styles.
+    expect(rowSource).toContain("msg-row${isOwn ? ' is-own' : ''}");
+  });
+
+  it('drives attachment cross-axis alignment solely from the attachments container', () => {
+    // The container owns the only alignment decision: peer stacks start,
+    // own stacks end. Image/voice tiles must NOT declare their own
+    // align-self — a self-declared value stranded own images on the left
+    // whenever the attachment stack grew wider than the tile (video, which
+    // has no align-self, always followed the container correctly).
+    expect(chatCss).toContain(
+      '.sc-msg-attachments { display: flex; flex-direction: column; flex-wrap: wrap; align-items: flex-start;',
+    );
+    expect(chatCss).toContain(
+      '.msg-row.is-own .sc-msg-attachments { align-items: flex-end; }',
+    );
+    const imageRule = chatCss.match(/\.sc-attachment--image\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(imageRule).not.toContain('align-self');
+    const voiceRule = chatCss.match(/\.sc-attachment--voice\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(voiceRule).not.toContain('align-self');
+    expect(chatCss).not.toContain('.msg-row.is-own .sc-attachment--image { align-self');
+    expect(chatCss).not.toContain('.msg-row.is-own .sc-attachment--voice { align-self');
+  });
+});
+
 describe('delivery verdict meta (north-star .sk-msg-status.is-failed parity)', () => {
   it('drives tone from the evidence state attribute with a compact modifier, not inline color', () => {
     expect(verdictSource).toContain(

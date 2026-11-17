@@ -687,7 +687,7 @@
 
 .ma-hero-avatar{position:relative;width:68px;height:68px;margin:-34px 0 10px}
 
-.ma-hero-avatar .pt-avatar{box-shadow:0 0 0 3px var(--pt-surface),var(--pt-shadow-rest)}
+.ma-hero-avatar .pt-avatar{box-shadow:0 0 0 2px var(--pt-surface),var(--pt-shadow-rest)}
 
 /* Avatar edit chip: same iconOnly FilePicker as the cover, pinned inside the
    avatar's bottom-right corner (desktop grammar right:6/bottom:6). */
@@ -704,6 +704,16 @@
 .ma-hero-stats strong{font-size:13.5px;font-weight:650;color:var(--pt-text);margin-right:2px}
 
 .ma-hero-stats em{margin-left:auto;font-style:normal;font-size:11.5px}
+
+/* Identity-edit controls: hidden until a long-press reveals the editing state,
+   then shown as small translucent dashed chips (element selectors only, so the
+   peers-ui primitive chrome is not restyled). */
+.ma-hero-edit-chip{opacity:0;pointer-events:none;transition:opacity .18s ease}
+.ma-hero.is-editing .ma-hero-edit-chip{opacity:1;pointer-events:auto}
+.ma-hero-edit-chip label{width:32px;height:32px;margin:0;padding:0;display:inline-flex;align-items:center;justify-content:center;border:1px dashed rgba(255,255,255,.72);border-radius:10px;background:rgba(15,23,42,.22);box-shadow:none}
+.ma-hero-edit-chip span{width:32px;height:32px;min-height:32px;padding:0;border:1px dashed rgba(255,255,255,.72);border-radius:10px;background:transparent;color:#fff}
+.ma-hero-avatar-action.ma-hero-edit-chip label{border-color:var(--pt-border-strong,#94a3b8);background:color-mix(in srgb,var(--pt-surface,#fff) 72%,transparent)}
+.ma-hero-avatar-action.ma-hero-edit-chip span{border-color:var(--pt-border-strong,#94a3b8);background:transparent;color:var(--pt-secondary)}
 
 /* ── Credentials (pushed page only) ── */
 .ma-cred-text{display:flex;flex-direction:column;gap:2px;min-width:0}

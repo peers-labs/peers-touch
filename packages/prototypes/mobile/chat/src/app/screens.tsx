@@ -1839,6 +1839,23 @@ export function MeScreen({ state, dispatch }: { state: AppState; dispatch: Dispa
   const [avatar, setAvatar] = useState('');
   const [cover, setCover] = useState('');
   const [signOutOpen, setSignOutOpen] = useState(false);
+  const [identityEditing, setIdentityEditing] = useState(false);
+  const holdTimer = useRef<number | null>(null);
+  const beginHold = (event: { clientX: number; clientY: number }) => {
+    const origin = { x: event.clientX, y: event.clientY };
+    holdTimer.current = window.setTimeout(() => setIdentityEditing(true), 500);
+    const cancel = () => {
+      if (holdTimer.current !== null) window.clearTimeout(holdTimer.current);
+      holdTimer.current = null;
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', cancel);
+    };
+    const move = (e: PointerEvent) => {
+      if (Math.hypot(e.clientX - origin.x, e.clientY - origin.y) > 12) cancel();
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', cancel);
+  };
   const readImage = (setter: (dataUrl: string) => void) => (files: readonly File[]) => {
     const file = files[0];
     if (!file) return;
@@ -1852,22 +1869,21 @@ export function MeScreen({ state, dispatch }: { state: AppState; dispatch: Dispa
           the avatar overlaps the cover's lower edge with a cutting ring.
           Identity facts carry the page; no settings actions live here.
           Both the cover and the avatar carry an image-change action. */}
-      <header className="ma-hero" data-me-profile>
-        {/* Identity-edit grammar mirrors desktop Settings › Identity
-            (AccountSection): the SAME iconOnly FilePicker pencil chip pinned to
-            each artwork's bottom-right corner — banner right:12/bottom:12,
-            avatar right:6/bottom:6. On touch (hover:none) it stays reachable. */}
+      <header className={`ma-hero${identityEditing ? ' is-editing' : ''}`} data-me-profile>
+        {/* Identity-edit controls stay hidden until a long-press enters the
+            editing state; they render as small translucent dashed chips. */}
         <div className="ma-hero-cover" data-hero-cover
-          style={{ backgroundImage: `url("${cover || PROFILE.cover}")` }}>
-          <span className="ma-hero-cover-action">
+          style={{ backgroundImage: `url("${cover || PROFILE.cover}")` }}
+          onPointerDown={beginHold}>
+          <span className="ma-hero-cover-action ma-hero-edit-chip">
             <FilePicker iconOnly iconId="edit" accept="image/*" label="更换封面" onFiles={readImage(setCover)} />
           </span>
         </div>
         <div className="ma-hero-body">
-          <div className="ma-hero-avatar" data-hero-avatar>
+          <div className="ma-hero-avatar" data-hero-avatar onPointerDown={beginHold}>
             <Avatar name={ME.name} source={avatar || undefined} size={68} background={ME.tone}
               style={{ borderRadius: 18 }} />
-            <span className="ma-hero-avatar-action">
+            <span className="ma-hero-avatar-action ma-hero-edit-chip">
               <FilePicker iconOnly iconId="edit" accept="image/*" label="更换头像" onFiles={readImage(setAvatar)} />
             </span>
           </div>

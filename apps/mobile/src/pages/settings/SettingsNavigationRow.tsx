@@ -1,5 +1,13 @@
-import { Button, Icon, Text } from '@peers-touch/ui';
+import type { KeyboardEvent } from 'react';
+import { Icon, ListRow } from '@peers-touch/ui';
 
+/**
+ * Settings navigation row built 100% from peers-ui primitives: ListRow owns
+ * the two-zone grid (label left, control right) and the inset hairline
+ * rhythm; Icon provides the chevron. The component only adds the press /
+ * focus contract shared by every tappable list row, mirroring the prototype
+ * NavRow pattern. No app-owned layout CSS, no hand-rolled button chrome.
+ */
 export function SettingsNavigationRow({ actionId, settingId, label, description, onActivate }: {
   readonly actionId: string;
   readonly settingId?: string | undefined;
@@ -7,13 +15,24 @@ export function SettingsNavigationRow({ actionId, settingId, label, description,
   readonly description?: string | undefined;
   readonly onActivate: () => void;
 }) {
-  return <Button actionId={actionId} data-setting-id={settingId} fullWidth emphasis="quiet" density="comfortable" onActivate={onActivate}>
-    <span className="mobile-setting-navigation-row">
-      <span className="mobile-setting-navigation-copy">
-        <Text>{label}</Text>
-        {description ? <Text tone="secondary">{description}</Text> : null}
-      </span>
-      <Icon iconId="chevron-right" size={18} />
-    </span>
-  </Button>;
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onActivate();
+    }
+  };
+
+  return (
+    <ListRow
+      role="button"
+      tabIndex={0}
+      data-action-id={actionId}
+      data-setting-id={settingId}
+      label={label}
+      description={description}
+      onClick={onActivate}
+      onKeyDown={handleKeyDown}
+      control={<Icon iconId="chevron-right" size={17} />}
+    />
+  );
 }

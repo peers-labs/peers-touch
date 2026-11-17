@@ -45,11 +45,24 @@ body,
 }
 .mobile-me-cover {
   position: relative;
+  box-sizing: border-box;
+  /* Contained (peer detail routes with their own page header): no bleed. */
+  margin-top: 0;
   height: clamp(144px, 38vw, 210px);
   overflow: hidden;
   background: var(--pt-subtle);
 }
+/* Only the standalone self tab bleeds the cover under the status bar: pull
+   the cover up by the safe-area inset while growing it by the same amount, so
+   its in-flow height is unchanged and the identity body stays below the bar. */
+.mobile-me-identity.is-bleed .mobile-me-cover {
+  margin-top: calc(0px - var(--safe-area-top));
+  height: calc(clamp(144px, 38vw, 210px) + var(--safe-area-top));
+  padding-top: var(--safe-area-top);
+}
 .mobile-me-cover > img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -58,6 +71,42 @@ body,
   position: absolute;
   right: 12px;
   bottom: 12px;
+  z-index: 2;
+}
+/* Image-edit controls stay hidden until a long-press reveals the editing
+   state, so they never compete for the viewer's primary attention. */
+.mobile-me-edit-chip {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+.mobile-me-identity.is-editing .mobile-me-edit-chip {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* Small, transparent, dashed chip — an app-owned control (no .pt-* chrome). */
+.mobile-me-edit-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px dashed var(--pt-border-strong, #94a3b8);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--pt-surface, #ffffff) 72%, transparent);
+  color: var(--pt-secondary);
+  cursor: pointer;
+}
+.mobile-me-edit-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* On the artwork cover use a light translucent treatment for contrast. */
+.mobile-me-cover-action .mobile-me-edit-button {
+  border-color: rgba(255, 255, 255, 0.72);
+  background: rgba(15, 23, 42, 0.22);
+  color: #ffffff;
 }
 .mobile-me-identity-body {
   display: flex;
@@ -70,6 +119,14 @@ body,
   position: relative;
   margin-top: -28px;
   z-index: 1;
+}
+/* Cutting ring: the identity avatar overlaps the cover's lower edge, so a
+   paper-colored 2px ring separates it from the artwork — one grammar with
+   desktop Settings and the mobile prototype .ma-hero-avatar. The rest shadow
+   gives the overlap weight without introducing a second border color. */
+.mobile-me-avatar .mobile-user-avatar {
+  box-shadow: 0 0 0 2px var(--pt-surface, #ffffff),
+    var(--pt-shadow-rest, 0 6px 16px rgba(15, 23, 42, 0.18));
 }
 .mobile-me-avatar-action {
   position: absolute;
@@ -107,21 +164,6 @@ body,
   overflow-wrap: anywhere;
   font: inherit;
   font-family: var(--pt-font-mono, monospace);
-}
-.mobile-setting-navigation-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  min-width: 0;
-  text-align: left;
-}
-.mobile-setting-navigation-copy {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  flex-direction: column;
-  gap: 4px;
 }
 
 .pt-ui.m-northstar {

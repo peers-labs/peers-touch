@@ -1437,3 +1437,5 @@ export * from './callMediaStats.js';
 export * from './attachmentAccess.js';
 export * from './attachmentFileType.js';
 export * from './attachmentPreview.js';
+export * from './imagePreviewGeometry.js';
+export * from './chatImageObjectUrlCache.js';
