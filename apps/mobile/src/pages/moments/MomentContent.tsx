@@ -9,7 +9,6 @@ import {
 import { useMobileI18n } from '../../app/mobileI18n';
 import type { Post } from '../../gen/proto/domain/social/post_pb';
 import { MomentImage } from './MomentImage';
-import { MomentPoll } from './MomentPoll';
 
 export type OpenMomentMedia = (
   postId: string,
@@ -30,7 +29,6 @@ export function MomentContent({ post, onOpenMedia }: MomentContentProps) {
     if (post.content.case === 'imagePost') return post.content.value.text;
     if (post.content.case === 'videoPost') return post.content.value.text;
     if (post.content.case === 'linkPost') return post.content.value.text;
-    if (post.content.case === 'pollPost') return '';
     if (post.content.case === 'repostPost') return post.content.value.comment;
     if (post.content.case === 'locationPost') return post.content.value.text;
     return '';
@@ -138,10 +136,6 @@ export function MomentContent({ post, onOpenMedia }: MomentContentProps) {
           </span>
           <span />
         </div>
-      ) : null}
-
-      {post.content.case === 'pollPost' && post.content.value.poll ? (
-        <MomentPoll post={post} />
       ) : null}
 
       {post.content.case === 'repostPost' ? (

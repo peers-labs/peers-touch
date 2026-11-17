@@ -99,15 +99,12 @@ async function renderCommands(values: PrivateReactionStatusProjection[]) {
   });
 }
 
-it('recovers pending unknown outcomes by exact ID after owner backoff, independently of terminal kinds and ballots', async () => {
+it('recovers pending unknown outcomes by exact ID after owner backoff, independently of terminal kinds', async () => {
   const now = Date.now();
   vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
   vi.setSystemTime(now);
   const like = command(ReactionKind.REACTION_LIKE, 'REACTION_PENDING', { retryNotBeforeUnixMs: now + 5_000 });
   await renderCommands([
-    command(ReactionKind.REACTION_UNSPECIFIED, 'REACTION_PENDING', {
-      operation: 'VOTE_POLL', selectedOpaqueOptionIds: ['a'.repeat(64)],
-    }),
     like, command(ReactionKind.REACTION_LOVE, 'REACTION_REJECTED'),
     command(ReactionKind.REACTION_WOW, 'REACTION_COMMITTED'),
   ]);
@@ -139,8 +136,6 @@ it('recovers pending unknown outcomes by exact ID after owner backoff, independe
   expect(usePrivateMomentsStore.getState().reactionCommands[key(like.kind)]).toBeUndefined();
   expect(usePrivateMomentsStore.getState().reactionCommands[key(ReactionKind.REACTION_LOVE)].state)
     .toBe('REACTION_REJECTED');
-  expect(usePrivateMomentsStore.getState().reactionCommands[key(ReactionKind.REACTION_UNSPECIFIED)].operation)
-    .toBe('VOTE_POLL');
   expect(likeButton()!.getAttribute('aria-disabled')).toBeNull();
   expect(retryErrors).toEqual([]);
 });

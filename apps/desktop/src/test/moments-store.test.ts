@@ -55,7 +55,7 @@ import {
   selectPrivateCommentThread,
   usePrivateCommentsStore,
 } from '../store/privateComments';
-import { normalizePrivateMomentProjection, privateMomentsNative } from '../services/privateMomentsNative';
+import { normalizePrivateMomentProjection } from '../services/privateMomentsNative';
 import { useRelationshipsStore } from '../store/relationships';
 import { useSessionStore } from '../store/session';
 import { EVENT, eventBus } from '../kernel/events';
@@ -1129,7 +1129,6 @@ describe('moments store: createPost / deletePost', () => {
     const privateAudience = create(AudienceSchema, {
       kind: Audience_Kind.FRIENDS,
     });
-    const expiresAtSeconds = 4_000_000_000;
     const cases: Array<{
       draftId: string;
       draft: MomentDraft;
@@ -1188,46 +1187,6 @@ describe('moments store: createPost / deletePost', () => {
             url: 'https://example.test/private',
             title: 'Private link',
             description: 'description',
-          },
-        },
-      },
-      {
-        draftId: 'draft-private-poll',
-        draft: {
-          kind: 'poll',
-          text: 'private poll',
-          audience: privateAudience,
-          poll: {
-            question: 'Choose one',
-            options: ['First', 'Second'],
-            minChoices: 1,
-            maxChoices: 1,
-            expiresAtSeconds,
-            durationHours: 1,
-            multipleChoice: false,
-          },
-        },
-        projectionContent: {
-          kind: 'POLL',
-          text: 'private poll',
-          question: 'Choose one',
-          options: ['First', 'Second'],
-          opaque_option_ids: ['11'.repeat(32), '22'.repeat(32)],
-          option_set_sha256: '77'.repeat(32),
-          min_choices: 1,
-          max_choices: 1,
-          expires_at_seconds: expiresAtSeconds,
-        },
-        expectedNative: {
-          moment_kind: 'POLL',
-          text: 'private poll',
-          files: [],
-          poll: {
-            question: 'Choose one',
-            options: ['First', 'Second'],
-            min_choices: 1,
-            max_choices: 1,
-            expires_at_seconds: expiresAtSeconds,
           },
         },
       },
@@ -1658,53 +1617,6 @@ describe('moments store: createPost / deletePost', () => {
 });
 
 describe('private Moments Native projection', () => {
-  it.each(['bootstrap', 'reconcile'] as const)('preserves a committed ballot across a delayed same-session %s', async action => {
-    installEventWindowStub();
-    Object.assign(window, { __TAURI_INTERNALS__: {} });
-    const wire = {
-      post_id: 'poll', content_id: 'poll', generation: '8', author_ptid: 'ptid:author',
-      audience_kind: 'FRIENDS', state: 'CONTENT_READY',
-      content: {
-        kind: 'POLL', text: '', question: 'Choose', options: ['First', 'Second'],
-        opaque_option_ids: ['1'.repeat(64), '2'.repeat(64)], option_set_sha256: '3'.repeat(64),
-        min_choices: 1, max_choices: 1, expires_at_seconds: 4_000_000_000,
-        result: { vote_counts: ['0', '0'], selected_options: [], voter_count: '0',
-          projection_revision: '10', command_id: '', vote_actor_ptid: '' },
-      },
-    };
-    usePrivateMomentsStore.getState().activateActor('ptid:viewer', 5);
-    usePrivateMomentsStore.setState({
-      scope: { actorPtid: 'ptid:viewer', rendererGeneration: 5, nativeSessionGeneration: '9' },
-      postsById: { poll: normalizePrivateMomentProjection(wire) },
-    });
-    let complete!: (value: ReturnType<typeof statusOk>) => void;
-    enqueue(action === 'bootstrap' ? 'social_private_moments_bootstrap' : 'social_private_moments_reconcile',
-      new Promise(resolve => { complete = resolve; }));
-    const pending = action === 'bootstrap' ? usePrivateMomentsStore.getState().bootstrap(5)
-      : usePrivateMomentsStore.getState().reconcile(['poll'], 'late-read', 5);
-    const committed = {
-      voteCounts: ['0', '1'], selectedOptions: [1], voterCount: '1',
-      projectionRevision: '11', commandId: 'ballot', voteActorPtid: 'ptid:viewer',
-    };
-    vi.spyOn(privateMomentsNative, 'votePoll').mockResolvedValueOnce({
-      command: { commandId: 'ballot', postId: 'poll', commentId: '', kind: ReactionKind.REACTION_UNSPECIFIED,
-        operation: 'VOTE_POLL', selectedOpaqueOptionIds: ['2'.repeat(64)],
-        state: 'REACTION_COMMITTED', attemptCount: 1, projectionRevision: '11' },
-      reactions: [], projectionRevision: '11', exactReplay: false, poll: committed,
-    });
-    await usePrivateMomentsStore.getState().votePoll('poll', [1]);
-    complete(statusOk({ actor_ptid: 'ptid:viewer', device_id: 'device', session_generation: '9',
-      projections: [wire], reaction_commands: [] }));
-    await pending;
-    expect(usePrivateMomentsStore.getState().postsById.poll.content).toMatchObject({ result: committed });
-    expect(usePrivateMomentsStore.getState().reactionCommands).toEqual({});
-    enqueue('social_private_moment_read', statusOk({
-      ...wire, state: 'NOT_FOUND_OR_NOT_AUTHORIZED', content: undefined,
-    }));
-    await usePrivateMomentsStore.getState().readMoment('poll');
-    expect(usePrivateMomentsStore.getState().postsById.poll.content).toBeUndefined();
-  });
-
   it('accepts only an opaque window-authorized private media URL', () => {
     const projection = normalizePrivateMomentProjection({
       post_id: 'post-private-media',

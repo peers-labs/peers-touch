@@ -38,7 +38,6 @@ import {
   socialCreateComment,
   socialDeleteComment,
   socialSetCommentLike,
-  socialVotePoll,
   socialCircleCreate,
   socialCircleDelete,
   socialCircleRename,
@@ -58,12 +57,10 @@ import { isReadablePrivateMomentProjection } from '../services/privateMomentsNat
 import { releasePrivateMediaLocalPreviews } from '../services/privateMediaLocalPreview';
 import { usePrivateMomentsStore } from './privateMoments';
 import { log } from '../utils/logger';
-import { readPublicPollCommands, resetPublicFeed } from '../services/publicFeedNative';
+import { resetPublicFeed } from '../services/publicFeedNative';
 import { useSessionStore } from './session';
 import { commentDraftKey, useSocialCommentDraftsStore } from './socialCommentDrafts';
 import { loadAllSocialCircleMembers, loadAllSocialCircles } from '../services/socialCirclePages';
-import { PollResultSchema } from '../gen/proto/domain/social/poll_pb';
-import { pollFailureState, type PollCommand } from '../services/pollCommandState';
 
 const TAG = 'moments-store';
 const EMPTY_COMMENTS: Comment[] = [];
@@ -96,7 +93,6 @@ let activeCommentTarget: { postId: string; commentId?: string } | null = null;
 // issuing another command; the operation id is logged for correlation
 // and drives per-kind pending UI in SocialActionBar.
 const reactionFlights = new Map<string, Promise<void>>();
-const pollFlights = new Map<string, Promise<void>>();
 
 function reactionFlightKey(postId: string, kind: ReactionKind, direction: 'add' | 'remove'): string {
   return `${direction}:${postId}:${kind}`;
@@ -180,7 +176,6 @@ export interface MomentComposerDraft {
   audience: Audience;
   mentions: Mention[];
   files: PrivateMomentLocalFileIntent[];
-  poll?: PrivateMomentPublishIntent['poll'];
 }
 
 const emptyFeed = (): MomentFeedState => ({
@@ -274,8 +269,6 @@ function privateMomentKind(
       return 'VIDEO';
     case 'link':
       return 'LINK';
-    case 'poll':
-      return 'POLL';
     case 'repost':
       return 'REPOST';
     case 'location':
@@ -316,15 +309,6 @@ export function privateMomentPublishIntent(
     files: privateMomentFiles(draft),
     link: draft.kind === 'link' ? draft.link : undefined,
     location: draft.kind === 'location' ? draft.location : undefined,
-    poll: draft.kind === 'poll'
-      ? {
-          question: draft.poll.question,
-          options: draft.poll.options,
-          minChoices: draft.poll.minChoices,
-          maxChoices: draft.poll.maxChoices,
-          expiresAtSeconds: draft.poll.expiresAtSeconds,
-        }
-      : undefined,
     repost: draft.kind === 'repost'
       ? { sourcePostId: draft.originalPostId }
       : undefined,
@@ -355,8 +339,6 @@ function privateMomentPostType(
       return PostType.VIDEO;
     case 'LINK':
       return PostType.LINK;
-    case 'POLL':
-      return PostType.POLL;
     case 'REPOST':
       return PostType.REPOST;
     case 'LOCATION':
@@ -503,7 +485,6 @@ interface MomentsState {
   commentsHasMore: Record<string, boolean>;
   commentsLoading: Record<string, boolean>;
   commentReactionCommands: Record<string, { pending: boolean; error?: string }>;
-  pollCommands: Record<string, PollCommand>;
 
   // Per-post reaction summary list. Sourced from `Post.reactions` on
   // every refresh — the explicit map exists so optimistic toggles in
@@ -554,9 +535,6 @@ interface MomentsState {
   ) => Promise<void>;
   deleteComment: (postId: string, commentId: string) => Promise<void>;
   setCommentLike: (postId: string, commentId: string, liked: boolean) => Promise<void>;
-  votePoll: (postId: string, options: readonly number[]) => Promise<void>;
-  retryPoll: (postId: string) => Promise<void>;
-  reconcilePublicPollCommands: () => Promise<void>;
 
   /** Re-fetch only one post's reaction projection. Used by post-scoped
    * realtime wakeups so a reaction event never reloads feeds/threads. */
@@ -594,7 +572,6 @@ const initialState: Pick<
   | 'commentsHasMore'
   | 'commentsLoading'
   | 'commentReactionCommands'
-  | 'pollCommands'
   | 'reactions'
   | 'feedExplanations'
   | 'circles'
@@ -619,7 +596,6 @@ const initialState: Pick<
   commentsHasMore: {},
   commentsLoading: {},
   commentReactionCommands: {},
-  pollCommands: {},
   reactions: {},
   feedExplanations: {},
   circles: [],
@@ -650,14 +626,6 @@ function samePostRevision(existing: Post | undefined, incoming: Post): boolean {
 
 function mergePostEntity(existing: Post | undefined, incoming: Post): Post {
   if (existing && samePostRevision(existing, incoming)) {
-    // Authored revision is immutable across ballots. A changed verified result
-    // must still repaint; unchanged periodic reads retain the same card.
-    if (existing.content.case === 'pollPost' && incoming.content.case === 'pollPost') {
-      const oldResult = existing.content.value.result, nextResult = incoming.content.value.result;
-      if (oldResult && nextResult ? !equals(PollResultSchema, oldResult, nextResult) : oldResult !== nextResult) {
-        return { ...existing, content: incoming.content };
-      }
-    }
     return existing;
   }
   return incoming;
@@ -1143,19 +1111,17 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     if (activeCommentTarget?.postId === postId) activeCommentTarget = null;
     set((s) => {
       const { [postId]: _dropPost, ...postsById } = s.postsById;
-      const { [postId]: _dropPoll, ...pollCommands } = s.pollCommands;
       const { [postId]: _dropReaction, ...reactions } = s.reactions;
       const { [postId]: _dropExplanation, ...feedExplanations } = s.feedExplanations;
       const { [postId]: _dropComments, ...comments } = s.comments;
       const { [postId]: _dropLoading, ...commentsLoadingState } = s.commentsLoading;
       const { [postId]: _dropCursor, ...commentsCursorState } = s.commentsCursor;
       const { [postId]: _dropHasMore, ...commentsHasMoreState } = s.commentsHasMore;
-      void _dropPost; void _dropPoll; void _dropReaction; void _dropExplanation;
+      void _dropPost; void _dropReaction; void _dropExplanation;
       void _dropComments; void _dropLoading; void _dropCursor; void _dropHasMore;
       const filterIds = (ids: string[]) => ids.filter((id) => id !== postId);
       return {
         postsById,
-        pollCommands,
         reactions,
         feedExplanations,
         comments,
@@ -1338,96 +1304,6 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
   // -------------------------------------------------------------------------
   // Reactions
   // -------------------------------------------------------------------------
-
-  votePoll: (postId, options) => {
-    if (isPrivateMomentMutation(postId, get().postsById[postId])) {
-      return usePrivateMomentsStore.getState().votePoll(postId, options).then(() => undefined);
-    }
-    const retained = get().pollCommands[postId];
-    const same = retained?.options.length === options.length
-      && retained.options.every((option, index) => option === options[index]);
-    const unresolved = retained && !['committed', 'rejected'].includes(retained.state);
-    if (unresolved && !same) return Promise.reject(new Error('FEED_POLL_ADMISSION_PENDING'));
-    const existing = pollFlights.get(postId);
-    if (existing) return existing;
-    const post = get().postsById[postId];
-    if (!post || post.isDeleted || post.content.case !== 'pollPost' || !post.publicFeedRef) {
-      return Promise.reject(new Error('FEED_POLL_NOT_POLL'));
-    }
-    const generation = storeGeneration;
-    let command: PollCommand = {
-      operationId: unresolved && same ? retained.operationId : makeReactionOperationId(),
-      options: [...options], state: 'pending',
-    };
-    set(state => ({ pollCommands: { ...state.pollCommands, [postId]: command } }));
-    const flight = socialVotePoll(postId, command.options, command.operationId, commandId => {
-      if (generation !== storeGeneration || get().pollCommands[postId] !== command) return;
-      command = { ...command, operationId: commandId };
-      set(state => ({ pollCommands: { ...state.pollCommands, [postId]: command } }));
-    }).then(result => {
-      if (generation !== storeGeneration || get().pollCommands[postId] !== command) return;
-      set(state => {
-        const current = state.postsById[postId];
-        if (!current || current.isDeleted || current.content.case !== 'pollPost'
-          || current.publicFeedRef !== post.publicFeedRef) return {};
-        return {
-          postsById: { ...state.postsById, [postId]: { ...current,
-            content: { case: 'pollPost', value: { ...current.content.value, result } } } },
-          pollCommands: { ...state.pollCommands, [postId]: { ...command, state: 'committed' } },
-        };
-      });
-    }).catch(error => {
-      if (generation !== storeGeneration || get().pollCommands[postId] !== command) return;
-      const current = get().postsById[postId];
-      if (!current || current.isDeleted || current.publicFeedRef !== post.publicFeedRef) return;
-      set(state => ({ pollCommands: { ...state.pollCommands, [postId]: {
-        ...command, state: pollFailureState(error), error: String(error),
-      } } }));
-      throw error;
-    }).finally(() => {
-      if (pollFlights.get(postId) === flight) pollFlights.delete(postId);
-    });
-    pollFlights.set(postId, flight);
-    return flight;
-  },
-
-  retryPoll: (postId) => {
-    if (isPrivateMomentMutation(postId, get().postsById[postId])) {
-      return usePrivateMomentsStore.getState().retryReaction(postId, '', ReactionKind.REACTION_UNSPECIFIED)
-        .then(() => undefined);
-    }
-    const retained = get().pollCommands[postId];
-    if (!retained) return Promise.reject(new Error('FEED_POLL_TARGET_UNAVAILABLE'));
-    return get().votePoll(postId, retained.options);
-  },
-
-  reconcilePublicPollCommands: async () => {
-    const generation = storeGeneration;
-    const candidates = Object.entries(get().pollCommands).filter(([postId, command]) => {
-      const post = get().postsById[postId];
-      return !pollFlights.has(postId) && !['pending', 'committed', 'rejected'].includes(command.state)
-        && post && !post.isDeleted && post.content.case === 'pollPost' && Boolean(post.publicFeedRef);
-    }).map(([postId, command]) => ({ postId, command, ref: get().postsById[postId].publicFeedRef }));
-    if (!candidates.length) return;
-    const settlements = await readPublicPollCommands(candidates.map(({ command }) => command.operationId));
-    if (generation !== storeGeneration) return;
-    set(state => {
-      const pollCommands = { ...state.pollCommands };
-      let changed = false;
-      for (const { postId, command, ref } of candidates) {
-        const post = state.postsById[postId];
-        if (pollFlights.has(postId) || pollCommands[postId] !== command || !post
-          || post.isDeleted || post.publicFeedRef !== ref || post.content.case !== 'pollPost') continue;
-        const settlement = settlements.find(result => result.commandId === command.operationId
-          && result.targetPostRef === ref && result.options.length === command.options.length
-          && result.options.every((option, index) => option === command.options[index]));
-        if (!settlement) continue;
-        pollCommands[postId] = { ...command, state: settlement.state, error: settlement.error };
-        changed = true;
-      }
-      return changed ? { pollCommands } : {};
-    });
-  },
 
   refreshPostReactions: async (postId) => {
     const generation = storeGeneration;
@@ -1690,7 +1566,6 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
   reset: () => {
     storeGeneration += 1;
     reactionFlights.clear();
-    pollFlights.clear();
     circlesRead = null;
     circleMemberReads.clear();
     circleCatalogVersion += 1;

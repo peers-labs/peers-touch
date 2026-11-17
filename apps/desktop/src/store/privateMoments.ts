@@ -93,7 +93,6 @@ interface PrivateMomentsState {
     operation: 'REACT' | 'UNREACT',
     commentId?: string,
   ) => Promise<PrivateReactionMutationResult>;
-  votePoll: (postId: string, options: readonly number[]) => Promise<PrivateReactionMutationResult>;
   retryReaction: (postId: string, commentId?: string, kind?: ReactionKind, commandId?: string) => Promise<PrivateReactionMutationResult>;
   revokeMoment: (
     postId: string,
@@ -203,26 +202,6 @@ function mergeProjection(
       reactions: current.reactions ?? [],
       reactionRevision: current.reactionRevision ?? '0',
       reactionsHydrated: current.reactionsHydrated,
-    };
-  }
-  if (
-    generationOrder === 0
-    && current.postId === next.postId
-    && current.contentId === next.contentId
-    && current.content?.kind === 'POLL'
-    && next.content?.kind === 'POLL'
-    && Boolean(current.content.optionSetSha256)
-    && current.content.optionSetSha256 === next.content.optionSetSha256
-    && structuralEqual(current.content.opaqueOptionIds, next.content.opaqueOptionIds)
-    && current.content.result
-    && (!next.content.result || compareGeneration(
-      next.content.result.projectionRevision,
-      current.content.result.projectionRevision,
-    ) < 0)
-  ) {
-    next = {
-      ...next,
-      content: { ...next.content, result: current.content.result },
     };
   }
   if (
@@ -457,7 +436,6 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
     const reactionFlights = new Map<string, {
       operation: PrivateReactionCommandProjection['operation'];
       commandId?: string;
-      options?: readonly number[];
       completion: Promise<PrivateReactionMutationResult>;
     }>();
     const revocationReasonByPost =
@@ -595,7 +573,7 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
         const current = postsById[result.command.postId];
         if (
           current
-          && !result.command.commentId && result.command.operation !== 'VOTE_POLL'
+          && !result.command.commentId
           && compareGeneration(
             result.projectionRevision,
             current.reactionRevision ?? '0',
@@ -606,12 +584,6 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
             reactions: result.reactions,
             reactionRevision: result.projectionRevision,
             reactionsHydrated: true,
-          };
-        }
-        if (current?.content?.kind === 'POLL' && result.command.operation === 'VOTE_POLL' && result.poll
-          && compareGeneration(result.poll.projectionRevision, current.content.result?.projectionRevision ?? '0') >= 0) {
-          postsById[result.command.postId] = {
-            ...current, content: { ...current.content, result: result.poll },
           };
         }
         const reactionCommands = { ...state.reactionCommands };
@@ -686,10 +658,7 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
         }
         if (result.command.postId !== postId || result.command.commentId !== commentId
           || result.command.kind !== kind || result.command.operation !== pending.operation
-          || result.command.commandId !== pending.commandId
-          || (pending.operation === 'VOTE_POLL'
-            && (JSON.stringify(result.command.selectedOpaqueOptionIds) !== JSON.stringify(pending.selectedOpaqueOptionIds)
-              || (result.command.state === 'REACTION_COMMITTED' && !result.poll)))) {
+          || result.command.commandId !== pending.commandId) {
           throw new PrivateMomentsNativeError({
             code: 'PRIVATE_PROJECTION_INVALID', state: 'REACTION_PENDING',
           });
@@ -729,7 +698,6 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
       kind: ReactionKind,
       operation: PrivateReactionCommandProjection['operation'],
       commentId = '',
-      options?: readonly number[],
     ): Promise<PrivateReactionMutationResult> => {
       const scope = get().scope;
       const actorPtid = scope.actorPtid;
@@ -747,21 +715,12 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
         });
       }
       const key = privateReactionTargetKey(postId, commentId, kind);
-      const selectedOpaqueOptionIds = operation === 'VOTE_POLL' && current.content?.kind === 'POLL'
-        ? options?.map(index => current.content?.kind === 'POLL' ? current.content.opaqueOptionIds?.[index] : undefined)
-          .filter((id): id is string => Boolean(id)).sort()
-        : [];
-      if (operation === 'VOTE_POLL' && (!options || !selectedOpaqueOptionIds
-        || selectedOpaqueOptionIds.length !== options.length || current.content?.kind !== 'POLL')) {
-        throw new PrivateMomentsNativeError({ code: 'SOCIAL_PRIVATE_POLL_INVALID_SELECTION', state: 'REACTION_REJECTED' });
-      }
       const existing = get().reactionCommands[key];
       if (
         existing?.commandId
         && existing.state !== 'REACTION_REJECTED'
       ) {
-        if (existing.kind !== kind || existing.operation !== operation
-          || (operation === 'VOTE_POLL' && JSON.stringify(existing.selectedOpaqueOptionIds) !== JSON.stringify(selectedOpaqueOptionIds))) {
+        if (existing.kind !== kind || existing.operation !== operation) {
           throw new PrivateMomentsNativeError({
             code: 'REACTION_COMMAND_PENDING',
             state: existing.state,
@@ -776,7 +735,6 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
         commentId,
         kind,
         operation,
-        selectedOpaqueOptionIds,
         state: 'REACTION_PENDING',
         attemptCount: 0,
         projectionRevision: current.reactionRevision ?? '0',
@@ -789,10 +747,7 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
       }));
       markReactionMutation(key);
       try {
-        const result = await (operation === 'VOTE_POLL'
-          ? privateMomentsNative.votePoll({ actorPtid, rendererGeneration: scope.rendererGeneration, postId,
-              selectedOptions: options! })
-          : operation === 'REACT'
+        const result = await (operation === 'REACT'
           ? privateMomentsNative.react({
               actorPtid,
               rendererGeneration: scope.rendererGeneration,
@@ -812,10 +767,7 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
           throw new PrivateMomentsNativeError({ code: 'PRIVATE_SESSION_REPLACED', state: 'REACTION_REJECTED' });
         }
         if (result.command.postId !== postId || result.command.commentId !== commentId
-          || result.command.kind !== kind || result.command.operation !== operation
-          || (operation === 'VOTE_POLL'
-            && (JSON.stringify(result.command.selectedOpaqueOptionIds) !== JSON.stringify(selectedOpaqueOptionIds)
-              || (result.command.state === 'REACTION_COMMITTED' && !result.poll)))) {
+          || result.command.kind !== kind || result.command.operation !== operation) {
           throw new PrivateMomentsNativeError({
             code: 'PRIVATE_PROJECTION_INVALID', state: 'REACTION_PENDING',
           });
@@ -843,7 +795,6 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
             durable?.commandId
             && durable.kind === kind
             && durable.operation === operation
-            && (operation !== 'VOTE_POLL' || JSON.stringify(durable.selectedOpaqueOptionIds) === JSON.stringify(selectedOpaqueOptionIds))
           ) {
             return runRetryReaction(postId, commentId, kind);
           }
@@ -871,7 +822,7 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
 
     const startReactionFlight = (
       key: string, operation: PrivateReactionCommandProjection['operation'],
-      run: () => Promise<PrivateReactionMutationResult>, options?: readonly number[], commandId?: string,
+      run: () => Promise<PrivateReactionMutationResult>, commandId?: string,
     ): Promise<PrivateReactionMutationResult> => {
       const scope = get().scope;
       // Defer execution so subscribers cannot re-enter before the flight is fenced.
@@ -882,7 +833,7 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
         }
         return run();
       });
-      const flight = { operation, completion, options: options ? [...options] : undefined, commandId };
+      const flight = { operation, completion, commandId };
       reactionFlights.set(key, flight);
       set(state => ({ reactionLiveFlights: { ...state.reactionLiveFlights, [key]: true } }));
       void completion.finally(() => {
@@ -911,20 +862,19 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
       if (existing) return existing.commandId === id ? existing.completion : Promise.reject(
         new PrivateMomentsNativeError({ code: 'REACTION_COMMAND_PENDING', state: pending.state }),
       );
-      return startReactionFlight(key, pending.operation, () => runRetryReaction(postId, commentId, kind, id), undefined, id);
+      return startReactionFlight(key, pending.operation, () => runRetryReaction(postId, commentId, kind, id), id);
     };
 
     const setReaction = (
       postId: string, kind: ReactionKind, operation: PrivateReactionCommandProjection['operation'], commentId = '',
-      options?: readonly number[],
     ): Promise<PrivateReactionMutationResult> => {
       const key = privateReactionTargetKey(postId, commentId, kind);
       const existing = reactionFlights.get(key);
-      if (existing) return existing.operation === operation && JSON.stringify(existing.options) === JSON.stringify(options)
+      if (existing) return existing.operation === operation
         ? existing.completion : Promise.reject(
           new PrivateMomentsNativeError({ code: 'REACTION_COMMAND_PENDING', state: 'REACTION_PENDING' }),
         );
-      return startReactionFlight(key, operation, () => runReaction(postId, kind, operation, commentId, options), options);
+      return startReactionFlight(key, operation, () => runReaction(postId, kind, operation, commentId));
     };
 
     return {
@@ -1386,7 +1336,6 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
       },
 
       setReaction,
-      votePoll: (postId, options) => setReaction(postId, ReactionKind.REACTION_UNSPECIFIED, 'VOTE_POLL', '', options),
 
       retryReaction,
 

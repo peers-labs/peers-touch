@@ -791,74 +791,6 @@ class PublicFeedNativeEntryTest(unittest.TestCase):
         gate.action.assert_not_called()
         gate.capture.assert_not_called()
 
-    def test_poll_timeout_retains_actual_predicate_and_rendering_before_cleanup(self):
-        for present, capture_error in (
-            (True, None), (False, None), (True, RuntimeError("capture failed")),
-        ):
-            with self.subTest(present=present, capture_error=capture_error is not None):
-                gate = object.__new__(Gate)
-                gate.active_social_scenario = "poll-single-choice"
-                gate.report = SimpleNamespace(runtime={})
-                client = Mock()
-                actual = {
-                    "present": True, "state": "ready", "counts": [1, 1],
-                    "choices": [], "voters": 2, "disabled": False,
-                    "top": 40, "bottom": 300, "height": 260,
-                    "viewportHeight": 600, "hitInside": True,
-                }
-                client.execute_script.return_value = actual
-                gate.clients = {"bob": client}
-                gate.visible_element = Mock(return_value=Mock() if present else None)
-                gate.capture = Mock(side_effect=capture_error)
-                failure = GateError("timed out waiting for bob verified poll counts and selection")
-                with patch(
-                    "tooling.acceptance.gates.social.public_feed_native.wait_until",
-                    side_effect=failure,
-                ) as wait:
-                    with self.assertRaises(GateError) as caught:
-                        gate.assert_poll("bob", "original-poll", "post", [1, 1], [1])
-                self.assertIs(caught.exception, failure)
-                self.assertEqual(wait.call_count, 1)
-                self.assertEqual(wait.call_args.kwargs["timeout"], 120)
-                self.assertEqual(gate.report.runtime["pollFailureObservations"], [{
-                    "actor": "bob",
-                    "expected": {"counts": [1, 1], "choices": [1], "closed": False},
-                    "actual": actual if present else {"present": False},
-                }])
-                gate.capture.assert_called_once_with(
-                    "bob", "poll-single-choice-bob-verification-failure")
-
-    def test_poll_rendering_capture_is_attempted_when_state_observation_fails(self):
-        gate = object.__new__(Gate)
-        gate.active_social_scenario = "poll-single-choice"
-        gate.report = SimpleNamespace(runtime={})
-        gate.visible_element = Mock(side_effect=RuntimeError("state capture failed"))
-        gate.capture = Mock()
-        failure = GateError("original poll failure")
-        with patch(
-            "tooling.acceptance.gates.social.public_feed_native.wait_until",
-            side_effect=failure,
-        ):
-            with self.assertRaises(GateError) as caught:
-                gate.assert_poll("bob", "original-poll", "post", [1, 1], [1])
-        self.assertIs(caught.exception, failure)
-        gate.capture.assert_called_once_with(
-            "bob", "poll-single-choice-bob-verification-failure")
-        self.assertNotIn("pollFailureObservations", gate.report.runtime)
-
-    def test_settled_poll_does_not_add_failure_observations_or_captures(self):
-        gate = object.__new__(Gate)
-        gate.report = SimpleNamespace(runtime={})
-        gate.capture = Mock()
-        with patch(
-            "tooling.acceptance.gates.social.public_feed_native.wait_until",
-            return_value=True,
-        ) as wait:
-            gate.assert_poll("bob", "original-poll", "post", [1, 1], [1])
-        self.assertEqual(wait.call_args.kwargs["timeout"], 120)
-        self.assertEqual(gate.report.runtime, {})
-        gate.capture.assert_not_called()
-
     def test_original_circle_suite_declares_block_and_intermediate_epoch_without_extra_launches(self):
         self.assertIn("circle-block", SCENARIOS)
         self.assertIn("circle-account-epoch", SCENARIOS)
@@ -866,68 +798,6 @@ class PublicFeedNativeEntryTest(unittest.TestCase):
             source_digest="a" * 40, fixture_epoch="circle-scope")
         self.assertEqual(ledger.contract.max_client_launches, 4)
         self.assertEqual(tuple(ledger.contract.scenario_ids), SCENARIOS)
-
-    def test_original_poll_checks_peer_availability_and_real_empty_activation(self):
-        for disabled, aria_disabled, accepted in (
-            (None, "true", True), ("true", None, True),
-            (None, "false", False), (None, None, False),
-        ):
-            with self.subTest(disabled=disabled, aria_disabled=aria_disabled):
-                gate = object.__new__(Gate)
-                question = {"value": ""}
-                publish = Mock()
-                publish.get_attribute.side_effect = {
-                    "disabled": disabled, "aria-disabled": aria_disabled,
-                }.get
-                field = Mock()
-                field.get_attribute.side_effect = question.get
-                card = Mock()
-                card.get_attribute.return_value = "actual-object"
-                lifecycle = {"open": True, "opens": 0, "reopenedReads": 0}
-
-                def click(actor, selector):
-                    if selector == '[data-action-id="compose.cancel"]':
-                        lifecycle["open"] = False
-                    elif selector == '[data-acceptance-id="social-composer-open"]':
-                        lifecycle["open"] = True
-                        lifecycle["opens"] += 1
-
-                def visible(actor, selector):
-                    if selector == 'textarea[data-moments-composer-input]':
-                        return field if lifecycle["open"] else None
-                    if selector.endswith('="social-poll-question"]'):
-                        if lifecycle["opens"] == 2:
-                            lifecycle["reopenedReads"] += 1
-                            if lifecycle["reopenedReads"] == 1:
-                                return None
-                        return field if lifecycle["open"] else None
-                    return publish
-
-                gate.visible_element = Mock(side_effect=visible)
-                gate.click = Mock(side_effect=click)
-                gate.action = Mock(return_value={"pendingCount": 0, "verifiedSequence": "7"})
-                gate.await_card = Mock(return_value=card)
-                gate.set_input = Mock(side_effect=lambda actor, selector, value:
-                    question.update(value=value) if selector.endswith('="social-poll-question"]') else None)
-
-                def assert_condition(name, condition, *args):
-                    if not condition:
-                        raise GateError(name)
-
-                gate.assert_condition = assert_condition
-                if not accepted:
-                    with self.assertRaisesRegex(GateError, "empty-poll-publication-disabled"):
-                        gate.create_poll("original-poll")
-                    gate.action.assert_not_called()
-                    continue
-                self.assertEqual(gate.create_poll("original-poll"), {
-                    "alice": "actual-object", "bob": "actual-object",
-                })
-                self.assertEqual(gate.action.call_count, 2)
-                self.assertEqual(lifecycle["reopenedReads"], 2)
-                self.assertEqual(gate.click.call_args_list.count(
-                    unittest.mock.call("alice", '[data-acceptance-id="social-composer-publish"]'),
-                ), 2)
 
     def test_original_runner_accepts_the_capability_catalog_launch(self):
         runner = runpy.run_path(str(ROOT / "tooling/scripts/acceptance-run.py"))
@@ -965,8 +835,8 @@ class PublicFeedNativeEntryTest(unittest.TestCase):
         target = Mock()
         client.find_elements.return_value = [target]
         gate.clients = {"alice": client}
-        # Mounted but clipped on the first poll; after the reveal scroll the same
-        # real control satisfies the unchanged visible predicate.
+        # Mounted but clipped on the first lookup; after the reveal scroll the
+        # same real control satisfies the unchanged visible predicate.
         gate.visible_element = Mock(side_effect=[None, target])
 
         def fake_wait_until(predicate, description, *, timeout):

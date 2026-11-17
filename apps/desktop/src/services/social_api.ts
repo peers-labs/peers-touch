@@ -27,7 +27,6 @@ import {
   CreateImagePostRequestSchema,
   CreateVideoPostRequestSchema,
   CreateLinkPostRequestSchema,
-  CreatePollPostRequestSchema,
   CreateRepostRequestSchema,
   CreateLocationPostRequestSchema,
   LocationSchema,
@@ -122,7 +121,6 @@ import {
   submitPublicFeed, publicOperationObjectId, publicPostRef, publicCommentRef, publicCommentTarget,
   verifyPublicPosts, verifyPublicComments, committedPublicPost, committedPublicComment,
   verifiedPublicReactions, verifiedPublicCommentLike, publicTextUpdatePayload,
-  publicPollBallotPayload, verifiedPublicPoll,
 } from './publicFeedNative';
 import type { PrivateMomentLocalFileIntent } from './privateMomentsNative';
 
@@ -180,21 +178,6 @@ export interface LinkDraft extends MomentDraftBase {
   };
 }
 
-export interface PollDraft extends MomentDraftBase {
-  kind: 'poll';
-  text: string;
-  poll: {
-    question: string;
-    options: string[];
-    minChoices: number;
-    maxChoices: number;
-    expiresAtSeconds: number;
-    /** Used only when no absolute expiry was selected. */
-    durationHours: number;
-    multipleChoice: boolean;
-  };
-}
-
 export interface RepostDraft extends MomentDraftBase {
   kind: 'repost';
   originalPostId: string;
@@ -219,7 +202,6 @@ export type MomentDraft =
   | ImageDraft
   | VideoDraft
   | LinkDraft
-  | PollDraft
   | RepostDraft
   | LocationDraft;
 
@@ -295,24 +277,6 @@ export function buildCreatePostRequest(draft: MomentDraft): CreatePostRequest {
           value: create(CreateLinkPostRequestSchema, {
             text: draft.text,
             url: draft.link.url,
-          }),
-        },
-      });
-    case 'poll':
-      return create(CreatePostRequestSchema, {
-        ...base,
-        type: PostType.POLL,
-        content: {
-          case: 'poll',
-          value: create(CreatePollPostRequestSchema, {
-            text: draft.text,
-            question: draft.poll.question,
-            options: draft.poll.options,
-            durationHours: draft.poll.expiresAtSeconds ? 0 : draft.poll.durationHours,
-            multipleChoice: draft.poll.multipleChoice,
-            minChoices: draft.poll.minChoices,
-            maxChoices: draft.poll.maxChoices,
-            expiresAtUnixMs: BigInt(draft.poll.expiresAtSeconds) * 1000n,
           }),
         },
       });
@@ -539,13 +503,6 @@ export async function socialSetCommentLike(postId: string, commentId: string, li
       targetPostRef: parent, targetCommentRef: publicCommentRef(commentId), reactionKind: ReactionKind.REACTION_LIKE,
     }) } }), operationId);
   return verifiedPublicCommentLike(commentId);
-}
-
-export async function socialVotePoll(postId: string, options: readonly number[], operationId: string,
-  onCommandId?: (commandId: string) => void) {
-  const payload = await publicPollBallotPayload(postId, options);
-  await submitPublicFeed(FeedEventKind.POLL_BALLOT_SET, payload, operationId, onCommandId);
-  return verifiedPublicPoll(postId);
 }
 
 // ---------------------------------------------------------------------------

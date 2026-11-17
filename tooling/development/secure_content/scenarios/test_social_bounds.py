@@ -106,17 +106,6 @@ class _FakeProductClient:
                         for digest in hashes
                     ],
                 }
-            poll = post["poll"]
-            return {
-                "state": "CONTENT_READY",
-                "subtypeEvidence": {
-                    "optionLabelSha256": [
-                        _digest(str(option))
-                        for option in poll["options"]
-                    ],
-                    "maxChoices": poll["maxChoices"],
-                },
-            }
         if method == "clearLocalState":
             return {"ok": True}
         raise AssertionError(f"unexpected fake call: {method}")
@@ -141,10 +130,6 @@ class SocialBoundsScenarioTest(unittest.TestCase):
         self.assertEqual(
             social_bounds.MAX_OBJECTS + 1,
             result["runtimeBounds"]["objectCountRejected"],
-        )
-        self.assertEqual(
-            social_bounds.MAX_POLL_OPTIONS,
-            result["runtimeBounds"]["pollOptionCountAccepted"],
         )
         self.assertFalse(result["recipientTruncationObserved"])
         self.assertFalse(result["partialCommitObserved"])

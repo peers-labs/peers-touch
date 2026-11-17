@@ -58,7 +58,7 @@ COMMANDS = (
               "src/services/socialRealtime.test.ts", "src/services/socialRelationshipTransport.test.ts",
               "src/store/momentsCircles.test.ts", "src/store/momentsReactions.test.ts",
               "src/store/privateComments.test.ts", "src/services/eventStream.test.ts",
-              "src/store/momentsPolls.test.ts", "src/test/moments-store.test.ts",
+              "src/test/moments-store.test.ts",
               "src/components/moments/CommentList.test.tsx",
               "src/components/moments/MomentCard.test.tsx",
               "src/components/moments/MomentCommentsSection.test.tsx",

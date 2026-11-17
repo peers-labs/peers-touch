@@ -76,7 +76,6 @@ PLATFORM_OPERATIONS = {
             "TEXT",
             "IMAGE",
             "VIDEO",
-            "POLL",
             "REPOST",
             "MENTION",
             "REACTION",

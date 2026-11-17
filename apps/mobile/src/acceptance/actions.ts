@@ -1446,9 +1446,8 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     const scope = identity();
     const command = initial.reactionCommands.find(candidate =>
       candidate.postId === postId && (candidate.commentId || '') === commentId
-      && (commentId
-        ? candidate.operation === 'REACT' && candidate.kind === ReactionKind.REACTION_LIKE
-        : candidate.operation === 'VOTE_POLL'));
+      && candidate.operation === 'REACT'
+      && (!commentId || candidate.kind === ReactionKind.REACTION_LIKE));
     if (!command || command.state !== 'REACTION_COMMITTED') {
       throw new Error('acceptance.mobile.committedPrivateInteractionMissing');
     }
@@ -1463,23 +1462,13 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
         || result.command.kind !== command.kind
         || result.command.operation !== command.operation
         || result.command.state !== 'REACTION_COMMITTED'
-        || result.command.attemptCount !== command.attemptCount
-        || JSON.stringify(result.command.selectedOpaqueOptionIds ?? [])
-          !== JSON.stringify(command.selectedOpaqueOptionIds ?? [])
-        || (!commentId && !result.poll)) {
+        || result.command.attemptCount !== command.attemptCount) {
         throw new Error('acceptance.mobile.privateInteractionReplayMismatch');
       }
       replays.push({
         projectionRevision: result.command.projectionRevision,
         exactReplay: result.exactReplay,
-        ...(result.poll ? {
-          voteCounts: result.poll.voteCounts,
-          voterCount: result.poll.voterCount,
-          selectedOptionsSha256: await digestText(JSON.stringify(result.poll.selectedOptions)),
-          pollProjectionRevision: result.poll.projectionRevision,
-        } : {
-          reactionsSha256: await digestText(JSON.stringify(result.reactions)),
-        }),
+        reactionsSha256: await digestText(JSON.stringify(result.reactions)),
       });
     }
     if (JSON.stringify(replays[0]) !== JSON.stringify(replays[1])) {
@@ -2334,7 +2323,7 @@ function requirePrivateMentions(value: unknown): PrivateMomentMention[] {
 
 function requirePrivateMomentKind(value: unknown): PrivateMomentKind {
   const kind = requireString(value ?? 'TEXT', 'moments.private.publish.momentKind');
-  if (!['TEXT', 'IMAGE', 'VIDEO', 'LINK', 'POLL', 'REPOST', 'LOCATION'].includes(kind)) {
+  if (!['TEXT', 'IMAGE', 'VIDEO', 'LINK', 'REPOST', 'LOCATION'].includes(kind)) {
     throw new Error('acceptance.mobile.invalidInput:moments.private.publish.momentKind');
   }
   return kind as PrivateMomentKind;
@@ -2403,24 +2392,6 @@ function requirePrivateMomentIntent(value: unknown): PrivateSocialMomentIntent {
       longitude: Number(location.longitude),
       address: typeof location.address === 'string' ? location.address : undefined,
       placeId: typeof location.placeId === 'string' ? location.placeId : undefined,
-    };
-  } else if (momentKind === 'POLL') {
-    const poll = input.poll as Record<string, unknown> | undefined;
-    if (!poll || !Array.isArray(poll.options)) {
-      throw new Error('acceptance.mobile.invalidInput:moments.private.publish.poll');
-    }
-    result.poll = {
-      question: requireString(poll.question, 'moments.private.publish.poll.question'),
-      options: poll.options.map((option, index) => requireString(
-        option,
-        `moments.private.publish.poll.options.${index}`,
-      )),
-      minChoices: requirePositiveInteger(poll.minChoices, 'moments.private.publish.poll.minChoices'),
-      maxChoices: requirePositiveInteger(poll.maxChoices, 'moments.private.publish.poll.maxChoices'),
-      expiresAtSeconds: requirePositiveInteger(
-        poll.expiresAtSeconds,
-        'moments.private.publish.poll.expiresAtSeconds',
-      ),
     };
   } else if (momentKind === 'REPOST') {
     const repost = input.repost as Record<string, unknown> | undefined;

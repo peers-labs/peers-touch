@@ -35,7 +35,6 @@ SCENARIOS = (
     "publication-late-follower", "non-follower-interaction", "public-edit",
     "restart-readback", "public-search", "public-tombstone",
     "comment-reactions",
-    "poll-single-choice", "poll-multiple-choice", "poll-cutoff",
     "normal-submit-readback", "lost-submit-ack", "corrupt-read-payload",
     "rollback-read-head", "second-device-writer-denial",
     "circle-members-pagination", "circle-cancel", "circle-partial-save-retry",
@@ -267,7 +266,7 @@ class Gate(DeviceSearchGate):
             # Presence precedes visibility. The feed clips retained cards in
             # its scroll container, so a mounted but offscreen control fails the
             # native displayed predicate until its real element is revealed.
-            # Scrolling first is the same reveal order the poll/paint oracles
+            # Scrolling first is the same reveal order the paint oracles
             # use. A control that is missing or CSS-hidden still returns None,
             # so the original visible gate and its deadline are preserved.
             candidates = self.clients[actor].find_elements(selector)
@@ -1136,151 +1135,6 @@ class Gate(DeviceSearchGate):
         """, control, value),
                    f"{actor} controlled input accepted", timeout=30)
 
-    def create_poll(self, text: str, *, multiple: bool = False, cutoff_seconds: int | None = None) -> dict[str, str]:
-        self.click("alice", '[data-acceptance-id="social-composer-open"]')
-        self.set_input("alice", 'textarea[data-moments-composer-input]', text)
-        self.click("alice", '[data-acceptance-id="social-compose-poll"]')
-        invalid = self.visible_element("alice", '[data-acceptance-id="social-composer-publish"]')
-        self.assert_condition(f"{text}-empty-poll-publication-disabled", invalid is not None
-                              and (invalid.get_attribute("aria-disabled") == "true"
-                                   or invalid.get_attribute("disabled") is not None))
-        before = self.action("alice", "publicFeedStatus")
-        self.click("alice", '[data-acceptance-id="social-composer-publish"]')
-        after = self.action("alice", "publicFeedStatus")
-        question = self.visible_element("alice", '[data-acceptance-id="social-poll-question"]')
-        self.assert_condition(f"{text}-empty-poll-activation-rejected",
-            question is not None and question.get_attribute("value") == ""
-            and before["pendingCount"] == after["pendingCount"] == 0
-            and before["verifiedSequence"] == after["verifiedSequence"])
-        self.set_input("alice", '[data-acceptance-id="social-poll-question"]', text + " question")
-        for index in range(2):
-            self.set_input("alice", f'[data-acceptance-id="social-poll-draft-option-{index}"]', f"Option {index}")
-        if multiple:
-            self.click("alice", '[data-action-id="compose.poll.add-option"]')
-            self.set_input("alice", '[data-acceptance-id="social-poll-draft-option-2"]', "Option 2")
-            self.set_input("alice", '[data-acceptance-id="social-poll-maximum"]', "2")
-            self.set_input("alice", '[data-acceptance-id="social-poll-minimum"]', "2")
-        if cutoff_seconds is not None:
-            expiry = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() + cutoff_seconds))
-            self.set_input("alice", '.sk-compose-poll input[type="datetime-local"]', expiry)
-        # Dismiss/reopen goes through the original draft owner, including poll
-        # fields; it must not turn the retained draft back into a text post.
-        self.click("alice", '[data-action-id="compose.cancel"]')
-        try:
-            wait_until(lambda: self.visible_element("alice",
-                'textarea[data-moments-composer-input]') is None,
-                "Alice composer dismissed", timeout=30)
-            self.click("alice", '[data-acceptance-id="social-composer-open"]')
-            question = wait_until(lambda: self.visible_element("alice",
-                '[data-acceptance-id="social-poll-question"]'),
-                "Alice reopened poll question", timeout=30)
-            self.assert_condition(f"{text}-poll-draft-restored",
-                question.get_attribute("value") == text + " question")
-        except Exception:
-            cleanup_preserving_primary_failure(
-                lambda: self.capture("alice", f"{text}-poll-draft-restore-failure"),
-                self.report, "Poll draft restoration diagnostic")
-            raise
-        self.click("alice", '[data-acceptance-id="social-composer-publish"]')
-        return {actor: self.await_card(actor, text).get_attribute("data-post-id") for actor in ("alice", "bob")}
-
-    def poll_selector(self, post_id: str) -> str:
-        return f'[data-acceptance-id="social-moment-card"][data-post-id="{post_id}"] [data-acceptance-id="social-poll"]'
-
-    def assert_poll(self, actor: str, text: str, post_id: str, counts: list[int], choices: list[int],
-                    *, closed: bool = False) -> None:
-        selector = self.poll_selector(post_id)
-        def settled() -> bool:
-            self.await_card(actor, text)
-            element = self.visible_element(actor, selector)
-            if element:
-                self.clients[actor].execute_script("arguments[0].scrollIntoView({block: 'center', inline: 'nearest'});", element)
-            return bool(element and self.clients[actor].execute_script("""
-                const el = arguments[0], counts = arguments[1], choices = arguments[2], closed = arguments[3];
-                const r = el.getBoundingClientRect();
-                const hit = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2);
-                return r.top >= 0 && r.bottom <= innerHeight + 1 && hit && el.contains(hit)
-                  && el.dataset.pollState === (closed ? 'closed' : 'ready')
-                  && JSON.stringify([...el.querySelectorAll('[data-poll-count]')].map(e => Number(e.dataset.pollCount))) === JSON.stringify(counts)
-                  && JSON.stringify([...el.querySelectorAll('input')].flatMap((e, i) => e.checked ? [i] : [])) === JSON.stringify(choices)
-                  && Number(el.querySelector('[data-poll-voters]')?.dataset.pollVoters) === (counts.some(n => n > 0) ? 2 : 0)
-                  && (!closed || [...el.querySelectorAll('input')].every(e => e.disabled));
-            """, element, counts, choices, closed))
-        try:
-            wait_until(settled, f"{actor} verified poll counts and selection", timeout=120)
-        except Exception:
-            # Preserve the actual failed predicate before the Suite releases its
-            # clients. Counts, selection and paint geometry are independent:
-            # a timeout alone cannot identify which original owner failed.
-            def observe() -> None:
-                element = self.visible_element(actor, selector)
-                actual = {"present": False} if element is None else self.clients[actor].execute_script("""
-                    const el = arguments[0], r = el.getBoundingClientRect();
-                    const hit = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2);
-                    return {
-                      present: true, state: el.dataset.pollState,
-                      counts: [...el.querySelectorAll('[data-poll-count]')].map(e => Number(e.dataset.pollCount)),
-                      choices: [...el.querySelectorAll('input')].flatMap((e, i) => e.checked ? [i] : []),
-                      voters: Number(el.querySelector('[data-poll-voters]')?.dataset.pollVoters),
-                      disabled: [...el.querySelectorAll('input')].every(e => e.disabled),
-                      top: r.top, bottom: r.bottom, height: r.height, viewportHeight: innerHeight,
-                      hitInside: Boolean(hit && el.contains(hit)),
-                    };
-                """, element)
-                self.report.runtime.setdefault("pollFailureObservations", []).append({
-                    "actor": actor,
-                    "expected": {"counts": counts, "choices": choices, "closed": closed},
-                    "actual": actual,
-                })
-            cleanup_preserving_primary_failure(
-                observe, self.report, "Poll verification state diagnostic")
-            cleanup_preserving_primary_failure(
-                lambda: self.capture(actor, f"{self.active_social_scenario or 'poll'}-{actor}-verification-failure"),
-                self.report, "Poll verification Native rendering diagnostic")
-            raise
-
-    def select_poll(self, actor: str, post_id: str, indices: list[int]) -> None:
-        selector = self.poll_selector(post_id)
-        inputs = self.clients[actor].find_elements(f"{selector} input")
-        single = inputs[0].get_attribute("type") == "radio"
-        for index, control in enumerate(inputs):
-            checked = control.get_attribute("checked") in ("true", "checked")
-            if (index in indices and not checked) or (not single and index not in indices and checked):
-                self.click(actor, f"{selector} [data-poll-option='{index}'] label")
-
-    def poll_scenario(self, ledger: SuiteRuntimeLedger, scenario: str, *, multiple: bool) -> tuple[str, dict[str, str]]:
-        self.begin_scenario(ledger, scenario)
-        text = f"{scenario}-{self.manifest['runId']}"
-        ids = self.create_poll(text, multiple=multiple)
-        self.select_poll("bob", ids["bob"], [0, 1] if multiple else [1])
-        self.click("bob", f'{self.poll_selector(ids["bob"])} [data-acceptance-id="social-poll-submit"]')
-        self.select_poll("alice", ids["alice"], [1, 2] if multiple else [0])
-        self.click("alice", f'{self.poll_selector(ids["alice"])} [data-acceptance-id="social-poll-submit"]')
-        counts = [1, 2, 1] if multiple else [1, 1]
-        self.assert_poll("alice", text, ids["alice"], counts, [1, 2] if multiple else [0])
-        self.assert_poll("bob", text, ids["bob"], counts, [0, 1] if multiple else [1])
-        self.select_poll("bob", ids["bob"], [1, 2] if multiple else [0])
-        self.click("bob", f'{self.poll_selector(ids["bob"])} [data-acceptance-id="social-poll-submit"]')
-        counts = [0, 2, 2] if multiple else [2, 0]
-        for actor in ("alice", "bob"):
-            self.assert_poll(actor, text, ids[actor], counts, [1, 2] if multiple else [0])
-        # Local cancellation does not revoke the committed ballot.
-        self.select_poll("bob", ids["bob"], [0, 1] if multiple else [1])
-        self.click("bob", f'[data-action-id="moment.poll.cancel.{ids["bob"]}"]')
-        self.assert_poll("bob", text, ids["bob"], counts, [1, 2] if multiple else [0])
-        updated_text = f"Edited-{text}"
-        alice_card = f'[data-acceptance-id="social-moment-card"][data-post-id="{ids["alice"]}"]'
-        self.click("alice", f'{alice_card} [data-acceptance-id="social-moment-menu"]')
-        self.click("alice", f'[data-action-id="moment.edit.{ids["alice"]}"]')
-        self.set_input("alice", '[data-acceptance-id="social-edit-input"]', updated_text)
-        self.click("alice", '[data-acceptance-id="social-edit-save"]')
-        for actor in ("alice", "bob"):
-            self.assert_poll(actor, updated_text, ids[actor], counts, [1, 2] if multiple else [0])
-        self.capture("bob", scenario)
-        self.complete_scenario(ledger, scenario, "alice,bob:poll-publish-vote-replace-cancel",
-                               "alice,bob:painted-verified-ballots-and-two-voters")
-        return updated_text, ids
-
     def begin_scenario(self, ledger: SuiteRuntimeLedger, scenario: str) -> None:
         ledger.record(SuiteRuntimeAction.SCENARIO_START, scenario_id=scenario)
         self.active_social_scenario = scenario
@@ -1421,19 +1275,6 @@ class Gate(DeviceSearchGate):
                 self.complete_scenario(ledger, SCENARIOS[6],
                     "alice,bob:root-and-reply-like-set-remove", "alice,bob:painted-confirmed-counts")
 
-                polls = [
-                    self.poll_scenario(ledger, SCENARIOS[7], multiple=False),
-                    self.poll_scenario(ledger, SCENARIOS[8], multiple=True),
-                ]
-                self.begin_scenario(ledger, SCENARIOS[9])
-                cutoff_text = f"Cutoff-{self.manifest['runId']}"
-                cutoff_ids = self.create_poll(cutoff_text, cutoff_seconds=30)
-                for actor in ("alice", "bob"):
-                    self.assert_poll(actor, cutoff_text, cutoff_ids[actor], [0, 0], [], closed=True)
-                self.capture("bob", SCENARIOS[9])
-                self.complete_scenario(ledger, SCENARIOS[9], "alice:publish-short-deadline",
-                                       "bob:painted-closed-poll-and-disabled-options")
-
                 self.begin_scenario(ledger, SCENARIOS[2])
                 self.action("bob", "followActor", {"actorPtid": fixture["alicePtid"]})
                 self.click("alice", f'{alice_selector} [data-acceptance-id="social-moment-menu"]')
@@ -1459,9 +1300,6 @@ class Gate(DeviceSearchGate):
                 self.open_comments("bob", bob_selector)
                 self.assert_comment_like("bob", bob_selector, comment_text, 2, True)
                 self.assert_comment_like("bob", bob_selector, reply_text, 1, True)
-                for index, (poll_text, poll_ids) in enumerate(polls):
-                    self.assert_poll("bob", poll_text, poll_ids["bob"],
-                                     [2, 0] if index == 0 else [0, 2, 2], [0] if index == 0 else [1, 2])
                 self.capture("bob", SCENARIOS[3])
                 self.complete_scenario(ledger, SCENARIOS[3], "bob:native-restart", "bob:painted-replayed-updated-body")
 

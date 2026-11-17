@@ -765,34 +765,6 @@ describe('Moments acceptance harness', () => {
     expect(result).not.toHaveProperty('transientPostId');
   });
 
-  it('retains the staged private poll and exact intent through publication retries', async () => {
-    const poll = {
-      question: 'private question', options: ['A', 'B'], minChoices: 1,
-      maxChoices: 1, expiresAtSeconds: 2_000_000_000,
-    };
-    await harness().stagePrivateDraft({
-      draftId: 'css09-as18-poll-0', revision: 1, text: 'private poll',
-      audienceKind: 'CUSTOM_ALLOW', actorPtids: ['ptid:test:remote'],
-      momentKind: 'POLL', poll,
-    });
-    momentsState.createPost.mockImplementation(async () => {
-      privateState.publish = { state: 'PUBLISHED' };
-      return 'private-poll-post';
-    });
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      expect(await harness().publishPrivateDraft()).toMatchObject({
-        state: 'PUBLISHED', transientPostId: 'private-poll-post',
-      });
-    }
-    const calls = momentsState.createPost.mock.calls.map(([draft]) => draft);
-    expect(calls).toHaveLength(2);
-    expect(calls[0]).toEqual(calls[1]);
-    expect(calls[0]).toMatchObject({
-      draftId: 'css09-as18-poll-0', draftRevision: 1, kind: 'poll', poll,
-      audience: { kind: Audience_Kind.CUSTOM_ALLOW, actorPtids: ['ptid:test:remote'] },
-    });
-  });
-
   it('retains the original Native failure detail without changing its failed state', async () => {
     await harness().stagePrivateDraft({
       draftId: 'failure-evidence', revision: 1, text: 'private media',
@@ -1026,30 +998,6 @@ describe('Moments acceptance harness', () => {
       },
     },
     {
-      momentKind: 'POLL',
-      extra: {
-        poll: {
-          question: 'Choose one',
-          options: ['First', 'Second'],
-          minChoices: 1,
-          maxChoices: 1,
-          expiresAtSeconds: 4_000_000_000,
-        },
-      },
-      expected: {
-        kind: 'poll',
-        poll: {
-          question: 'Choose one',
-          options: ['First', 'Second'],
-          minChoices: 1,
-          maxChoices: 1,
-          expiresAtSeconds: 4_000_000_000,
-          durationHours: 1,
-          multipleChoice: false,
-        },
-      },
-    },
-    {
       momentKind: 'LOCATION',
       extra: {
         location: {
@@ -1200,73 +1148,6 @@ describe('Moments acceptance harness', () => {
       postId: 'private-parent', commentId: 'private-reply',
     })).rejects.toThrow('moments.acceptance.reactionReplayMismatch');
     expect(retry).toHaveBeenCalledTimes(1);
-  });
-
-  function committedPollVote() {
-    const command = {
-      commandId: 'original-ballot', postId: 'private-poll', commentId: '',
-      kind: ReactionKind.REACTION_UNSPECIFIED, operation: 'VOTE_POLL' as const,
-      selectedOpaqueOptionIds: ['opaque-b', 'opaque-c'],
-      state: 'REACTION_COMMITTED' as const, attemptCount: 1, projectionRevision: '7',
-    };
-    vi.spyOn(privateMomentsNative, 'bootstrap').mockResolvedValue({ reactionCommands: [command] } as never);
-    const result: PrivateReactionMutationResult = {
-      command, reactions: [], projectionRevision: '8', exactReplay: false,
-      poll: {
-        voteCounts: ['0', '2', '2'], selectedOptions: [1, 2], voterCount: '2',
-        projectionRevision: '8', commandId: 'newer-peer-ballot', voteActorPtid: 'ptid:test:bob',
-      },
-    };
-    const retry = vi.spyOn(privateMomentsNative, 'retryReaction').mockResolvedValue(result);
-    return { command, result, retry };
-  }
-
-  it('retries the exact private ballot while preserving newer viewer counts', async () => {
-    const { retry } = committedPollVote();
-    const result = await harness().replayPrivatePollVote({ postId: 'private-poll' });
-    expect(retry).toHaveBeenCalledTimes(2);
-    expect(retry).toHaveBeenCalledWith({
-      actorPtid: 'ptid:test:alice', rendererGeneration: 9, commandId: 'original-ballot',
-    });
-    expect(result).toMatchObject({
-      nativeRetryCount: 2, operation: 'VOTE_POLL',
-      replays: [
-        { voteCounts: ['0', '2', '2'], voterCount: '2', projectionRevision: '8', exactReplay: false },
-        { voteCounts: ['0', '2', '2'], voterCount: '2', projectionRevision: '8', exactReplay: false },
-      ],
-    });
-  });
-
-  it.each([
-    { commandId: 'substitute' }, { postId: 'wrong-parent' }, { commentId: 'wrong-comment' },
-    { operation: 'REACT' }, { selectedOpaqueOptionIds: ['opaque-a'] }, { attemptCount: 2 },
-    { state: 'REACTION_UNKNOWN_OUTCOME' },
-  ])('rejects private ballot replay identity drift %j', async changed => {
-    const { command, result, retry } = committedPollVote();
-    retry.mockResolvedValue({ ...result, command: { ...command, ...changed } } as never);
-    await expect(harness().replayPrivatePollVote({ postId: 'private-poll' }))
-      .rejects.toThrow('moments.acceptance.pollReplayMismatch');
-    expect(retry).toHaveBeenCalledTimes(1);
-  });
-
-  it('rejects changing counts across retained ballot retries', async () => {
-    const { result, retry } = committedPollVote();
-    retry.mockResolvedValueOnce(result).mockResolvedValueOnce({
-      ...result, poll: { ...result.poll!, voteCounts: ['0', '3', '2'] },
-    });
-    await expect(harness().replayPrivatePollVote({ postId: 'private-poll' }))
-      .rejects.toThrow('moments.acceptance.pollReplayMismatch');
-  });
-
-  it('fences a queued ballot replay after same-value scope replacement', async () => {
-    const { command, retry } = committedPollVote();
-    vi.mocked(privateMomentsNative.bootstrap).mockImplementation(async () => {
-      privateState.scope = { ...privateState.scope };
-      return { reactionCommands: [command] } as never;
-    });
-    await expect(harness().replayPrivatePollVote({ postId: 'private-poll' }))
-      .rejects.toThrow('moments.acceptance.sessionReplaced');
-    expect(retry).not.toHaveBeenCalled();
   });
 
   it('uses the production reaction store for private Moment add and remove', async () => {
