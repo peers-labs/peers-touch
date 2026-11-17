@@ -74,14 +74,6 @@ pub(crate) fn decode(
                 PrivateMomentContentProjection::Link { text, title, .. } => {
                     format!("{title}\n{text}")
                 }
-                PrivateMomentContentProjection::Poll {
-                    text,
-                    question,
-                    options,
-                    ..
-                } => {
-                    format!("{text}\n{question}\n{}", options.join("\n"))
-                }
                 // A repost snapshot does not grant current read rights to its source.
                 PrivateMomentContentProjection::Repost { comment, .. } => comment,
                 PrivateMomentContentProjection::Location {

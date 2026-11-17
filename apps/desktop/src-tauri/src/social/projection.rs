@@ -118,20 +118,6 @@ pub enum PrivateMomentContentProjection {
         url: String,
         title: String,
     },
-    Poll {
-        text: String,
-        question: String,
-        options: Vec<String>,
-        #[serde(default)]
-        opaque_option_ids: Vec<String>,
-        #[serde(default)]
-        option_set_sha256: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        result: Option<PrivatePollResultProjection>,
-        min_choices: u32,
-        max_choices: u32,
-        expires_at_seconds: i64,
-    },
     Repost {
         comment: String,
         source_post_id: String,
@@ -168,7 +154,6 @@ pub struct PrivateReactionSummaryProjection {
 pub enum PrivateReactionOperation {
     React = 3,
     Unreact = 4,
-    VotePoll = 5,
 }
 
 impl TryFrom<i64> for PrivateReactionOperation {
@@ -178,20 +163,9 @@ impl TryFrom<i64> for PrivateReactionOperation {
         match value {
             3 => Ok(Self::React),
             4 => Ok(Self::Unreact),
-            5 => Ok(Self::VotePoll),
             _ => Err("private interaction operation is invalid".into()),
         }
     }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct PrivatePollResultProjection {
-    pub vote_counts: Vec<String>,
-    pub selected_options: Vec<u32>,
-    pub voter_count: String,
-    pub projection_revision: String,
-    pub command_id: String,
-    pub vote_actor_ptid: String,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -201,7 +175,6 @@ pub struct PrivateReactionCommandProjection {
     pub comment_id: String,
     pub kind: i32,
     pub operation: PrivateReactionOperation,
-    pub selected_opaque_option_ids: Vec<String>,
     pub state: String,
     pub attempt_count: u32,
     pub projection_revision: String,
@@ -428,7 +401,7 @@ fn decrypt_projection_from_response_at(
 
     let kind = private_moment_kind(metadata.r#type)?;
     let (subtype_prepare_authority_sha256, _) =
-        validated_subtype_authority(parts.private, parts.verification, parts.resource, kind)?;
+        validated_subtype_authority(parts.private, parts.verification, kind)?;
     let domain_binding = social::PrivateMomentDomainBinding {
         format_version: PAYLOAD_FORMAT_VERSION,
         kind: kind as i32,
@@ -1014,14 +987,6 @@ fn public_rendered_source_snapshot(
                 social::public_rendered_source_snapshot::Body::Link(body.clone()),
             )
         }
-        Some(social::post::Content::PollPost(body))
-            if post.r#type == social::PostType::Poll as i32 && body.mentions.is_empty() =>
-        {
-            (
-                social::PrivateRenderedSourceKind::Poll,
-                social::public_rendered_source_snapshot::Body::Poll(body.clone()),
-            )
-        }
         Some(social::post::Content::LocationPost(body))
             if post.r#type == social::PostType::Location as i32
                 && body.mentions.is_empty()
@@ -1092,13 +1057,6 @@ fn private_rendered_source_snapshot(
             social::private_rendered_source_snapshot::Body::Link(body.clone()),
         ),
         (
-            social::PrivateMomentKind::Poll,
-            Some(social::private_moment_content::Body::Poll(body)),
-        ) => (
-            social::PrivateRenderedSourceKind::Poll,
-            social::private_rendered_source_snapshot::Body::Poll(body.clone()),
-        ),
-        (
             social::PrivateMomentKind::Location,
             Some(social::private_moment_content::Body::Location(body)),
         ) => (
@@ -1133,14 +1091,14 @@ fn verified_private_mentions(
         Some(social::private_moment_content::Body::Link(body)) => {
             (body.text.as_str(), body.mentions.as_slice())
         }
-        Some(social::private_moment_content::Body::Poll(body)) => {
-            (body.text.as_str(), body.mentions.as_slice())
-        }
         Some(social::private_moment_content::Body::Repost(body)) => {
             (body.comment.as_str(), body.mentions.as_slice())
         }
         Some(social::private_moment_content::Body::Location(body)) => {
             (body.text.as_str(), body.mentions.as_slice())
+        }
+        Some(social::private_moment_content::Body::Poll(_)) => {
+            return Err("private poll Moment is no longer supported".to_string())
         }
         None => return Err("private Moment plaintext body is unavailable".to_string()),
     };
@@ -1279,62 +1237,6 @@ fn project_plaintext(
                 title: preview.title.clone(),
             })
         }
-        Some(social::private_moment_content::Body::Poll(poll)) => {
-            let authority = match private
-                .verification
-                .as_ref()
-                .and_then(|verification| verification.subtype_authority.as_ref())
-            {
-                Some(social::private_content_verification::SubtypeAuthority::PollAuthority(
-                    authority,
-                )) => authority,
-                _ => return Err("private poll Moment authority is unavailable".to_string()),
-            };
-            let mut option_ids = poll
-                .options
-                .iter()
-                .map(|option| option.opaque_option_id.clone())
-                .collect::<Vec<_>>();
-            option_ids.sort();
-            if kind != social::PrivateMomentKind::Poll
-                || !private.objects.is_empty()
-                || poll.question.trim().is_empty()
-                || poll.question.trim() != poll.question
-                || poll.options.iter().any(|option| {
-                    option.opaque_option_id.len() != 32
-                        || option.label.trim().is_empty()
-                        || option.label.trim() != option.label
-                })
-                || option_ids.windows(2).any(|pair| pair[0] == pair[1])
-                || option_ids != authority.opaque_option_ids
-                || poll.option_set_sha256 != authority.option_set_sha256
-                || poll.min_choices != authority.min_choices
-                || poll.max_choices != authority.max_choices
-                || poll.expires_at != authority.expires_at
-            {
-                return Err("private poll Moment authority mismatch".to_string());
-            }
-            let mut content = private_poll_content(poll);
-            let projected_result = private
-                .poll
-                .as_ref()
-                .map(|result| {
-                    super::private_poll::project_poll_result(
-                        &content,
-                        result,
-                        &authority
-                            .resource
-                            .as_ref()
-                            .ok_or("private poll resource is unavailable")?
-                            .content_id,
-                    )
-                })
-                .transpose()?;
-            if let PrivateMomentContentProjection::Poll { result, .. } = &mut content {
-                *result = projected_result;
-            }
-            Ok(content)
-        }
         Some(social::private_moment_content::Body::Repost(repost)) => {
             let authority = match private
                 .verification
@@ -1427,32 +1329,6 @@ fn project_plaintext(
     }
 }
 
-fn private_poll_content(poll: &social::PrivatePollContent) -> PrivateMomentContentProjection {
-    PrivateMomentContentProjection::Poll {
-        text: poll.text.clone(),
-        question: poll.question.clone(),
-        options: poll
-            .options
-            .iter()
-            .map(|option| option.label.clone())
-            .collect(),
-        opaque_option_ids: poll
-            .options
-            .iter()
-            .map(|option| hex::encode(&option.opaque_option_id))
-            .collect(),
-        option_set_sha256: hex::encode(&poll.option_set_sha256),
-        result: None,
-        min_choices: poll.min_choices,
-        max_choices: poll.max_choices,
-        expires_at_seconds: poll
-            .expires_at
-            .as_ref()
-            .map(|value| value.seconds)
-            .unwrap_or_default(),
-    }
-}
-
 fn rendered_repost_source_identity(
     rendered: &social::RenderedSourceSnapshot,
 ) -> Result<
@@ -1481,12 +1357,10 @@ fn rendered_repost_source_identity(
                 Some(social::public_rendered_source_snapshot::Body::Link(body)) => {
                     body.text.clone()
                 }
-                Some(social::public_rendered_source_snapshot::Body::Poll(body)) => {
-                    body.text.clone()
-                }
                 Some(social::public_rendered_source_snapshot::Body::Location(body)) => {
                     body.text.clone()
                 }
+                Some(social::public_rendered_source_snapshot::Body::Poll(_)) => String::new(),
                 None => String::new(),
             };
             Ok((
@@ -1522,12 +1396,10 @@ fn rendered_repost_source_identity(
                 Some(social::private_rendered_source_snapshot::Body::Link(body)) => {
                     body.text.clone()
                 }
-                Some(social::private_rendered_source_snapshot::Body::Poll(body)) => {
-                    body.text.clone()
-                }
                 Some(social::private_rendered_source_snapshot::Body::Location(body)) => {
                     body.text.clone()
                 }
+                Some(social::private_rendered_source_snapshot::Body::Poll(_)) => String::new(),
                 None => String::new(),
             };
             Ok((
@@ -1591,9 +1463,6 @@ fn validate_public_rendered_source(
             Ok(social::PrivateRenderedSourceKind::Link),
             Some(social::public_rendered_source_snapshot::Body::Link(_))
         ) | (
-            Ok(social::PrivateRenderedSourceKind::Poll),
-            Some(social::public_rendered_source_snapshot::Body::Poll(_))
-        ) | (
             Ok(social::PrivateRenderedSourceKind::Location),
             Some(social::public_rendered_source_snapshot::Body::Location(_))
         )
@@ -1642,9 +1511,6 @@ fn validate_private_rendered_source(
         ) | (
             Ok(social::PrivateRenderedSourceKind::Link),
             Some(social::private_rendered_source_snapshot::Body::Link(_))
-        ) | (
-            Ok(social::PrivateRenderedSourceKind::Poll),
-            Some(social::private_rendered_source_snapshot::Body::Poll(_))
         ) | (
             Ok(social::PrivateRenderedSourceKind::Location),
             Some(social::private_rendered_source_snapshot::Body::Location(_))
@@ -1701,7 +1567,7 @@ fn verify_response_integrity_at(
 
     let kind = private_moment_kind(parts.metadata.r#type)?;
     let (subtype_prepare_authority_sha256, subtype_authority_hash) =
-        validated_subtype_authority(parts.private, parts.verification, parts.resource, kind)?;
+        validated_subtype_authority(parts.private, parts.verification, kind)?;
     let domain_binding = social::PrivateMomentDomainBinding {
         format_version: PAYLOAD_FORMAT_VERSION,
         kind: kind as i32,
@@ -1904,78 +1770,13 @@ pub(super) fn object_descriptor_set_hash(
     Ok(Sha256::digest(encoder.finish()).into())
 }
 
-pub(super) fn private_poll_option_set_hash(
-    opaque_option_ids: &[Vec<u8>],
-) -> Result<[u8; 32], String> {
-    let mut encoder = CanonicalMessageEncoder::new();
-    for option_id in opaque_option_ids {
-        encoder
-            .repeated_bytes(1, option_id)
-            .map_err(|error| error.to_string())?;
-    }
-    Ok(Sha256::digest(encoder.finish()).into())
-}
-
 fn validated_subtype_authority(
     private: &social::PrivateContentAccess,
     verification: &social::PrivateContentVerification,
-    resource: &wire::SecureResourceRef,
     kind: social::PrivateMomentKind,
 ) -> Result<(Vec<u8>, [u8; 32]), String> {
     let empty_hash: [u8; 32] = Sha256::digest([]).into();
     match kind {
-        social::PrivateMomentKind::Poll => {
-            let authority = match verification.subtype_authority.as_ref() {
-                Some(social::private_content_verification::SubtypeAuthority::PollAuthority(
-                    authority,
-                )) => authority,
-                _ => return Err("private poll Moment authority is unavailable".to_string()),
-            };
-            let expires_at = authority
-                .expires_at
-                .as_ref()
-                .ok_or_else(|| "private poll Moment expiry is unavailable".to_string())?;
-            if authority.resource.as_ref() != Some(resource)
-                || authority.opaque_option_ids.len() < 2
-                || authority.opaque_option_ids.len() > 20
-                || authority.min_choices < 1
-                || authority.min_choices > authority.max_choices
-                || authority.max_choices > authority.opaque_option_ids.len() as u32
-                || checked_timestamp_millis(Some(expires_at), "private poll Moment expiry").is_err()
-                || authority
-                    .opaque_option_ids
-                    .iter()
-                    .any(|option_id| option_id.len() != 32)
-                || !authority
-                    .opaque_option_ids
-                    .windows(2)
-                    .all(|pair| pair[0] < pair[1])
-            {
-                return Err("private poll Moment authority is invalid".to_string());
-            }
-            let option_set_hash = private_poll_option_set_hash(&authority.opaque_option_ids)?;
-            if authority.option_set_sha256.as_slice() != option_set_hash.as_slice() {
-                return Err("private poll Moment option-set commitment is invalid".to_string());
-            }
-            if let Some(poll) = private.poll.as_ref() {
-                let projected_ids = poll
-                    .options
-                    .iter()
-                    .map(|option| option.opaque_option_id.as_slice())
-                    .collect::<Vec<_>>();
-                let authority_ids = authority
-                    .opaque_option_ids
-                    .iter()
-                    .map(Vec::as_slice)
-                    .collect::<Vec<_>>();
-                if projected_ids != authority_ids {
-                    return Err("private poll Moment vote projection is invalid".to_string());
-                }
-            }
-            let canonical = authority.encode_to_vec();
-            let hash: [u8; 32] = Sha256::digest(&canonical).into();
-            Ok((hash.to_vec(), hash))
-        }
         social::PrivateMomentKind::Repost => {
             let authority = match verification.subtype_authority.as_ref() {
                 Some(social::private_content_verification::SubtypeAuthority::RepostAuthority(
@@ -2094,7 +1895,6 @@ fn private_moment_kind(post_type: i32) -> Result<social::PrivateMomentKind, Stri
         Some(social::PostType::Image) => Ok(social::PrivateMomentKind::Image),
         Some(social::PostType::Video) => Ok(social::PrivateMomentKind::Video),
         Some(social::PostType::Link) => Ok(social::PrivateMomentKind::Link),
-        Some(social::PostType::Poll) => Ok(social::PrivateMomentKind::Poll),
         Some(social::PostType::Repost) => Ok(social::PrivateMomentKind::Repost),
         Some(social::PostType::Location) => Ok(social::PrivateMomentKind::Location),
         _ => Err("private Moment subtype is unsupported".to_string()),
@@ -2498,113 +2298,6 @@ mod tests {
                 reacted_by_viewer: true,
             },
         ])
-        .is_err());
-    }
-
-    #[test]
-    fn secure_content_poll_projection_requires_exact_authority_equality() {
-        let resource = wire::SecureResourceRef {
-            owner_domain: wire::SecureContentOwnerDomain::Social as i32,
-            content_id: "content-poll".to_string(),
-            generation: 1,
-        };
-        let option_ids = vec![vec![0x11; 32], vec![0x22; 32]];
-        let option_set_sha256 = private_poll_option_set_hash(&option_ids).unwrap();
-        let authority = social::PrivatePollAuthority {
-            resource: Some(resource.clone()),
-            opaque_option_ids: option_ids.clone(),
-            option_set_sha256: option_set_sha256.to_vec(),
-            min_choices: 1,
-            max_choices: 1,
-            expires_at: Some(prost_types::Timestamp {
-                seconds: 4_000_000_000,
-                nanos: 0,
-            }),
-        };
-        let private = social::PrivateContentAccess {
-            poll: Some(social::PrivatePollProjection {
-                options: option_ids
-                    .iter()
-                    .map(|option_id| social::PrivatePollOptionResult {
-                        opaque_option_id: option_id.clone(),
-                        vote_count: 0,
-                        selected_by_viewer: false,
-                    })
-                    .collect(),
-                voter_count: 0,
-                post_id: resource.content_id.clone(),
-                option_set_sha256: option_set_sha256.to_vec(),
-                ..Default::default()
-            }),
-            verification: Some(social::PrivateContentVerification {
-                subtype_authority: Some(
-                    social::private_content_verification::SubtypeAuthority::PollAuthority(
-                        authority.clone(),
-                    ),
-                ),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        let verification = private.verification.as_ref().unwrap();
-        let (domain_field, proof_hash) = validated_subtype_authority(
-            &private,
-            verification,
-            &resource,
-            social::PrivateMomentKind::Poll,
-        )
-        .unwrap();
-        assert_eq!(domain_field, proof_hash);
-        let expected_proof_hash: [u8; 32] = Sha256::digest(authority.encode_to_vec()).into();
-        assert_eq!(proof_hash, expected_proof_hash);
-
-        let content = social::PrivateMomentContent {
-            format_version: PAYLOAD_FORMAT_VERSION,
-            body: Some(social::private_moment_content::Body::Poll(
-                social::PrivatePollContent {
-                    text: "private".to_string(),
-                    question: "Choose one".to_string(),
-                    options: vec![
-                        social::PrivatePollOption {
-                            opaque_option_id: option_ids[1].clone(),
-                            label: "Second".to_string(),
-                        },
-                        social::PrivatePollOption {
-                            opaque_option_id: option_ids[0].clone(),
-                            label: "First".to_string(),
-                        },
-                    ],
-                    option_set_sha256: option_set_sha256.to_vec(),
-                    min_choices: 1,
-                    max_choices: 1,
-                    expires_at: authority.expires_at.clone(),
-                    mentions: Vec::new(),
-                },
-            )),
-            mention_commitment_salt: Vec::new(),
-        };
-        assert!(matches!(
-            project_plaintext(
-                &content,
-                &private,
-                social::PrivateMomentKind::Poll,
-                PrivateMediaAccessPath::HomeStationLocalObject,
-            )
-            .unwrap(),
-            PrivateMomentContentProjection::Poll { .. }
-        ));
-
-        let mut tampered = content;
-        let Some(social::private_moment_content::Body::Poll(poll)) = tampered.body.as_mut() else {
-            unreachable!();
-        };
-        poll.options[0].opaque_option_id[0] ^= 1;
-        assert!(project_plaintext(
-            &tampered,
-            &private,
-            social::PrivateMomentKind::Poll,
-            PrivateMediaAccessPath::HomeStationLocalObject,
-        )
         .is_err());
     }
 
