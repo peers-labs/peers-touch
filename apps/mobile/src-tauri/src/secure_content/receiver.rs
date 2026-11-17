@@ -699,14 +699,6 @@ fn decrypt_text_with_content_key(
         return Err(PrivateReadError::integrity());
     }
     let mentions = verified_private_mentions(&decoded, parts.private)?;
-    if parts
-        .private
-        .poll
-        .as_ref()
-        .is_some_and(|poll| poll.post_id != metadata.post_id)
-    {
-        return Err(PrivateReadError::integrity());
-    }
     let content = project_plaintext(&decoded, parts.private, kind)?;
     let (reactions, reaction_revision, reactions_hydrated) =
         source_reaction_summaries(response, &metadata.post_id).map_err(PrivateReadError::from)?;
@@ -1103,9 +1095,6 @@ fn project_plaintext(
                 title: link.title.clone(),
             })
         }
-        Some(social::private_moment_content::Body::Poll(_)) => {
-            Err("private poll Moment is no longer supported".to_string())
-        }
         Some(social::private_moment_content::Body::Repost(body)) => {
             let authority = match private
                 .verification
@@ -1192,9 +1181,6 @@ fn verified_private_mentions(
         }
         Some(social::private_moment_content::Body::Link(body)) => {
             (body.text.as_str(), body.mentions.as_slice())
-        }
-        Some(social::private_moment_content::Body::Poll(_)) => {
-            return Err("private poll Moment is no longer supported".to_string())
         }
         Some(social::private_moment_content::Body::Repost(body)) => {
             (body.comment.as_str(), body.mentions.as_slice())
@@ -1748,9 +1734,6 @@ fn validated_subtype_authority(
 ) -> Result<(Vec<u8>, [u8; 32]), String> {
     let empty_hash: [u8; 32] = Sha256::digest([]).into();
     match kind {
-        social::PrivateMomentKind::Poll => {
-            Err("private poll Moment is no longer supported".to_string())
-        }
         social::PrivateMomentKind::Repost => {
             let authority = match verification.subtype_authority.as_ref() {
                 Some(social::private_content_verification::SubtypeAuthority::RepostAuthority(
@@ -1800,7 +1783,7 @@ fn validated_subtype_authority(
             Ok((hash.to_vec(), hash))
         }
         _ => {
-            if verification.subtype_authority.is_some() || private.poll.is_some() {
+            if verification.subtype_authority.is_some() {
                 return Err("private Moment has unexpected subtype authority".to_string());
             }
             Ok((Vec::new(), empty_hash))
@@ -1875,7 +1858,6 @@ fn private_moment_kind(post_type: i32) -> Result<social::PrivateMomentKind, Stri
         Ok(social::PostType::Image) => Ok(social::PrivateMomentKind::Image),
         Ok(social::PostType::Video) => Ok(social::PrivateMomentKind::Video),
         Ok(social::PostType::Link) => Ok(social::PrivateMomentKind::Link),
-        Ok(social::PostType::Poll) => Err("private poll Moment is no longer supported".to_string()),
         Ok(social::PostType::Repost) => Ok(social::PrivateMomentKind::Repost),
         Ok(social::PostType::Location) => Ok(social::PrivateMomentKind::Location),
         Err(_) => Err("private Moment subtype is invalid".to_string()),
@@ -2237,7 +2219,6 @@ mod tests {
                         payload: Some(payload),
                         viewer_envelope: Some(envelope),
                         objects: Vec::new(),
-                        poll: None,
                         verification: Some(social::PrivateContentVerification {
                             commit_proof: Some(proof),
                             mention_routing: None,

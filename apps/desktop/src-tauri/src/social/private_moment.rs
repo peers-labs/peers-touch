@@ -949,7 +949,6 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                 social::private_content_verification::SubtypeAuthority::RepostAuthority(
                     authority,
                 ) => Some(authority),
-                _ => None,
             })
             .ok_or_else(|| "private repost authority is unavailable".to_string())?;
         let source_post_id = repost
@@ -2551,9 +2550,6 @@ fn validate_publish_intent(intent: &PrivateMomentPublishIntent) -> Result<(), St
         {
             return Err("private repost Moment source is invalid".to_string());
         }
-        social::PrivateMomentKind::Poll => {
-            return Err("private poll Moment is no longer supported".to_string());
-        }
         social::PrivateMomentKind::Text
         | social::PrivateMomentKind::Image
         | social::PrivateMomentKind::Video
@@ -2689,11 +2685,6 @@ fn private_payload(
                 hashtags: Vec::new(),
                 mentions: mentions.to_vec(),
             })
-        }
-        social::PrivateMomentKind::Poll => {
-            return Err(PrivatePublishFailure::cleanup(
-                "private poll Moment is no longer supported",
-            ))
         }
         social::PrivateMomentKind::Unspecified => {
             return Err(PrivatePublishFailure::cleanup(

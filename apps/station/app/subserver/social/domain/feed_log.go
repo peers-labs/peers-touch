@@ -81,7 +81,7 @@ func VerifyFeedEvent(event *model.FeedEvent, grant *model.FeedWriterGrant) error
 		statement.CreatedAtUnixMs <= 0 || len(statement.PreviousHash) != sha256.Size ||
 		len(event.Payload) == 0 || len(event.Payload) > signedlog.MaxMessageBytes ||
 		statement.Kind < model.FeedEventKind_FEED_EVENT_KIND_POST_CREATED ||
-		statement.Kind > model.FeedEventKind_FEED_EVENT_KIND_POLL_BALLOT_SET {
+		statement.Kind > model.FeedEventKind_FEED_EVENT_KIND_COMMENT_TOMBSTONED {
 		return ErrFeedInvalid
 	}
 	grantHash, err := signedlog.Hash(FeedGrantDomain, grant)

@@ -1097,9 +1097,6 @@ fn verified_private_mentions(
         Some(social::private_moment_content::Body::Location(body)) => {
             (body.text.as_str(), body.mentions.as_slice())
         }
-        Some(social::private_moment_content::Body::Poll(_)) => {
-            return Err("private poll Moment is no longer supported".to_string())
-        }
         None => return Err("private Moment plaintext body is unavailable".to_string()),
     };
     let routing = private
@@ -1360,7 +1357,6 @@ fn rendered_repost_source_identity(
                 Some(social::public_rendered_source_snapshot::Body::Location(body)) => {
                     body.text.clone()
                 }
-                Some(social::public_rendered_source_snapshot::Body::Poll(_)) => String::new(),
                 None => String::new(),
             };
             Ok((
@@ -1399,7 +1395,6 @@ fn rendered_repost_source_identity(
                 Some(social::private_rendered_source_snapshot::Body::Location(body)) => {
                     body.text.clone()
                 }
-                Some(social::private_rendered_source_snapshot::Body::Poll(_)) => String::new(),
                 None => String::new(),
             };
             Ok((
@@ -1826,7 +1821,7 @@ fn validated_subtype_authority(
             Ok((hash.to_vec(), hash))
         }
         _ => {
-            if verification.subtype_authority.is_some() || private.poll.is_some() {
+            if verification.subtype_authority.is_some() {
                 return Err("private Moment has unexpected subtype authority".to_string());
             }
             Ok((Vec::new(), empty_hash))
@@ -2167,7 +2162,6 @@ mod tests {
                         payload: Some(payload),
                         viewer_envelope: Some(envelope),
                         objects: Vec::new(),
-                        poll: None,
                         verification: Some(social::PrivateContentVerification {
                             commit_proof: Some(proof),
                             mention_routing: None,

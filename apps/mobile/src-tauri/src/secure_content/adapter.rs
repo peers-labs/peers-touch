@@ -226,7 +226,6 @@ pub fn prepare_request(
         command_id: draft.prepare_command_id.clone(),
         kind: social::PrivateMomentKind::Text as i32,
         repost_authority: None,
-        poll_authority: None,
     })
 }
 
@@ -309,7 +308,6 @@ pub fn build_text_submission(
         envelopes,
         objects: Vec::new(),
         mention_routing: None,
-        poll_authority: None,
         repost_authority: None,
         command_id: command_id.clone(),
     };
@@ -423,9 +421,6 @@ pub fn validate_moment_intent(intent: &PrivateMomentIntent) -> Result<(), String
                 }) =>
         {
             Err("private repost Moment source is invalid".to_string())
-        }
-        social::PrivateMomentKind::Poll => {
-            Err("private poll Moment is no longer supported".to_string())
         }
         social::PrivateMomentKind::Text
         | social::PrivateMomentKind::Image
@@ -742,8 +737,8 @@ pub fn verify_submit_readback(
         checked_timestamp_millis(metadata.updated_at.as_ref(), "private Social update time")?;
     let kind = private_moment_kind_from_post_type(metadata.r#type)?;
     let (subtype_prepare_authority_sha256, subtype_authority_sha256, subtype_matches) =
-        match (&request.poll_authority, &request.repost_authority) {
-            (None, Some(authority)) if kind == social::PrivateMomentKind::Repost => {
+        match &request.repost_authority {
+            Some(authority) if kind == social::PrivateMomentKind::Repost => {
                 let encoded = authority.encode_to_vec();
                 let hash = Sha256::digest(&encoded).to_vec();
                 let matches = matches!(
@@ -754,7 +749,7 @@ pub fn verify_submit_readback(
                 );
                 (hash.clone(), hash, matches)
             }
-            (None, None) if kind != social::PrivateMomentKind::Repost => {
+            None if kind != social::PrivateMomentKind::Repost => {
                 (
                     Vec::new(),
                     Sha256::digest([]).to_vec(),
@@ -1286,7 +1281,6 @@ fn private_moment_kind_from_post_type(value: i32) -> Result<social::PrivateMomen
         Ok(social::PostType::Image) => Ok(social::PrivateMomentKind::Image),
         Ok(social::PostType::Video) => Ok(social::PrivateMomentKind::Video),
         Ok(social::PostType::Link) => Ok(social::PrivateMomentKind::Link),
-        Ok(social::PostType::Poll) => Err("private poll Moment is no longer supported".to_string()),
         Ok(social::PostType::Repost) => Ok(social::PrivateMomentKind::Repost),
         Ok(social::PostType::Location) => Ok(social::PrivateMomentKind::Location),
         Err(_) => Err("private Moment readback subtype is invalid".to_string()),
@@ -1365,9 +1359,6 @@ fn private_moment_payload(
                 hashtags: Vec::new(),
                 mentions: mentions.to_vec(),
             })
-        }
-        social::PrivateMomentKind::Poll => {
-            return Err("private poll Moment is no longer supported".to_string())
         }
         social::PrivateMomentKind::Repost => {
             let repost = repost
