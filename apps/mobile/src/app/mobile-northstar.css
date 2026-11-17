@@ -42,13 +42,15 @@ body,
 }
 .mobile-me-identity {
   width: 100%;
-  /* Bleed the hero under the status bar so the surface reads edge-to-edge
-     instead of leaving a detached system strip above the app. */
-  margin-top: calc(0px - var(--safe-area-top));
 }
 .mobile-me-cover {
   position: relative;
   box-sizing: border-box;
+  /* Only the cover artwork bleeds under the status bar. Pull the cover up by
+     the safe-area inset while growing it by the same amount, so its in-flow
+     height is unchanged: the identity body keeps its original position below
+     the status bar instead of being dragged under the notch. */
+  margin-top: calc(0px - var(--safe-area-top));
   height: calc(clamp(144px, 38vw, 210px) + var(--safe-area-top));
   padding-top: var(--safe-area-top);
   overflow: hidden;
