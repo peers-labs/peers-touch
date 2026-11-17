@@ -3929,11 +3929,22 @@ span.message-avatar {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 16px;
+  padding: 10px 12px;
   background: #fff;
   border-bottom: 0.5px solid rgba(15, 23, 42, 0.06);
   cursor: pointer;
   transition: background 0.12s;
+}
+
+/* The full-width list button inherits the primitive's centered content;
+   re-align it to the start so avatar + copy line up with the other contact
+   rows (left edge), instead of floating in the middle. App-owned class, no
+   .pt-* selector override. */
+.contact-row-button {
+  justify-content: flex-start;
+  text-align: left;
+  width: 100%;
+  padding: 0;
 }
 
 .contact-item-row:last-child {

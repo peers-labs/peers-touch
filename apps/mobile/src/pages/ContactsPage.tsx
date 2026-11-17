@@ -603,7 +603,9 @@ function ContactsPageInner({
                     className="contact-item friend-request-item"
                   >
                     <div className="contact-item-meta">
-                      <MobileAvatar src={request.senderAvatar}>{displayPeerName(request.senderDisplayName, request.senderPtid, t).slice(0, 1)}</MobileAvatar>
+                      <MobileAvatar src={request.senderAvatar}
+                        name={displayPeerName(request.senderDisplayName, request.senderPtid, t)}
+                        identityKey={request.senderPtid}>{displayPeerName(request.senderDisplayName, request.senderPtid, t).slice(0, 1)}</MobileAvatar>
                       <span className="contact-item-copy">
                         <Text strong>{displayPeerName(request.senderDisplayName, request.senderPtid, t)}</Text>
                         <span className="contact-item-description">
@@ -663,10 +665,12 @@ function ContactsPageInner({
                       : null}
                       <div className="contact-item-row">
                         <Button actionId={`contacts.open.${contact.peerPtid}`} data-focus-id={contact.peerPtid}
-                          fullWidth emphasis="quiet" density="comfortable"
+                          fullWidth emphasis="quiet" density="comfortable" className="contact-row-button"
                           onActivate={() => onOpenContact(contact.peerPtid)}>
                         <span className="conversation-avatar-frame">
-                          <MobileAvatar src={contact.peerAvatar} size={44}>{displayPeerName(contact.peerName, contact.peerPtid, t).slice(0, 1)}</MobileAvatar>
+                          <MobileAvatar src={contact.peerAvatar} size={44}
+                            name={displayPeerName(contact.peerName, contact.peerPtid, t)}
+                            identityKey={contact.peerPtid}>{displayPeerName(contact.peerName, contact.peerPtid, t).slice(0, 1)}</MobileAvatar>
                           {contact.peerOnline ? <span className="conversation-online-dot" aria-hidden="true" /> : null}
                         </span>
                         <div className="contact-info">
@@ -706,7 +710,9 @@ function ContactsPageInner({
               {(rows) => rows.map((request) => (
                 <div key={request.requestId} data-scroll-anchor-id={request.requestId} className="contact-item">
                   <div className="contact-item-meta">
-                    <MobileAvatar src={request.receiverAvatar}>{displayPeerName(request.receiverDisplayName, request.receiverPtid, t).slice(0, 1)}</MobileAvatar>
+                    <MobileAvatar src={request.receiverAvatar}
+                      name={displayPeerName(request.receiverDisplayName, request.receiverPtid, t)}
+                      identityKey={request.receiverPtid}>{displayPeerName(request.receiverDisplayName, request.receiverPtid, t).slice(0, 1)}</MobileAvatar>
                     <span className="contact-item-copy">
                       <Text strong>{displayPeerName(request.receiverDisplayName, request.receiverPtid, t)}</Text>
                       <span className="contact-item-description">{t('mobile.contacts.waitingForAccept')}</span>
