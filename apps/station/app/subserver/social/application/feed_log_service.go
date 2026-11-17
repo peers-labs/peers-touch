@@ -98,11 +98,7 @@ func (s *FeedLogService) Submit(ctx context.Context, actorPTID, deviceID string,
 		if err != nil {
 			return err
 		}
-		admissions, err := s.pollAdmissionsFor(ctx, tx, request.Bundle)
-		if err != nil {
-			return err
-		}
-		response = &model.SubmitFeedEventResponse{Head: head, Duplicate: duplicate, PollAdmissions: admissions}
+		response = &model.SubmitFeedEventResponse{Head: head, Duplicate: duplicate}
 		return nil
 	})
 	if err != nil {

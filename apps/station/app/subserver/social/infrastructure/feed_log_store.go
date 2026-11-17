@@ -157,7 +157,7 @@ func (s *FeedLogStore) Migrate(ctx context.Context) error {
 		&FeedChainRecord{}, &FeedEventRecord{}, &FeedFanoutRecord{},
 		&FeedSubscriptionRecord{}, &FeedInteractionRecord{},
 		&FeedObjectRecord{},
-		&FeedReactionVersion{}, &FeedPollVersion{},
+		&FeedReactionVersion{},
 		&FeedInteractionFanout{},
 		&FeedThreadHead{}, &FeedThreadRecord{}, &FeedQuarantineRecord{},
 	)

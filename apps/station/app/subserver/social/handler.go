@@ -138,7 +138,6 @@ func (s *subServer) Handlers() []server.Handler {
 		// Reactions
 		server.NewTypedHandler("social-react", routeSocialMomentReact, server.POST, s.handleReact, cw, deviceIDWrapper, jw),
 		server.NewTypedHandler("social-unreact", routeSocialMomentUnreact, server.POST, s.handleUnreact, cw, deviceIDWrapper, jw),
-		server.NewStrictTypedHandler("social-vote-private-poll", routeSocialMomentVote, server.POST, s.handleVotePrivatePoll, socialObjectPathWrapper("/api/v1/social/moments/", "/poll/vote"), cw, privateContentAuthenticationFailureWrapper, privateContentDeviceWrapper, privateContentJWTWrapper),
 
 		// Comments
 		server.NewStrictTypedHandler("social-get-moment-comments", routeSocialMomentComment, server.GET, s.handleListMomentComments, cw, privateContentAuthenticationFailureWrapper, deviceIDWrapper, privateContentOptionalJWTWrapper),
@@ -1044,9 +1043,7 @@ func privateContentHandlerError(err error) error {
 	message := "private-content command failed"
 	switch domain.PrivateContentCodeOf(err) {
 	case domain.PrivateContentInvalidArgument,
-		domain.PrivateContentUnsupported,
-		domain.PrivateContentPollNotPoll,
-		domain.PrivateContentPollInvalidSelection:
+		domain.PrivateContentUnsupported:
 		status = nethttp.StatusBadRequest
 		code = model.ErrorCode_ERROR_CODE_INVALID_REQUEST
 		message = "invalid private-content command"
@@ -1060,9 +1057,7 @@ func privateContentHandlerError(err error) error {
 		message = "private content not found"
 	case domain.PrivateContentConflict,
 		domain.PrivateContentStalePlan,
-		domain.PrivateContentExpiredPlan,
-		domain.PrivateContentPollDefinitionChanged,
-		domain.PrivateContentPollClosed:
+		domain.PrivateContentExpiredPlan:
 		status = nethttp.StatusConflict
 		code = model.ErrorCode_ERROR_CODE_INVALID_REQUEST
 		message = "private-content command conflicts with current authority"
@@ -1404,27 +1399,6 @@ func (s *subServer) handleUnreact(ctx context.Context, req *model.UnreactToPostR
 		return nil, err
 	}
 	response, err := s.privateContentSvc.UnreactPrivateMoment(ctx, author, req)
-	if err != nil {
-		return nil, privateContentHandlerError(err)
-	}
-	return response, nil
-}
-
-func (s *subServer) handleVotePrivatePoll(ctx context.Context, req *privatecontentpb.VotePrivatePollRequest) (*privatecontentpb.VotePrivatePollResponse, error) {
-	if pathID, ok := ctx.Value(socialObjectPathContextKey{}).(string); ok && pathID != req.GetPostId() {
-		return nil, server.BadRequest("poll path and signed post_id differ")
-	}
-	if _, public := canonicalPublicSocialID(req.GetPostId()); public {
-		return nil, signedPublicWriteRequired()
-	}
-	if s.privateContentSvc == nil {
-		return nil, server.InternalError("private poll owner is unavailable")
-	}
-	author, err := s.privateContentAuthor(ctx)
-	if err != nil {
-		return nil, err
-	}
-	response, err := s.privateContentSvc.VotePrivatePoll(ctx, author, req)
 	if err != nil {
 		return nil, privateContentHandlerError(err)
 	}

@@ -22,7 +22,6 @@ var privateKindRegistry = []privateKindBinding{
 	{privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_IMAGE, privateContentPostKindImage, actormodel.PostType_IMAGE},
 	{privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_VIDEO, privateContentPostKindVideo, actormodel.PostType_VIDEO},
 	{privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_LINK, privateContentPostKindLink, actormodel.PostType_LINK},
-	{privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_POLL, privateContentPostKindPoll, actormodel.PostType_POLL},
 	{privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_REPOST, privateContentPostKindRepost, actormodel.PostType_REPOST},
 	{privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_LOCATION, privateContentPostKindLocation, actormodel.PostType_LOCATION},
 }

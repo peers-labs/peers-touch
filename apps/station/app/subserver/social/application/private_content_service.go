@@ -1591,7 +1591,7 @@ func (s *PrivateContentService) GetPrivateMoment(
 	if err != nil {
 		return nil, err
 	}
-	pollAuthority, repostAuthority, err := decodePrivateSubtypeAuthority(
+	repostAuthority, err := decodePrivateSubtypeAuthority(
 		read.Post.Kind,
 		read.PrepareBinding,
 	)
@@ -1642,14 +1642,7 @@ func (s *PrivateContentService) GetPrivateMoment(
 		return nil, err
 	}
 	access := privateContentAccess(payload, objects, viewerEnvelope, proof, attestation,
-		mentionRouting, pollAuthority, repostAuthority)
-	if pollAuthority != nil {
-		access.Poll, err = s.interactionStore.LoadPrivatePollProjection(ctx, nil, s.localStationPeerID,
-			viewer.GetActor().GetPtid(), pollAuthority)
-		if err != nil {
-			return nil, mapPrivateStoreError(operation, err)
-		}
-	}
+		mentionRouting, repostAuthority)
 	return &privatecontentpb.GetMomentResourceResponse{
 		Post:                       postProjection,
 		ReactionProjectionRevision: reactionProjectionRevision,
@@ -2025,7 +2018,7 @@ func (s *PrivateContentService) submit(
 				}
 				if prepared.MomentKind ==
 					privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_REPOST {
-					_, repostAuthority, authorityErr :=
+					repostAuthority, authorityErr :=
 						decodePrivateSubtypeAuthority(
 							privateContentPostKindRepost,
 							binding,
@@ -2817,7 +2810,6 @@ func (s *PrivateContentService) persistMoment(
 					proof,
 					nil,
 					request.GetMentionRouting(),
-					request.GetPollAuthority(),
 					request.GetRepostAuthority(),
 				),
 			},
@@ -3013,7 +3005,6 @@ func (s *PrivateContentService) persistComment(
 					proof,
 					nil,
 					request.GetMentionRouting(),
-					nil,
 					nil,
 				),
 			},
@@ -3335,7 +3326,6 @@ func privateContentAccess(
 	proof *securecontentpb.ViewerContentCommitProof,
 	attestation *securecontentpb.StationContentSigningKeyAttestation,
 	mentionRouting *privatecontentpb.SignedMentionRouting,
-	pollAuthority *privatecontentpb.PrivatePollAuthority,
 	repostAuthority *privatecontentpb.PrivateRepostAuthority,
 ) *privatecontentpb.PrivateContentAccess {
 	clonedObjects := make([]*securecontentpb.EncryptedObjectDescriptor, 0, len(objects))
@@ -3359,14 +3349,6 @@ func privateContentAccess(
 		verification.MentionRouting = proto.Clone(
 			mentionRouting,
 		).(*privatecontentpb.SignedMentionRouting)
-	}
-	if pollAuthority != nil {
-		verification.SubtypeAuthority =
-			&privatecontentpb.PrivateContentVerification_PollAuthority{
-				PollAuthority: proto.Clone(
-					pollAuthority,
-				).(*privatecontentpb.PrivatePollAuthority),
-			}
 	}
 	if repostAuthority != nil {
 		verification.SubtypeAuthority =
@@ -4276,7 +4258,7 @@ func decodePersistedPrepare(
 				)
 		}
 		postKind, _ := privateMomentProjection(input.GetKind())
-		pollAuthority, repostAuthority, err :=
+		repostAuthority, err :=
 			decodePrivateSubtypeAuthority(postKind, binding)
 		if err != nil {
 			return socialdomain.PrivatePrepareMaterial{}, err
@@ -4287,7 +4269,6 @@ func decodePersistedPrepare(
 			ObjectCount:     input.GetObjectCount(),
 			CommandId:       input.GetCommandId(),
 			Kind:            input.GetKind(),
-			PollAuthority:   pollAuthority,
 			RepostAuthority: repostAuthority,
 		}
 		material, err := socialdomain.CanonicalizePrivateMomentPrepare(request)
@@ -4358,30 +4339,28 @@ func decodePrivateSubtypeAuthority(
 	postKind string,
 	binding infrastructure.PrivatePrepareBinding,
 ) (
-	*privatecontentpb.PrivatePollAuthority,
 	*privatecontentpb.PrivateRepostAuthority,
 	error,
 ) {
 	const operation = "social.private_content.decode_subtype_authority"
 	emptyHash := sha256.Sum256(nil)
-	if postKind != privateContentPostKindPoll &&
-		postKind != privateContentPostKindRepost {
+	if postKind != privateContentPostKindRepost {
 		if len(binding.SubtypePrepareAuthorityBytes) != 0 ||
 			!bytes.Equal(
 				binding.SubtypePrepareAuthoritySHA256,
 				emptyHash[:],
 			) {
-			return nil, nil, socialdomain.NewPrivateContentError(
+			return nil, socialdomain.NewPrivateContentError(
 				socialdomain.PrivateContentIntegrityFailed,
 				operation,
 				"subtype_authority",
 				"must be absent for this Post subtype",
 			)
 		}
-		return nil, nil, nil
+		return nil, nil
 	}
 	if len(binding.SubtypePrepareAuthorityBytes) == 0 {
-		return nil, nil, socialdomain.NewPrivateContentError(
+		return nil, socialdomain.NewPrivateContentError(
 			socialdomain.PrivateContentIntegrityFailed,
 			operation,
 			"subtype_authority",
@@ -4395,85 +4374,43 @@ func decodePrivateSubtypeAuthority(
 		authorityHash[:],
 		binding.SubtypePrepareAuthoritySHA256,
 	) {
-		return nil, nil, socialdomain.NewPrivateContentError(
+		return nil, socialdomain.NewPrivateContentError(
 			socialdomain.PrivateContentIntegrityFailed,
 			operation,
 			"subtype_authority",
 			"bytes do not match the durable hash",
 		)
 	}
-	switch postKind {
-	case privateContentPostKindPoll:
-		authority := &privatecontentpb.PrivatePollAuthority{}
-		if err := proto.Unmarshal(
-			binding.SubtypePrepareAuthorityBytes,
-			authority,
-		); err != nil {
-			return nil, nil, socialdomain.WrapPrivateContentError(
-				socialdomain.PrivateContentIntegrityFailed,
-				operation,
-				err,
-			)
-		}
-		canonical, err := socialdomain.CanonicalProtoBytes(authority)
-		if err != nil || !bytes.Equal(
-			canonical,
-			binding.SubtypePrepareAuthorityBytes,
-		) {
-			return nil, nil, socialdomain.NewPrivateContentError(
-				socialdomain.PrivateContentIntegrityFailed,
-				operation,
-				"poll_authority",
-				"is not canonical",
-			)
-		}
-		if err := socialdomain.ValidatePrivatePollAuthority(
-			authority,
-			authority.GetResource().GetContentId(),
-			operation,
-		); err != nil {
-			return nil, nil, err
-		}
-		return authority, nil, nil
-	case privateContentPostKindRepost:
-		authority := &privatecontentpb.PrivateRepostAuthority{}
-		if err := proto.Unmarshal(
-			binding.SubtypePrepareAuthorityBytes,
-			authority,
-		); err != nil {
-			return nil, nil, socialdomain.WrapPrivateContentError(
-				socialdomain.PrivateContentIntegrityFailed,
-				operation,
-				err,
-			)
-		}
-		canonical, err := socialdomain.CanonicalProtoBytes(authority)
-		if err != nil || !bytes.Equal(
-			canonical,
-			binding.SubtypePrepareAuthorityBytes,
-		) {
-			return nil, nil, socialdomain.NewPrivateContentError(
-				socialdomain.PrivateContentIntegrityFailed,
-				operation,
-				"repost_authority",
-				"is not canonical",
-			)
-		}
-		if err := socialdomain.ValidatePrivateRepostAuthority(
-			authority,
-			operation,
-		); err != nil {
-			return nil, nil, err
-		}
-		return nil, authority, nil
-	default:
-		return nil, nil, socialdomain.NewPrivateContentError(
+	authority := &privatecontentpb.PrivateRepostAuthority{}
+	if err := proto.Unmarshal(
+		binding.SubtypePrepareAuthorityBytes,
+		authority,
+	); err != nil {
+		return nil, socialdomain.WrapPrivateContentError(
 			socialdomain.PrivateContentIntegrityFailed,
 			operation,
-			"post.kind",
-			"is unsupported",
+			err,
 		)
 	}
+	canonical, err := socialdomain.CanonicalProtoBytes(authority)
+	if err != nil || !bytes.Equal(
+		canonical,
+		binding.SubtypePrepareAuthorityBytes,
+	) {
+		return nil, socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentIntegrityFailed,
+			operation,
+			"repost_authority",
+			"is not canonical",
+		)
+	}
+	if err := socialdomain.ValidatePrivateRepostAuthority(
+		authority,
+		operation,
+	); err != nil {
+		return nil, err
+	}
+	return authority, nil
 }
 
 func decodePersistedClaim(

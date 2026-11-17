@@ -21,6 +21,26 @@ func FeedTargetPost(value string) (string, string, error) {
 	return feedTargetObject(value, "post")
 }
 
+// Every portable interaction binds the same stable parent-thread reference.
+func FeedInteractionTarget(payload *model.FeedPayload) (string, error) {
+	if payload == nil {
+		return "", ErrFeedInvalid
+	}
+	var target string
+	switch mutation := payload.Mutation.(type) {
+	case *model.FeedPayload_Reaction:
+		target = mutation.Reaction.GetTargetPostRef()
+	case *model.FeedPayload_Comment:
+		target = mutation.Comment.GetTargetPostRef()
+	default:
+		return "", ErrFeedInvalid
+	}
+	if _, _, err := FeedTargetPost(target); err != nil {
+		return "", err
+	}
+	return target, nil
+}
+
 func FeedTargetComment(value string) (string, string, error) {
 	return feedTargetObject(value, "comment")
 }
@@ -74,7 +94,6 @@ func ValidateFeedPayload(kind model.FeedEventKind, payload *model.FeedPayload) e
 			(r.Type == model.PostType_IMAGE && r.GetImage() != nil) ||
 			(r.Type == model.PostType_VIDEO && r.GetVideo() != nil) ||
 			(r.Type == model.PostType_LINK && r.GetLink() != nil) ||
-			(r.Type == model.PostType_POLL && r.GetPoll() != nil) ||
 			(r.Type == model.PostType_REPOST && r.GetRepost() != nil) ||
 			(r.Type == model.PostType_LOCATION && r.GetLocation() != nil)
 		if !matched {
@@ -86,9 +105,6 @@ func ValidateFeedPayload(kind model.FeedEventKind, payload *model.FeedPayload) e
 		if r.GetRepost() != nil {
 			_, _, err := FeedTargetPost(r.GetRepost().OriginalPostId)
 			return err
-		}
-		if r.GetPoll() != nil {
-			return ValidateFeedPollRequest(r.GetPoll())
 		}
 		return nil
 	case model.FeedEventKind_FEED_EVENT_KIND_REACTION_SET,
@@ -138,8 +154,6 @@ func ValidateFeedPayload(kind model.FeedEventKind, payload *model.FeedPayload) e
 			return ErrFeedInvalid
 		}
 		return nil
-	case model.FeedEventKind_FEED_EVENT_KIND_POLL_BALLOT_SET:
-		return ValidateFeedPollBallot(payload.GetPollBallot())
 	default:
 		return ErrFeedInvalid
 	}

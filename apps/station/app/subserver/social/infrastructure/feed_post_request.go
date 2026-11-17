@@ -3,39 +3,26 @@ package infrastructure
 import (
 	"bytes"
 	"context"
-	"encoding/json"
-	"errors"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/frame/core/signedlog"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
-	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
-	"google.golang.org/protobuf/proto"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
-// Disposable projection of accepted ballots. Rejected newer events preserve
-// an Actor's last accepted full selection.
-type FeedPollVersion struct {
-	PostRef    string `gorm:"primaryKey;size:512"`
-	ActorPTID  string `gorm:"column:actor_ptid;primaryKey;size:255"`
-	Sequence   uint64 `gorm:"not null"`
-	Selections string `gorm:"not null"`
-}
-
-func (FeedPollVersion) TableName() string { return "social_feed_poll_versions" }
-
-// A supplemental Home decision does not change the immutable Actor receipt.
+// FeedInteractionCanonicalBytes returns the canonical bytes used to dedup a
+// stored interaction receipt. The immutable Actor receipt is canonicalized
+// as-is.
 func FeedInteractionCanonicalBytes(receipt *model.FeedInteraction) ([]byte, error) {
 	if receipt == nil {
 		return nil, domain.ErrFeedInvalid
 	}
-	base := proto.Clone(receipt).(*model.FeedInteraction)
-	base.PollAdmission = nil
-	return signedlog.Canonical(base)
+	return signedlog.Canonical(receipt)
 }
 
+// OriginalFeedPostRequest reconstructs the signed CreatePostRequest for a
+// public post object from its retained, hash-verified feed event prefix. It
+// is content-kind agnostic and shared by the projection/edit paths.
 func OriginalFeedPostRequest(ctx context.Context, tx *gorm.DB, object *FeedObjectRecord) (*model.CreatePostRequest, int64, error) {
 	if object == nil || object.ObjectKind != "post" {
 		return nil, 0, domain.ErrFeedInvalid
@@ -129,76 +116,4 @@ func OriginalFeedPostRequest(ctx context.Context, tx *gorm.DB, object *FeedObjec
 			return nil, 0, domain.ErrFeedGap
 		}
 	}
-}
-
-func FeedPollDefinitionAt(ctx context.Context, tx *gorm.DB, target string) (*model.FeedPollDefinition, *FeedObjectRecord, error) {
-	home, id, err := domain.FeedTargetPost(target)
-	if err != nil {
-		return nil, nil, err
-	}
-	var object FeedObjectRecord
-	err = tx.WithContext(ctx).Where("home_station = ? AND object_kind = 'post' AND object_id = ?", home, id).Take(&object).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil, domain.ErrFeedGap
-	}
-	if err != nil {
-		return nil, nil, err
-	}
-	request, created, err := OriginalFeedPostRequest(ctx, tx, &object)
-	if err != nil {
-		return nil, nil, err
-	}
-	definition, err := domain.FeedPollDefinitionFor(request.GetPoll(), created)
-	return definition, &object, err
-}
-
-func (p *FeedProjector) projectPollBallot(ctx context.Context, tx *gorm.DB,
-	receipt *model.FeedInteraction, post *db.SocialPublicPost) error {
-	if receipt.PollAdmission == nil {
-		return domain.ErrFeedGap
-	}
-	payload := &model.FeedPayload{}
-	if err := signedlog.Decode(receipt.Event.Payload, payload); err != nil {
-		return err
-	}
-	ballot := payload.GetPollBallot()
-	definition, _, err := FeedPollDefinitionAt(ctx, tx, ballot.TargetPostRef)
-	if err != nil {
-		return err
-	}
-	if err := domain.ValidateFeedPollAdmission(receipt.PollAdmission, receipt.Event, definition); err != nil {
-		return err
-	}
-	if receipt.PollAdmission.Statement.Result != model.FeedPollAdmissionResult_FEED_POLL_ADMISSION_RESULT_ACCEPTED ||
-		post.DeletedAt != nil {
-		return nil
-	}
-	version := FeedPollVersion{PostRef: ballot.TargetPostRef, ActorPTID: receipt.Event.Statement.ActorPtid}
-	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&version).Error; err != nil {
-		return err
-	}
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("post_ref = ? AND actor_ptid = ?", version.PostRef, version.ActorPTID).Take(&version).Error; err != nil {
-		return err
-	}
-	if version.Sequence >= receipt.Event.Statement.Sequence {
-		return nil
-	}
-	wire, err := json.Marshal(ballot.OptionIndices)
-	if err != nil {
-		return err
-	}
-	return tx.Model(&version).Updates(map[string]interface{}{
-		"sequence": receipt.Event.Statement.Sequence, "selections": string(wire),
-	}).Error
-}
-
-type pollInteractionHandler struct{ projector *FeedProjector }
-
-func (pollInteractionHandler) Match(payload *model.FeedPayload) bool {
-	return payload.GetPollBallot() != nil
-}
-
-func (h pollInteractionHandler) Project(ctx context.Context, in InteractionInput) error {
-	return h.projector.projectPollBallot(ctx, in.Tx, in.Receipt, in.Post)
 }

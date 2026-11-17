@@ -72,7 +72,6 @@ func DefaultContentKindRegistry() *ContentKindRegistry {
 		imageContentHandler{},
 		videoContentHandler{},
 		linkContentHandler{},
-		pollContentHandler{},
 		repostContentHandler{},
 		locationContentHandler{},
 	)

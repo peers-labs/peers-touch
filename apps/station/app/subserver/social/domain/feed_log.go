@@ -105,16 +105,6 @@ func VerifyFeedEvent(event *model.FeedEvent, grant *model.FeedWriterGrant) error
 	if err := ValidateFeedPayload(statement.Kind, payload); err != nil {
 		return err
 	}
-	if statement.Kind == model.FeedEventKind_FEED_EVENT_KIND_POST_CREATED && payload.GetPost() != nil {
-		request := &model.CreatePostRequest{}
-		if err := signedlog.Decode(payload.GetPost().CreateRequest, request); err != nil {
-			return ErrFeedInvalid
-		}
-		if request.GetPoll() != nil {
-			_, err := FeedPollDefinitionFor(request.GetPoll(), statement.CreatedAtUnixMs)
-			return err
-		}
-	}
 	return nil
 }
 

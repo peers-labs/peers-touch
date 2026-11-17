@@ -24,7 +24,6 @@ func (p *FeedProjector) StoreInteraction(ctx context.Context, tx *gorm.DB,
 		return false, domain.ErrFeedInvalid
 	}
 	receipt = proto.Clone(receipt).(*model.FeedInteraction)
-	incomingSupplement := receipt.PollAdmission != nil
 	event := receipt.Event
 	payload := &model.FeedPayload{}
 	if err := signedlog.Decode(event.Payload, payload); err != nil {
@@ -113,41 +112,6 @@ func (p *FeedProjector) StoreInteraction(ctx context.Context, tx *gorm.DB,
 	if parent == nil {
 		// The parent may arrive after the initial lookup. Defer this whole
 		// projection instead of acquiring it after receipt/thread locks.
-		return duplicate, nil
-	}
-	if payload.GetPollBallot() != nil && p.pollAuthority == nil {
-		return false, domain.ErrFeedInvalid
-	}
-	if p.pollAuthority != nil {
-		err := p.pollAuthority(ctx, tx, receipt)
-		if errors.Is(err, domain.ErrFeedGap) && !incomingSupplement {
-			return duplicate, nil
-		}
-		if err != nil {
-			return false, err
-		}
-	} else if incomingSupplement {
-		return false, domain.ErrFeedInvalid
-	}
-	if receipt.PollAdmission != nil {
-		supplement, err := signedlog.Canonical(receipt.PollAdmission)
-		if err != nil {
-			return false, err
-		}
-		if len(row.PollAdmission) != 0 && !bytes.Equal(row.PollAdmission, supplement) {
-			return false, domain.ErrFeedInvalid
-		}
-		if len(row.PollAdmission) == 0 {
-			row.PollAdmission = supplement
-			row.AdmissionReturnRequired = station == p.localStation && home != station
-			if err := tx.Model(&row).Updates(map[string]interface{}{
-				"poll_admission": supplement, "admission_return_required": row.AdmissionReturnRequired,
-			}).Error; err != nil {
-				return false, err
-			}
-		}
-	}
-	if payload.GetPollBallot() != nil && receipt.PollAdmission == nil {
 		return duplicate, nil
 	}
 	if station == p.localStation {
@@ -338,9 +302,6 @@ func (p *FeedProjector) projectInteraction(ctx context.Context, tx *gorm.DB,
 	var post db.SocialPublicPost
 	if err := tx.Where("id = ?", object.LocalID).Take(&post).Error; err != nil {
 		return err
-	}
-	if payload.GetPollBallot() != nil {
-		return p.projectPollBallot(ctx, tx, receipt, &post)
 	}
 	// A late historical interaction cannot resurrect a hidden parent.
 	if post.DeletedAt != nil {

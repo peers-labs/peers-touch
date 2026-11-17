@@ -231,9 +231,6 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 		stationPeerID:     federationRuntime.LocalStationPeerID(),
 		proofKeyAuthority: privateProofKeyAuthority,
 	}
-	if err := s.feedLogSvc.ConfigurePollAuthority(privateStationSigner, privateStationSigner.verifyFeedPollStation); err != nil {
-		return err
-	}
 	s.privateContentSvc, err = application.NewPrivateContentService(
 		privateContentStore,
 		privateAudienceAuthority,

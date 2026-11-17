@@ -734,10 +734,6 @@ func (s *PrivateContentService) signFederatedPrivateResourceFrame(
 		frame.OrderingKey = privateReactionOrderingKey(message.GetResource(), message.GetReaction().GetCommentId(), message.GetTargetActor().GetPtid())
 		frame.OrderingSequence = int64(message.GetReaction().GetProjectionRevision())
 	}
-	if message.GetResourceKind() == privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_POLL_PROJECTION {
-		frame.OrderingKey = privatePollOrderingKey(message.GetResource(), message.GetTargetActor().GetPtid())
-		frame.OrderingSequence = int64(message.GetPoll().GetProjectionRevision())
-	}
 	signingBytes, err := federationdelivery.SigningBytes(frame)
 	if err != nil {
 		return nil, err
@@ -1110,9 +1106,6 @@ func (s *PrivateContentService) ReceiveFederatedPrivateResource(
 	}
 	if message.GetResourceKind() == privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_REACTION_PROJECTION {
 		return s.receivePrivateReactionProjection(ctx, transaction, message)
-	}
-	if message.GetResourceKind() == privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_POLL_PROJECTION {
-		return s.receivePrivatePollProjection(ctx, transaction, message)
 	}
 	canonical, err := socialdomain.CanonicalProtoBytes(message)
 	if err != nil {
@@ -1657,9 +1650,6 @@ func (s *PrivateContentService) validateFederatedPrivateResource(
 	}
 	if message.GetResourceKind() == privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_REACTION_PROJECTION {
 		return s.validatePrivateReactionDelivery(message, frame)
-	}
-	if message.GetResourceKind() == privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_POLL_PROJECTION {
-		return s.validatePrivatePollDelivery(message, frame)
 	}
 	resource := message.GetResource()
 	post := message.GetPost()
@@ -2337,14 +2327,6 @@ func (s *PrivateContentService) projectRemotePrivateMoment(
 	if err != nil {
 		return nil, err
 	}
-	var pollProjection *privatecontentpb.PrivatePollProjection
-	if verification.GetPollAuthority() != nil {
-		pollProjection, err = s.interactionStore.LoadPrivatePollProjection(ctx, transaction,
-			message.GetSourceStationPeerId(), message.GetTargetActor().GetPtid(), verification.GetPollAuthority())
-		if err != nil {
-			return nil, mapPrivateStoreError(operation, err)
-		}
-	}
 	return &privatecontentpb.GetMomentResourceResponse{
 		Post:                       postProjection,
 		ReactionProjectionRevision: reactionProjectionRevision,
@@ -2374,7 +2356,6 @@ func (s *PrivateContentService) projectRemotePrivateMoment(
 					ViewerEnvelope: viewerEnvelope,
 					Objects:        cloneEncryptedObjects(message.GetObjects()),
 					Verification:   verification,
-					Poll:           pollProjection,
 				},
 			},
 		},
