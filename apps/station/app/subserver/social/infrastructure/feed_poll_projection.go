@@ -192,3 +192,13 @@ func (p *FeedProjector) projectPollBallot(ctx context.Context, tx *gorm.DB,
 		"sequence": receipt.Event.Statement.Sequence, "selections": string(wire),
 	}).Error
 }
+
+type pollInteractionHandler struct{ projector *FeedProjector }
+
+func (pollInteractionHandler) Match(payload *model.FeedPayload) bool {
+	return payload.GetPollBallot() != nil
+}
+
+func (h pollInteractionHandler) Project(ctx context.Context, in InteractionInput) error {
+	return h.projector.projectPollBallot(ctx, in.Tx, in.Receipt, in.Post)
+}

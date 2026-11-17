@@ -34,6 +34,7 @@ type FeedProjector struct {
 	localStation  string
 	observer      FeedProjectionObserver
 	pollAuthority func(context.Context, *gorm.DB, *model.FeedInteraction) error
+	interactions  *InteractionRegistry
 }
 
 func (p *FeedProjector) SetPollAuthority(authority func(context.Context, *gorm.DB, *model.FeedInteraction) error) {
@@ -49,7 +50,20 @@ func (p *FeedProjector) observe(ctx context.Context, tx *gorm.DB, event *model.F
 }
 
 func NewFeedProjector(localStation string) *FeedProjector {
-	return &FeedProjector{localStation: localStation}
+	p := &FeedProjector{localStation: localStation}
+	// Handlers reference the projector's own projection methods; wire the
+	// immutable dispatch table after construction to avoid a self-reference.
+	registry, err := NewInteractionRegistry(
+		reactionInteractionHandler{projector: p},
+		commentInteractionHandler{projector: p},
+		pollInteractionHandler{projector: p},
+	)
+	if err != nil {
+		// Static handler set; a wiring duplicate is a compile-time mistake.
+		panic(err)
+	}
+	p.interactions = registry
+	return p
 }
 
 // Apply is called only after the entire append batch passes verification.
