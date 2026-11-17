@@ -7033,7 +7033,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                         receiver_ptid: actor_ptid.clone(),
                         sender_home_station_peer_id: input.sender_home_station_peer_id,
                         receiver_home_station_peer_id,
-                        message: input.message.unwrap_or_default(),
+                        // Decision commands sign an empty message; the
+                        // signer enforces the Station decision contract.
+                        message: String::new(),
                         federation_id: input.federation_id,
                     },
                 ) {
@@ -7122,7 +7124,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                         receiver_ptid: actor_ptid.clone(),
                         sender_home_station_peer_id: input.sender_home_station_peer_id,
                         receiver_home_station_peer_id,
-                        message: input.message.unwrap_or_default(),
+                        // Decision commands sign an empty message; the
+                        // signer enforces the Station decision contract.
+                        message: String::new(),
                         federation_id: input.federation_id,
                     },
                 ) {

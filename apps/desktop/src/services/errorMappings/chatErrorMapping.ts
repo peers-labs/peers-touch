@@ -47,15 +47,27 @@ function operationFallback(operation: ChatErrorOperation): string {
   }
 }
 
+// Station errors cross the Tauri boundary two ways: structured
+// `details.error_code` when the response header survived, or only the Rust
+// Display text (`... [code=CONVERSATION_...]`) when an intermediate layer
+// re-wrapped the failure and dropped details. Extract the embedded code so
+// the friendly mapping fires in both cases instead of leaking the raw code.
+const EMBEDDED_CODE_PATTERN = /\[code=([A-Z0-9_]+)\]/;
+
+function embeddedStationCode(message: string): string {
+  return message.match(EMBEDDED_CODE_PATTERN)?.[1] ?? '';
+}
+
 export const mapChatError: ErrorMapper<ChatErrorContext> = (error, context) => {
   const message = errorMessage(error);
   const lowerMessage = message.toLowerCase();
   const details = error instanceof RustCommandException
     ? error.details
     : undefined;
-  const stationCode = typeof details?.error_code === 'string'
+  const structuredCode = typeof details?.error_code === 'string'
     ? details.error_code
     : '';
+  const stationCode = structuredCode || embeddedStationCode(message);
   const reason = typeof details?.reason === 'string'
     ? details.reason.trim()
     : '';

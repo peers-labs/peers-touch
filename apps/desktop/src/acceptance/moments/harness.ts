@@ -1160,7 +1160,6 @@ export function installAcceptanceHarness(): void {
             senderPtid: input.actorPtid,
             senderHomeStationPeerId,
             federationId,
-            message: '',
           });
           return { accepted: true, requestId };
         }

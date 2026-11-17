@@ -11,6 +11,7 @@ import {
   readStoredChatRailWidth,
 } from '../components/chat/chatRailWidth';
 import { ChatDetailPanel } from '../components/chat/ChatDetailPanel';
+import { ChatContactsDetailPanel } from '../components/chat/ChatContactsDetailPanel';
 import { ChatThreadPanel } from '../components/chat/ChatThreadPanel';
 import { AttachmentDetailHost } from '../components/chat/AttachmentDetailHost';
 import { CallSurface } from '../components/chat/CallSurface';
@@ -356,6 +357,10 @@ export function SocialChatPage() {
             selectedContact={selectedContact}
             onSelectContact={(contact) => {
               setOwnedContactSelection({ actorPtid: contactOwnerPtid, contact });
+              // A pending request opens the profile decision surface in the
+              // work area (no conversation exists yet), so reveal the stage
+              // exactly like selecting an established contact.
+              if (contact.kind === 'person') assembly.reveal();
             }}
             onStartChat={(contact) => {
               setOwnedContactSelection({ actorPtid: contactOwnerPtid, contact });
@@ -377,12 +382,16 @@ export function SocialChatPage() {
       <div className="sc-chat-work__body"
         inert={!!assembly.leaf || assembly.leafProgress > 0}
         aria-hidden={!!assembly.leaf || assembly.leafProgress > 0}>
-      <ChatMessageArea
-        directOpenIntent={directOpenIntent}
-        compressed={pose.compressed}
-        compactTools={pose.workToolsCompact}
-        onBack={backToCatalog}
-      />
+      {selectedContact?.kind === 'person' ? (
+        <ChatContactsDetailPanel selection={selectedContact} />
+      ) : (
+        <ChatMessageArea
+          directOpenIntent={directOpenIntent}
+          compressed={pose.compressed}
+          compactTools={pose.workToolsCompact}
+          onBack={backToCatalog}
+        />
+      )}
       </div>
       <div className="sc-chat-leaf" data-visible={!!assembly.leaf || assembly.leafProgress > 0}
         inert={!assembly.leaf || assembly.leafProgress < 1}

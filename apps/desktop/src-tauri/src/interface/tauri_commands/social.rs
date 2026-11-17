@@ -123,6 +123,26 @@ pub(crate) struct FriendRequestCommandInput {
     pub federation_id: String,
 }
 
+/// Canonicalizes the command body message for the federation protocol.
+///
+/// The Home Station contract permits a greeting only on SEND commands; an
+/// ACCEPT or REJECT decision carrying any message is rejected with
+/// INVALID_ARGUMENT ("message must be empty for a decision"). Decision
+/// callers therefore never control the body message — the signer enforces an
+/// empty body so no UI transport can smuggle the original request greeting
+/// into a signed decision command.
+pub(crate) fn friend_request_command_body_message(
+    action: model::social::FriendRequestAction,
+    raw_message: &str,
+) -> String {
+    match action {
+        model::social::FriendRequestAction::Send => raw_message.trim().to_string(),
+        model::social::FriendRequestAction::Accept
+        | model::social::FriendRequestAction::Reject
+        | model::social::FriendRequestAction::Unspecified => String::new(),
+    }
+}
+
 pub(crate) fn sign_friend_request_command(
     station_client: &StationClient,
     state: &AppState,
@@ -205,7 +225,7 @@ pub(crate) fn sign_friend_request_command(
         receiver: Some(person_actor_ref(input.receiver_ptid)),
         sender_home_station_peer_id: input.sender_home_station_peer_id,
         receiver_home_station_peer_id: input.receiver_home_station_peer_id,
-        message: input.message.trim().to_string(),
+        message: friend_request_command_body_message(input.action, &input.message),
         observed_request_state: match input.action {
             model::social::FriendRequestAction::Send => {
                 model::social::FriendRequestState::Unspecified as i32
@@ -1681,7 +1701,9 @@ pub fn social_friend_request_accept(
             receiver_ptid: actor_ptid.clone(),
             sender_home_station_peer_id: input.sender_home_station_peer_id,
             receiver_home_station_peer_id,
-            message: input.message.unwrap_or_default(),
+            // Decision commands sign an empty message; the signer enforces
+            // the Station contract that greetings belong only to SEND.
+            message: String::new(),
             federation_id: input.federation_id,
         },
     ) {
@@ -1754,7 +1776,9 @@ pub fn social_friend_request_reject(
             receiver_ptid: actor_ptid.clone(),
             sender_home_station_peer_id: input.sender_home_station_peer_id,
             receiver_home_station_peer_id,
-            message: input.message.unwrap_or_default(),
+            // Decision commands sign an empty message; the signer enforces
+            // the Station contract that greetings belong only to SEND.
+            message: String::new(),
             federation_id: input.federation_id,
         },
     ) {
@@ -1827,4 +1851,43 @@ fn social_friend_request_list_blocking(
         Err(e) => return station_error_proto(e, "list friend requests failed"),
     };
     AppResult::success(resp.encode_to_vec())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::friend_request_command_body_message;
+    use crate::model::social::FriendRequestAction;
+
+    #[test]
+    fn send_command_keeps_the_trimmed_greeting() {
+        let message = friend_request_command_body_message(
+            FriendRequestAction::Send,
+            "  hello federation  ",
+        );
+        assert_eq!(message, "hello federation");
+    }
+
+    #[test]
+    fn decision_commands_never_carry_a_message() {
+        // Regression: the store forwarded the original SEND greeting into
+        // accept/reject inputs, and the Home Station rejects any decision
+        // command whose body message is non-empty (INVALID_ARGUMENT).
+        for action in [FriendRequestAction::Accept, FriendRequestAction::Reject] {
+            let message =
+                friend_request_command_body_message(action, "cross-device realtime probe");
+            assert!(message.is_empty(), "action {action:?} must sign an empty message");
+        }
+    }
+
+    #[test]
+    fn empty_or_whitespace_input_stays_empty_for_every_action() {
+        for action in [
+            FriendRequestAction::Send,
+            FriendRequestAction::Accept,
+            FriendRequestAction::Reject,
+        ] {
+            assert!(friend_request_command_body_message(action, "   ").is_empty());
+            assert!(friend_request_command_body_message(action, "").is_empty());
+        }
+    }
 }

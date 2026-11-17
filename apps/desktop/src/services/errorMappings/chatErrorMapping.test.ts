@@ -71,6 +71,39 @@ describe('mapChatError Group creation', () => {
       message: 'error.chat.federationInactive',
     });
   });
+
+  it('recovers the station code from the message when structured details were dropped', () => {
+    // Regression: an intermediate Rust layer re-wrapped the station failure,
+    // so details is absent and the only code carrier is the Display text
+    // `station returned 409: ... [code=...]`. The raw code must not reach the
+    // toast; the friendly federation message still has to fire.
+    const error = new RustCommandException('messaging_open_conversation', {
+      code: 'CONFLICT',
+      message: 'station returned 409: [code=CONVERSATION_FEDERATION_STATION_INACTIVE]',
+    });
+
+    const presented = mapChatError(error, { operation: 'conversationAction' });
+    expect(presented).toMatchObject({
+      code: 'CONVERSATION_FEDERATION_STATION_INACTIVE',
+      message: 'error.chat.federationInactive',
+      recoverable: true,
+    });
+    expect(presented?.message).not.toContain('[code=');
+    expect(presented?.message).not.toContain('station returned 409');
+    // The raw wire text stays in the debug-only field for diagnostics.
+    expect(presented?.debugMessage).toContain('CONVERSATION_FEDERATION_STATION_INACTIVE');
+  });
+
+  it('still falls back to the generic toast when no station code is recoverable', () => {
+    const error = new RustCommandException('messaging_open_conversation', {
+      code: 'INTERNAL_ERROR',
+      message: 'station returned 500: unexpected',
+    });
+
+    const presented = mapChatError(error, { operation: 'conversationAction' });
+    expect(presented?.code).toBe('chat.conversationActionFailed');
+    expect(presented?.message).toContain('error.chat.conversationActionFailed');
+  });
 });
 
 describe('mapChatError send fallback', () => {

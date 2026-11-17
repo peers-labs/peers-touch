@@ -23,11 +23,8 @@ import {
   canonicalProfileAvatar,
   remoteProfileHandle,
 } from '../../store/socialProfileProjection';
-import type { FriendRequestData } from '../../store/socialNormalizers';
 import { useDismissedFriendRequestsStore } from '../../store/dismissedFriendRequests';
-import { presentError } from '../../services/errorPresenter';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
-import { log } from '../../utils/logger';
 import {
   useActiveChatFederationSlice,
   useActiveSocialChatSlice,
@@ -91,8 +88,6 @@ export function ChatContactsPanel({
     getIMConversations,
     selectSession,
     selectGroup,
-    acceptFriendRequest,
-    rejectFriendRequest,
   } = useActiveSocialChatSlice((s) => ({
     friendRequests: s.friendRequests,
     friendRequestsLoading: s.friendRequestsLoading,
@@ -107,15 +102,12 @@ export function ChatContactsPanel({
     getIMConversations: s.getIMConversations,
     selectSession: s.selectSession,
     selectGroup: s.selectGroup,
-    acceptFriendRequest: s.acceptFriendRequest,
-    rejectFriendRequest: s.rejectFriendRequest,
   }));
   const { federations, actorStationEntries } = useActiveChatFederationSlice((s) => ({
     federations: s.federations,
     actorStationEntries: s.actorStationEntries,
   }));
 
-  const [busyAction, setBusyAction] = useState<{ id: string; kind: 'accept' | 'reject' } | null>(null);
   const [collapsed, setCollapsed] = useState<ContactSectionKey[]>(
     Object.entries(SECTION_COLLAPSED_DEFAULT)
       .filter(([, isCollapsed]) => isCollapsed)
@@ -299,28 +291,6 @@ export function ChatContactsPanel({
     onStartChat(friendContactSelection(selfIdentity, friendConversations));
   };
 
-  const runRequestAction = async (
-    request: FriendRequestData,
-    action: 'accept' | 'reject',
-  ) => {
-    setBusyAction({ id: request.id, kind: action });
-    try {
-      if (action === 'accept') {
-        await acceptFriendRequest(request);
-      } else {
-        await rejectFriendRequest(request);
-      }
-    } catch (error) {
-      log.error('contacts', `${action}FriendRequest failed`, error);
-      // Unified floating toast; the request row stays interactive.
-      presentError(error, {
-        fallbackKey: 'error.chat.conversationActionFailed',
-      });
-    } finally {
-      setBusyAction(null);
-    }
-  };
-
   const renderRequestCard = (peer: (typeof requestPeers)[number]) => {
     const { request, direction, peerPtid, attemptCount } = peer;
     const peerName = direction === 'outgoing'
@@ -359,7 +329,6 @@ export function ChatContactsPanel({
       federationId,
       federationName: federationNames.get(federationId) || '',
     };
-    const isPendingIncoming = direction === 'incoming' && request.status === 1;
     const isOutgoing = direction === 'outgoing';
     const isSettled = request.status !== 1;
     const isSelected = Boolean(
@@ -439,40 +408,6 @@ export function ChatContactsPanel({
                 <PtTag>{attemptsLabel}</PtTag>
               ) : null}
             </span>
-            {isPendingIncoming ? (
-              <span className="sc-request-card__decide">
-                <IconButton
-                  actionId={`friend-request-accept-${request.id}`}
-                  className="sc-decide is-accept"
-                  data-chat-friend-request-action="accept"
-                  iconId="check"
-                  iconSize={14}
-                  density="compact"
-                  emphasis="quiet"
-                  execution={busyAction?.id === request.id && busyAction?.kind === 'accept' ? 'pending' : 'idle'}
-                  label={t('chat.social.contacts.accept')}
-                  onActivate={(event) => {
-                    event.stopPropagation();
-                    void runRequestAction(request, 'accept');
-                  }}
-                />
-                <IconButton
-                  actionId={`friend-request-reject-${request.id}`}
-                  className="sc-decide is-reject"
-                  data-chat-friend-request-action="reject"
-                  iconId="close"
-                  iconSize={14}
-                  density="compact"
-                  emphasis="quiet"
-                  execution={busyAction?.id === request.id && busyAction?.kind === 'reject' ? 'pending' : 'idle'}
-                  label={t('chat.social.contacts.reject')}
-                  onActivate={(event) => {
-                    event.stopPropagation();
-                    void runRequestAction(request, 'reject');
-                  }}
-                />
-              </span>
-            ) : null}
           </div>
           {!isSettled && isOutgoing && request.status === 1 ? (
             <span className="sc-request-card__greeting is-sent">
