@@ -1700,19 +1700,21 @@ select {
   word-break: break-word;
 }
 
+/* Semantic notices consume north-star semantic tokens; pine never doubles as
+   success/info, so each tone keeps its independent palette. */
 .mobile-notice.error {
-  background: rgba(255, 77, 79, 0.1);
-  color: #d9363e;
+  background: var(--pt-dangerSubtle);
+  color: var(--pt-danger);
 }
 
 .mobile-notice.info {
-  background: rgba(76, 110, 245, 0.1);
-  color: #3d5afe;
+  background: var(--pt-infoSubtle);
+  color: var(--pt-info);
 }
 
 .mobile-notice.success {
-  background: rgba(82, 196, 26, 0.1);
-  color: #237804;
+  background: var(--pt-successSubtle);
+  color: var(--pt-success);
 }
 
 .mobile-notice-icon {
@@ -2391,18 +2393,16 @@ select {
   background: rgba(15, 23, 42, 0.14);
 }
 
+/* The library BottomSheet already renders grip + title; this is only a compact
+   transparent dismiss row (top-right), never a second painted sheet header. */
 .chat-action-sheet-header {
-  position: sticky;
-  top: -8px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-height: 48px;
-  margin: 0 -4px 12px;
-  padding: 2px 4px 8px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 78%, rgba(255, 255, 255, 0));
-  z-index: 1;
+  justify-content: flex-end;
+  min-height: 32px;
+  margin: 0 0 8px;
+  padding: 0;
+  background: transparent;
 }
 
 .chat-action-list {
@@ -2431,7 +2431,7 @@ select {
 }
 
 .chat-background-choice:focus-visible {
-  outline: 3px solid rgba(76, 110, 245, 0.24);
+  outline: 3px solid color-mix(in srgb, var(--pt-focus) 24%, transparent);
   outline-offset: 2px;
 }
 
@@ -2474,9 +2474,9 @@ select {
 }
 
 .chat-background-choice.active {
-  border-color: rgba(76, 110, 245, 0.35);
-  box-shadow: 0 0 0 2px rgba(76, 110, 245, 0.1);
-  color: #3d5afe;
+  border-color: color-mix(in srgb, var(--pt-accent) 35%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--pt-accent) 10%, transparent);
+  color: var(--pt-accent);
 }
 
 .chat-header-search-field {
@@ -2594,7 +2594,8 @@ select {
 }
 
 .message-bubble-row.highlighted .message-bubble {
-  box-shadow: 0 0 0 2px rgba(76, 110, 245, 0.24), 0 10px 28px rgba(76, 110, 245, 0.16);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--pt-accent) 35%, transparent),
+    0 10px 28px color-mix(in srgb, var(--pt-accent) 16%, transparent);
 }
 
 span.message-avatar {
@@ -2609,11 +2610,13 @@ span.message-avatar {
 
 .message-bubble-row.mine .message-bubble {
   border-radius: var(--chat-message-bubble-radius-own, 17px 17px 5px 17px);
-  background: #5d82f7;
+  /* North-star: own bubble is neutral ink (--pt-ownBubble), never a saturated
+     brand/blue fill; on-primary keeps readable contrast on the ink surface. */
+  background: var(--pt-ownBubble);
 }
 
 .message-bubble-row.mine .message-bubble {
-  color: #fff;
+  color: var(--pt-onPrimary);
 }
 
 .message-text {
