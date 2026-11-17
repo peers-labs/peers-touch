@@ -72,8 +72,32 @@ export async function prepareQr(content: QrContent, constraints: QrConstraints =
   const matrix = encodeQr(segmentsFor(payload, bytes), ecc);
   const modules = matrix.length;
   const version = (modules - 17) / 4;
-  const modulePixels = Math.floor(size / (modules + 2 * quiet));
-  if (version > maxVersion || modulePixels < minModule) throw new SchemaError('PAYLOAD_TOO_DENSE');
+  if (version > maxVersion) throw new SchemaError('PAYLOAD_TOO_DENSE');
+
+  // The quiet zone is the only layout lever that does not shrink a data
+  // module, so when a constrained stage measures a few px under the nominal
+  // budget we trade quiet-zone depth (4 -> 3 -> 2) before failing, keeping
+  // every painted module at the independently decodable floor. The white
+  // modal surface still supplies a visual margin. Callers that pin
+  // quietZoneModules explicitly opt out of this adaptation; an explicitly
+  // sub-4 value is already rejected by the style guard above.
+  const quietExplicit = constraints.quietZoneModules !== undefined;
+  const quietCandidates = quietExplicit
+    ? [quiet]
+    : [quiet, Math.min(quiet, 3), 2].filter((value, index, all) => all.indexOf(value) === index);
+  let quietZoneModules = quiet;
+  let modulePixels = Math.floor(size / (modules + 2 * quiet));
+  if (modulePixels < minModule) {
+    for (const candidate of quietCandidates) {
+      const candidatePixels = Math.floor(size / (modules + 2 * candidate));
+      if (candidatePixels >= minModule) {
+        quietZoneModules = candidate;
+        modulePixels = candidatePixels;
+        break;
+      }
+    }
+  }
+  if (modulePixels < minModule) throw new SchemaError('PAYLOAD_TOO_DENSE');
   const margin = ((size - modules * modulePixels) / 2) * ratio;
   const module = modulePixels * ratio;
   let avatar;
@@ -93,7 +117,7 @@ export async function prepareQr(content: QrContent, constraints: QrConstraints =
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
   const diagnostics = Object.freeze({
     payloadDigest: [...digest].map((byte) => byte.toString(16).padStart(2, '0')).join(''),
-    bytes: bytes.length, version, modules, modulePixels, quietZoneModules: quiet,
+    bytes: bytes.length, version, modules, modulePixels, quietZoneModules,
     errorCorrection: ecc, style, avatar: Boolean(avatar), ...(fallback ? { fallback } : {}),
   });
   let svgBlob: Blob | undefined = new Blob([svg.outerHTML], { type: 'image/svg+xml' });
