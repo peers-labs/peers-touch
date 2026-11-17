@@ -11,6 +11,7 @@
   },
   "selectors": {
     "ios": {
+      "selection_policy": "Explicit Profile/name references; device_name is a layout hint, never a machine allocation key",
       "runtime": "iOS 26.5"
     }
   },
@@ -62,18 +63,18 @@
   "cleanup": {
     "resources": [
       "appium-process",
-      "app-installations",
+      "owned-appium-sessions",
       "ports",
       "storage",
-      "simulator-boot",
+      "machine-resource-leases",
       "environment-lease"
     ],
     "order": [
       "appium-process",
-      "app-installations",
+      "owned-appium-sessions",
       "ports",
       "storage",
-      "simulator-boot",
+      "machine-resource-leases",
       "environment-lease"
     ],
     "deterministic": true

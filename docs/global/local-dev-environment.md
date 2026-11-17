@@ -83,6 +83,56 @@ worktree.
 
 ---
 
+### 1.2 iOS Profile Resources
+
+The existing Machine Dev owner stores assignments and observed contents in
+`~/.peers-touch/dev/resources.json`. This is subordinate machine state under
+the registry fence; shared Profile source contains compatibility requirements,
+never machine UUIDs. The canonical contract is
+[Local Dev resource dependencies](../architecture/engineering/local-dev/data-model.md#12-resource-dependency-contract).
+
+Declare `PT_MOBILE_IOS_RUNTIME` and `PT_MOBILE_IOS_DEVICE_TYPE` in a reviewed
+Profile. `PT_MOBILE_IOS_DATA=preserve|fresh` states its data requirement.
+Specify a positive count, purpose or readable device selection:
+
+```bash
+node tooling/scripts/local-dev/machine-dev.mjs resource-discover
+node tooling/scripts/local-dev/machine-dev.mjs resource-assign --count 2 --purpose 'Messaging'
+node tooling/scripts/local-dev/machine-dev.mjs resource-assign \
+  --count 2 --purpose 'Messaging' --create true --preparation-id 'messaging-fixture-001'
+node tooling/scripts/local-dev/machine-dev.mjs resource-inspect
+make mobile RESOURCE='Messaging 1'
+```
+
+Creation is explicit and retrying the same preparation recovers its original
+devices. Assignment does not overwrite installed content. Readable selections
+resolve internal IDs; discovery lists shared Profiles, actual contents and
+holders. An ambiguous name returns candidates for selection from that list.
+
+Both Make and `pnpm --dir apps/mobile run tauri:ios:dev -- '<name-or-purpose>'`
+use the same slot and physical-device owner. Xcode builds for the held UUID;
+the generated Tauri build phase uses the configured dev URL. Web edits reload;
+native edits require rerunning the entry. Mobile checks the configured Station
+connection and starts offline when unavailable.
+
+A conflicting operation returns its concrete impact and pending operation.
+Review shared Profiles, current/target content, app data, Keychain and active
+sessions, then make that operation's decision with `resource-decide
+--operation-id <agent-resolved-operation> --impact-digest <displayed-digest>
+--decision force|decline`. Resume with `make mobile OPERATION=<operation>`.
+The Agent resolves these internal values; humans need not copy or memorize
+IDs. A changed impact invalidates the decision. Force never bypasses a physical
+lock or becomes a permanent preference.
+
+Acceptance supplies `PT_IOS_RESOURCE_SELECTIONS_JSON`, for example
+`{"sim-ios":{"profile":"test-ios","selector":"Messaging 1"}}`.
+Base, selected and layout Provisioners bind these references once per Suite;
+they retain their own Fixture, Harness and evidence responsibilities. Cleanup
+releases owned sessions and locks while retaining assignments, installations
+and data. `resource-detach` removes one Profile reference; physical reset/delete
+is a separate exact operation with its own impact/decision and provider readback.
+Current source tests cover the cut; native proof is separately required.
+
 ## 2. Profile System
 
 ### 2.1 What Is A Profile

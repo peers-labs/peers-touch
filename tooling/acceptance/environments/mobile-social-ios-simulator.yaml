@@ -110,10 +110,10 @@
   "cleanup": {
     "resources": [
       "appium-process",
-      "app-installations",
+      "owned-appium-sessions",
       "ports",
       "storage",
-      "simulator-boot",
+      "machine-resource-leases",
       "profile-leases",
       "deployment-leases"
     ],

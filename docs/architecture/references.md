@@ -10,7 +10,9 @@ image embeds targeting that exact asset are counted as diagram references.
 
 | Diagram ID | Module | Viewpoint | Diagram | Referenced by |
 |---|---|---|---|---:|
+| `chat-group-calling.runtime` | `chat-group-calling` | `runtime-topology` | [source](./domains/chat/calling/group/runtime-topology.svg) | 1 |
 | `cross-client-runtime.reuse-topology` | `cross-client-runtime` | `reuse-topology` | [source](./platform/client/cross-client-runtime/architecture.svg) | 3 |
+| `local-dev.resources.control` | `local-dev-control-plane` | `control-plane` | [source](./engineering/local-dev/resource-dependencies.svg) | 1 |
 | `project.actor-feed-log-target` | `project` | `runtime-topology` | [source](./actor-feed-log-target.svg) | 1 |
 | `project.authority-map` | `project` | `authority-map` | [source](./authority-map.svg) | 3 |
 | `project.engineering-control-plane` | `project` | `control-plane` | [source](./engineering-control-plane.svg) | 2 |
@@ -18,12 +20,21 @@ image embeds targeting that exact asset are counted as diagram references.
 | `project.journey.route-convergence` | `project` | `dynamic-flow` | [source](./journey-route-convergence.svg) | 2 |
 | `project.journey.same-station` | `project` | `dynamic-flow` | [source](./journey-same-station.svg) | 2 |
 | `project.logical-layered-architecture` | `project` | `logical-layer` | [source](./architecture.svg) | 3 |
-| `project.runtime-topology` | `project` | `runtime-topology` | [source](./runtime-topology.svg) | 5 |
+| `project.runtime-topology` | `project` | `runtime-topology` | [source](./runtime-topology.svg) | 6 |
 | `project.system-context` | `project` | `system-context` | [source](./system-context.svg) | 2 |
 | `search.authority-map` | `search` | `authority-map` | [source](./domains/search/authority-map.svg) | 1 |
 | `search.device-query` | `search` | `dynamic-flow` | [source](./domains/search/device-query.svg) | 1 |
 | `search.reuse-topology` | `search` | `reuse-topology` | [source](./domains/search/architecture.svg) | 2 |
 | `ui-system.design-architecture` | `ui-system` | `logical-layer` | [source](./platform/client/ui-system/architecture.svg) | 1 |
+
+## `chat-group-calling.runtime`
+
+- Module: `chat-group-calling`
+- Viewpoint: `runtime-topology`
+- Diagram spec: [docs/architecture/domains/chat/calling/group/runtime-topology.diagram.json](./domains/chat/calling/group/runtime-topology.diagram.json)
+- SVG asset: [docs/architecture/domains/chat/calling/group/runtime-topology.svg](./domains/chat/calling/group/runtime-topology.svg)
+- Referenced by:
+  - [docs/architecture/domains/chat/calling/group/design.md](./domains/chat/calling/group/design.md)
 
 ## `cross-client-runtime.reuse-topology`
 
@@ -35,6 +46,15 @@ image embeds targeting that exact asset are counted as diagram references.
   - [docs/architecture/README.md](./README.md)
   - [docs/architecture/platform/client/cross-client-runtime/README.md](./platform/client/cross-client-runtime/README.md)
   - [docs/architecture/platform/client/cross-client-runtime/design.md](./platform/client/cross-client-runtime/design.md)
+
+## `local-dev.resources.control`
+
+- Module: `local-dev-control-plane`
+- Viewpoint: `control-plane`
+- Diagram spec: [docs/architecture/engineering/local-dev/resource-dependencies.diagram.json](./engineering/local-dev/resource-dependencies.diagram.json)
+- SVG asset: [docs/architecture/engineering/local-dev/resource-dependencies.svg](./engineering/local-dev/resource-dependencies.svg)
+- Referenced by:
+  - [docs/architecture/engineering/local-dev/design.md](./engineering/local-dev/design.md)
 
 ## `project.actor-feed-log-target`
 
@@ -117,6 +137,7 @@ image embeds targeting that exact asset are counted as diagram references.
   - [docs/README.md](../README.md)
   - [docs/architecture/README.md](./README.md)
   - [docs/architecture/architecture.md](./architecture.md)
+  - [docs/architecture/domains/identity/device-login-approval/design.md](./domains/identity/device-login-approval/design.md)
   - [docs/architecture/domains/identity/mobile-scan-login/design.md](./domains/identity/mobile-scan-login/design.md)
   - [docs/architecture/shared/schema/design.md](./shared/schema/design.md)
 

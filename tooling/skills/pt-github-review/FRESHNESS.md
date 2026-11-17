@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-11-15
-covered_docs_hash: 9be18ae469fac5c6c67a66faa1c6ef98821ed78a6a540746283a81236da09423
+covered_docs_hash: cbdd4174e8425dab4957ebf25944c82cf423d76a27eaaf7c1290a1dbe086b0f5
 
 covered_docs:
   - AGENTS.md
@@ -39,6 +39,17 @@ accepted-base Git history; removal of an existing owner fails closed. Real
 temporary Git repositories exercise absent, installed and removed policies.
 Server activation and isolated Agent calibration remain separately verified
 properties, never inferred from the source workflow or fixture schema.
+
+Reviewed the Profile resource ID cutover against LDCP-D23/D25/D26/D27.
+Canonical Machine Dev owns assignments, instance contents, physical leases and
+interrupted preparation/mutation recovery. Readable discovery does not make
+display names into identities. Shared references do not authorize overwrite;
+the exact decision is revalidated under the physical lease. Mobile startup
+connects to its configured Station without deploying it, and iOS Suite cleanup
+retains installations while fixture deletion has a separate exact decision.
+Provider, native/source, Keychain and clean-source formal evidence remain
+distinct. Existing ownership, failure honesty and proof rules cover this
+change without a new review policy.
 
 Reviewed the canonical Feature denominator and proof reader across coverage,
 gaps, prerequisites, aggregates and continuation. Failed original assertions,

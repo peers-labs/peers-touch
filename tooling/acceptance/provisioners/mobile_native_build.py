@@ -1947,7 +1947,10 @@ def create_build_identity(
     build_inputs_digest: str,
     environment_digest: str,
     application_id: str = APPLICATION_ID,
+    configuration: str = BUILD_CONFIGURATION,
 ) -> dict[str, Any]:
+    if configuration not in {BUILD_CONFIGURATION, "development"}:
+        raise MobileNativeBuildError("unsupported build identity configuration")
     if not build_id or any(character.isspace() for character in build_id):
         raise MobileNativeBuildError("build ID must be non-empty and whitespace-free")
     for name, digest in (
@@ -1960,16 +1963,20 @@ def create_build_identity(
         "schema": BUILD_IDENTITY_SCHEMA,
         "buildId": build_id,
         "platform": platform,
-        "configuration": BUILD_CONFIGURATION,
+        "configuration": configuration,
         "sourceCommit": source.source_commit,
         "workspaceState": source.workspace_state,
         "workspaceDigest": source.workspace_digest,
         "buildInputsDigest": build_inputs_digest,
         "allowlistedEnvironmentDigest": environment_digest,
         "applicationId": application_id,
-        "harnessEnabled": True,
+        "harnessEnabled": configuration == BUILD_CONFIGURATION,
     }
-    parse_build_identity(canonical_json_bytes(identity).decode("ascii"))
+    _parse_identity(
+        canonical_json_bytes(identity).decode("ascii"),
+        configuration=configuration,
+        harness_enabled=configuration == BUILD_CONFIGURATION,
+    )
     return identity
 
 

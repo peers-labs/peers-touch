@@ -138,6 +138,7 @@
 		CE234B18D084EF92890D4E37 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		D44D4A3F64DDCD50C3EC1F34 /* storage_governance_test.rs */ = {isa = PBXFileReference; path = storage_governance_test.rs; sourceTree = "<group>"; };
 		D538826EF6274B718D5766E9 /* station.rs */ = {isa = PBXFileReference; path = station.rs; sourceTree = "<group>"; };
+		D7C2B1689A2356062F0620B8 /* private_poll.rs */ = {isa = PBXFileReference; path = private_poll.rs; sourceTree = "<group>"; };
 		D9E929249A14FB3C681562AA /* transport.rs */ = {isa = PBXFileReference; path = transport.rs; sourceTree = "<group>"; };
 		DCCB047FBDBF38D6BA837B63 /* peers-touch-mobile_iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "peers-touch-mobile_iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		DD199FDE4988538B599C7F7A /* actions.rs */ = {isa = PBXFileReference; path = actions.rs; sourceTree = "<group>"; };
@@ -246,6 +247,7 @@
 			children = (
 				68F147B9708537A2D178164A /* adapter.rs */,
 				C3C0A6808B7743AB993E13FD /* mod.rs */,
+				D7C2B1689A2356062F0620B8 /* private_poll.rs */,
 				8A62445753AB038964CD44D6 /* private_reaction.rs */,
 				FFB247DB8535B4DFDD1925D7 /* search.rs */,
 			);
@@ -725,7 +727,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "peers-touch-mobile_iOS/peers-touch-mobile_iOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = "D82S6W6WUC";
+				DEVELOPMENT_TEAM = "$(APPLE_DEVELOPMENT_TEAM)";
 				ENABLE_BITCODE = NO;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
@@ -757,7 +759,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "peers-touch-mobile_iOS/peers-touch-mobile_iOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = "D82S6W6WUC";
+				DEVELOPMENT_TEAM = "$(APPLE_DEVELOPMENT_TEAM)";
 				ENABLE_BITCODE = NO;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;

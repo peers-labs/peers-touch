@@ -84,6 +84,8 @@ def write_metadata(handle, value):
 def error_code(resource_kind):
     if resource_kind == "local.slot":
         return "LOCAL_SLOT_CONFLICT"
+    if resource_kind == "simulator.ios":
+        return "PHYSICAL_RESOURCE_CONFLICT"
     return "STATION_CAPABILITY_CONFLICT"
 
 
@@ -217,6 +219,16 @@ class MachineLease:
             values["PT_DEV_TARGET_PROFILE"] = self.request["targetProfile"]
         if self.reset_scope:
             values["PT_MACHINE_LEASE_RESET_SCOPE"] = self.reset_scope
+        if self.request["source"].get("workspaceDigest"):
+            values["PT_MACHINE_LEASE_SOURCE_WORKSPACE_DIGEST"] = self.request["source"]["workspaceDigest"]
+        stack = json.loads(os.environ.get("PT_MACHINE_LEASE_STACK_JSON", "[]"))
+        stack.append({
+            "fd": self.handle.fileno(),
+            "leaseId": self.metadata["leaseId"],
+            "kind": self.request["resourceKind"],
+            "resourceId": self.request["resourceId"],
+        })
+        values["PT_MACHINE_LEASE_STACK_JSON"] = json.dumps(stack)
         return values
 
     def release(self):
@@ -246,7 +258,10 @@ def run_with_lease(args):
                 "resourceId": args.resource_id,
                 "workspaceId": args.workspace_id,
                 "budgetSeconds": args.budget_seconds,
-                "source": {"branch": args.expected_branch, "head": args.expected_head},
+                "source": {
+                    "branch": args.expected_branch, "head": args.expected_head,
+                    "workspaceDigest": args.expected_workspace_digest,
+                },
                 "targetProfile": args.target_profile,
             },
             validation_command,
@@ -280,10 +295,14 @@ def run_with_lease(args):
         try:
             child_environment = os.environ.copy()
             child_environment.update(lease.environment)
+            inherited_fds = tuple(
+                int(frame["fd"])
+                for frame in json.loads(child_environment["PT_MACHINE_LEASE_STACK_JSON"])
+            )
             child = subprocess.Popen(
                 args.command,
                 start_new_session=True,
-                pass_fds=(lease.handle.fileno(),),
+                pass_fds=inherited_fds,
                 env=child_environment,
             )
             deadline = lease.deadline
@@ -456,6 +475,7 @@ def parser():
     run.add_argument("--budget-seconds", required=True, type=int)
     run.add_argument("--expected-branch", required=True)
     run.add_argument("--expected-head", required=True)
+    run.add_argument("--expected-workspace-digest")
     run.add_argument("--target-profile")
     run.add_argument("--validation-command-json", required=True)
     run.add_argument("--reset-scope")

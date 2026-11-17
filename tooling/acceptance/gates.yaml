@@ -1,6 +1,53 @@
 {
   "version": 1,
   "gates": {
+    "profile-resource-native-functional": {
+      "argv": ["python3", "-m", "tooling.acceptance.gates.mobile.resource_dependencies_functional"],
+      "timeout_seconds": 3600,
+      "environment": "local",
+      "tier": "env-evidence",
+      "e2e": {
+        "journeys": [{"id": "LDCP-resource-native-functional", "uses": ["tooling/acceptance/gates/mobile/resource_dependencies_functional.py#ResourceDependencyJourney.exercise"]}],
+        "implementations": [
+          {"ref": "tooling/acceptance/gates/mobile/resource_dependencies_functional.py#ResourceDependencyJourney.exercise", "purpose": "Execute one task-owned native resource Journey", "lifetime": "suite", "dependsOn": ["tooling/acceptance/provisioners/profile_ios_fixture.py#ProfileIOSFixture.prepare", "tooling/acceptance/provisioners/mobile_simulator.py#SelectedMobileSimulatorProvisioner.provision"], "invalidatedBy": ["source", "environment", "client", "session", "oracle"]},
+          {"ref": "tooling/acceptance/provisioners/profile_ios_fixture.py#ProfileIOSFixture.prepare", "purpose": "Create explicit fixture Profiles and devices through the canonical machine owner", "lifetime": "suite", "dependsOn": [], "invalidatedBy": ["source", "environment", "fixture"]},
+          {"ref": "tooling/acceptance/provisioners/mobile_simulator.py#SelectedMobileSimulatorProvisioner.provision", "purpose": "Build and install one iOS native client through its original owner", "lifetime": "suite", "dependsOn": [], "invalidatedBy": ["source", "toolchain", "environment", "client"]}
+        ]
+      },
+      "description": "Development-only native resource Journey using canonical machine fixtures and the existing selected iOS Provisioner."
+    },
+    "profile-resource-id-sharing-native-e2e": {
+      "argv": ["python3", "-m", "tooling.acceptance.gates.mobile.resource_dependencies_e2e"],
+      "timeout_seconds": 3600,
+      "environment": "local",
+      "tier": "env-evidence",
+      "e2e": {
+        "journeys": [{"id": "LDCP-R01-R04-R06-R07-R10", "uses": ["tooling/acceptance/gates/mobile/resource_dependencies_e2e.py#SharingGate.run"]}],
+        "implementations": [
+          {"ref": "tooling/acceptance/gates/mobile/resource_dependencies_e2e.py#SharingGate.run", "purpose": "Observe readable assignments, shared native content, physical locks and retention", "lifetime": "suite", "dependsOn": ["tooling/acceptance/gates/mobile/resource_dependencies_functional.py#ResourceDependencyJourney.exercise"], "invalidatedBy": ["source", "environment", "fixture", "oracle"]},
+          {"ref": "tooling/acceptance/gates/mobile/resource_dependencies_functional.py#ResourceDependencyJourney.exercise", "purpose": "Execute the original bounded task-owned native resource Journey", "lifetime": "suite", "dependsOn": ["tooling/acceptance/provisioners/profile_ios_fixture.py#ProfileIOSFixture.prepare", "tooling/acceptance/provisioners/mobile_simulator.py#SelectedMobileSimulatorProvisioner.provision"], "invalidatedBy": ["source", "environment", "client", "session", "oracle"]},
+          {"ref": "tooling/acceptance/provisioners/profile_ios_fixture.py#ProfileIOSFixture.prepare", "purpose": "Create explicit fixture Profiles and devices through the canonical machine owner", "lifetime": "suite", "dependsOn": [], "invalidatedBy": ["source", "environment", "fixture"]},
+          {"ref": "tooling/acceptance/provisioners/mobile_simulator.py#SelectedMobileSimulatorProvisioner.provision", "purpose": "Build and install one iOS native client through its original owner", "lifetime": "suite", "dependsOn": [], "invalidatedBy": ["source", "toolchain", "environment", "client"]}
+        ]
+      },
+      "description": "Clean-source iOS resource sharing proof; requires actual native/source, provider, lock and cleanup observations."
+    },
+    "profile-resource-overwrite-native-e2e": {
+      "argv": ["python3", "-m", "tooling.acceptance.gates.mobile.resource_dependencies_e2e"],
+      "timeout_seconds": 3600,
+      "environment": "local",
+      "tier": "env-evidence",
+      "e2e": {
+        "journeys": [{"id": "LDCP-R05-R08-R09", "uses": ["tooling/acceptance/gates/mobile/resource_dependencies_e2e.py#OverwriteGate.run"]}],
+        "implementations": [
+          {"ref": "tooling/acceptance/gates/mobile/resource_dependencies_e2e.py#OverwriteGate.run", "purpose": "Observe exact overwrite notice, refusal, force, stale references and native Keychain retention/reset", "lifetime": "suite", "dependsOn": ["tooling/acceptance/gates/mobile/resource_dependencies_functional.py#ResourceDependencyJourney.exercise"], "invalidatedBy": ["source", "environment", "fixture", "oracle"]},
+          {"ref": "tooling/acceptance/gates/mobile/resource_dependencies_functional.py#ResourceDependencyJourney.exercise", "purpose": "Execute the original bounded task-owned native resource Journey", "lifetime": "suite", "dependsOn": ["tooling/acceptance/provisioners/profile_ios_fixture.py#ProfileIOSFixture.prepare", "tooling/acceptance/provisioners/mobile_simulator.py#SelectedMobileSimulatorProvisioner.provision"], "invalidatedBy": ["source", "environment", "client", "session", "oracle"]},
+          {"ref": "tooling/acceptance/provisioners/profile_ios_fixture.py#ProfileIOSFixture.prepare", "purpose": "Create explicit fixture Profiles and devices through the canonical machine owner", "lifetime": "suite", "dependsOn": [], "invalidatedBy": ["source", "environment", "fixture"]},
+          {"ref": "tooling/acceptance/provisioners/mobile_simulator.py#SelectedMobileSimulatorProvisioner.provision", "purpose": "Build and install one iOS native client through its original owner", "lifetime": "suite", "dependsOn": [], "invalidatedBy": ["source", "toolchain", "environment", "client"]}
+        ]
+      },
+      "description": "Clean-source iOS overwrite proof, with fixture-only force and independent native data readback."
+    },
     "social-content-search-contract": {
       "argv": ["python3", "-m", "tooling.acceptance.gates.social.content_search_contract"],
       "timeout_seconds": 120,
@@ -609,7 +656,7 @@
     },
     "machine-dev-registry-self": {
       "executionInputs": {"environmentKeys": [], "identityProbe": {"ownerId": "machine-dev-toolchain", "argv": ["python3", "-B", "-m", "tooling.acceptance.input_owners.machine_dev_toolchain", "--gate", "machine-dev-registry-self"], "timeoutSeconds": 10}},
-      "command": "node --test tooling/scripts/local-dev/machine-dev.test.mjs tooling/devctl/test/desktop.test.mjs tooling/devctl/test/process-adapter.test.mjs tooling/devctl/test/profile.test.mjs tooling/devctl/test/station.test.mjs",
+      "command": "node --test tooling/scripts/local-dev/machine-dev.test.mjs tooling/scripts/local-dev/machine-dev-resources.test.mjs tooling/scripts/local-dev/machine-dev-resource-overwrite.test.mjs tooling/scripts/local-dev/machine-dev-resource-lock.test.mjs tooling/scripts/local-dev/machine-dev-mobile-entry.test.mjs tooling/devctl/test/desktop.test.mjs tooling/devctl/test/process-adapter.test.mjs tooling/devctl/test/profile.test.mjs tooling/devctl/test/station.test.mjs",
       "timeout_seconds": 600,
       "environment": "local",
       "tier": "ci-cheap",
@@ -3239,14 +3286,20 @@
       "e2e": {
         "journeys": [{
           "id": "mobile-direct-and-group-chat",
-          "uses": ["tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.execute"]
+          "uses": ["tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.execute", "tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.run_chat_native_text"]
         }],
         "implementations": [{
           "ref": "tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.execute",
           "purpose": "Execute the original Direct and Group sender/receiver journey without profile or contact-preference extensions",
           "lifetime": "suite",
-          "dependsOn": [],
+          "dependsOn": ["tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.run_chat_native_text"],
           "invalidatedBy": ["source", "environment", "fixture", "client", "oracle"]
+        }, {
+          "ref": "tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.run_chat_native_text",
+          "purpose": "Reuse mounted composers in both Direct and Group directions, verify the same receiver DOM message ID, visible delivered/read receipt and retained receiver draft",
+          "lifetime": "suite",
+          "dependsOn": [],
+          "invalidatedBy": ["source", "client", "session", "oracle"]
         }]
       },
       "command": "python3 -m tooling.acceptance.gates.mobile.simulator_social_e2e --scenario chat",
@@ -3254,20 +3307,26 @@
       "environment": "mobile-direct-simulator",
       "provisioner": "mobile-direct-simulator",
       "tier": "env-evidence",
-      "description": "Prove same-Station Direct and Group messaging, interactions, attachments, search, receipts and restart readback on the original two-actor simulator journey."
+      "description": "Prove same-Station Direct and Group bidirectional visible composer send, receiver DOM plaintext, delivered/read receipts and retained drafts, plus interactions, native media, attachments, search and restart readback on the original two-actor simulator journey."
     },
     "mobile-simulator-chat-contacts-e2e": {
       "e2e": {
         "journeys": [{
           "id": "mobile-chat-contacts",
-          "uses": ["tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.execute"]
+          "uses": ["tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.execute", "tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.run_chat_native_text"]
         }],
         "implementations": [{
           "ref": "tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.execute",
           "purpose": "Execute the original contact, Direct and Group sender/receiver journey",
           "lifetime": "suite",
-          "dependsOn": [],
+          "dependsOn": ["tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.run_chat_native_text"],
           "invalidatedBy": ["source", "environment", "fixture", "client", "oracle"]
+        }, {
+          "ref": "tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.run_chat_native_text",
+          "purpose": "Reuse the existing two native clients for both text directions, actual receiver rendering, visible receipt and incoming-message draft retention",
+          "lifetime": "suite",
+          "dependsOn": [],
+          "invalidatedBy": ["source", "client", "session", "oracle"]
         }]
       },
       "command": "python3 -m tooling.acceptance.gates.mobile.simulator_social_e2e --scenario chat-contacts",
@@ -3275,7 +3334,7 @@
       "environment": "mobile-direct-simulator",
       "provisioner": "mobile-direct-simulator",
       "tier": "env-evidence",
-      "description": "Prove required same-Station contact, Direct, Group, interaction, attachment, search, receipt, and restart readback on simulator cells."
+      "description": "Prove required same-Station contact, Direct and Group bidirectional visible text, receiver plaintext, receipt and draft retention, plus interaction, attachment, search and restart readback on simulator cells."
     },
     "mobile-simulator-recovery-e2e": {
       "e2e": {

@@ -20,7 +20,10 @@
   "required_gates": ["mobile-simulator-social-convergence-e2e", "mobile-simulator-chat-contacts-e2e"],
   "acceptance": {
     "product_assertions": ["MS-PA06", "MS-PA09", "MS-PA10", "MS-PA18", "MS-PA19"],
-    "visible": ["two actors on one Station can complete Chat, contact, and group journeys with authoritative readback"]
+    "visible": [
+      "two actors on one Station can complete Chat, contact, and group journeys with authoritative readback",
+      "Direct and Group text sends operate mounted composers in both directions; the receiver renders the same message ID and plaintext while retaining its unsent draft, and the sender renders a delivered/read receipt"
+    ]
   },
   "negative": [
     "Messaging runtime must not open a second Station event stream",
@@ -29,6 +32,7 @@
     "message search and thread counts must not depend on mounted rows",
     "pagination must not publish partial or stale-account relationship snapshots",
     "opaque encrypted object media type must not replace private attachment filename or MIME type in sender and receiver projections",
-    "same-Station evidence must not be promoted to cross-Station or Relay-backed delivery"
+    "same-Station evidence must not be promoted to cross-Station or Relay-backed delivery",
+    "Harness-only sends or projection readback must not replace visible composer, receiver DOM, receipt and draft assertions"
   ]
 }

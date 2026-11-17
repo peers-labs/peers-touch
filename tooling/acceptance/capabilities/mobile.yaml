@@ -11,6 +11,21 @@
   },
   "capabilities": [
     {
+      "id": "mobile-profile-resource-dependencies",
+      "domain": "mobile",
+      "direction": "acceptance_validates_product",
+      "features": ["mobile-profile-resource-dependencies"],
+      "required_gates": ["machine-dev-registry-self", "profile-resource-id-sharing-native-e2e", "profile-resource-overwrite-native-e2e"],
+      "synthetic_paths": ["tooling/scripts/local-dev/machine-dev-resource-store.mjs", "apps/mobile/scripts/ios-dev-sim.sh", "tooling/acceptance/provisioners/mobile_ios_resources.py"],
+      "evidence": {
+        "truth_sources": ["Canonical Machine Dev resource document", "CoreSimulator native installation and scoped Keychain row"],
+        "surfaces": ["Readable CLI discovery, sharing projection and operation-specific overwrite notice", "iOS Simulator native Mobile"],
+        "proven_by": ["machine-dev-registry-self", "profile-resource-id-sharing-native-e2e", "profile-resource-overwrite-native-e2e"],
+        "proven_scope": ["LDCP-R01 through LDCP-R10 on task-owned iOS resources only when their required native Gates pass"],
+        "unproven_scope": ["Android resources", "Physical-device secure storage", "Unrun native journeys and ordinary manual startup"]
+      }
+    },
+    {
       "id": "mobile-station-access",
       "domain": "mobile",
       "direction": "acceptance_validates_product",

@@ -192,6 +192,15 @@ Use canonical Local Dev / Acceptance entrypoints. Runtime admission requires:
 Task declarations, OWNER, PlanMount, resource-plan receipts, Hook receipts, and
 task completion neither grant nor block runtime acquisition.
 
+iOS resource work follows the [existing Local Dev owner](../../../docs/architecture/engineering/local-dev/integration.md#9-resource-dependency-cutover).
+Resolve count/purpose/readable selection to machine IDs and show shared
+references/current content. No fixed client-role allocation or human UUID
+memorization. Mobile entries are Station connect-only; Acceptance uses explicit
+Profile resource references. End-of-Suite release preserves installed content.
+A conflicting overwrite has one concrete impact, one force/decline decision
+and post-lock revalidation; it never authorizes another operation or bypasses
+an OS-held lock.
+
 An existing reviewed non-stable Profile authorizes selection, registration,
 runtime provisioning, deploy, restart, and exact-scope reset. A worktree-local
 Profile may be created with `make profile-init`. Remote topology must remain

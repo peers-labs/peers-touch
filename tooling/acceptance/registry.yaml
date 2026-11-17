@@ -2,6 +2,23 @@
   "version": 1,
   "rules": [
     {
+      "id": "mobile-profile-resource-dependencies",
+      "features": ["mobile-profile-resource-dependencies"],
+      "when": {"paths": [
+        "tooling/scripts/local-dev/machine-dev-resource-*",
+        "tooling/scripts/local-dev/machine-dev-ios-provider.mjs",
+        "tooling/scripts/local-dev/machine-dev-resource*",
+        "tooling/scripts/local-dev/machine-dev-lease.py",
+        "tooling/scripts/local-dev/mobile-ios-sim.sh",
+        "apps/mobile/scripts/ios-dev-sim.sh",
+        "tooling/acceptance/provisioners/mobile_ios_resources.py",
+        "tooling/acceptance/provisioners/profile_ios_fixture.py",
+        "tooling/acceptance/gates/mobile/resource_dependencies*",
+        "docs/architecture/engineering/local-dev/**"
+      ]},
+      "require": ["machine-dev-registry-self", "profile-resource-id-sharing-native-e2e", "profile-resource-overwrite-native-e2e"]
+    },
+    {
       "id": "social-content-search",
       "features": ["social-content-search"],
       "when": {

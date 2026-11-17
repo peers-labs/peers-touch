@@ -10,6 +10,7 @@ import {
   machineDevRoot,
   machineRegistryLockPath,
   machineRegistryPath,
+  machineResourcesPath,
   machineWorkspacesPath,
   workspaceIdForRoot,
   workspaceStatePath,
@@ -53,6 +54,7 @@ test('resolves runtime state under the machine Dev Control Plane', () => {
 });
 
 test('resolves the canonical registry and OS lease paths', () => {
+  assert.equal(machineResourcesPath('/home/tester'), '/home/tester/.peers-touch/dev/resources.json');
   assert.equal(
     machineRegistryPath('/home/tester'),
     '/home/tester/.peers-touch/dev/registry.json',
@@ -87,6 +89,8 @@ test('supports an explicit isolated machine Dev root', () => {
       machineRegistryPath(),
       '/tmp/peers-touch-machine-dev-test/registry.json',
     );
+    assert.equal(machineLeasePath('simulator.ios', '9D95D6FD-F0A3-45F3-B6EE-D96D92F97519'),
+      '/tmp/peers-touch-machine-dev-test/leases/simulator-ios-9D95D6FD-F0A3-45F3-B6EE-D96D92F97519.lock');
   } finally {
     if (previous === undefined) {
       delete process.env.PT_MACHINE_DEV_ROOT;

@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Architecture Design
 
 > **Status**: active
-> **Version**: v1.6
-> **Created**: 2026-09-13 | **Updated**: 2026-10-15
+> **Version**: v2.1
+> **Created**: 2026-09-13 | **Updated**: 2026-11-15
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -259,6 +259,11 @@ Owns bounded live exclusivity. Required lease classes:
 | `local.slot` | exclusive while local clients run | Desktop/Mobile ports for one workspace |
 | `runtime.profile` | exclusive when environment requires isolated runtime state | Acceptance/runtime profile state |
 
+This table includes required target classes. Current `LEASE_RESOURCE_KINDS`
+implements only `local.slot`, `station.deploy`, and `station.reset`.
+The simulator physical lease below is implemented by the canonical machine owner.
+OS-held lock checks do not replace native application or data proof.
+
 A durable binding does not prove a live lease. A live lease does not rewrite the
 durable binding.
 
@@ -446,3 +451,165 @@ The target implementation must prove:
   `DEVCTL_DEPENDENCY_MISSING` with exact `pkg-config` evidence and package
   hints. No adapter invokes an OS package manager or silently substitutes a
   bare debug binary.
+
+## 9. Profile Resource Dependencies
+
+**Contract status: implemented consumer cut, native proof pending.** LDCP-D23/D25/D26/D27
+extend this existing control plane. Station and Simulator are peer Profile
+dependencies; there is no second simulator control plane.
+
+### 9.1 Evidence And Ownership
+
+| Finding | Evidence class | Source | Limit |
+|---------|----------------|--------|-------|
+| Definition and machine allocation have separate owners | verified_fact | LDCP-D03; `machine-dev-registry.mjs`, `machine-dev-resource-store.mjs` | Native effects require provider readback |
+| Current leases fence slot and Station operations | verified_fact | `machine-dev-lease.py`; `LEASE_RESOURCE_KINDS` | Releasing a lease does not delete a device |
+| Base, selected-client and layout Provisioners bind canonical Profile resources and retain their locks | verified_fact | `mobile_simulator.py`, `mobile_ios_resources.py` | Fixture source tests are separate from native proof |
+| Normal Mobile Make checks Station connectivity without deployment | verified_fact | `mobile-ios-sim.sh` | No Station restart/reset authority is implied |
+| Simulator is a Profile dependency, allocated and shared by ID | implemented_contract | `machine-dev-resource-store.mjs`; LDCP-D23/D26 | Native/data scope remains unproven until its Gate passes |
+
+Profile owns logical requirements. Machine Dev owns user-directed Profile-to-ID
+assignments, physical identity, leases, current content, retention and recovery. Platform adapters
+execute provider operations. Client/Fixture owners retain accounts, sessions,
+databases, data isolation and product evidence.
+
+### 9.2 Control Plane View
+
+**Viewpoint: Control Plane. Arrows denote control requests only.**
+
+![Profile resource dependency control](./resource-dependencies.svg)
+
+The view projects the accepted target. Station remains remote/shareable for
+connect; a simulator is local and may be referenced by multiple Profiles.
+Physical mutations remain exclusive. Same-level dependency
+status does not make their capabilities or deletion semantics interchangeable.
+
+### 9.3 Admission And Data Boundaries
+
+Requirements are projected by the existing Profile parser. Shared Profile
+definitions do not store machine UUIDs, PIDs or ownership. Node and Python
+callers consume the same resolved contract and cannot independently allocate
+devices. The [data model](./data-model.md#12-resource-dependency-contract)
+separates requirements, instances and leases.
+
+The user specifies a count, purpose or readable device selection. Agent/control
+plane inspects the real provider inventory and existing assignments, offers
+eligible named resources or matches the delegated request, and resolves the
+internal IDs. The user never has to discover, memorize or enter UUIDs.
+Assignment produces an explicit internal ID set; its cardinality is display
+information, not an identity, ownership rule or conflict detector. There is no
+default simulator count, machine-wide count cap or mandatory client role.
+Each Profile may arrange those IDs for its own scenarios.
+
+The selection view shows readable device name/label, model, runtime, observed
+state, assigned/shared Profiles and actual current contents. Unknown references
+are marked unknown rather than inferred from a generated device name.
+Readable names/labels are separate from identity; renaming a label does not
+change resource ownership or locks. Duplicate names are differentiated by
+model/runtime/purpose/context or a temporary list choice bound to this inventory.
+List positions are not persistent IDs and cannot silently select another
+device after refresh. Names or quantity-only requests are valid user inputs.
+
+Multiple Profiles may attach the same ID. One machine-owned instance is
+resolved for that ID, and all attached Profiles see the reverse reference list,
+current installed content and actual holder. Sharing a reference is normal;
+it does not clone the instance, transfer exclusive ownership or silently
+grant overwrite authority. Caller roles are Profile-local labels, not physical IDs.
+
+Operation admission checks provider compatibility and the actual resource
+state. Merely attaching or inspecting a shared ID needs no overwrite prompt.
+Installing different content, replacing a binding or changing a conflicting
+data scope requires the explicit overwrite protocol below. Shared references
+cannot silently mix Actor/Station credentials or databases. Uninstall alone
+does not establish an iOS keychain reset.
+
+### 9.4 Lifecycle And Recovery
+
+Physical-device locking is distinct from `local.slot`; all boot, installation,
+reset and deletion consume the physical lock. Acquire a resource set in stable
+order, use bounded waits, and unwind partial acquisition on failure. Station
+equipment and remote source leases retain their existing owner-defined order.
+
+Persist the user-directed ID assignment, preparation intent and nonce **before** provider
+creation. Retry recovers the same preparation. A crash between create and UUID
+writeback is reconciled from that intent and provider identity evidence;
+a name prefix alone cannot prove ownership. Ambiguous matches remain
+`ownership-unknown`, unavailable for automatic mutation.
+
+On release, end only the owned operation/session and verify provider state.
+Profile assignments and installed contents remain; releasing one holder does
+not shut down a device still used by another holder, detach another Profile,
+erase its contents or delete the physical resource. Removing a Profile reference
+changes that reference only. Removing the last reference does not itself
+authorize physical deletion.
+
+Task-disposable data may be settled only within its exact owned scope; shared
+state changes still require the overwrite protocol. Requested physical deletion
+requires classified ownership, a notice to affected Profiles and verified
+device/directory absence. Manual handoff records retained purpose. Unknown
+resources cannot be mutated without first establishing ownership.
+
+Timeout or crash triggers reconciliation of OS-held locks, child identity,
+provider state and retention. A timestamp or stale PID does not authorize
+cleanup. Failed cleanup preserves instance identity and failure reason;
+lease release and instance cleanup have separate results.
+
+### 9.5 Explicit Overwrite Notice
+
+Before an operation would replace an existing installation/provider binding,
+reset another Profile's data or disrupt its active session, show:
+
+- Readable device name, model/runtime and context, bound internally to the
+  exact resource ID/provider identity. Raw UUIDs are optional diagnostic detail.
+- Every attached Profile and any observed active holder.
+- Current and requested installation/source, binding or data scope.
+- What will be replaced, which sessions would be interrupted and the exact data effect.
+- The choice to decline or explicitly force this operation.
+
+Decline, cancellation or no response causes no overwrite and leaves existing
+contents and references intact. Assignment or sharing alone is not an approval.
+An Agent cannot manufacture a force decision, infer it from a non-stable Profile,
+persist a blanket force default or reuse approval for another operation.
+
+Acquire the physical lock and recheck the reference set, holder and content/
+binding revision before mutation. If the confirmed impact has changed, show a
+fresh notice. Force never bypasses the OS lock or grants Station deploy/reset.
+If force would require stopping an active user's process, the notice must name
+that effect and obtain explicit permission for that stop before the original
+owner cooperatively releases its hold.
+
+After overwrite, one canonical current-content record is updated and every
+attached Profile sees the new writer/source and invalidated prior expectation.
+Failed or partial overwrite remains visible; do not report a completed replacement
+until provider readback confirms it. These are target semantics, not an implemented UI.
+
+### 9.6 Operation Permissions
+
+Mobile connect-only never enters Station deploy/reset, even when the Station
+is unavailable. Report the dependency state or preserve the product connection
+flow. Profile reset policy continues to follow LDCP-D21, but does not classify
+user-retained simulator data as disposable.
+
+Historical devices require explicit ownership classification before adoption
+or deletion. These contracts grant no historical cleanup permission.
+
+### 9.7 Falsifiable Resource Requirements
+
+These are requirement IDs, not registered or passed Gate IDs:
+
+| Requirement | Binary evidence |
+|-------------|-----------------|
+| LDCP-R01 explicit assignment | User-requested ID sets and counts are reflected exactly; no hidden allocation or fixed role/count |
+| LDCP-R02 visible sharing | Different Profiles referencing the same ID resolve one instance and see each other; equal counts do not imply sharing |
+| LDCP-R03 physical exclusivity | Concurrent worktrees requesting the same UUID cannot both mutate it |
+| LDCP-R04 recoverable preparation | Crashes at preparation/create/install/release boundaries recover without duplicate allocation or silent residue |
+| LDCP-R05 data and retention | No silent credential/database overwrite; refusal preserves retained state and unknown resources are not adopted |
+| LDCP-R06 connect-only | Native Mobile startup has zero Station deploy/reset operations |
+| LDCP-R07 truthful cleanup | Detach/release/delete are separate; another Profile's references/data survive; failed cleanup cannot claim removal |
+| LDCP-R08 overwrite decision | Notice names affected IDs/Profiles/content; refusal changes nothing; explicit force affects only the confirmed operation |
+| LDCP-R09 post-confirmation race | Changed references/content/holder invalidate an old force decision; physical locking is never bypassed |
+| LDCP-R10 readable discovery | Count/purpose/name requests resolve via observed inventory; users see names/state/shared Profiles; duplicate names, renamed labels and stale list positions cannot change the selected internal identity |
+
+Platform evidence is initially iOS-only. No Android lifecycle or data-isolation
+claim follows from the generic resource vocabulary. Provider readback and
+native client evidence must corroborate unit tests before runtime claims.
