@@ -2584,13 +2584,21 @@ select {
 }
 
 .message-bubble {
-  display: block;
-  max-width: var(--chat-message-bubble-max-width, 78%);
-  min-width: var(--chat-message-bubble-min-width, 56px);
-  padding: var(--chat-message-bubble-padding, 7px 9px 5px);
-  border-radius: var(--chat-message-bubble-radius-peer, 17px 17px 17px 5px);
-  background: var(--pt-surface);
-  box-shadow: 0 1px 1px rgba(27, 31, 59, 0.08);
+  /* Column flex container that hugs content (north-star .ma-bubble): a block
+     flex item resolves fit-content like max-content and over-expands, whereas
+     inline-flex shrinks to the widest child while still capping at max-width. */
+  display: inline-flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  align-items: flex-start;
+  align-self: flex-start;
+  width: fit-content;
+  min-width: 0;
+  max-width: var(--chat-message-bubble-max-width, 76%);
+  padding: var(--chat-message-bubble-padding, 10px 14px);
+  border-radius: 16px 16px 16px 6px;
+  background: var(--pt-subtle);
+  color: var(--pt-text);
 }
 
 .message-bubble-row.highlighted .message-bubble {
@@ -2609,7 +2617,9 @@ span.message-avatar {
 }
 
 .message-bubble-row.mine .message-bubble {
-  border-radius: var(--chat-message-bubble-radius-own, 17px 17px 5px 17px);
+  align-self: flex-end;
+  align-items: flex-end;
+  border-radius: 16px 16px 6px 16px;
   /* North-star: own bubble is neutral ink (--pt-ownBubble), never a saturated
      brand/blue fill; on-primary keeps readable contrast on the ink surface. */
   background: var(--pt-ownBubble);
@@ -2617,6 +2627,17 @@ span.message-avatar {
 
 .message-bubble-row.mine .message-bubble {
   color: var(--pt-onPrimary);
+}
+
+/* Reply quote must stay legible on the ink own-bubble: a translucent light
+   chip mirrors the prototype .ma-msg.mine .ma-msg-quote treatment. */
+.message-bubble-row.mine .message-reply-quote {
+  background: color-mix(in srgb, var(--pt-white, #ffffff) 16%, transparent);
+  color: var(--pt-onPrimary);
+}
+
+.message-bubble-row.mine .message-reply-quote span {
+  color: color-mix(in srgb, var(--pt-onPrimary) 82%, transparent);
 }
 
 .message-text {
@@ -2641,8 +2662,11 @@ span.message-avatar {
 .message-meta.attachment-only-meta {
   float: none;
   justify-content: flex-end;
-  width: 100%;
-  margin: 4px 0 0;
+  /* Hug the meta content instead of forcing width:100%, which otherwise makes
+     a fit-content bubble expand to its max-width even for short messages. */
+  width: fit-content;
+  max-width: 100%;
+  margin: 4px 0 0 auto;
 }
 
 .message-meta-row {
@@ -2686,7 +2710,7 @@ span.message-avatar {
 }
 
 .message-overflow-button {
-  flex: 0 0 44px;
+  flex: 0 0 28px;
 }
 
 .message-pin-indicator {
@@ -2812,7 +2836,7 @@ span.message-avatar {
 }
 
 .message-status-icon.read {
-  color: #9fd3ff;
+  color: color-mix(in srgb, var(--pt-onPrimary) 88%, transparent);
   opacity: 1;
 }
 
@@ -2838,23 +2862,24 @@ span.message-avatar {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 28px;
+  height: 28px;
   border: none;
   border-radius: 8px;
   color: inherit;
-  background: rgba(255, 255, 255, 0.18);
+  /* Subtle glass chip on the ink own-bubble, never a large opaque square. */
+  background: color-mix(in srgb, currentColor 12%, transparent);
   cursor: pointer;
 }
 
 .message-action-button.light {
-  color: rgba(0, 0, 0, 0.56);
-  background: rgba(15, 23, 42, 0.06);
+  color: var(--pt-secondary);
+  background: var(--pt-subtle);
 }
 
 .message-bubble-row.peer .message-action-button {
-  color: rgba(0, 0, 0, 0.56);
-  background: rgba(15, 23, 42, 0.06);
+  color: var(--pt-secondary);
+  background: var(--pt-subtle);
 }
 
 .message-editing-banner {
