@@ -21,7 +21,7 @@ export type {
   SearchStatus,
   GlobalSearchSurfaceProps,
 } from './search/search.types';
-// Serializable data core + shared fixtures (mock/production anti-drift contract).
+// Serializable props subset + shared fixtures (mock/production anti-drift contract).
 export type {
   SearchSurfaceData,
   SearchGroupData,

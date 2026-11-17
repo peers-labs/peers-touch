@@ -1,13 +1,13 @@
 /**
  * Fixture contract tests.
  *
- * These prove the data-core idea actually works end to end:
+ * These prove the serializable props idea actually works end to end:
  *   1. Every fixture is JSON-serializable (no React nodes / functions leak in),
  *      so the same literal can be a prototype mock, a test input or a recorded
  *      real payload without transformation.
- *   2. A data core can be upgraded into the full SearchSurfaceModel by a pure
- *      assembly step that only attaches host nodes — no field renaming, which is
- *      exactly the boundary a host adapter is allowed to own.
+ *   2. Serializable props can be upgraded into the full SearchSurfaceModel by a
+ *      pure assembly step that only attaches host nodes — no field renaming, which
+ *      is exactly the boundary a host container is allowed to own.
  */
 import { describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
@@ -17,7 +17,7 @@ import type {
   SearchResultRow, SearchSurfaceIntents, SearchSurfaceModel,
 } from './search.types';
 
-describe('search fixtures — serializable data core', () => {
+describe('search fixtures — serializable props', () => {
   for (const [name, fixture] of Object.entries(searchFixtures)) {
     it(`fixture "${name}" survives a JSON round-trip unchanged`, () => {
       const restored = JSON.parse(JSON.stringify(fixture)) as SearchSurfaceData;
@@ -32,7 +32,7 @@ describe('search fixtures — serializable data core', () => {
   });
 });
 
-describe('data core -> full model assembly', () => {
+describe('serializable props -> full model assembly', () => {
   /** The ONLY host-owned transform: attach an icon node and copy every serial
    *  field verbatim. No field renaming means no shape drift surface. */
   function assembleRow(data: SearchResultRowData, resolveIcon: (iconId?: string) => ReactNode): SearchResultRow {

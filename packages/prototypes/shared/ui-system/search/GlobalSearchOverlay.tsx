@@ -39,6 +39,10 @@ import type {
   CompositeTranslate, SearchSurfaceModel, SearchSurfaceIntents, SearchRegionKey,
   SurfaceHooks, SearchResultRow as CompositeRow,
 } from '@peers-touch/ui-composite';
+// Serializable props contract: the prototype mock and the Desktop response data
+// both project into this same type, so field/enum/shape drift is caught at compile
+// time. Type-only import — erased at build, adds no runtime dependency.
+import type { SearchSurfaceData, SearchResultRowData } from '@peers-touch/ui-composite';
 
 import './global-search.css';
 
@@ -152,17 +156,20 @@ function buildIndex(t: (k: StringKey) => string): HostRow[] {
   return rows;
 }
 
-// ── Adapter: host HostRow → composite CompositeRow ───────────────────────
+// ── Container: host HostRow → serializable props / full presentational row ──
 
-function toCompositeRow(row: HostRow): CompositeRow {
-  const Icon = row.icon ?? KIND_ICON[row.kind];
+/**
+ * Pure-data projection: no React nodes, no host navigation target. The result
+ * satisfies the composite serializable contract, which is the same type the
+ * Desktop adapter projects its store state into — the two hosts share shape.
+ */
+function toRowData(row: HostRow): SearchResultRowData {
   return {
     rowKey: row.id,
     kind: row.kind,
     title: row.title,
     snippet: row.snippet,
-    meta: row.meta,
-    icon: Icon ? <Icon size={14} /> : undefined,
+    metaText: row.meta,
   };
 }
 
@@ -230,9 +237,9 @@ export function GlobalSearchOverlay({ open, grammar = 'glass', onClose, onNaviga
     ...index.filter(r => r.kind === 'function').slice(0, 2),
   ], [index, t]);
 
-  // ── Build composite SearchSurfaceModel ──────────────────────────────────
+  // ── Step 1: serializable props (same SearchSurfaceData type as Desktop) ──
 
-  const model: SearchSurfaceModel = useMemo(() => {
+  const surfaceData: SearchSurfaceData = useMemo(() => {
     const hasQuery = !!query.trim();
     return {
       query,
@@ -241,21 +248,43 @@ export function GlobalSearchOverlay({ open, grammar = 'glass', onClose, onNaviga
       groups: filteredGroups.map(g => ({
         key: g.kind,
         labelKey: kindLabelKey(g.kind),
-        rows: g.items.map(toCompositeRow),
+        rows: g.items.map(toRowData),
       })),
-      quickFunctions: !hasQuery ? quickFunctions.map(toCompositeRow) : undefined,
-      recentItems: !hasQuery ? recents.map(toCompositeRow) : undefined,
+      quickFunctions: !hasQuery ? quickFunctions.map(toRowData) : undefined,
+      recentItems: !hasQuery ? recents.map(toRowData) : undefined,
       showEmpty: hasQuery && filteredGroups.length === 0,
-      // emptyTitleKey intentionally NOT set → composite uses its hardcoded
-      // 'search.empty.title' (which we also mirrored in prototype STRINGS).
+      // emptyTitleKey intentionally omitted → composite falls back to its key.
       filters: [],
       pendingSources: [],
       coverage: [],
       hasMore: false,
       opening: false,
       groupTitleKey: 'search.results',
-    };
+    } satisfies SearchSurfaceData;
   }, [query, filteredGroups, quickFunctions, recents]);
+
+  // ── Step 2: assemble the full model by attaching host-only icon nodes ──
+
+  const model: SearchSurfaceModel = useMemo(() => {
+    const resolveRow = (data: SearchResultRowData): CompositeRow => {
+      const host = index.find(r => r.id === data.rowKey);
+      const Icon = host?.icon ?? KIND_ICON[data.kind];
+      return {
+        rowKey: data.rowKey,
+        kind: data.kind,
+        title: data.title,
+        snippet: data.snippet,
+        meta: data.metaText,
+        icon: Icon ? <Icon size={14} /> : undefined,
+      };
+    };
+    return {
+      ...surfaceData,
+      groups: surfaceData.groups.map(g => ({ ...g, rows: g.rows.map(resolveRow) })),
+      quickFunctions: surfaceData.quickFunctions?.map(resolveRow),
+      recentItems: surfaceData.recentItems?.map(resolveRow),
+    };
+  }, [surfaceData, index]);
 
   // ── Build composite SearchSurfaceIntents ────────────────────────────────
 

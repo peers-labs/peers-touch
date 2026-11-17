@@ -1,17 +1,16 @@
 /**
- * SearchSurface — serializable data core (the "fixture contract").
+ * SearchSurfaceData — the serializable subset of SearchSurfaceModel.
  *
- * This is the slice of SearchSurfaceModel that contains NO React nodes and
- * NO callbacks. It is plain, JSON-able data, which means it can be:
- *   - authored directly as prototype fixtures (mock),
- *   - produced by the Desktop adapter from real store state,
- *   - shared verbatim by composite behavior tests and host adapter tests.
+ * These are the component's props with NO React nodes and NO callbacks: plain,
+ * JSON-able data. Both hosts build this same shape, from different sources:
+ *   - prototype: local mock constants,
+ *   - Desktop: real response data.
  *
- * The host-only, non-serializable pieces (icon/meta ReactNodes, intent
- * callbacks) are deliberately excluded; the adapter attaches them when it
- * upgrades SearchSurfaceData into the full SearchSurfaceModel. Keeping the
- * core React-free is what lets one TypeScript type pin both mock and real
- * data, eliminating field-name / enum / shape drift at compile time.
+ * The container (host) keeps the non-serializable pieces — icon/meta React
+ * nodes and the click callbacks — and attaches them when building the full
+ * SearchSurfaceModel. Because this type holds no React, one TypeScript type
+ * pins both mock and real data, so field-name / enum / shape drift fails at
+ * compile time instead of surfacing at runtime.
  */
 import type { SearchStatus } from './search.types';
 

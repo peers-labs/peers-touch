@@ -1,5 +1,5 @@
 /**
- * SearchSurface fixtures — typed, serializable sample data for the data core.
+ * SearchSurface fixtures — typed, serializable sample props for the component.
  *
  * These are the SINGLE source of sample data shared by:
  *   1. composite behavior tests (this package),
