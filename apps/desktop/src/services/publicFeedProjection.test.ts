@@ -40,6 +40,8 @@ describe('Native-verified public Feed projection binding', () => {
     const modified = clone(PostSchema, projected);
     if (modified.content.case === 'textPost') modified.content.value.text = 'Station rewrite';
     expect(() => projection.bindPost(modified, actor)).toThrow('FEED_PROJECTION_TAMPERED');
+    expect(() => projection.bindPost(modified, actor))
+      .toThrow(/FEED_PROJECTION_TAMPERED fields=[^\n]*textPost/);
     expect(() => projection.bindPost({ ...projected, publicFeedRef: 'oss://other/post/42' }, actor)).toThrow('FEED_PROJECTION_UNVERIFIED');
     expect(() => projection.bindPost({ ...projected, authorPtid: 'ptid:mallory' }, actor)).toThrow('FEED_PROJECTION_UNVERIFIED');
   });

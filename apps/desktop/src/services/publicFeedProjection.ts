@@ -1,4 +1,4 @@
-import { clone, create, equals, fromBinary } from '@bufbuild/protobuf';
+import { clone, create, equals, fromBinary, toJson } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import {
   FeedEventKind, FeedPayloadSchema, FeedPollDefinitionSchema, FeedPollAdmissionResult,
@@ -19,6 +19,16 @@ import { publicPollDefinition, publicPollResult, type PublicPollBallotVersion } 
 
 function stamp(ms: bigint) {
   return timestampFromDate(new Date(Number(ms)));
+}
+
+// Diagnostic only: name the authored fields that diverge between the Station
+// projected row and the Native-signed reconstruction. The strict equality gate
+// and its error code are unchanged; this never relaxes the rejection.
+function mismatchedPostFields(actual: Post, expected: Post): string[] {
+  const a = toJson(PostSchema, actual) as Record<string, unknown>;
+  const e = toJson(PostSchema, expected) as Record<string, unknown>;
+  return [...new Set([...Object.keys(a), ...Object.keys(e)])]
+    .filter(key => JSON.stringify(a[key]) !== JSON.stringify(e[key]));
 }
 
 export function signedPostContent(request: CreatePostRequest, createdAt: bigint): Post['content'] {
@@ -213,7 +223,11 @@ export class PublicFeedProjection {
     body.reactions = [];
     if (body.content.case === 'pollPost') body.content.value.result = undefined;
     // Compare every authored field, including media, mentions and timestamps.
-    if (!equals(PostSchema, body, signed)) throw new Error('FEED_PROJECTION_TAMPERED');
+    if (!equals(PostSchema, body, signed)) {
+      throw new Error(
+        `FEED_PROJECTION_TAMPERED fields=${mismatchedPostFields(body, signed).join('|') || 'unknown'}`,
+      );
+    }
     const reactions = this.reactionSummaries(signed.publicFeedRef, viewer);
     const content = clone(PostSchema, signed).content;
     if (content.case === 'pollPost') {
