@@ -104,4 +104,28 @@ describe('Chat component ownership boundaries', () => {
     expect(pageSource).toContain("t('mobile.chat.encrypted')");
     expect(stylesSource).toMatch(/\.chat-header-actions\s*\{[\s\S]*?display:\s*flex/);
   });
+
+  it('keeps reaction pills compact instead of inflating them into 44px circles', () => {
+    // The chat-surface touch-target rule must exempt inline reaction chips.
+    expect(stylesSource).toMatch(
+      /\.chat-thread-page\s*\[data-action-id\]:not\(\.message-reaction-chip\)\s*\{[\s\S]*?min-width:\s*44px/,
+    );
+    // The chip rule outranks peers-ui touch-target rules (0,2,0) with a
+    // three-class selector and explicitly resets both minimum dimensions.
+    expect(stylesSource).toMatch(
+      /\.message-bubble-row\s+\.message-reaction-row\s+\.message-reaction-chip\s*\{[\s\S]*?min-width:\s*auto[\s\S]*?min-height:\s*24px[\s\S]*?height:\s*24px/,
+    );
+    expect(stylesSource).not.toContain(
+      '.chat-thread-page [data-action-id] {',
+    );
+  });
+
+  it('renders own bubbles on light paper, never the ink-black ownBubble token', () => {
+    expect(stylesSource).toMatch(
+      /\.message-bubble-row\.mine\s+\.message-bubble\s*\{[\s\S]*?background:\s*var\(--chat-own-bubble-fill\)[\s\S]*?color:\s*var\(--pt-text\)/,
+    );
+    expect(stylesSource).toContain('--chat-own-bubble-fill:');
+    expect(stylesSource).not.toContain('--pt-ownBubble');
+    expect(stylesSource).not.toContain('--pt-onPrimary');
+  });
 });

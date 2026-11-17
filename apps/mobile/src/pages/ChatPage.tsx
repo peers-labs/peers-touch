@@ -88,6 +88,10 @@ import {
 } from '../features/chat/typingDispatch';
 import { useMessageFlagState } from '../features/chat/messageFlagState';
 import { useChatMessageAnchor } from '../features/chat/useChatMessageAnchor';
+import {
+  buildThreadTimelineUnits,
+  threadTimelineAnchor,
+} from '../features/chat/threadTimeline';
 import { useChatReadCursor } from '../features/chat/useChatReadCursor';
 import { useMobileChatVoiceRecorder } from '../features/chat/useMobileChatVoiceRecorder';
 import { mobileCallManager } from '../features/call/callState';
@@ -1549,7 +1553,13 @@ function ChatPageInner({
     const scope = activeConversationKeyRef.current;
     const current = () => activeConversationKeyRef.current === scope
       && useAuthStore.getState().session === authSession;
-    if (!messageWindow.current?.reveal(messageUlid)) {
+    // Thread replies are nested under their root card, so the window only
+    // knows the root's key; resolve any nested id before revealing.
+    const anchorKey = threadTimelineAnchor(
+      buildThreadTimelineUnits(history.visible),
+      messageUlid,
+    );
+    if (!messageWindow.current?.reveal(anchorKey)) {
       setThreadRootMessageUlid('');
       try {
         await dispatchLoadConversationHistory(
@@ -1564,7 +1574,7 @@ function ChatPageInner({
       if (!current()) return;
       requestAnimationFrame(() => {
         if (!current()) return;
-        if (!messageWindow.current?.reveal(messageUlid)) {
+        if (!messageWindow.current?.reveal(anchorKey)) {
           setLocalActionError(t('mobile.chat.messageUnavailable'));
         }
       });
@@ -2098,6 +2108,7 @@ function ChatPageInner({
           surfaceKey={`messages:${activeConversationKey}:${threadRootMessageUlid}`}
           background={actionState.background}
           messages={threadMessages}
+          threadRootUlid={threadRootMessageUlid || undefined}
           historyById={history.byId}
           currentUserPtid={currentUserPtid}
           highlightedMessageUlid={highlightedMessageUlid}
@@ -2159,6 +2170,7 @@ function ChatPageInner({
           selectionActive={selectionActive}
           selectedIds={new Set(selectedMessageIds)}
           onToggleSelection={toggleSelectedMessage}
+          onOpenThread={openMessageThread}
         />
 
         {activePeerBlocked ? (

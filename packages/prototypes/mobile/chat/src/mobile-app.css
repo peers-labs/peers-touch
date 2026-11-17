@@ -687,7 +687,7 @@
 
 .ma-hero-avatar{position:relative;width:68px;height:68px;margin:-34px 0 10px}
 
-.ma-hero-avatar .pt-avatar{box-shadow:0 0 0 3px var(--pt-surface),var(--pt-shadow-rest)}
+.ma-hero-avatar .pt-avatar{box-shadow:0 0 0 2px var(--pt-surface),var(--pt-shadow-rest)}
 
 /* Avatar edit chip: same iconOnly FilePicker as the cover, pinned inside the
    avatar's bottom-right corner (desktop grammar right:6/bottom:6). */

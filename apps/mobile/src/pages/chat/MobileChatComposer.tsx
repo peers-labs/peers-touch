@@ -1,12 +1,11 @@
 import { useState, type ReactNode, type Ref, type RefObject } from 'react';
 import {
-  Button, EmojiPicker, FieldFrame, Icon, IconButton, Menu, Text, TextArea,
+  Button, Icon, IconButton, Text, TextArea,
   geometry, type TextAreaProps,
 } from '@peers-touch/ui';
 
 import { useMobileI18n } from '../../app/mobileI18n';
-
-const EMOJIS = ['😀', '😊', '😂', '😍', '👍', '🙏', '🎉', '🔥', '❤️', '✨', '😭', '🤔'] as const;
+import { EmojiPalettePanel } from '../../components/emoji/EmojiPalettePanel';
 
 export interface MobileChatComposerProps {
   readonly draft: string;
@@ -35,16 +34,20 @@ export interface MobileChatComposerProps {
   readonly recentEmojis: readonly string[];
   readonly onEmojiUsed: (emoji: string) => void;
   readonly nativePickers?: ReactNode;
-  readonly initiallyExpanded?: boolean;
 }
 
 /** Render-only writing dock. Draft, media, submission and persistence stay with ChatPage. */
 export function MobileChatComposer(props: MobileChatComposerProps) {
   const { t } = useMobileI18n();
-  const [expanded, setExpanded] = useState(props.initiallyExpanded ?? false);
+  // The "+" capability grid is composer-local state; the emoji panel is owned
+  // by ChatPage so focusing the text field can dismiss it. The two are mutually
+  // exclusive and both sit above the writing bar.
+  const [toolsOpen, setToolsOpen] = useState(false);
   const unavailable = props.toolsDisabled
     ? { kind: 'disabled' as const, reason: t('mobile.chat.composerToolsBusy') }
     : undefined;
+  const canSend = !props.sendDisabledReason;
+
   const insertEmoji = (emoji: string) => {
     const input = props.inputRef.current;
     const start = input?.selectionStart ?? props.draft.length;
@@ -56,18 +59,54 @@ export function MobileChatComposer(props: MobileChatComposerProps) {
       input?.setSelectionRange(start + emoji.length, start + emoji.length);
     });
   };
-  const emojiItems = (items: readonly string[]) => items.map(emoji => ({
-    id: emoji, emoji, name: t('mobile.chat.insertEmoji', { emoji }),
-  }));
+
+  const toggleEmoji = () => {
+    props.inputRef.current?.blur();
+    setToolsOpen(false);
+    props.onEmojiOpenChange(!props.emojiOpen);
+  };
+
+  const toggleTools = () => {
+    props.inputRef.current?.blur();
+    props.onEmojiOpenChange(false);
+    setToolsOpen((value) => !value);
+  };
+
+  const capabilityActions = [
+    { id: 'chat.attach.album', iconId: 'image', label: t('mobile.chat.composerAlbum'), onActivate: props.onChooseFile },
+    { id: 'chat.attach.camera', iconId: 'camera', label: t('mobile.chat.takePhoto'), onActivate: props.onTakePhoto },
+    { id: 'chat.attach.voice', iconId: 'mic', label: t('mobile.chat.composerVoice'), onActivate: props.onRecordVoice },
+  ] as const;
+
   return (
     <footer className="message-composer">
       <div className="message-composer-input-panels" ref={props.inputPanelRef}>
         {props.emojiOpen && (
           <div className="message-composer-panel emoji-panel">
-            {props.recentEmojis.length > 0 && (
-              <EmojiPicker presentation="palette" label={t('mobile.chat.recentEmojis')} items={emojiItems(props.recentEmojis)} onSelect={insertEmoji} />
-            )}
-            <EmojiPicker presentation="palette" label={t('mobile.chat.allEmojis')} items={emojiItems(EMOJIS)} onSelect={insertEmoji} />
+            <EmojiPalettePanel
+              recent={props.recentEmojis}
+              onSelect={insertEmoji}
+            />
+          </div>
+        )}
+        {toolsOpen && (
+          <div className="message-composer-panel composer-tools-panel" data-product-surface="chat.composer-tools">
+            {capabilityActions.map((action) => (
+              <button
+                key={action.id}
+                type="button"
+                className="composer-tool-cell"
+                data-action-id={action.id}
+                disabled={props.toolsDisabled}
+                onClick={() => {
+                  setToolsOpen(false);
+                  action.onActivate();
+                }}
+              >
+                <span className="composer-tool-icon"><Icon iconId={action.iconId} size={26} /></span>
+                <span className="composer-tool-label">{action.label}</span>
+              </button>
+            ))}
           </div>
         )}
         {props.recording && (
@@ -92,46 +131,36 @@ export function MobileChatComposer(props: MobileChatComposerProps) {
               emphasis="quiet" density="comfortable" onActivate={props.context.onCancel} />
           </div>
         )}
-        <FieldFrame appearance="composer" className="message-composer-row" data-composer-mode={props.editing ? 'editing' : 'compose'}>
-          <span className="message-composer-tools">
-            <IconButton actionId="chat.composer.emoji" iconId="smile" iconSize={19}
-              label={t('mobile.chat.composerEmoji')} emphasis="quiet" density="comfortable"
-              aria-pressed={props.emojiOpen} availability={unavailable}
-              onActivate={() => {
-                props.inputRef.current?.blur();
-                props.onEmojiOpenChange(!props.emojiOpen);
-              }} />
-            <Menu placement="top" actions={[
-              { id: 'chat.attach.file', label: t('mobile.chat.composerFile'), leading: <Icon iconId="folder-open" size={16} />, onActivate: props.onChooseFile },
-              { id: 'chat.attach.camera', label: t('mobile.chat.takePhoto'), leading: <Icon iconId="camera" size={16} />, onActivate: props.onTakePhoto },
-            ]}>
-              <IconButton actionId="chat.composer.attach" iconId="folder-open" iconSize={19}
-                label={t('mobile.chat.composerFile')} emphasis="quiet" density="comfortable" availability={unavailable} />
-            </Menu>
-            <IconButton actionId="chat.composer.voice" iconId="mic" iconSize={19}
-              label={t('mobile.chat.composerVoice')} emphasis="quiet" density="comfortable"
-              availability={unavailable} onActivate={props.onRecordVoice} />
-          </span>
+        <div className="message-composer-bar" data-composer-mode={props.editing ? 'editing' : 'compose'}>
+          <IconButton actionId="chat.composer.voice" iconId="audio-lines" iconSize={22}
+            label={t('mobile.chat.composerVoice')} emphasis="quiet" density="comfortable"
+            availability={unavailable} onActivate={props.onRecordVoice} />
           <span className="message-composer-input-frame">
             <TextArea {...props.inputProps} ref={props.inputRef} className="message-composer-input"
               framing="embedded" density="comfortable" autoGrow rows={1}
-              minimumRows={expanded ? geometry.composer.expandedRows : geometry.composer.collapsedRows}
-              maximumRows={expanded ? geometry.composer.maximumRows : geometry.composer.expandedRows}
+              minimumRows={geometry.composer.collapsedRows}
+              maximumRows={geometry.composer.expandedRows}
               value={props.draft} onValueChange={props.onDraftChange} placeholder={props.placeholder}
               aria-label={props.placeholder} disabled={props.inputDisabled}
-            data-product-surface={expanded ? 'chat.composer-expanded' : props.keyboardOpen ? 'chat.composer-keyboard' : undefined}
-              data-composer-expanded={expanded ? 'true' : 'false'}
+              data-product-surface={props.keyboardOpen ? 'chat.composer-keyboard' : undefined}
               autoComplete="off" autoCorrect="off" autoCapitalize="sentences" />
           </span>
-          <IconButton actionId="chat.composer.expand" iconId={expanded ? 'minimize-2' : 'maximize-2'}
-            label={t(expanded ? 'mobile.chat.collapseComposer' : 'mobile.chat.expandComposer')}
-            emphasis="quiet" density="comfortable" aria-pressed={expanded}
-            onActivate={() => setExpanded(value => !value)} />
-          <IconButton actionId="chat.send-message" iconId="send" iconSize={17}
-            aria-label={t('common.action.send')} label={t('common.action.send')} density="comfortable" emphasis="primary"
-            availability={props.sendDisabledReason ? { kind: 'disabled', reason: props.sendDisabledReason } : undefined}
-            execution={props.sending ? 'pending' : 'idle'} onActivate={props.onSend} />
-        </FieldFrame>
+          <IconButton actionId="chat.composer.emoji" iconId="smile" iconSize={22}
+            label={t('mobile.chat.composerEmoji')} emphasis="quiet" density="comfortable"
+            aria-pressed={props.emojiOpen} availability={unavailable}
+            onActivate={toggleEmoji} />
+          {canSend ? (
+            <IconButton actionId="chat.send-message" iconId="send" iconSize={18}
+              aria-label={t('common.action.send')} label={t('common.action.send')}
+              density="comfortable" emphasis="primary"
+              execution={props.sending ? 'pending' : 'idle'} onActivate={props.onSend} />
+          ) : (
+            <IconButton actionId="chat.composer.tools" iconId="plus" iconSize={22}
+              label={t('mobile.chat.composerMore')} emphasis="quiet" density="comfortable"
+              aria-pressed={toolsOpen} availability={unavailable}
+              onActivate={toggleTools} />
+          )}
+        </div>
         {props.nativePickers}
       </div>
     </footer>

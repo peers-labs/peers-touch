@@ -2188,15 +2188,6 @@ select {
   color: var(--pt-muted);
 }
 
-.contact-profile-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  width: 100%;
-  padding: 20px 0 4px;
-}
-
 .contact-profile-copy {
   display: flex;
   flex-direction: column;
@@ -2215,28 +2206,14 @@ select {
   color: rgba(0, 0, 0, 0.72);
 }
 
-.contact-profile-stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  width: 100%;
-}
-
-.contact-profile-stat {
+/* Identity hero is the shared ProfileIdentityHeader; this container only
+   stacks peer-specific notices and actions below that hero. */
+.contact-profile-actions {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 8px;
-  border-radius: 12px;
-  background: rgba(248, 250, 252, 0.9);
-}
-
-.contact-profile-tags {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px;
+  align-items: stretch;
+  gap: 14px;
+  width: 100%;
 }
 
 .notification-item {
@@ -2501,6 +2478,13 @@ select {
   padding: 10px 8px 92px;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  /* Light paper grammar (矿灰纸白): own bubbles take one neutral ink-wash step
+     over the pure-white peer bubble instead of an ink-black fill. Scoped to
+     the chat surface because peers-ui tokens live on the provider element,
+     not :root. */
+  --chat-own-bubble-fill: color-mix(in srgb, var(--pt-text) 8%, var(--pt-surface));
+  --chat-own-bubble-quote: color-mix(in srgb, var(--pt-text) 8%, transparent);
+  --chat-own-bubble-card: rgba(15, 23, 42, 0.06);
 }
 
 .bounded-list {
@@ -2569,8 +2553,13 @@ select {
 }
 
 .message-bubble-row {
+  /* Top-align avatar with the message column so the avatar's top edge meets
+     the bubble's top edge (desktop ChatMessageRow align-items:flex-start and
+     prototype .ma-msg align-items:flex-start). flex-end previously sank the
+     avatar to the column's bottom once the external meta/reaction rows made
+     the column taller than the avatar, letting the bubble rise above it. */
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: var(--chat-message-avatar-gap, 7px);
   width: 100%;
 }
@@ -2581,6 +2570,182 @@ select {
 
 .message-bubble-row.peer {
   justify-content: flex-start;
+}
+
+/* Recalled/service message: centered quiet pill, no avatar, no bubble chrome
+   (parity with prototype .ma-msg-service and desktop's borderless recall). */
+.message-service-row {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.message-service-pill {
+  max-width: var(--chat-message-bubble-max-width, 76%);
+  padding: 4px 14px;
+  border-radius: 999px;
+  background: var(--pt-subtle);
+  color: var(--pt-secondary);
+  font-size: 11.5px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+/* Message column mirrors the prototype .ma-msg-col: the bubble is one child;
+   sender name, pin flags, reactions and the quiet meta row stack beneath it
+   instead of being inset inside the ink bubble. */
+.message-bubble-col {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: var(--chat-message-bubble-max-width, 76%);
+}
+
+.message-bubble-row.peer .message-bubble-col {
+  align-items: flex-start;
+}
+
+.message-bubble-row.mine .message-bubble-col {
+  align-items: flex-end;
+}
+
+.message-sender-name {
+  padding: 0 0 3px 4px;
+  font-size: 11px;
+  color: var(--pt-secondary);
+}
+
+/* Thread tree (parity with prototype .ma-thread-root / .ma-thread-replies):
+   the root message is a separated parent block with a divider, and replies
+   form a named section that fills the width instead of one flat narrow
+   right-aligned bubble stream. */
+.thread-view .is-thread-root {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--pt-border);
+}
+
+.thread-replies-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin: 10px 0 4px;
+  color: var(--pt-secondary);
+  font-size: 11.5px;
+  font-weight: 650;
+}
+
+.thread-replies-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--pt-border);
+}
+
+/* Own roots are right-aligned; the reply summary must sit on the same side.
+   row-reverse flips the label to the right with the hairline filling left,
+   and the inset tucks it under the bubble instead of the avatar gutter. */
+.thread-replies-divider.is-own {
+  flex-direction: row-reverse;
+  padding-right: calc(var(--chat-message-avatar-size, 38px) + 9px);
+}
+
+.thread-view .thread-reply-row .message-bubble-col {
+  max-width: 100%;
+}
+
+/* Thread replies live INSIDE the root message bubble as an explicit light
+   panel so they stay readable regardless of the parent bubble fill (the own
+   bubble is dark ink). No side rail; the whole block opens the thread. */
+.message-thread-preview {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  width: 100%;
+  min-width: min(220px, 72vw);
+  margin: 9px 0 1px;
+  padding: 10px 11px;
+  border: 1px solid var(--pt-border);
+  border-radius: 12px;
+  background: var(--pt-subtle);
+  color: var(--pt-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.message-thread-preview__reply {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.message-thread-preview__reply.highlighted {
+  border-radius: 8px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--pt-accent) 35%, transparent);
+}
+
+.message-thread-preview__reply .message-avatar {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  border-radius: 8px !important;
+  font-size: 11px;
+}
+
+.message-thread-preview__reply-col {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.message-thread-preview__reply-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.message-thread-preview__sender {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--pt-secondary);
+}
+
+.message-thread-preview__time {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--pt-muted);
+}
+
+.message-thread-preview__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--pt-text);
+}
+
+.message-thread-preview__open {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--pt-border);
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--pt-secondary);
 }
 
 .message-bubble {
@@ -2594,7 +2759,7 @@ select {
   align-self: flex-start;
   width: fit-content;
   min-width: 0;
-  max-width: var(--chat-message-bubble-max-width, 76%);
+  max-width: 100%;
   padding: var(--chat-message-bubble-padding, 10px 14px);
   border-radius: 16px 16px 16px 6px;
   background: var(--pt-subtle);
@@ -2620,24 +2785,36 @@ span.message-avatar {
   align-self: flex-end;
   align-items: flex-end;
   border-radius: 16px 16px 6px 16px;
-  /* North-star: own bubble is neutral ink (--pt-ownBubble), never a saturated
-     brand/blue fill; on-primary keeps readable contrast on the ink surface. */
-  background: var(--pt-ownBubble);
+  /* Light paper grammar: own bubbles read as one neutral ink-wash step over
+     the white peer bubble, never an ink-black capsule; ink text keeps full
+     contrast on the pale fill. */
+  background: var(--chat-own-bubble-fill);
+  color: var(--pt-text);
 }
 
-.message-bubble-row.mine .message-bubble {
-  color: var(--pt-onPrimary);
+/* Image-only message = bare full-bleed picture (desktop mediaOnlyMessage
+   parity): drop the ink/surface fill, padding, border and shadow so the image
+   paints its own rounded rectangle instead of sitting in a dark padded box.
+   Selectors repeat the row scope to out-rank the mine/peer bubble fill rules. */
+.message-bubble--bare-image,
+.message-bubble-row.mine .message-bubble--bare-image,
+.message-bubble-row.peer .message-bubble--bare-image {
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  box-shadow: none;
+  color: inherit;
 }
 
-/* Reply quote must stay legible on the ink own-bubble: a translucent light
-   chip mirrors the prototype .ma-msg.mine .ma-msg-quote treatment. */
+/* Reply quote on the pale own-bubble: a quiet ink-wash chip with ink text,
+   mirroring the prototype quote treatment without relying on a dark fill. */
 .message-bubble-row.mine .message-reply-quote {
-  background: color-mix(in srgb, var(--pt-white, #ffffff) 16%, transparent);
-  color: var(--pt-onPrimary);
+  background: var(--chat-own-bubble-quote);
+  color: var(--pt-text);
 }
 
 .message-bubble-row.mine .message-reply-quote span {
-  color: color-mix(in srgb, var(--pt-onPrimary) 82%, transparent);
+  color: var(--pt-secondary);
 }
 
 .message-text {
@@ -2667,6 +2844,30 @@ span.message-avatar {
   width: fit-content;
   max-width: 100%;
   margin: 4px 0 0 auto;
+}
+
+/* The meta row now lives under the bubble (like desktop .sc-msg-meta), not
+   inside the ink bubble: neutral secondary color and row-end alignment. */
+.message-bubble-col .message-meta-row {
+  width: 100%;
+  margin-top: 3px;
+  color: var(--pt-secondary);
+}
+
+.message-bubble-row.peer .message-bubble-col .message-meta-row {
+  justify-content: flex-start;
+}
+
+.message-bubble-row.mine .message-bubble-col .message-meta-row {
+  justify-content: flex-end;
+}
+
+/* The overflow (...) control sits on the quiet external meta row, so it uses
+   a neutral subtle chip instead of the glass-on-ink treatment it needed inside
+   the own bubble. */
+.message-bubble-col .message-action-button {
+  color: var(--pt-secondary);
+  background: var(--pt-subtle);
 }
 
 .message-meta-row {
@@ -2717,9 +2918,10 @@ span.message-avatar {
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-bottom: 5px;
+  margin: 0 0 4px;
   font-size: 10px;
   font-weight: 700;
+  color: var(--pt-secondary);
   opacity: 0.72;
 }
 
@@ -2744,8 +2946,82 @@ span.message-avatar {
   margin-top: 6px;
 }
 
-.message-action-sheet .message-action-reactions .chat-background-grid {
-  grid-template-columns: repeat(5, minmax(40px, 1fr));
+/* Reaction pills sit under the bubble (prototype .ma-msg-reaction / desktop
+   .sc-reaction-chip), not inside it: compact 24px bordered surface pills with
+   a primary "mine" state. The three-class selector outranks the peers-ui
+   button touch-target rules (comfortable density and the coarse-pointer
+   media query, both specificity 0,2,0), which otherwise inflate the inline
+   pill to a 44x44 circle on touch devices. Selectors use only app-owned
+   classes, never primitive chrome. */
+.message-bubble-row .message-reaction-row .message-reaction-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: auto;
+  min-height: 24px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--pt-border);
+  border-radius: 999px;
+  background: var(--pt-surface);
+  color: var(--pt-text);
+  font-size: 11.5px;
+  line-height: 1;
+}
+
+.message-bubble-row .message-reaction-row .message-reaction-chip.active {
+  background: var(--pt-primarySubtle);
+  border-color: color-mix(in srgb, var(--pt-accent) 35%, var(--pt-border));
+  color: var(--pt-accent);
+}
+
+/* The library BottomSheet centers its title; the message-actions sheet puts
+   the close control on the same title row (left title, right close) instead
+   of a second dismiss row underneath, matching the other mobile sheets. */
+.message-action-sheet .pt-sheet-title {
+  display: flex;
+  align-items: center;
+  text-align: left;
+}
+
+.message-action-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
+/* One action per row: the two-column grid cramped icon actions into
+   uneven pairs; an iOS-style single column reads as one clean list. */
+.message-action-sheet .chat-action-group {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* CopyButton is a bare .pt-button without the chat-action-button modifier;
+   align it with the icon rows so the whole action list shares one left edge. */
+.message-action-sheet .chat-action-group .pt-button {
+  justify-content: flex-start;
+}
+
+/* Collapsed reaction row: recents + defaults share one evenly-spaced row with
+   the "all reactions" more button, instead of spreading the full grid on open. */
+.message-action-sheet .reaction-quick-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+
+.message-action-sheet .reaction-quick-row .pt-button {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.message-action-sheet .reaction-quick-row .reaction-quick-more {
+  color: var(--pt-secondary);
 }
 
 .message-reaction-choice {
@@ -2774,7 +3050,12 @@ span.message-avatar {
 }
 
 .mobile-attachment-image {
+  /* The button owns the reserved box (inline width/height from learned
+     geometry); base 160x96 only covers the never-decoded placeholder. */
   display: block;
+  position: relative;
+  width: 160px;
+  height: 96px;
   max-width: min(220px, 100%);
   padding: 0;
   border: 0;
@@ -2784,13 +3065,39 @@ span.message-avatar {
 }
 
 .mobile-attachment-image img {
+  /* Absolute fill so a fresh decode never changes layout; fade in once
+     decoded instead of collapsing then snapping the bubble open. */
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
-  max-height: 260px;
+  height: 100%;
   object-fit: contain;
+  opacity: 0;
+  transition: opacity 0.16s ease;
 }
 
-.mobile-attachment-card {
+.mobile-attachment-image img.is-loaded {
+  opacity: 1;
+}
+
+.mobile-attachment-image__placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: var(--pt-subtle);
+  color: var(--pt-secondary);
+}
+
+/* File cards sit inside both peer (white) and own (ink-wash paper) bubbles,
+   so one neutral ink wash works on either pale fill instead of the old
+   white-translucent chip designed for the retired ink own-bubble. */
+.mobile-attachment-card,
+.message-bubble-row.peer .mobile-attachment-card,
+.message-bubble-row.mine .mobile-attachment-card {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2799,12 +3106,8 @@ span.message-avatar {
   border: 0;
   border-radius: 10px;
   color: inherit;
-  background: rgba(255, 255, 255, 0.18);
+  background: var(--chat-own-bubble-card, rgba(15, 23, 42, 0.06));
   text-align: left;
-}
-
-.message-bubble-row.peer .mobile-attachment-card {
-  background: rgba(15, 23, 42, 0.06);
 }
 
 .mobile-attachment-card:disabled {
@@ -2836,7 +3139,10 @@ span.message-avatar {
 }
 
 .message-status-icon.read {
-  color: color-mix(in srgb, var(--pt-onPrimary) 88%, transparent);
+  /* The meta row sits outside the bubble on the light chat canvas, so the
+     read check uses the quiet meta ink instead of the old on-primary white
+     that only contrasted against the retired ink own-bubble. */
+  color: var(--pt-secondary);
   opacity: 1;
 }
 
@@ -2867,7 +3173,7 @@ span.message-avatar {
   border: none;
   border-radius: 8px;
   color: inherit;
-  /* Subtle glass chip on the ink own-bubble, never a large opaque square. */
+  /* Quiet ink-wash chip on the pale own/peer bubble, never an opaque square. */
   background: color-mix(in srgb, currentColor 12%, transparent);
   cursor: pointer;
 }
@@ -2905,8 +3211,16 @@ span.message-avatar {
   display: flex;
   flex-direction: column;
   padding-bottom: var(--safe-area-bottom);
-  border-top: 1px solid var(--pt-border);
-  background: var(--pt-surface);
+  /* Fade the composer into the conversation instead of a hard top rule:
+     transparent at the edge, easing to an opaque surface lower down. */
+  border-top: 0;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--pt-surface) 0%, transparent) 0,
+    color-mix(in srgb, var(--pt-surface) 72%, transparent) 18px,
+    var(--pt-surface) 34px
+  );
+  box-shadow: 0 -6px 20px -16px rgba(15, 23, 42, 0.18);
 }
 
 .message-composer-surface {
@@ -2914,12 +3228,6 @@ span.message-avatar {
   flex-direction: column;
   gap: var(--pt-space-xxs);
   padding: var(--pt-composer-inset);
-}
-
-.message-composer-tools {
-  display: flex;
-  align-items: flex-end;
-  flex: 0 0 auto;
 }
 
 .message-composer-input-panels {
@@ -2958,7 +3266,12 @@ span.message-avatar {
 }
 
 .chat-thread-page .message-composer {
-  background: #fff;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0) 0,
+    rgba(255, 255, 255, 0.72) 18px,
+    #fff 34px
+  );
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
@@ -3070,6 +3383,85 @@ span.message-avatar {
   min-width: 0;
 }
 
+/* Writing bar: voice | white input pill | emoji + (plus/send). The bar itself
+   is transparent so only the input reads as a floating white card against the
+   fading composer surface. */
+.message-composer-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  width: 100%;
+  background: transparent;
+}
+
+.message-composer-bar .message-composer-input {
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 0.5px solid rgba(15, 23, 42, 0.08);
+  border-radius: 22px;
+  background: var(--pt-surface);
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.05);
+}
+
+/* "+" capability grid (album / camera / voice), modelled on the system
+   attachment sheet: rounded white icon tiles with captions. */
+.message-composer-panel.composer-tools-panel {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px 8px;
+  padding: 14px 10px 18px;
+}
+
+.composer-tool-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--pt-text);
+  cursor: pointer;
+}
+
+.composer-tool-cell:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.composer-tool-icon {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 16px;
+  background: var(--pt-surface);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
+  color: var(--pt-secondary);
+}
+
+.composer-tool-cell:active .composer-tool-icon {
+  transform: scale(0.96);
+}
+
+.composer-tool-label {
+  font-size: 12px;
+  color: var(--pt-secondary);
+  text-align: center;
+}
+
+/* Reaction block no longer sits inside a highlighted chat-background-section;
+   give it breathing room without a card background or title. */
+.message-action-sheet .message-action-reactions {
+  padding: 4px 2px 8px;
+}
+
+/* Dedicated full-emoji drawer opened from the quick row's "..." button. */
+.message-emoji-drawer .mobile-emoji-palette {
+  max-height: 58vh;
+}
+
 .message-selection-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -3104,8 +3496,12 @@ span.message-avatar {
   min-height: 100%;
 }
 
-.chat-acceptance-fixture [data-action-id],
-.chat-thread-page [data-action-id] {
+/* Comfortable 44px touch targets for full controls on the chat surface.
+   Inline reaction pills are deliberately excluded: their compact 24px
+   geometry is governed by .message-reaction-chip and must not inflate into
+   44x44 circles. */
+.chat-acceptance-fixture [data-action-id]:not(.message-reaction-chip),
+.chat-thread-page [data-action-id]:not(.message-reaction-chip) {
   min-width: 44px;
   min-height: 44px;
 }

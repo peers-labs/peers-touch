@@ -48,6 +48,12 @@ export type MobileDetailRoute =
       readonly routeId: 'detail:find-people';
     }
   | {
+      readonly routeId: 'detail:new-friends';
+    }
+  | {
+      readonly routeId: 'detail:group-chats';
+    }
+  | {
       readonly routeId: 'detail:contact-profile';
       readonly actorPtid: string;
     }
@@ -285,6 +291,8 @@ export function navigationLocationKey(
       return `${route.routeId}:${route.groupUlid}${route.messageId ? `:${route.messageId}` : ''}`;
     case 'detail:search':
     case 'detail:find-people':
+    case 'detail:new-friends':
+    case 'detail:group-chats':
       return route.routeId;
     case 'detail:contact-profile':
       return `${route.routeId}:${route.actorPtid}`;
