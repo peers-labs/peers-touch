@@ -42,14 +42,21 @@ body,
 }
 .mobile-me-identity {
   width: 100%;
+  /* Bleed the hero under the status bar so the surface reads edge-to-edge
+     instead of leaving a detached system strip above the app. */
+  margin-top: calc(0px - var(--safe-area-top));
 }
 .mobile-me-cover {
   position: relative;
-  height: clamp(144px, 38vw, 210px);
+  box-sizing: border-box;
+  height: calc(clamp(144px, 38vw, 210px) + var(--safe-area-top));
+  padding-top: var(--safe-area-top);
   overflow: hidden;
   background: var(--pt-subtle);
 }
 .mobile-me-cover > img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -58,6 +65,42 @@ body,
   position: absolute;
   right: 12px;
   bottom: 12px;
+  z-index: 2;
+}
+/* Image-edit controls stay hidden until a long-press reveals the editing
+   state, so they never compete for the viewer's primary attention. */
+.mobile-me-edit-chip {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+.mobile-me-identity.is-editing .mobile-me-edit-chip {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* Small, transparent, dashed chip — an app-owned control (no .pt-* chrome). */
+.mobile-me-edit-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px dashed var(--pt-border-strong, #94a3b8);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--pt-surface, #ffffff) 72%, transparent);
+  color: var(--pt-secondary);
+  cursor: pointer;
+}
+.mobile-me-edit-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* On the artwork cover use a light translucent treatment for contrast. */
+.mobile-me-cover-action .mobile-me-edit-button {
+  border-color: rgba(255, 255, 255, 0.72);
+  background: rgba(15, 23, 42, 0.22);
+  color: #ffffff;
 }
 .mobile-me-identity-body {
   display: flex;

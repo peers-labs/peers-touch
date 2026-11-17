@@ -28,6 +28,13 @@ const MOBILE_AVATAR_COLORS = [
   '#2e8286', // cyan
 ] as const;
 
+/**
+ * Self identity tone — brand pine, mirrored from the prototype
+ * identity-tone IDENTITY_PINE / VIEWER_TONE. The viewer is the ONLY green
+ * avatar; every other person uses a hashed hue from MOBILE_AVATAR_COLORS.
+ */
+export const MOBILE_SELF_TONE = '#2f6a50';
+
 export function mobileUserAvatarFallbackColor(identityKey: string): string {
   let hash = 0;
   for (const character of identityKey.trim()) {
@@ -44,14 +51,22 @@ export function MobileAvatar({
   className,
   identityKey = '',
   name = '',
+  self = false,
   size = 32,
   src,
   style,
   children,
   ...props
-}: MobileAvatarProps) {
+}: MobileAvatarProps & { self?: boolean }) {
   const avatar = useAvatarAsset(src);
   const fallbackKey = identityKey.trim() || name.trim();
+  const background = style?.background
+    ? undefined
+    : self
+      ? MOBILE_SELF_TONE
+      : fallbackKey
+        ? mobileUserAvatarFallbackColor(fallbackKey)
+        : undefined;
 
   return (
     <Avatar
@@ -60,11 +75,7 @@ export function MobileAvatar({
       size={size}
       source={avatar.source ?? undefined}
       name={name}
-      background={
-        fallbackKey && !style?.background
-          ? mobileUserAvatarFallbackColor(fallbackKey)
-          : undefined
-      }
+      background={background}
       style={style}
     >
       {children ?? avatarInitial(name)}

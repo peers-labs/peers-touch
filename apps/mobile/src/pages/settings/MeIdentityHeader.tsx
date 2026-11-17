@@ -1,4 +1,5 @@
-import { IconButton, Tag, Text } from '@peers-touch/ui';
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { Icon, Tag, Text } from '@peers-touch/ui';
 import { useMobileI18n } from '../../app/mobileI18n';
 import { MobileAvatar } from '../../components/MobileAvatar';
 import { useAvatarAsset } from '../../runtimes/avatarAssetRuntime';
@@ -23,29 +24,87 @@ interface MeIdentityHeaderProps {
   readonly onPickImage: (field: ProfileImageField) => void;
 }
 
+const HOLD_MS = 500;
+const HOLD_CANCEL_PX = 12;
+
+/** Long-press detector matching the chat gesture grammar (500ms, 12px slop). */
+function useLongPress(onHold: () => void) {
+  const timer = useRef<number | null>(null);
+  const start = useRef<{ x: number; y: number } | null>(null);
+  const cancel = () => {
+    if (timer.current !== null) window.clearTimeout(timer.current);
+    timer.current = null;
+    start.current = null;
+  };
+  useEffect(() => cancel, []);
+  return {
+    onPointerDown: (event: ReactPointerEvent) => {
+      if (event.button !== 0) return;
+      start.current = { x: event.clientX, y: event.clientY };
+      timer.current = window.setTimeout(onHold, HOLD_MS);
+    },
+    onPointerMove: (event: ReactPointerEvent) => {
+      if (!start.current || timer.current === null) return;
+      if (Math.hypot(event.clientX - start.current.x, event.clientY - start.current.y) > HOLD_CANCEL_PX) cancel();
+    },
+    onPointerUp: cancel,
+    onPointerLeave: cancel,
+  };
+}
+
 export function MeIdentityHeader({ model, editingImage, imageEditUnavailableReason, onPickImage }: MeIdentityHeaderProps) {
   const { t, language } = useMobileI18n();
   const cover = useAvatarAsset(model.header);
+  const [editMode, setEditMode] = useState(false);
+  const rootRef = useRef<HTMLElement | null>(null);
+  const coverHold = useLongPress(() => setEditMode(true));
+  const avatarHold = useLongPress(() => setEditMode(true));
+
+  // Editing is a transient, opt-in state: tapping outside the hero leaves it.
+  useEffect(() => {
+    if (!editMode) return;
+    const onDown = (event: PointerEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setEditMode(false);
+    };
+    document.addEventListener('pointerdown', onDown);
+    return () => document.removeEventListener('pointerdown', onDown);
+  }, [editMode]);
+
   const joinedDate = new Date(model.joined);
   const joined = model.joined && Number.isFinite(joinedDate.getTime())
     ? new Intl.DateTimeFormat(language, { year: 'numeric', month: 'short' }).format(joinedDate) : '';
-  const imageAction = (field: ProfileImageField) => <IconButton
-    actionId={`settings.profile.change-${field}`} iconId="edit" density="comfortable" emphasis="secondary"
-    label={t(field === 'avatar' ? 'mobile.settings.profile.changeAvatar' : 'mobile.settings.profile.changeCover')}
-    execution={editingImage === field ? 'pending' : 'idle'}
-    availability={imageEditUnavailableReason
-      ? { kind: 'disabled', reason: imageEditUnavailableReason }
-      : editingImage ? { kind: 'disabled', reason: t('mobile.settings.profile.imageBusy') } : undefined}
-    data-acceptance-id={`settings-profile-${field}-edit`} onActivate={() => onPickImage(field)} />;
-  return <header className="mobile-me-identity" data-me-profile>
-    <div className="mobile-me-cover" data-hero-cover>
+
+  const imageAction = (field: ProfileImageField) => {
+    const disabled = Boolean(imageEditUnavailableReason) || Boolean(editingImage);
+    const reason = imageEditUnavailableReason
+      ?? (editingImage ? t('mobile.settings.profile.imageBusy') : undefined);
+    return <button
+      type="button"
+      className="mobile-me-edit-button"
+      data-acceptance-id={`settings-profile-${field}-edit`}
+      data-action-id={`settings.profile.change-${field}`}
+      aria-label={t(field === 'avatar' ? 'mobile.settings.profile.changeAvatar' : 'mobile.settings.profile.changeCover')}
+      aria-disabled={disabled || undefined}
+      title={reason}
+      disabled={disabled}
+      onClick={() => {
+        onPickImage(field);
+        setEditMode(false);
+      }}
+    >
+      <Icon iconId="edit" size={15} />
+    </button>;
+  };
+
+  return <header ref={rootRef} className={`mobile-me-identity${editMode ? ' is-editing' : ''}`} data-me-profile>
+    <div className="mobile-me-cover" data-hero-cover {...coverHold}>
       {cover.src ? <img src={cover.src} alt="" /> : null}
-      <span className="mobile-me-cover-action">{imageAction('header')}</span>
+      <span className="mobile-me-cover-action mobile-me-edit-chip">{imageAction('header')}</span>
     </div>
     <div className="mobile-me-identity-body">
-      <div className="mobile-me-avatar" data-hero-avatar>
-        <MobileAvatar size={68} identityKey={model.actorPtid} name={model.displayName} src={model.avatar} />
-        <span className="mobile-me-avatar-action">{imageAction('avatar')}</span>
+      <div className="mobile-me-avatar" data-hero-avatar {...avatarHold}>
+        <MobileAvatar self size={68} identityKey={model.actorPtid} name={model.displayName} src={model.avatar} />
+        <span className="mobile-me-avatar-action mobile-me-edit-chip">{imageAction('avatar')}</span>
       </div>
       <div className="mobile-me-name-row">
         <Text strong className="mobile-me-name" data-hero-name>{model.displayName}</Text>
