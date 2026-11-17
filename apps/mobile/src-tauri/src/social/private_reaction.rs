@@ -13,8 +13,7 @@ use crate::secure_content::private_comment::{
 use crate::secure_content::proto::social::v1 as social;
 use crate::secure_content::receiver::{
     canonical_reaction_summaries, merge_reaction_fields, source_reaction_summaries,
-    PrivateMomentReadProjection, PrivateReactionSummaryProjection, PrivateReadContent,
-    PrivateReadState,
+    PrivateMomentReadProjection, PrivateReactionSummaryProjection, PrivateReadState,
 };
 use crate::secure_content::store::{
     PrivateSocialStore, ReactionCommandState, StoredReactionCommand,

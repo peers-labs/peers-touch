@@ -3998,7 +3998,7 @@ mod tests {
         let result_bytes = vec![9, 8, 7];
         let result_sha256: [u8; 32] = Sha256::digest(&result_bytes).into();
         assert!(store
-            .mark_reaction_committed(&retry, &result_bytes, &result_sha256, 2, &[], None)
+            .mark_reaction_committed(&retry, &result_bytes, &result_sha256, 2, &[])
             .unwrap());
         let committed = store.reaction_command("reaction-1").unwrap().unwrap();
         assert_eq!(committed.state, ReactionCommandState::Committed);
@@ -4095,7 +4095,7 @@ mod tests {
             ..root.clone()
         };
         assert!(!store
-            .mark_reaction_committed(&wrong, result, &hash, 2, &[], None)
+            .mark_reaction_committed(&wrong, result, &hash, 2, &[])
             .unwrap());
         assert_eq!(
             store.reaction_command("root").unwrap().unwrap().state,
@@ -4109,7 +4109,7 @@ mod tests {
             },
         ];
         assert!(store
-            .mark_reaction_committed(&root, result, &hash, 2, &reactions, None)
+            .mark_reaction_committed(&root, result, &hash, 2, &reactions)
             .unwrap());
         let root_projection =
             crate::secure_content::private_comment::PrivateCommentProjection::decode(
@@ -4157,7 +4157,7 @@ mod tests {
         let result = b"older-result";
         let hash = Sha256::digest(result).into();
         assert!(store
-            .mark_reaction_committed(&command, result, &hash, 4, &[], None)
+            .mark_reaction_committed(&command, result, &hash, 4, &[])
             .unwrap());
         assert_eq!(store.comment_projection("root").unwrap().unwrap(), current);
         assert!(crate::social::private_reaction::project_reaction_target(

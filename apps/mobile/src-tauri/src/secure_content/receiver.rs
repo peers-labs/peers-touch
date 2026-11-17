@@ -647,7 +647,7 @@ fn decrypt_text_with_content_key(
     let resource = parts.resource;
     let kind = private_moment_kind(metadata.r#type)?;
     let (subtype_prepare_authority_sha256, _) =
-        validated_subtype_authority(parts.private, parts.verification, resource, kind)?;
+        validated_subtype_authority(parts.private, parts.verification, kind)?;
     let domain_binding = social::PrivateMomentDomainBinding {
         format_version: PAYLOAD_FORMAT_VERSION,
         kind: kind as i32,
@@ -1508,7 +1508,7 @@ fn verify_response_integrity(
     }
     let kind = private_moment_kind(parts.metadata.r#type)?;
     let (subtype_prepare_authority_sha256, subtype_authority_hash) =
-        validated_subtype_authority(parts.private, parts.verification, parts.resource, kind)?;
+        validated_subtype_authority(parts.private, parts.verification, kind)?;
     let domain_binding = social::PrivateMomentDomainBinding {
         format_version: PAYLOAD_FORMAT_VERSION,
         kind: kind as i32,
@@ -1744,7 +1744,6 @@ pub(crate) fn verify_station_attestation(
 fn validated_subtype_authority(
     private: &social::PrivateContentAccess,
     verification: &social::PrivateContentVerification,
-    resource: &wire::SecureResourceRef,
     kind: social::PrivateMomentKind,
 ) -> Result<(Vec<u8>, [u8; 32]), String> {
     let empty_hash: [u8; 32] = Sha256::digest([]).into();

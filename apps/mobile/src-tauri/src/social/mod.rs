@@ -505,7 +505,7 @@ impl PrivateSocialEngine {
         }
         let transport = NativeSocialTransport::new(self.session.clone())?;
         let repost = self.load_repost_source_material(intent, &draft, &transport)?;
-        let (prepare, poll) = prepare_moment_request(
+        let prepare = prepare_moment_request(
             &self.session.scope.actor_ptid,
             &draft,
             intent,
@@ -545,7 +545,6 @@ impl PrivateSocialEngine {
             intent,
             plan,
             attachments,
-            poll,
             repost,
         )?;
         self.store.persist_submission(&prepared.command)?;
