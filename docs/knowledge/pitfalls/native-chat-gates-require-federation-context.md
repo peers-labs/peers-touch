@@ -17,6 +17,7 @@ owns:
   - tooling/acceptance/gates/chat/lifecycle_group_live.py
   - tooling/acceptance/fixtures/chat_native_actors.py
   - tooling/development/secure_content/runtime_owner.py
+  - tooling/development/secure_content/test_runtime_owner.py
   - tooling/development/secure_content/scenarios/social_expansion.py
 referenced-by:
   - docs/knowledge/README.md
@@ -134,6 +135,18 @@ tooling.acceptance.gates.social.test_public_feed_native` to verify the original
 launch ordering and preserved restore failure; current-source Native execution
 must separately prove second-device read access and typed write denial.
 
+Accepted friendship alone is not an unblocked audience. A reused CSS-09 actor
+retained Alice's directional block of Bob after the poll-denial scenario.
+The next run resolved both actors and their friendship correctly, but AS17
+failed with `SOCIAL_PRIVATE_INVALID_ARGUMENT`: Friends expansion contained
+no unblocked recipient. The existing Fixture owner now observes both directional
+relationships, unblocks only the named test actors through the production
+revision-bound command, and verifies the resulting projections before
+requesting friendship. The denial scenario registers restoration before its
+block command and verifies unblocked state before leaving its authenticated
+scope, including lost command responses and failed receiver assertions.
+Cleanup failure remains visible alongside the original failure.
+
 ### What guards against regression
 
 `NativeRuntimeCellRunnerContractTest` verifies shared-Federation selection and
@@ -169,6 +182,13 @@ rg -n -C 4 '"createDirectConversation"|"createGroup"' \
 
 Every programmatic creation payload must carry the Federation selected from
 the participating clients' production contexts.
+
+The runtime-owner regressions must cover bilateral retained blocks, invalid or
+unconverged relationship projections, no mutation for an unblocked baseline,
+and restoration before logout on success, assertion failure and a committed
+block with a lost response. On the real CSS-09 run, inspect the source-bound
+Fixture baseline and final directional relationship state; a mock PASS does not
+prove private publishing or cleanup.
 
 For a cross-Station fixture, also verify that each participating Station lists
 the same active Federation membership before creating the Conversation. Actor

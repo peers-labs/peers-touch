@@ -651,6 +651,10 @@ function shouldReread(
   response: SearchResponse | null,
 ): boolean {
   if (!response) return true;
+  // The Runtime marks an original-owner invalidation idle after concealing
+  // its rows. A pinned remote owner may report no monotonic revision, so its
+  // unchanged read-state cannot qualify that concealed frame as completed.
+  if (status === 'idle') return true;
   if (status === 'error') return true;
   if (hasExpiringLease(response) && searchResponseDeadline(response) <= Date.now()) return true;
   if (ownerState && !searchResponseCurrent(response, ownerState)) return true;

@@ -6,6 +6,8 @@ owns:
   - apps/desktop/src/store/relationships.ts
   - apps/desktop/src/store/relationships.test.ts
   - apps/desktop/src/store/privateMoments.ts
+  - apps/desktop/src/test/moments-store.test.ts
+  - apps/desktop/src/acceptance/moments/harness.ts
   - apps/desktop/src/components/moments/MomentCard.tsx
   - apps/desktop/src/components/moments/surfaces/SocialActionBar.tsx
   - apps/desktop/src/components/moments/surfaces/SocialActionBar.test.tsx
@@ -36,6 +38,10 @@ Independent publishers compared against different revision baselines. Complete
 list absence has no edge revision, and its page maximum cannot supply one.
 The UI also inferred command admission from a status label instead of consuming
 the original command owner's exact identity, deadline and live-flight state.
+An equivalent private Moments snapshot recreated the activation scope object.
+The original AS20 ballot replay correctly fences replaced activations, so a
+periodic read arriving during retry could falsely report `pollReplayMismatch`
+despite unchanged Native session and command identities.
 
 ## Mitigation
 
@@ -51,6 +57,9 @@ the original command owner's exact identity, deadline and live-flight state.
   live original submission. Terminal rejection remains terminal; transport
   failure retains the durable identity. Ballots and other reaction kinds do not
   acquire the affected post reaction's admission.
+- Equivalent Native bootstrap and reconcile retain the current activation
+  object. Native generation advance and explicit reactivation still replace it.
+  The original replay observer's strict activation fence remains intact.
 
 ## How To Detect A Recurrence
 
@@ -70,6 +79,10 @@ and ballot exclusion. Scope status-node assertions to the reaction owner,
 excluding shared controls' pending spinners and unrelated live regions.
 
 These are source regressions, not Native product proof or whole-PR merge approval.
+The real Store regressions cover both equivalent read paths, generation advance,
+and explicit same-value reactivation. Native AS20 must also execute the retained
+ballot twice through `social-private-desktop-e2e`; stable unit identity alone
+does not prove poll counts, command replay or receiver convergence.
 
 ## Crosswalks
 

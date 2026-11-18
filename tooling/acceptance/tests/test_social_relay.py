@@ -14,6 +14,7 @@ from tooling.acceptance.core.errors import BlockedError, EphemeralLaunchCleanupF
 from tooling.acceptance.core.evidence_store import EvidenceStore
 from tooling.acceptance.core.provisioning import ServiceAttestation
 from tooling.acceptance.provisioners import social_relay as relay
+from tooling.acceptance.provisioners import native_tauri_embedded_webdriver as native
 from tooling.acceptance.provisioners.native_tauri_embedded_webdriver import (
     CrossStationSocialNativeProvisioner, NativeTauriEmbeddedWebDriverProvisioner,
 )
@@ -169,6 +170,38 @@ class SocialRelayTests(unittest.TestCase):
         self.assertIs(fixture, parent._social_relay_fixture)
         self.assertEqual(COMMIT, json.loads(
             (self.run.run_dir / "runtime/social-relay-preparation.json").read_bytes())["sourceCommit"])
+
+    def test_original_launch_owner_passes_its_bound_evidence_run_to_capture(self):
+        parent = CrossStationSocialNativeProvisioner(
+            EnvironmentContract.from_yaml(ENVIRONMENTS_DIR / "cross-station-social-native.yaml"),
+            station_profiles={"station-four": "fedlab-a", "station-five-arm": "fedlab-b"},
+        )
+        parent.bind_evidence_run(self.run)
+        parent._manifest = SimpleNamespace(
+            run_id=self.manifest.run_id, source_commit=COMMIT,
+            clients=parent.contract.clients, services=self.stations, is_ready=lambda: True,
+        )
+        parent._social_relay_fixture = Mock()
+        capabilities = ("social-feed-notification", "social-relay-opaque")
+        with patch.object(native, "resolve_deployment_environment_path", return_value=ROOT), \
+             patch.object(native, "load_env_file", return_value={}), \
+             patch.object(native, "EphemeralGateLaunchContext") as context, \
+             patch("tooling.acceptance.fixtures.social_feed_notification.SocialFeedNotificationHandler"):
+            result = parent.create_gate_launch_context(
+                gate_id=self.run.gate_id, evidence_run_id=self.run.run_id,
+                provisioning_run_id=self.manifest.run_id, required_capabilities=capabilities,
+            )
+            self.assertIs(result, context.return_value)
+            parent._social_relay_fixture.capture_handler.assert_called_once_with(
+                evidence_environment=self.run.subprocess_environment({}),
+            )
+            parent._social_relay_fixture.capture_handler.reset_mock()
+            with self.assertRaises(BlockedError):
+                parent.create_gate_launch_context(
+                    gate_id=self.run.gate_id, evidence_run_id=self.manifest.run_id,
+                    provisioning_run_id=self.manifest.run_id, required_capabilities=capabilities,
+                )
+            parent._social_relay_fixture.capture_handler.assert_not_called()
 
     def equipment_context(self, root):
         self.fixture.repo_root = root

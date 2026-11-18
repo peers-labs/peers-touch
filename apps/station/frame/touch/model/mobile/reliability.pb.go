@@ -485,6 +485,11 @@ type ChatDraftPayload struct {
 	Text             string                    `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
 	ReplyToMessageId string                    `protobuf:"bytes,2,opt,name=reply_to_message_id,json=replyToMessageId,proto3" json:"reply_to_message_id,omitempty"`
 	AttachmentRefs   []*EncryptedBlobReference `protobuf:"bytes,3,rep,name=attachment_refs,json=attachmentRefs,proto3" json:"attachment_refs,omitempty"`
+	// Native device-local stages; never interpret these as encrypted object IDs.
+	StagedAttachmentIds []string `protobuf:"bytes,4,rep,name=staged_attachment_ids,json=stagedAttachmentIds,proto3" json:"staged_attachment_ids,omitempty"`
+	ThreadRootMessageId string   `protobuf:"bytes,5,opt,name=thread_root_message_id,json=threadRootMessageId,proto3" json:"thread_root_message_id,omitempty"`
+	// A submitted draft restores its pending projection, not a second send.
+	PendingMessageId string `protobuf:"bytes,6,opt,name=pending_message_id,json=pendingMessageId,proto3" json:"pending_message_id,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -538,6 +543,27 @@ func (x *ChatDraftPayload) GetAttachmentRefs() []*EncryptedBlobReference {
 		return x.AttachmentRefs
 	}
 	return nil
+}
+
+func (x *ChatDraftPayload) GetStagedAttachmentIds() []string {
+	if x != nil {
+		return x.StagedAttachmentIds
+	}
+	return nil
+}
+
+func (x *ChatDraftPayload) GetThreadRootMessageId() string {
+	if x != nil {
+		return x.ThreadRootMessageId
+	}
+	return ""
+}
+
+func (x *ChatDraftPayload) GetPendingMessageId() string {
+	if x != nil {
+		return x.PendingMessageId
+	}
+	return ""
 }
 
 type MomentDraftPayload struct {
@@ -761,11 +787,14 @@ const file_domain_mobile_reliability_proto_rawDesc = "" +
 	"\x13social_relationship\x18\x15 \x01(\v26.peers_touch.model.social.v1.SocialRelationshipCommandH\x00R\x12socialRelationshipB\t\n" +
 	"\apayload\"1\n" +
 	"\x16EncryptedBlobReference\x12\x17\n" +
-	"\ablob_id\x18\x01 \x01(\tR\x06blobId\"\xb3\x01\n" +
+	"\ablob_id\x18\x01 \x01(\tR\x06blobId\"\xca\x02\n" +
 	"\x10ChatDraftPayload\x12\x12\n" +
 	"\x04text\x18\x01 \x01(\tR\x04text\x12-\n" +
 	"\x13reply_to_message_id\x18\x02 \x01(\tR\x10replyToMessageId\x12\\\n" +
-	"\x0fattachment_refs\x18\x03 \x03(\v23.peers_touch.model.mobile.v1.EncryptedBlobReferenceR\x0eattachmentRefs\"\xbf\x01\n" +
+	"\x0fattachment_refs\x18\x03 \x03(\v23.peers_touch.model.mobile.v1.EncryptedBlobReferenceR\x0eattachmentRefs\x122\n" +
+	"\x15staged_attachment_ids\x18\x04 \x03(\tR\x13stagedAttachmentIds\x123\n" +
+	"\x16thread_root_message_id\x18\x05 \x01(\tR\x13threadRootMessageId\x12,\n" +
+	"\x12pending_message_id\x18\x06 \x01(\tR\x10pendingMessageId\"\xbf\x01\n" +
 	"\x12MomentDraftPayload\x12\x12\n" +
 	"\x04text\x18\x01 \x01(\tR\x04text\x12A\n" +
 	"\baudience\x18\x02 \x01(\v2%.peers_touch.model.social.v1.AudienceR\baudience\x12R\n" +

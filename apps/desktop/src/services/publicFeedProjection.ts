@@ -1,27 +1,35 @@
-import { clone, create, equals, fromBinary } from '@bufbuild/protobuf';
+import { clone, create, equals, fromBinary, toJson } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import {
-  FeedEventKind, FeedPayloadSchema, FeedPollDefinitionSchema, FeedPollAdmissionResult,
-  type FeedEvent, type FeedPollAdmission,
+  FeedEventKind, FeedPayloadSchema,
+  type FeedEvent,
 } from '../gen/proto/domain/social/feed_log_pb';
 import {
   CreatePostRequestSchema, PostSchema, TextPostSchema, ImagePostSchema,
   ImageAttachmentSchema, VideoPostSchema, VideoAttachmentSchema,
   LinkPostSchema, LinkPreviewSchema, RepostPostSchema, LocationPostSchema,
-  PollPostSchema,
   PostInteractionSchema, ReactionKind, ReactionSummarySchema, type Post, type CreatePostRequest,
   PostStatsSchema,
 } from '../gen/proto/domain/social/post_pb';
 import {
   CommentSchema, CreateCommentRequestSchema, type Comment,
 } from '../gen/proto/domain/social/comment_pb';
-import { publicPollDefinition, publicPollResult, type PublicPollBallotVersion } from './publicFeedPollProjection';
 
 function stamp(ms: bigint) {
   return timestampFromDate(new Date(Number(ms)));
 }
 
-export function signedPostContent(request: CreatePostRequest, createdAt: bigint): Post['content'] {
+// Diagnostic only: name the authored fields that diverge between the Station
+// projected row and the Native-signed reconstruction. The strict equality gate
+// and its error code are unchanged; this never relaxes the rejection.
+function mismatchedPostFields(actual: Post, expected: Post): string[] {
+  const a = toJson(PostSchema, actual) as Record<string, unknown>;
+  const e = toJson(PostSchema, expected) as Record<string, unknown>;
+  return [...new Set([...Object.keys(a), ...Object.keys(e)])]
+    .filter(key => JSON.stringify(a[key]) !== JSON.stringify(e[key]));
+}
+
+export function signedPostContent(request: CreatePostRequest): Post['content'] {
   const content = request.content;
   switch (content.case) {
     case 'text': return { case: 'textPost', value: create(TextPostSchema, { text: content.value.text }) };
@@ -39,9 +47,6 @@ export function signedPostContent(request: CreatePostRequest, createdAt: bigint)
     }) };
     case 'repost': return { case: 'repostPost', value: create(RepostPostSchema, {
       comment: content.value.comment, originalPostId: content.value.originalPostId,
-    }) };
-    case 'poll': return { case: 'pollPost', value: create(PollPostSchema, {
-      text: content.value.text, poll: publicPollDefinition(content.value, createdAt),
     }) };
     case 'location': return { case: 'locationPost', value: create(LocationPostSchema, {
       text: content.value.text, location: content.value.location,
@@ -63,10 +68,9 @@ export class PublicFeedProjection {
   private readonly postVersions = new Map<string, bigint>();
   private readonly postRequests = new Map<string, CreatePostRequest>();
   private readonly postCreations = new Map<string, { request: CreatePostRequest; at: bigint }>();
-  private readonly pollBallots = new Map<string, PublicPollBallotVersion>();
   private readonly deferredComments = new Map<string, { event: FeedEvent; home: string }>();
 
-  apply(event: FeedEvent, home: string, admission?: FeedPollAdmission): void {
+  apply(event: FeedEvent, home: string): void {
     const statement = event.statement;
     if (!statement || !home) throw new Error('FEED_INVALID_RESPONSE');
     const payload = fromBinary(FeedPayloadSchema, event.payload);
@@ -92,38 +96,15 @@ export class PublicFeedProjection {
         this.postCreations.set(ref, original);
       } else {
         if (!original) throw new Error('FEED_GAP');
-        const oldPoll = original.request.content, newPoll = request.content;
-        if (oldPoll.case === 'poll' || newPoll.case === 'poll') {
-          if (oldPoll.case !== 'poll' || newPoll.case !== 'poll'
-            || !equals(FeedPollDefinitionSchema, publicPollDefinition(oldPoll.value, original.at),
-              publicPollDefinition(newPoll.value, original.at))) throw new Error('FEED_INVALID');
-        }
       }
       this.postRequests.set(ref, request);
       this.posts.set(ref, create(PostSchema, {
         publicFeedRef: ref, authorPtid: actor, type: request.type,
-        audience: request.audience, content: signedPostContent(request, original.at),
+        audience: request.audience, content: signedPostContent(request),
         createdAt: previous?.createdAt ?? stamp(statement.createdAtUnixMs),
         updatedAt: stamp(statement.createdAtUnixMs),
       }));
       this.postVersions.set(ref, statement.sequence);
-      return;
-    }
-    if (mutation.case === 'pollBallot') {
-      // A verified Actor event alone does not establish admission before cutoff.
-      // Native supplies this supplement only after checking its independent key.
-      if (!admission) return;
-      const receipt = admission.statement;
-      const ballot = mutation.value;
-      if (statement.kind !== FeedEventKind.POLL_BALLOT_SET || !receipt
-        || receipt.targetPostRef !== ballot.targetPostRef || receipt.eventHash.length !== 32
-        || receipt.homeStationPeerId !== ballot.targetPostRef.split('/')[2]) throw new Error('FEED_INVALID_RESPONSE');
-      if (receipt.result !== FeedPollAdmissionResult.ACCEPTED) return;
-      const key = `${ballot.targetPostRef}\0${actor}`;
-      const previous = this.pollBallots.get(key);
-      if (!previous || previous.sequence < statement.sequence) this.pollBallots.set(key, {
-        postRef: ballot.targetPostRef, actor, sequence: statement.sequence, options: [...ballot.optionIndices],
-      });
       return;
     }
     if (mutation.case === 'comment') {
@@ -211,15 +192,14 @@ export class PublicFeedProjection {
     body.stats = undefined;
     body.interaction = undefined;
     body.reactions = [];
-    if (body.content.case === 'pollPost') body.content.value.result = undefined;
     // Compare every authored field, including media, mentions and timestamps.
-    if (!equals(PostSchema, body, signed)) throw new Error('FEED_PROJECTION_TAMPERED');
+    if (!equals(PostSchema, body, signed)) {
+      throw new Error(
+        `FEED_PROJECTION_TAMPERED fields=${mismatchedPostFields(body, signed).join('|') || 'unknown'}`,
+      );
+    }
     const reactions = this.reactionSummaries(signed.publicFeedRef, viewer);
     const content = clone(PostSchema, signed).content;
-    if (content.case === 'pollPost') {
-      if (!content.value.poll) throw new Error('FEED_INVALID_RESPONSE');
-      content.value.result = publicPollResult(content.value.poll,signed.publicFeedRef,viewer,this.pollBallots.values(),Date.now());
-    }
     return create(PostSchema, {
       ...projected, content, typedMentions: signed.typedMentions,
       reactions,

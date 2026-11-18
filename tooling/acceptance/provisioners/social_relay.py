@@ -248,7 +248,7 @@ class SocialRelayFixture:
             "binarySha256": self.capture_probe_digest,
         }
 
-    def capture_handler(self):
+    def capture_handler(self, *, evidence_environment: Mapping[str, str]):
         from tooling.acceptance.fixtures.social_relay_capture import SocialRelayCaptureHandler
         if self.capture_probe is None:
             raise BlockedError(reason="Social Relay has no prepared trust observer",
@@ -257,5 +257,5 @@ class SocialRelayFixture:
         return SocialRelayCaptureHandler(
             config=self.config, inventory=self.inventory, trust_anchor=trust,
             probe=self.capture_probe, probe_digest=self.capture_probe_digest,
-            repo_root=self.repo_root,
+            repo_root=self.repo_root, evidence_environment=evidence_environment,
         )

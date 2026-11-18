@@ -112,28 +112,6 @@ fn validate_prepared(state: &AppState, window: &Window, p: &PreparedFeed) -> Res
     Ok(())
 }
 
-pub(super) fn poll_station_key(state: &AppState, home: &str) -> Result<(String,Vec<u8>),String> {
-    let pin = state.station.registry().federation_signing_key_pin(home)
-        .map_err(|_| "FEED_POLL_TRUST_UNAVAILABLE")?.ok_or("FEED_POLL_TRUST_UNAVAILABLE")?;
-    if pin.station_peer_id != home { return Err("FEED_WRITER_NOT_AUTHORIZED".into()); }
-    Ok((pin.signing_key_id,pin.ed25519_public_key.to_vec()))
-}
-
-fn qualify_poll_submission(state: &AppState, prepared: &mut PreparedFeed,
-    response: &SubmitFeedEventResponse) -> Result<Option<FeedPollAdmission>,String> {
-    if prepared.bundle.events.len() != 1 { return Err("FEED_INVALID".into()); }
-    let event = &prepared.bundle.events[0];
-    if event.statement.as_ref().ok_or("FEED_INVALID")?.kind != FeedEventKind::PollBallotSet as i32 {
-        return if response.poll_admissions.is_empty() { Ok(None) } else { Err("FEED_INVALID_RESPONSE".into()) };
-    }
-    if response.poll_admissions.len() > 1 { return Err("FEED_INVALID_RESPONSE".into()); }
-    let keys = |home: &str| poll_station_key(state,home);
-    if let Some(admission) = response.poll_admissions.first() {
-        prepared.store.retain_poll_admission(event,admission,&keys)?;
-    }
-    prepared.store.poll_admission_for(event,&keys)
-}
-
 fn validate_session(state: &AppState, window: &Window, actor: &str, account: &str,
     token: &str, device: &str, key_id: &str,
     scope: &crate::application::station_runtime::client::StationRequestScope) -> Result<(), String> {
@@ -202,42 +180,22 @@ pub fn social_public_feed_submit(state: State<'_, Arc<AppState>>, window: Window
     }
     let head = response.head.as_ref().ok_or("FEED_INVALID")?;
     p.store.confirm(&p.actor, &p.root, &input.command_id, head)?;
-    // Source ACK releases the sequence even if the Home supplement is absent
-    // or fails verification. Its unresolved obligation is journaled atomically.
-    let is_ballot = p.bundle.events[0].statement.as_ref().ok_or("FEED_INVALID")?.kind == FeedEventKind::PollBallotSet as i32;
-    let qualified = qualify_poll_submission(&state,&mut p,&response);
-    validate_prepared(&state,&window,&p)?;
-    let mut result = json!({"commandId": input.command_id, "state": "COMMITTED",
+    // Network success may arrive after logout, account switch, device restart
+    // or Station replacement. Such an ACK cannot touch the new session.
+    let _identity = state.identity_transition.lock().map_err(|_| "FEED_SESSION_CHANGED")?;
+    validate_prepared(&state, &window, &p)?;
+    let result = json!({"commandId": input.command_id, "state": "COMMITTED",
         "sourceState": "COMMITTED", "duplicate": response.duplicate,
         "headB64": STANDARD.encode(head.encode_to_vec()), "sequence": head.sequence.to_string(),
         "bundleB64": STANDARD.encode(p.bundle.encode_to_vec()), "homeStationPeerId": p.scope.station_peer_id});
-    match qualified {
-        Ok(Some(admission)) => {
-            let decision = FeedPollAdmissionResult::try_from(admission.statement.as_ref().ok_or("FEED_INVALID")?.result)
-                .map_err(|_| "FEED_INVALID")?;
-            result["state"] = json!(if decision == FeedPollAdmissionResult::Accepted { "COMMITTED" } else { "REJECTED" });
-            result["pollAdmissionB64"] = json!(STANDARD.encode(admission.encode_to_vec()));
-            result["pollResult"] = json!(decision.as_str_name());
-        }
-        Ok(None) if is_ballot => {
-            result["state"] = json!("PENDING_ADMISSION");
-            result["errorCode"] = json!("FEED_POLL_ADMISSION_PENDING");
-        }
-        Err(_) if is_ballot => {
-            result["state"] = json!("PENDING_READBACK");
-            result["errorCode"] = json!("FEED_POLL_ADMISSION_UNVERIFIED");
-        }
-        Err(error) => return Err(error),
-        Ok(None) => (),
-    }
     Ok(result)
 }
 
 /// Reopen retained intent after a process restart or a lost ACK. Returning the
 /// original payload/command lets submit reuse the exact journal event.
 #[tauri::command]
-pub fn social_public_feed_status(state: State<'_, Arc<AppState>>, window: Window,
-    command_ids: Option<Vec<String>>) -> Result<Value, String> {
+pub fn social_public_feed_status(state: State<'_, Arc<AppState>>, window: Window)
+    -> Result<Value, String> {
     let _identity = state.identity_transition.lock().map_err(|_| "FEED_SESSION_CHANGED")?;
     let active = state.sessions.get(window.label()).ok_or("FEED_AUTHENTICATION_REQUIRED")?;
     if active.jwt.is_empty() { return Err("FEED_AUTHENTICATION_REQUIRED".into()); }
@@ -247,7 +205,7 @@ pub fn social_public_feed_status(state: State<'_, Arc<AppState>>, window: Window
     let root = identity.verifying_key.to_bytes();
     let store = PublicFeedStore::open(actor)?;
     if store.authorization(actor, &root)?.is_none() {
-        return Ok(json!({"state": "NOT_INITIALIZED", "pending": [], "pendingAdmissions": [], "confirmedPollCommands": []}));
+        return Ok(json!({"state": "NOT_INITIALIZED", "pending": []}));
     }
     let head = store.head(actor)?;
     let pending: Vec<Value> = store.pending(actor, &root)?.into_iter().map(|(command, event)| {
@@ -255,20 +213,6 @@ pub fn social_public_feed_status(state: State<'_, Arc<AppState>>, window: Window
             "payloadB64": STANDARD.encode(&event.payload), "eventB64": STANDARD.encode(event.encode_to_vec()),
             "state": "PENDING_SUBMISSION"})
     }).collect();
-    let pending_admissions: Vec<Value> = store.pending_poll_admissions(actor)?.into_iter().map(|(command,event)| {
-        json!({"commandId": command, "kind": event.statement.as_ref().map(|s| s.kind),
-            "payloadB64": STANDARD.encode(&event.payload), "eventB64": STANDARD.encode(event.encode_to_vec()),
-            "sourceState": "COMMITTED", "state": "PENDING_ADMISSION"})
-    }).collect();
-    let confirmed_poll_commands: Vec<Value> = store.confirmed_poll_commands(actor,&root,
-        &command_ids.unwrap_or_default(),&|home| poll_station_key(&state,home))?
-        .into_iter().map(|(command,event,admission)| {
-            json!({"commandId": command, "actorPtid": actor,
-                "kind": event.statement.as_ref().map(|s| s.kind),
-                "payloadB64": STANDARD.encode(&event.payload),
-                "pollResult": admission.statement.as_ref().map(|s| s.result)})
-        }).collect();
     Ok(json!({"headB64": STANDARD.encode(head.encode_to_vec()), "sequence": head.sequence.to_string(),
-        "pending": pending, "pendingAdmissions": pending_admissions,
-        "confirmedPollCommands": confirmed_poll_commands}))
+        "pending": pending}))
 }

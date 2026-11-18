@@ -58,7 +58,7 @@ class MobileSocialFeedNativeGate(AcceptanceGate):
                 "Station-owned Recent and Hot Explore ranking",
                 "scope-specific bounded-list anchors",
                 "36px Home/Explore segment with 32px controls",
-                "explicit text, image, video, link, poll, repost, and location kinds",
+                "explicit text, image, video, link, repost, and location kinds",
                 "bounded loading, empty, filtered, error, and unavailable states",
             ],
             "unproven_scope": [

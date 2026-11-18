@@ -21,6 +21,51 @@ SOURCE_COMMIT = "a" * 40
 PRODUCER = "social-cross-station-native-e2e"
 CONSUMER = "social-private-desktop-e2e"
 
+def outage_observations(run="prepared-fixture-epoch"):
+    publication = {"state": "REMOTE_DELIVERY_PENDING", "transientPostId": "post"}
+    outbox = {"outboxRows": 1, "outboxState": "retry_wait", "originalFrameSha256": "c" * 64}
+    return {
+        "committedPublication": publication, "committedOutbox": outbox,
+        "heldFrame": {"sourceCommit": SOURCE_COMMIT, "runId": run,
+                      "effectCount": 1, "frameSha256": "c" * 64, "expired": False},
+        "beforeDelivery": {"projections": {"social_remote_private_resources": {"rows": 0}}},
+        "outagePublications": [dict(publication), dict(publication)],
+        "outageOutbox": [dict(outbox), dict(outbox)],
+        "stationOutage": {"stop": {"stopped": True, "containerId": "original", "sourceCommit": SOURCE_COMMIT},
+                          "start": {"restored": True, "containerId": "original", "sourceCommit": SOURCE_COMMIT}},
+        "settledPublication": {**publication, "state": "PUBLISHED"},
+        "settledOutbox": {**outbox, "outboxState": "delivered"},
+        "receiverRows": {"projections": {"social_remote_private_resources": {"rows": 1}}},
+    }
+
+
+class PrivateOutageProofTest(unittest.TestCase):
+    def test_original_proof_rejects_each_missing_or_changed_causal_boundary(self):
+        module._validate_private_outage_observations(
+            outage_observations(), source=SOURCE_COMMIT, run="prepared-fixture-epoch",
+        )
+        for key in outage_observations():
+            with self.subTest(key=key):
+                value = outage_observations()
+                del value[key]
+                with self.assertRaises(GateError):
+                    module._validate_private_outage_observations(
+                        value, source=SOURCE_COMMIT, run="prepared-fixture-epoch",
+                    )
+        for key, value in (
+            ("heldFrame", {"sourceCommit": "b" * 40, "runId": "foreign", "effectCount": 0}),
+            ("beforeDelivery", {"projections": {"social_remote_private_resources": {"rows": 1}}}),
+            ("outagePublications", [{"state": "REMOTE_DELIVERY_PENDING", "transientPostId": "foreign"}] * 2),
+            ("settledOutbox", {"outboxRows": 1, "outboxState": "delivered", "originalFrameSha256": "d" * 64}),
+        ):
+            with self.subTest(key=key):
+                observations = outage_observations()
+                observations[key] = value
+                with self.assertRaises(GateError):
+                    module._validate_private_outage_observations(
+                        observations, source=SOURCE_COMMIT, run="prepared-fixture-epoch",
+                    )
+
 
 class _Report:
     def __init__(self) -> None:
@@ -122,6 +167,15 @@ class SuiteResultValidationTest(unittest.TestCase):
             path_ref = {"path": str(self.store.resolve(module.ArtifactRef.from_dict(ref))), "sha256": ref["sha256"]}
             supporting.append(path_ref)
             scenario_results[scenario] = {"status": "PASS", "evidenceRefs": [path_ref]}
+            if scenario == "AS21":
+                observation_ref = self.run.write_json("private-social/AS21/result.json", {
+                    "artifactKind": "social-cross-station-scenario-evidence",
+                    "scenarioId": "AS21", "observations": outage_observations(epoch),
+                })
+                observation_path = {"path": str(self.store.resolve(observation_ref)),
+                                    "sha256": observation_ref.sha256}
+                supporting.append(observation_path)
+                scenario_results[scenario]["evidenceRefs"].append(observation_path)
         ledger.record(SuiteRuntimeAction.CLEANUP_COMPLETE)
         suite_report = ledger.require_valid()
         suite_ref = self.run.write_json("private-social/suite-runtime.json", suite_report)
@@ -196,7 +250,7 @@ class SuiteResultValidationTest(unittest.TestCase):
     def test_complete_current_run_result_is_accepted(self) -> None:
         result = self.validate()
         self.assertEqual(self.payload["suiteRuntimeReportDigest"], result.suite_runtime_report["reportDigest"])
-        self.assertEqual(len(module.SCENARIO_IDS), len(result.supporting_artifacts))
+        self.assertEqual(len(module.SCENARIO_IDS) + 1, len(result.supporting_artifacts))
         self.assertEqual({"station-four", "station-five-arm"},
                          {call.kwargs["service_id"] for call in self.schema_loader.call_args_list})
 

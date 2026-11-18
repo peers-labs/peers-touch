@@ -11,6 +11,7 @@ from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from selenium.webdriver.common.keys import Keys
 
 from tooling.acceptance.core import (
     EphemeralGateClient, GateError, RuntimeReuseContract, SuiteRuntimeAction, SuiteRuntimeLedger,
@@ -27,13 +28,13 @@ from tooling.development.secure_content.runtime_owner import (
     _prepare_portable_recovery, _restore_portable_recovery,
     _provision_runtime_accounts, _runtime_account_search_query,
 )
+from .public_comment_revalidation import PublicCommentRevalidation
 
 GATE_ID = "social-public-feed-native-e2e"
 SCENARIOS = (
     "publication-late-follower", "non-follower-interaction", "public-edit",
     "restart-readback", "public-search", "public-tombstone",
     "comment-reactions",
-    "poll-single-choice", "poll-multiple-choice", "poll-cutoff",
     "normal-submit-readback", "lost-submit-ack", "corrupt-read-payload",
     "rollback-read-head", "second-device-writer-denial",
     "circle-members-pagination", "circle-cancel", "circle-partial-save-retry",
@@ -104,6 +105,84 @@ class Gate(DeviceSearchGate):
     def action(self, actor: str, method: str, payload: dict[str, Any] | None = None) -> Any:
         return call_async_harness(self.clients[actor], method, payload or {},
                                   namespace="moments", script_timeout=120)
+
+    def presented_public_reference(self, query: str, post_id: str) -> dict[str, Any]:
+        # Keep the reference tied to the response currently painted by Search.
+        # The inherited diagnostic submit defaults to MESSAGE and creates a
+        # different source session; it cannot describe this Social result.
+        presentation = call_async_harness(
+            self.receiver, "deviceSearchPresentation", {},
+            namespace="chat", script_timeout=120,
+        )
+        page = presentation.get("page")
+        if (presentation.get("open") is not True
+            or presentation.get("query") != query
+            or presentation.get("filter") != "social"
+            or not isinstance(page, dict)):
+            raise GateError("Public Search has no matching presented Social response")
+        item = next((item for item in page.get("items", [])
+                     if item.get("resource", {}).get("id") == post_id
+                     and item.get("sourceId") == "station.social.public"), None)
+        self.assert_condition("search-replicated-public-identity", item is not None)
+        return item
+
+    def assert_tombstone_search_removed(self, query: str, result_selector: str) -> None:
+        started = time.monotonic()
+        try:
+            def completed_response() -> bool:
+                presentation = call_async_harness(
+                    self.receiver, "deviceSearchPresentation", {},
+                    namespace="chat", script_timeout=120)
+                page = presentation.get("page")
+                qualified = (
+                    presentation.get("open") is True
+                    and presentation.get("status") == "ready"
+                    and presentation.get("query") == query
+                    and presentation.get("filter") == "social"
+                    and isinstance(page, dict)
+                    and not page.get("items")
+                    and any(source.get("sourceId") == "station.social.public"
+                            and source.get("state") == "SOURCE_STATE_READY"
+                            for source in page.get("coverage", []))
+                )
+                if qualified:
+                    self.report.runtime["search"]["tombstonePresentedResponse"] = presentation
+                return qualified
+            wait_until(completed_response, "Bob original completed public tombstone Search response", timeout=120)
+            self.wait_js(
+                f"!document.querySelector({json.dumps(result_selector)})"
+                " && !!document.querySelector('.pt-search-empty')"
+                " && !document.querySelector('.pt-search-error')"
+                " && document.querySelector('.pt-search-body')?.getAttribute('aria-busy') === 'false'"
+                f" && document.querySelector('.pt-search-body')?.dataset.displayedQuery === {json.dumps(query)}",
+                "Bob public tombstone removes the actual retained Search result",
+                timeout=max(0, 120 - (time.monotonic() - started)))
+            self.assert_condition("search-tombstone-painted-empty", self.wait_surface()["painted"])
+        except Exception:
+            def observe_presentation() -> None:
+                self.report.runtime["search"]["tombstoneFailurePresentation"] = call_async_harness(
+                    self.receiver, "deviceSearchPresentation", {},
+                    namespace="chat", script_timeout=120)
+            def observe_document() -> None:
+                self.report.runtime["search"]["tombstoneFailureDocument"] = self.receiver.execute_script("""
+                    const body = document.querySelector('.pt-search-body');
+                    return {
+                      retained: Boolean(document.querySelector(arguments[0])),
+                      empty: Boolean(document.querySelector('.pt-search-empty')),
+                      error: Boolean(document.querySelector('.pt-search-error')),
+                      busy: body?.getAttribute('aria-busy'),
+                      displayedQuery: body?.dataset.displayedQuery,
+                      visibility: document.visibilityState,
+                    };
+                """, result_selector)
+            for diagnostic, owner in (
+                (observe_presentation, "Public tombstone original Search presentation"),
+                (observe_document, "Public tombstone original Search document"),
+                (lambda: self.capture("bob", "public-tombstone-bob-search-failure"),
+                 "Public tombstone Native rendering"),
+            ):
+                cleanup_preserving_primary_failure(diagnostic, self.report, owner)
+            raise
 
     def prepare_fixture(self, stack: ExitStack) -> dict[str, str]:
         primary = runtime_station_service(self.manifest, "alice")
@@ -184,16 +263,20 @@ class Gate(DeviceSearchGate):
 
     def click(self, actor: str, selector: str) -> None:
         def locate() -> Any:
-            element = self.visible_element(actor, selector)
-            if element is not None:
-                # Feed accumulates many cards; bring the target into the
-                # viewport before interacting instead of relying on it staying
-                # on screen after later scenarios appended content.
-                self.clients[actor].execute_script(
-                    "arguments[0].scrollIntoView({block:'center',inline:'nearest'});",
-                    element,
-                )
-            return element
+            # Presence precedes visibility. The feed clips retained cards in
+            # its scroll container, so a mounted but offscreen control fails the
+            # native displayed predicate until its real element is revealed.
+            # Scrolling first is the same reveal order the paint oracles
+            # use. A control that is missing or CSS-hidden still returns None,
+            # so the original visible gate and its deadline are preserved.
+            candidates = self.clients[actor].find_elements(selector)
+            if not candidates:
+                return None
+            self.clients[actor].execute_script(
+                "arguments[0].scrollIntoView({block:'center',inline:'nearest'});",
+                candidates[0],
+            )
+            return self.visible_element(actor, selector)
         try:
             element = wait_until(locate, selector, timeout=120)
         except GateError:
@@ -219,6 +302,16 @@ class Gate(DeviceSearchGate):
                   canEdit: card?.getAttribute('data-can-edit') ?? null,
                   menusInDom: document.querySelectorAll('[data-acceptance-id="social-moment-menu"]').length,
                   matchingCards: pid ? document.querySelectorAll(`[data-post-id="${pid}"]`).length : 0,
+                  scopedPresent: !!document.querySelector(s),
+                  scopedRect: (() => {
+                    const node = document.querySelector(s);
+                    if (!node) return null;
+                    const r = node.getBoundingClientRect();
+                    const cs = getComputedStyle(node);
+                    return { width: r.width, height: r.height, top: r.top, bottom: r.bottom,
+                      display: cs.display, visibility: cs.visibility, opacity: cs.opacity };
+                  })(),
+                  viewport: { width: innerWidth, height: innerHeight },
                   scrollY: window.scrollY,
                 };
             """, selector)
@@ -231,6 +324,10 @@ class Gate(DeviceSearchGate):
         expanded = control.get_attribute("aria-expanded")
         if expanded not in ("true", "false"):
             raise GateError("Moment comment control has no explicit expansion state")
+        self.clients[actor].execute_script(
+            "arguments[0].scrollIntoView({block:'center',inline:'nearest'});",
+            control,
+        )
         if expanded == "false":
             control.click()
         def is_open() -> bool:
@@ -257,11 +354,15 @@ class Gate(DeviceSearchGate):
         self.save_dom(self.clients[actor], label)
 
     def await_painted_public_card(self, actor: str, text: str, *, timeout: float = 80) -> Any:
-        # Passive oracle: only the original Runtime may initiate repair reads.
+        # Reveal the real card; only the original Runtime may initiate repair reads.
         def painted() -> Any:
             card = self.card(actor, text)
             if card is None:
                 return None
+            self.clients[actor].execute_script(
+                "arguments[0].scrollIntoView({block:'center',inline:'nearest'});",
+                card,
+            )
             observation = self.clients[actor].execute_async_script("""
                 const el = arguments[0], done = arguments[arguments.length - 1];
                 const visible = () => {
@@ -280,7 +381,14 @@ class Gate(DeviceSearchGate):
                 });
             """, card)
             return card if observation["painted"] and observation["paintFrames"] == 2 else None
-        return wait_until(painted, f"{actor} passively painted signed public Moment", timeout=timeout)
+        try:
+            return wait_until(painted, f"{actor} passively painted signed public Moment", timeout=timeout)
+        except Exception:
+            cleanup_preserving_primary_failure(
+                lambda: self.capture(actor, f"{self.active_social_scenario or 'public'}-{actor}-paint-failure"),
+                self.report, "Public Moment Native rendering diagnostic",
+            )
+            raise
 
     def public_fault(self, actor: str, *, action: str = "read", kind: str = "",
                      target: str = "", label: str = "") -> Any:
@@ -339,8 +447,20 @@ class Gate(DeviceSearchGate):
             self.assert_circle_element_painted(row, "circle-last-member-painted")
 
     def assert_circle_element_painted(self, element: Any, assertion: str) -> None:
-        self.clients["alice"].execute_script("arguments[0].scrollIntoView({block:'center'});", element)
-        painted = self.clients["alice"].execute_async_script("""
+        try:
+            # Reopening the original editor starts the shared Dialog entrance.
+            # Its moving bounds cannot yet establish the scroll target.
+            wait_until(lambda: self.clients["alice"].execute_script("""
+                const el = arguments[0];
+                if (!el.isConnected) return false;
+                for (let node = el; node; node = node.parentElement) {
+                  if (node.getAnimations().some(animation =>
+                    animation.pending || animation.playState === 'running')) return false;
+                }
+                return true;
+            """, element), "original Circle entrance settled before reveal", timeout=30)
+            self.clients["alice"].execute_script("arguments[0].scrollIntoView({block:'center'});", element)
+            painted = self.clients["alice"].execute_async_script("""
             const el = arguments[0], done = arguments[arguments.length - 1];
             const visible = () => {
               const r = el.getBoundingClientRect(), style = getComputedStyle(el);
@@ -352,8 +472,34 @@ class Gate(DeviceSearchGate):
               const first = visible();
               requestAnimationFrame(() => done(first && visible()));
             });
-        """, element)
-        self.assert_condition(assertion, painted is True)
+            """, element)
+            self.assert_condition(assertion, painted is True)
+        except Exception:
+            def observe() -> None:
+                self.report.runtime.setdefault("circlePaintFailures", []).append(
+                    self.clients["alice"].execute_script("""
+                        const el = arguments[0], r = el.getBoundingClientRect();
+                        const hit = document.elementFromPoint((r.left+r.right)/2, (r.top+r.bottom)/2);
+                        const ancestors = [];
+                        for (let node = el; node; node = node.parentElement) {
+                          const style = getComputedStyle(node);
+                          if (style.overflowY !== 'visible' || node.getAnimations().length) {
+                            ancestors.push({
+                              bounds: node.getBoundingClientRect().toJSON(),
+                              scrollTop: node.scrollTop, clientHeight: node.clientHeight,
+                              scrollHeight: node.scrollHeight, overflowY: style.overflowY,
+                              motion: node.getAnimations().map(animation => animation.playState),
+                            });
+                          }
+                        }
+                        return {connected: el.isConnected, bounds: r.toJSON(),
+                          hitInside: Boolean(hit && el.contains(hit)), ancestors};
+                    """, element))
+            cleanup_preserving_primary_failure(observe, self.report, "Circle original paint geometry")
+            cleanup_preserving_primary_failure(
+                lambda: self.capture("alice", f"{self.active_social_scenario}-alice-{assertion}-failure"),
+                self.report, "Circle original Native rendering")
+            raise
 
     def circle_scenarios(self, ledger: SuiteRuntimeLedger) -> None:
         self.click("alice", '[data-action-id="segment.circles"]')
@@ -513,7 +659,7 @@ class Gate(DeviceSearchGate):
             "outgoingActorPtid": prepared["primaryActorPtid"],
             "outgoingSessionEpoch": before["sessionEpoch"], "pin": prepared["pin"],
         })
-        self.click("alice", '[data-pt-primary-nav="moments"] [role="button"]')
+        self.click("alice", '[data-pt-primary-nav="moments"] button[data-action-id="primary-nav.moments"]')
         self.click("alice", '[data-action-id="segment.circles"]')
         def isolated() -> bool:
             projection = self.action("alice", "circleProjection")
@@ -547,7 +693,7 @@ class Gate(DeviceSearchGate):
         })
         self.assert_condition("circle-account-epoch-advanced",
             primary["afterGeneration"] > secondary["afterGeneration"] > before["sessionEpoch"])
-        self.click("alice", '[data-pt-primary-nav="moments"] [role="button"]')
+        self.click("alice", '[data-pt-primary-nav="moments"] button[data-action-id="primary-nav.moments"]')
         self.click("alice", '[data-action-id="segment.circles"]')
         self.assert_circle(circle_id, name, description, members)
         self.click("alice", f'[data-action-id="circle.manage.{circle_id}"]')
@@ -581,17 +727,48 @@ class Gate(DeviceSearchGate):
         self.begin_scenario(ledger, scenario)
         text = f"{scenario}-{self.manifest['runId']}"
         self.public_fault("bob", action="clear")
-        self.public_fault("bob", action="arm", kind="observe-reads",
-                          target=self.ptids["alice"], label=scenario)
-        started = self.publish_text_ui(text)
-        self.await_painted_public_card("alice", text)
-        self.await_painted_public_card("bob", text)
-        self.capture_public_measurement(scenario, started, self.public_fault("bob"))
-        self.capture("bob", scenario)
-        self.complete_scenario(ledger, scenario, "alice:real-publication",
-                               "bob:passive-runtime-painted-authentic-post")
-        self.public_fault("bob", action="clear")
-        return text
+        try:
+            self.public_fault("bob", action="arm", kind="observe-reads",
+                              target=self.ptids["alice"], label=scenario)
+            started = self.publish_text_ui(text)
+            self.await_painted_public_card("alice", text)
+            self.await_painted_public_card("bob", text)
+            self.capture_public_measurement(scenario, started, self.public_fault("bob"))
+            self.capture("bob", scenario)
+            self.complete_scenario(ledger, scenario, "alice:real-publication",
+                                   "bob:passive-runtime-painted-authentic-post")
+            return text
+        except Exception:
+            observation = self.report.runtime.setdefault("publicFeedBaselineFailure", {})
+
+            def read_observation() -> None:
+                observation["lastObservation"] = dict(self.public_fault("bob"))
+
+            def document_observation() -> None:
+                observation["document"] = self.clients["bob"].execute_script("""
+                    return {
+                      hidden: document.hidden,
+                      visibilityState: document.visibilityState,
+                      focused: document.hasFocus(),
+                      feedCards: document.querySelectorAll(
+                        '[data-acceptance-id="social-moment-card"]').length,
+                      viewportWidth: innerWidth, viewportHeight: innerHeight,
+                    };
+                """)
+
+            for diagnostic, owner in (
+                (read_observation, "Public baseline Native read diagnostic"),
+                (document_observation, "Public baseline document diagnostic"),
+                (lambda: self.capture("bob", f"{scenario}-bob-baseline-failure"),
+                 "Public baseline Native rendering diagnostic"),
+            ):
+                cleanup_preserving_primary_failure(diagnostic, self.report, owner)
+            raise
+        finally:
+            cleanup_preserving_primary_failure(
+                lambda: self.public_fault("bob", action="clear"), self.report,
+                "Public baseline receiver read observation",
+            )
 
     def lost_ack_scenario(self, ledger: SuiteRuntimeLedger) -> str:
         scenario = "lost-submit-ack"
@@ -674,14 +851,15 @@ class Gate(DeviceSearchGate):
             self.assert_comment_like("alice", alice_selector, comment, 0, False)
             self.assert_comment_like("bob", bob_selector, comment, 0, False)
             self.await_painted_public_card("bob", text)
-            self.capture("bob", scenario)
-            self.capture("alice", scenario)
+            self.capture("bob", f"{scenario}-bob")
+            self.capture("alice", f"{scenario}-alice")
             observation = control("finish")
             self.report.runtime["relayOpaque"] = {
                 **observation, "verifiedHead": after["verifiedSequence"],
             }
             self.assert_condition("relay-both-legs-both-directions",
-                all(value > 0 for leg in observation["directionBytes"] for value in leg))
+                all(any(all(value > 0 for value in observation["directionBytes"][index])
+                        for index in group) for group in observation["stationLegs"]))
             self.assert_condition("relay-exact-plaintext-absent", observation["plaintextObserved"] is False)
             self.complete_scenario(ledger, scenario, "alice,bob:publish-and-confirm-comment-over-Circuit",
                                    "alice,bob:painted-verified-content-and-bound-opaque-two-leg-capture")
@@ -712,12 +890,26 @@ class Gate(DeviceSearchGate):
 
             def repaired() -> Any:
                 observed = self.notification_control("read")
+                # Retain the original validated sample before cleanup retires
+                # the rule, including when no matching hint or repair occurred.
+                self.report.runtime["federationNotification"] = dict(observed)
                 return observed if observed["effectCount"] == 1 and observed["repairApplied"] else None
 
             remaining = deadline - time.monotonic()
             self.assert_condition(f"{scenario}-repair-budget", remaining > 0)
-            observed = wait_until(repaired, "original verified Federation missed-hint repair",
-                                  timeout=remaining)
+            try:
+                observed = wait_until(repaired, "original verified Federation missed-hint repair",
+                                      timeout=remaining)
+            except GateError:
+                try:
+                    self.report.runtime["federationNotificationReceiverReads"] = self.public_fault("bob")
+                except Exception:
+                    pass
+                try:
+                    self.capture("bob", f"{scenario}-bob-repair-failure")
+                except Exception:
+                    pass
+                raise
             remaining = deadline - time.monotonic()
             self.assert_condition(f"{scenario}-paint-budget", remaining > 0)
             self.await_painted_public_card("bob", text, timeout=remaining)
@@ -729,7 +921,6 @@ class Gate(DeviceSearchGate):
                 <= observed["repairVerifiedHead"])
             self.assert_condition(f"{scenario}-bounded-original-repair",
                 observed["bounded"] and not observed["expired"])
-            self.report.runtime["federationNotification"] = observed
             self.capture_public_measurement(scenario, started, self.public_fault("bob"))
             self.capture("bob", scenario)
             self.complete_scenario(ledger, scenario, "alice:real-publication",
@@ -752,22 +943,63 @@ class Gate(DeviceSearchGate):
         self.public_fault("bob", action="clear")
         self.public_fault("bob", action="arm", kind=kind, target=self.ptids["alice"], label=kind)
         text = f"{kind}-{self.manifest['runId']}"
-        started = self.publish_text_ui(text)
-        self.await_painted_public_card("alice", text)
-        self.await_painted_public_card("bob", text)
-        observed = self.public_fault("bob")
         rejection = {"corrupt-read-payload": "FEED_INVALID",
                      "rollback-read-head": "FEED_HEAD_ROLLBACK"}[kind]
-        self.assert_condition(f"{kind}-real-response-transformed",
-                              observed["effectCount"] == 1 and observed["rejection"] == rejection)
-        self.assert_condition(f"{kind}-retained-authentic-body",
-                              self.await_painted_public_card("bob", original_text)
-                              .get_attribute("data-post-id") == original_id)
-        self.capture_public_measurement(kind, started, observed)
-        self.capture("bob", f"{kind}-verified-recovery")
-        self.complete_scenario(ledger, kind, "alice:real-publication",
-                               "bob:painted-authentic-retained-and-recovered-bodies")
-        self.public_fault("bob", action="clear")
+        phases = self.report.runtime.setdefault("publicFeedIntegrity", {}).setdefault(kind, {})
+        try:
+            started = self.publish_text_ui(text)
+            self.await_painted_public_card("alice", text)
+
+            def rejected() -> Any:
+                # Snapshot only the original Native fault owner. This does not
+                # trigger a read or supply a recovery projection.
+                observed = dict(self.public_fault("bob"))
+                phases["rejection"] = observed
+                return observed if (observed["effectCount"] == 1
+                                    and observed["rejection"] == rejection) else None
+
+            fault = wait_until(rejected, f"bob rejected original {kind} response", timeout=80)
+            self.assert_condition(f"{kind}-real-response-transformed",
+                                  fault["effectCount"] == 1 and fault["rejection"] == rejection)
+            self.assert_condition(f"{kind}-fault-within-lease",
+                                  fault["expired"] is False and fault["boundedResponses"] is True)
+            # A rejection can arrive near the end of a 45-second Runtime
+            # cycle. Give the next original cycle its own bounded observation,
+            # without extending the 90-second mutation lease or forcing sync.
+            self.public_fault("bob", action="clear")
+            self.public_fault("bob", action="arm", kind="observe-reads",
+                              target=self.ptids["alice"], label=f"{kind}:recovery")
+            self.await_painted_public_card("bob", text)
+            observed = dict(self.public_fault("bob"))
+            phases["recovery"] = observed
+            self.assert_condition(f"{kind}-original-recovery-read",
+                                  observed["kind"] == "observe-reads" and observed["readCount"] > 0
+                                  and observed["effectCount"] == 0)
+            self.assert_condition(f"{kind}-retained-authentic-body",
+                                  self.await_painted_public_card("bob", original_text)
+                                  .get_attribute("data-post-id") == original_id)
+            combined = dict(observed)
+            for field in ("readCount", "threadReadCount"):
+                combined[field] += fault[field]
+            for field in ("maxEventCount", "maxThreadCount", "maxResponseBytes"):
+                combined[field] = max(combined[field], fault[field])
+            self.capture_public_measurement(kind, started, combined)
+            self.capture("bob", f"{kind}-verified-recovery")
+            self.complete_scenario(ledger, kind, "alice:real-publication",
+                                   "bob:painted-authentic-retained-and-recovered-bodies")
+        except Exception:
+            def retain_failure() -> None:
+                phases["lastObservation"] = dict(self.public_fault("bob"))
+            cleanup_preserving_primary_failure(
+                retain_failure, self.report, "Public integrity Native observation")
+            cleanup_preserving_primary_failure(
+                lambda: self.capture("bob", f"{kind}-bob-integrity-failure"),
+                self.report, "Public integrity Native rendering diagnostic")
+            raise
+        finally:
+            cleanup_preserving_primary_failure(
+                lambda: self.public_fault("bob", action="clear"), self.report,
+                "Public integrity read control")
         return text
 
     def second_writer_scenario(self, ledger: SuiteRuntimeLedger) -> None:
@@ -832,7 +1064,14 @@ class Gate(DeviceSearchGate):
                     comment_id = row.get_attribute("data-comment-id")
                     return f'{post_selector} [data-comment-id="{comment_id}"]'
             return None
-        return wait_until(locate, f"{actor} painted comment", timeout=120)
+        try:
+            return wait_until(locate, f"{actor} painted comment", timeout=120)
+        except Exception:
+            cleanup_preserving_primary_failure(
+                lambda: self.capture(actor, f"{self.active_social_scenario or 'comment'}-{actor}-row-failure"),
+                self.report, "Comment row Native rendering diagnostic",
+            )
+            raise
 
     def assert_comment_like(self, actor: str, post_selector: str, text: str,
                             count: int, liked: bool) -> str:
@@ -896,151 +1135,6 @@ class Gate(DeviceSearchGate):
         """, control, value),
                    f"{actor} controlled input accepted", timeout=30)
 
-    def create_poll(self, text: str, *, multiple: bool = False, cutoff_seconds: int | None = None) -> dict[str, str]:
-        self.click("alice", '[data-acceptance-id="social-composer-open"]')
-        self.set_input("alice", 'textarea[data-moments-composer-input]', text)
-        self.click("alice", '[data-acceptance-id="social-compose-poll"]')
-        invalid = self.visible_element("alice", '[data-acceptance-id="social-composer-publish"]')
-        self.assert_condition(f"{text}-empty-poll-publication-disabled", invalid is not None
-                              and (invalid.get_attribute("aria-disabled") == "true"
-                                   or invalid.get_attribute("disabled") is not None))
-        before = self.action("alice", "publicFeedStatus")
-        self.click("alice", '[data-acceptance-id="social-composer-publish"]')
-        after = self.action("alice", "publicFeedStatus")
-        question = self.visible_element("alice", '[data-acceptance-id="social-poll-question"]')
-        self.assert_condition(f"{text}-empty-poll-activation-rejected",
-            question is not None and question.get_attribute("value") == ""
-            and before["pendingCount"] == after["pendingCount"] == 0
-            and before["verifiedSequence"] == after["verifiedSequence"])
-        self.set_input("alice", '[data-acceptance-id="social-poll-question"]', text + " question")
-        for index in range(2):
-            self.set_input("alice", f'[data-acceptance-id="social-poll-draft-option-{index}"]', f"Option {index}")
-        if multiple:
-            self.click("alice", '[data-action-id="compose.poll.add-option"]')
-            self.set_input("alice", '[data-acceptance-id="social-poll-draft-option-2"]', "Option 2")
-            self.set_input("alice", '[data-acceptance-id="social-poll-maximum"]', "2")
-            self.set_input("alice", '[data-acceptance-id="social-poll-minimum"]', "2")
-        if cutoff_seconds is not None:
-            expiry = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() + cutoff_seconds))
-            self.set_input("alice", '.sk-compose-poll input[type="datetime-local"]', expiry)
-        # Dismiss/reopen goes through the original draft owner, including poll
-        # fields; it must not turn the retained draft back into a text post.
-        self.click("alice", '[data-action-id="compose.cancel"]')
-        try:
-            wait_until(lambda: self.visible_element("alice",
-                'textarea[data-moments-composer-input]') is None,
-                "Alice composer dismissed", timeout=30)
-            self.click("alice", '[data-acceptance-id="social-composer-open"]')
-            question = wait_until(lambda: self.visible_element("alice",
-                '[data-acceptance-id="social-poll-question"]'),
-                "Alice reopened poll question", timeout=30)
-            self.assert_condition(f"{text}-poll-draft-restored",
-                question.get_attribute("value") == text + " question")
-        except Exception:
-            cleanup_preserving_primary_failure(
-                lambda: self.capture("alice", f"{text}-poll-draft-restore-failure"),
-                self.report, "Poll draft restoration diagnostic")
-            raise
-        self.click("alice", '[data-acceptance-id="social-composer-publish"]')
-        return {actor: self.await_card(actor, text).get_attribute("data-post-id") for actor in ("alice", "bob")}
-
-    def poll_selector(self, post_id: str) -> str:
-        return f'[data-acceptance-id="social-moment-card"][data-post-id="{post_id}"] [data-acceptance-id="social-poll"]'
-
-    def assert_poll(self, actor: str, text: str, post_id: str, counts: list[int], choices: list[int],
-                    *, closed: bool = False) -> None:
-        selector = self.poll_selector(post_id)
-        def settled() -> bool:
-            self.await_card(actor, text)
-            element = self.visible_element(actor, selector)
-            if element:
-                self.clients[actor].execute_script("arguments[0].scrollIntoView({block: 'center', inline: 'nearest'});", element)
-            return bool(element and self.clients[actor].execute_script("""
-                const el = arguments[0], counts = arguments[1], choices = arguments[2], closed = arguments[3];
-                const r = el.getBoundingClientRect();
-                const hit = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2);
-                return r.top >= 0 && r.bottom <= innerHeight + 1 && hit && el.contains(hit)
-                  && el.dataset.pollState === (closed ? 'closed' : 'ready')
-                  && JSON.stringify([...el.querySelectorAll('[data-poll-count]')].map(e => Number(e.dataset.pollCount))) === JSON.stringify(counts)
-                  && JSON.stringify([...el.querySelectorAll('input')].flatMap((e, i) => e.checked ? [i] : [])) === JSON.stringify(choices)
-                  && Number(el.querySelector('[data-poll-voters]')?.dataset.pollVoters) === (counts.some(n => n > 0) ? 2 : 0)
-                  && (!closed || [...el.querySelectorAll('input')].every(e => e.disabled));
-            """, element, counts, choices, closed))
-        try:
-            wait_until(settled, f"{actor} verified poll counts and selection", timeout=120)
-        except Exception:
-            # Preserve the actual failed predicate before the Suite releases its
-            # clients. Counts, selection and paint geometry are independent:
-            # a timeout alone cannot identify which original owner failed.
-            def observe() -> None:
-                element = self.visible_element(actor, selector)
-                actual = {"present": False} if element is None else self.clients[actor].execute_script("""
-                    const el = arguments[0], r = el.getBoundingClientRect();
-                    const hit = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2);
-                    return {
-                      present: true, state: el.dataset.pollState,
-                      counts: [...el.querySelectorAll('[data-poll-count]')].map(e => Number(e.dataset.pollCount)),
-                      choices: [...el.querySelectorAll('input')].flatMap((e, i) => e.checked ? [i] : []),
-                      voters: Number(el.querySelector('[data-poll-voters]')?.dataset.pollVoters),
-                      disabled: [...el.querySelectorAll('input')].every(e => e.disabled),
-                      top: r.top, bottom: r.bottom, height: r.height, viewportHeight: innerHeight,
-                      hitInside: Boolean(hit && el.contains(hit)),
-                    };
-                """, element)
-                self.report.runtime.setdefault("pollFailureObservations", []).append({
-                    "actor": actor,
-                    "expected": {"counts": counts, "choices": choices, "closed": closed},
-                    "actual": actual,
-                })
-            cleanup_preserving_primary_failure(
-                observe, self.report, "Poll verification state diagnostic")
-            cleanup_preserving_primary_failure(
-                lambda: self.capture(actor, f"{self.active_social_scenario or 'poll'}-{actor}-verification-failure"),
-                self.report, "Poll verification Native rendering diagnostic")
-            raise
-
-    def select_poll(self, actor: str, post_id: str, indices: list[int]) -> None:
-        selector = self.poll_selector(post_id)
-        inputs = self.clients[actor].find_elements(f"{selector} input")
-        single = inputs[0].get_attribute("type") == "radio"
-        for index, control in enumerate(inputs):
-            checked = control.get_attribute("checked") in ("true", "checked")
-            if (index in indices and not checked) or (not single and index not in indices and checked):
-                self.click(actor, f"{selector} [data-poll-option='{index}'] label")
-
-    def poll_scenario(self, ledger: SuiteRuntimeLedger, scenario: str, *, multiple: bool) -> tuple[str, dict[str, str]]:
-        self.begin_scenario(ledger, scenario)
-        text = f"{scenario}-{self.manifest['runId']}"
-        ids = self.create_poll(text, multiple=multiple)
-        self.select_poll("bob", ids["bob"], [0, 1] if multiple else [1])
-        self.click("bob", f'{self.poll_selector(ids["bob"])} [data-acceptance-id="social-poll-submit"]')
-        self.select_poll("alice", ids["alice"], [1, 2] if multiple else [0])
-        self.click("alice", f'{self.poll_selector(ids["alice"])} [data-acceptance-id="social-poll-submit"]')
-        counts = [1, 2, 1] if multiple else [1, 1]
-        self.assert_poll("alice", text, ids["alice"], counts, [1, 2] if multiple else [0])
-        self.assert_poll("bob", text, ids["bob"], counts, [0, 1] if multiple else [1])
-        self.select_poll("bob", ids["bob"], [1, 2] if multiple else [0])
-        self.click("bob", f'{self.poll_selector(ids["bob"])} [data-acceptance-id="social-poll-submit"]')
-        counts = [0, 2, 2] if multiple else [2, 0]
-        for actor in ("alice", "bob"):
-            self.assert_poll(actor, text, ids[actor], counts, [1, 2] if multiple else [0])
-        # Local cancellation does not revoke the committed ballot.
-        self.select_poll("bob", ids["bob"], [0, 1] if multiple else [1])
-        self.click("bob", f'[data-action-id="moment.poll.cancel.{ids["bob"]}"]')
-        self.assert_poll("bob", text, ids["bob"], counts, [1, 2] if multiple else [0])
-        updated_text = f"Edited-{text}"
-        alice_card = f'[data-acceptance-id="social-moment-card"][data-post-id="{ids["alice"]}"]'
-        self.click("alice", f'{alice_card} [data-acceptance-id="social-moment-menu"]')
-        self.click("alice", f'[data-action-id="moment.edit.{ids["alice"]}"]')
-        self.set_input("alice", '[data-acceptance-id="social-edit-input"]', updated_text)
-        self.click("alice", '[data-acceptance-id="social-edit-save"]')
-        for actor in ("alice", "bob"):
-            self.assert_poll(actor, updated_text, ids[actor], counts, [1, 2] if multiple else [0])
-        self.capture("bob", scenario)
-        self.complete_scenario(ledger, scenario, "alice,bob:poll-publish-vote-replace-cancel",
-                               "alice,bob:painted-verified-ballots-and-two-voters")
-        return updated_text, ids
-
     def begin_scenario(self, ledger: SuiteRuntimeLedger, scenario: str) -> None:
         ledger.record(SuiteRuntimeAction.SCENARIO_START, scenario_id=scenario)
         self.active_social_scenario = scenario
@@ -1083,7 +1177,7 @@ class Gate(DeviceSearchGate):
                 ledger.record(SuiteRuntimeAction.ACCOUNT_PROVISION, resource_id="22-real-circle-members")
                 self.action("bob", "unfollowActor", {"actorPtid": fixture["alicePtid"]})
                 for actor in self.client_specs:
-                    self.click(actor, '[data-pt-primary-nav="moments"] [role="button"]')
+                    self.click(actor, '[data-pt-primary-nav="moments"] button[data-action-id="primary-nav.moments"]')
                     self.click(actor, '[data-action-id="segment.feed"]')
 
                 self.begin_scenario(ledger, SCENARIOS[0])
@@ -1104,14 +1198,20 @@ class Gate(DeviceSearchGate):
                 self.action("bob", "unfollowActor", {"actorPtid": fixture["alicePtid"]})
                 bob_selector = f'[data-post-id="{bob_id}"]'
                 self.open_comments("bob", bob_selector)
+                revalidation = PublicCommentRevalidation(self)
+                revalidation.stable("bob", bob_selector, phase="acquired-empty", rows=0)
                 comment_text = f"Non-follower {text}"
                 comment_input = wait_until(lambda: self.visible_element("bob",
                     f'{bob_selector} [data-acceptance-id="social-comment-input"]'), "Bob comment input", timeout=30)
-                comment_input.send_keys(comment_text)
-                self.click("bob", f'{bob_selector} [data-acceptance-id="social-comment-send"]')
-                wait_until(lambda: comment_text in self.await_card("bob", text).text, "Bob committed comment", timeout=120)
+                with revalidation.late_read("bob", bob_selector, phase="late-create", rows=1):
+                    comment_input.send_keys(comment_text)
+                    self.click("bob", f'{bob_selector} [data-acceptance-id="social-comment-send"]')
+                    self.assert_comment_like("bob", bob_selector, comment_text, 0, False)
                 self.click("bob", f'{bob_selector} [data-acceptance-id="social-reaction-trigger"]')
                 self.click("bob", '[data-acceptance-id="social-reaction-pick-1"]')
+                self.click("bob", f'{bob_selector} [data-acceptance-id="social-reaction-trigger"]')
+                wait_until(lambda: self.visible_element("bob", ".sk-react-picker") is None,
+                           "Bob reaction picker closed", timeout=30)
                 alice_selector = f'[data-post-id="{alice_id}"]'
                 self.open_comments("alice", alice_selector)
                 wait_until(lambda: comment_text in self.await_card("alice", text).text, "Alice non-follower comment", timeout=120)
@@ -1122,7 +1222,9 @@ class Gate(DeviceSearchGate):
 
                 self.begin_scenario(ledger, SCENARIOS[6])
                 alice_root = self.assert_comment_like("alice", alice_selector, comment_text, 0, False)
-                self.click("alice", alice_root)
+                with revalidation.late_read("alice", alice_selector, phase="late-like", rows=1):
+                    self.click("alice", alice_root)
+                    self.assert_comment_like("alice", alice_selector, comment_text, 1, True)
                 bob_root = self.assert_comment_like("bob", bob_selector, comment_text, 1, False)
                 self.assert_comment_like("alice", alice_selector, comment_text, 1, True)
                 self.click("bob", bob_root)
@@ -1153,21 +1255,25 @@ class Gate(DeviceSearchGate):
                 self.assert_comment_like("bob", bob_selector, reply_text, 1, True)
                 for actor in ("alice", "bob"):
                     self.capture(actor, f"{SCENARIOS[6]}-{actor}")
+                disposable = f"Disposable {text}"
+                self.set_input("bob", f'{bob_selector} [data-acceptance-id="social-comment-input"]', disposable)
+                self.click("bob", f'{bob_selector} [data-acceptance-id="social-comment-send"]')
+                self.assert_comment_like("bob", bob_selector, disposable, 0, False)
+                self.assert_comment_like("alice", alice_selector, disposable, 0, False)
+                with revalidation.late_read("bob", bob_selector, phase="late-delete", rows=2):
+                    revalidation.delete_disposable("bob", bob_selector, disposable)
+                for actor, post in (("alice", alice_selector), ("bob", bob_selector)):
+                    wait_until(lambda: self.clients[actor].execute_script("""
+                        return [...document.querySelectorAll(arguments[0] + ' [data-moments-comment]')]
+                          .every(row => row.querySelector('.sk-comment-text')?.textContent !== arguments[1]);
+                    """, post, disposable), "Peer confirmed Comment deletion", timeout=30)
+                    self.assert_comment_like(actor, post, comment_text, 2, True)
+                    self.assert_comment_like(actor, post, reply_text, 1, actor == "bob")
+                    revalidation.stable(actor, post, phase="expanded", rows=2)
+                    revalidation.stable(actor, post, phase="collapsed", rows=2, expanded=False)
+                    revalidation.stable(actor, post, phase="alive-return", rows=2, expanded=False, alive=True)
                 self.complete_scenario(ledger, SCENARIOS[6],
                     "alice,bob:root-and-reply-like-set-remove", "alice,bob:painted-confirmed-counts")
-
-                polls = [
-                    self.poll_scenario(ledger, SCENARIOS[7], multiple=False),
-                    self.poll_scenario(ledger, SCENARIOS[8], multiple=True),
-                ]
-                self.begin_scenario(ledger, SCENARIOS[9])
-                cutoff_text = f"Cutoff-{self.manifest['runId']}"
-                cutoff_ids = self.create_poll(cutoff_text, cutoff_seconds=30)
-                for actor in ("alice", "bob"):
-                    self.assert_poll(actor, cutoff_text, cutoff_ids[actor], [0, 0], [], closed=True)
-                self.capture("bob", SCENARIOS[9])
-                self.complete_scenario(ledger, SCENARIOS[9], "alice:publish-short-deadline",
-                                       "bob:painted-closed-poll-and-disabled-options")
 
                 self.begin_scenario(ledger, SCENARIOS[2])
                 self.action("bob", "followActor", {"actorPtid": fixture["alicePtid"]})
@@ -1188,15 +1294,12 @@ class Gate(DeviceSearchGate):
                 self.begin_scenario(ledger, SCENARIOS[3])
                 self.restart_client("bob")
                 ledger.record(SuiteRuntimeAction.CLIENT_REPLACEMENT, resource_id="client:bob", scenario_id=SCENARIOS[3])
-                self.click("bob", '[data-pt-primary-nav="moments"] [role="button"]')
+                self.click("bob", '[data-pt-primary-nav="moments"] button[data-action-id="primary-nav.moments"]')
                 self.click("bob", '[data-action-id="segment.feed"]')
                 self.await_card("bob", edited_text)
                 self.open_comments("bob", bob_selector)
                 self.assert_comment_like("bob", bob_selector, comment_text, 2, True)
                 self.assert_comment_like("bob", bob_selector, reply_text, 1, True)
-                for index, (poll_text, poll_ids) in enumerate(polls):
-                    self.assert_poll("bob", poll_text, poll_ids["bob"],
-                                     [2, 0] if index == 0 else [0, 2, 2], [0] if index == 0 else [1, 2])
                 self.capture("bob", SCENARIOS[3])
                 self.complete_scenario(ledger, SCENARIOS[3], "bob:native-restart", "bob:painted-replayed-updated-body")
 
@@ -1221,11 +1324,7 @@ class Gate(DeviceSearchGate):
                 )
                 wait_until(lambda: self.visible_element("bob", result_selector),
                            "Bob Search issued replicated public post", timeout=120)
-                page = self.native_page(edited_text)
-                item = next((item for item in page["items"]
-                             if item["resource"]["id"] == bob_id
-                             and item["sourceId"] == "station.social.public"), None)
-                self.assert_condition("search-replicated-public-identity", item is not None)
+                item = self.presented_public_reference(edited_text, bob_id)
                 self.assert_condition("search-replicated-updated-body",
                     edited_text in self.rows() and self.wait_surface()["painted"])
                 self.report.runtime["search"]["replicatedPublicReference"] = item
@@ -1244,17 +1343,13 @@ class Gate(DeviceSearchGate):
                     wait_until(removed, f"{actor} tombstoned card removed", timeout=120)
                 self.assert_condition("native-tombstone-committed",
                     self.action("alice", "publicFeedStatus")["pendingCount"] == 0)
-                self.wait_js(
-                    f"!document.querySelector({json.dumps(result_selector)})"
-                    " && !!document.querySelector('.pt-search-empty')"
-                    " && !document.querySelector('.pt-search-error')"
-                    " && document.querySelector('.pt-search-body')?.getAttribute('aria-busy') === 'false'"
-                    f" && document.querySelector('.pt-search-body')?.dataset.displayedQuery === {json.dumps(edited_text)}",
-                    "Bob public tombstone removes the actual retained Search result", timeout=120)
-                self.assert_condition("search-tombstone-painted-empty", self.wait_surface()["painted"])
+                self.assert_tombstone_search_removed(edited_text, result_selector)
                 self.capture("bob", SCENARIOS[5])
                 self.complete_scenario(ledger, SCENARIOS[5],
                     "alice:delete-confirm", "bob:no-painted-deleted-card-or-search-result")
+                self.press(Keys.ESCAPE)
+                self.wait_js("!document.querySelector('.pt-search-overlay')",
+                             "Bob Search closes before Circle publication", timeout=30)
                 self.circle_scenarios(ledger)
         finally:
             def release() -> None:
@@ -1279,7 +1374,7 @@ class Gate(DeviceSearchGate):
                 self.report.runtime["suiteRuntimeReport"] = ledger.report()
             cleanup_preserving_primary_failure(release, self.report, "Public signed-feed Native")
         runtime_report = ledger.report()
-        validate_suite_runtime_report(runtime_report, RUNTIME_REUSE)
+        validate_suite_runtime_report(runtime_report, expected_contract=RUNTIME_REUSE)
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as artifact:
             json.dump(runtime_report, artifact, sort_keys=True)
             artifact_path = Path(artifact.name)

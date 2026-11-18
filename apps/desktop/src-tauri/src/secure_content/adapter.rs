@@ -82,7 +82,20 @@ impl std::fmt::Display for NativeTransportError {
             formatter,
             "secure content transport failed (status={:?}, code={})",
             self.http_status, self.stable_code
-        )
+        )?;
+        // Preserve the typed Social rejection across string-only command
+        // boundaries without exposing response prose or network error details.
+        if self.http_status.is_some()
+            && self.message.starts_with("SOCIAL_PRIVATE_")
+            && self.message.len() <= 96
+            && self
+                .message
+                .bytes()
+                .all(|byte| byte.is_ascii_uppercase() || byte == b'_')
+        {
+            write!(formatter, ": {}", self.message)?;
+        }
+        Ok(())
     }
 }
 
@@ -202,31 +215,6 @@ impl SecureContentTransport {
             .map_err(|_| invalid_local_request("private Comment submission bytes are malformed"))?;
         self.post_proto_bytes_with_retry_after(
             &format!("/api/v1/social/moments/{post_id}/comments/submit-private"),
-            request_bytes,
-            RetryAfterSemantics::Exact,
-        )
-    }
-
-    pub fn submit_private_poll_vote(
-        &self,
-        post_id: &str,
-        request_bytes: &[u8],
-    ) -> Result<social::VotePrivatePollResponse, NativeTransportError> {
-        let request = social::VotePrivatePollRequest::decode(request_bytes)
-            .map_err(|_| invalid_local_request("private poll request bytes are malformed"))?;
-        if request.encode_to_vec() != request_bytes
-            || request.post_id != post_id
-            || request.command_id.trim().is_empty()
-            || request.actor_signing_key_id.trim().is_empty()
-            || request.actor_device_signature.len() != 64
-            || request.option_set_sha256.len() != 32
-        {
-            return Err(invalid_local_request(
-                "private poll request bytes are not canonical",
-            ));
-        }
-        self.post_proto_bytes_with_retry_after(
-            &format!("/api/v1/social/moments/{post_id}/poll/vote"),
             request_bytes,
             RetryAfterSemantics::Exact,
         )
@@ -1785,6 +1773,7 @@ mod tests {
         let conflict =
             decode_typed_error(409, &conflict_body, None, RequestCommitSemantics::MayCommit);
         assert_eq!(conflict.message, "SOCIAL_PRIVATE_STALE_PLAN");
+        assert!(conflict.to_string().ends_with(": SOCIAL_PRIVATE_STALE_PLAN"));
 
         let read_failure = decode_typed_error(503, &[], None, RequestCommitSemantics::ReadOnly);
         let mutation_failure =
@@ -1795,6 +1784,23 @@ mod tests {
             NativeErrorDisposition::UnknownCommit
         );
         assert_eq!(conflict.disposition, NativeErrorDisposition::Terminal);
+
+        let untrusted_body = error_model::ErrorResponse {
+            code: error_model::ErrorCode::InvalidRequest as i32,
+            message: "private response prose".to_string(),
+            details: [(
+                PRIVATE_CONTENT_CODE_DETAIL.to_string(),
+                "SOCIAL_PRIVATE_INVALID_ARGUMENT\nprivate response prose".to_string(),
+            )]
+            .into(),
+        }
+        .encode_to_vec();
+        let untrusted =
+            decode_typed_error(400, &untrusted_body, None, RequestCommitSemantics::MayCommit);
+        assert!(!untrusted.to_string().contains("private response prose"));
+        assert!(!network_error("private network detail")
+            .to_string()
+            .contains("private network detail"));
 
         let committed = committed_response_error(200, "response body was truncated");
         assert_eq!(committed.http_status, Some(200));

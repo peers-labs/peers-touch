@@ -5,6 +5,9 @@ import { usePrivateMomentsStore } from '../../store/privateMoments';
 import { resolveFederationStationName, useFederationStore } from '../../store/federation';
 import { actorDisplayName } from '../../store/socialProfileProjection';
 import { reconcileMomentsProjection } from '../../runtimes/momentsRuntime';
+import {
+  armCommentRead, clearCommentRead, commentReadFaultStatus, releaseCommentRead,
+} from './commentReadFault';
 
 function requireNativeScope(): void {
   const actorPtid = useSessionStore.getState().currentUser?.actorPtid;
@@ -58,4 +61,55 @@ export async function reconcileFeedProjection() {
   await reconcileMomentsProjection('acceptance-social-feed-stability');
   requireNativeScope();
   return { reconciled: true };
+}
+
+let delayedReconcile: Promise<void> | undefined;
+let delayedReconcileError: unknown;
+let delayedReconcileCompleted = false;
+
+function readScopeIdentity(): string {
+  requireNativeScope();
+  const session = useSessionStore.getState();
+  return JSON.stringify([
+    session.currentUser?.actorPtid, session.sessionEpoch, session.stationPeerId,
+    usePrivateMomentsStore.getState().scope,
+  ]);
+}
+
+/** Start the original Runtime read without blocking the subsequent real UI action. */
+export async function beginCommentReadReconcile(input: { postId: string }) {
+  if (delayedReconcile) throw new Error('moments.acceptance.commentReconcileAlreadyActive');
+  const identity = readScopeIdentity();
+  armCommentRead(input.postId, () => {
+    if (readScopeIdentity() !== identity) {
+      throw new Error('moments.acceptance.commentReadScopeChanged');
+    }
+  });
+  delayedReconcileError = undefined;
+  delayedReconcileCompleted = false;
+  delayedReconcile = reconcileFeedProjection().then(
+    () => { delayedReconcileCompleted = true; },
+    error => { delayedReconcileError = error; },
+  );
+  return commentReadReconcileStatus();
+}
+
+export async function commentReadReconcileStatus() {
+  if (delayedReconcileError) throw delayedReconcileError;
+  return { ...commentReadFaultStatus(), reconciled: delayedReconcileCompleted };
+}
+
+export async function releaseCommentReadReconcile() {
+  releaseCommentRead();
+  await delayedReconcile;
+  return commentReadReconcileStatus();
+}
+
+export async function clearCommentReadReconcile() {
+  clearCommentRead();
+  await delayedReconcile;
+  delayedReconcile = undefined;
+  delayedReconcileError = undefined;
+  delayedReconcileCompleted = false;
+  return { cleared: true };
 }

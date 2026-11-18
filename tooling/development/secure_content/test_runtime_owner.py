@@ -4,6 +4,7 @@ import hashlib
 import io
 import inspect
 import json
+import os
 import re
 import shutil
 import tempfile
@@ -74,6 +75,7 @@ from tooling.development.secure_content.runtime_owner import (
     _continuation_run_id,
     _continuation_services,
     _copy_immutable,
+    _record_social_frame_replay,
     _error_message_with_cleanup,
     _generate_mobile_recovery_phrase,
     _make_client,
@@ -168,6 +170,184 @@ def fixture_payload() -> dict[str, object]:
 
 
 class RuntimeOwnerTest(unittest.TestCase):
+    def test_private_outage_commits_before_stop_and_releases_after_restore(self):
+        events = []
+        commit, epoch, frame = "a" * 40, "b" * 16, "c" * 64
+        stopped = {
+            "stopped": True, "deploymentEnvironment": "receiver",
+            "containerId": "original", "runtimeOwner": "owner", "beforeProcessIds": [11],
+            "sourceCommit": commit, "buildCommit": commit,
+        }
+        def invoke(capability, operation, payload, **options):
+            events.append(operation)
+            if operation == "read-hold":
+                return {"sourceCommit": commit, "runId": epoch, "frameSha256": frame,
+                        "effectCount": 1, "expired": False}
+            if operation == "stop":
+                return stopped
+            if operation == "start":
+                return {**stopped, "restored": True, "afterProcessIds": [22]}
+            return {}
+        def publish():
+            events.append("publish")
+            return {"state": "REMOTE_DELIVERY_PENDING", "transientPostId": "original"}
+        def observe(operation, post):
+            self.assertEqual(post, "original")
+            events.append(operation)
+            if operation == "snapshot":
+                return {"projections": {"social_remote_private_resources": {"rows": 0}}}
+            return {"outboxRows": 1, "outboxState": "retry_wait", "originalFrameSha256": frame}
+        outcome = runtime_owner_module._commit_private_receiver_outage(
+            MagicMock(invoke=invoke), publish=publish, observe=observe,
+            deployment_environment="receiver", source_commit=commit, provisioning_run_id=epoch,
+        )
+        self.assertEqual(events, [
+            "hold", "publish", "outbox", "read-hold", "snapshot", "stop",
+            "publish", "outbox", "publish", "outbox", "start", "release",
+        ])
+        self.assertEqual(outcome["postId"], "original")
+        self.assertEqual(len(outcome["outagePublications"]), 2)
+
+    def test_private_outage_rejects_uncommitted_or_delivered_frame_before_stop(self):
+        for failure_at in ("arm", "commit", "hash", "receiver-row", "expiry"):
+            with self.subTest(failure_at=failure_at):
+                capability = MagicMock()
+                primary = RuntimeError("unknown arm outcome")
+                def invoke(cap, operation, payload, **options):
+                    if operation == "hold" and failure_at == "arm":
+                        raise primary
+                    return {"sourceCommit": "a" * 40, "runId": "b" * 16,
+                            "frameSha256": ("d" if failure_at == "hash" else "c") * 64,
+                            "effectCount": 1, "expired": failure_at == "expiry"}
+                capability.invoke.side_effect = invoke
+                publish = MagicMock(return_value={
+                    "state": "RECIPIENT_KEY_UNAVAILABLE" if failure_at == "commit" else "REMOTE_DELIVERY_PENDING",
+                    "transientPostId": "original",
+                })
+                observe = MagicMock(side_effect=[
+                    {"outboxRows": 1, "outboxState": "pending", "originalFrameSha256": "c" * 64},
+                    {"projections": {"social_remote_private_resources": {
+                        "rows": 1 if failure_at == "receiver-row" else 0,
+                    }}},
+                ])
+                with self.assertRaises((RuntimeOwnerBlocked, RuntimeError)):
+                    runtime_owner_module._commit_private_receiver_outage(
+                        capability, publish=publish, observe=observe,
+                        deployment_environment="receiver", source_commit="a" * 40,
+                        provisioning_run_id="b" * 16,
+                    )
+                operations = [item.args[1] for item in capability.invoke.call_args_list]
+                self.assertNotIn("stop", operations)
+                self.assertEqual(operations[-1], "release")
+
+    def test_private_outage_restores_then_releases_without_masking_retry_failure(self):
+        capability = MagicMock()
+        primary, cleanup_error = RuntimeError("original retry failure"), RuntimeError("release failure")
+        def invoke(cap, operation, payload, **options):
+            if operation == "read-hold":
+                return {"sourceCommit": "a" * 40, "runId": "b" * 16,
+                        "frameSha256": "c" * 64, "effectCount": 1, "expired": False}
+            if operation == "release":
+                raise cleanup_error
+            return {"stopped": True, "restored": True}
+        capability.invoke.side_effect = invoke
+        publish = MagicMock(side_effect=[
+            {"state": "REMOTE_DELIVERY_PENDING", "transientPostId": "original"}, primary,
+        ])
+        observe = MagicMock(side_effect=[
+            {"outboxRows": 1, "outboxState": "pending", "originalFrameSha256": "c" * 64},
+            {"projections": {"social_remote_private_resources": {"rows": 0}}},
+        ])
+        with self.assertRaises(RuntimeError) as raised:
+            runtime_owner_module._commit_private_receiver_outage(
+                capability, publish=publish, observe=observe,
+                deployment_environment="receiver", source_commit="a" * 40,
+                provisioning_run_id="b" * 16,
+            )
+        self.assertIs(raised.exception, primary)
+        self.assertEqual([item.args[1] for item in capability.invoke.call_args_list],
+                         ["hold", "read-hold", "stop", "start", "release"])
+        self.assertTrue(primary.secondary_cleanup_failures)
+
+    def test_receiver_station_restart_requires_original_container_source_and_new_process(self):
+        commit = "a" * 40
+        stopped = {
+            "stopped": True, "deploymentEnvironment": "synthetic-receiver",
+            "containerId": "original-container", "runtimeOwner": "original-owner",
+            "beforeProcessIds": [11], "sourceCommit": commit, "buildCommit": commit,
+        }
+        restored = {
+            **{key: value for key, value in stopped.items() if key != "stopped"},
+            "restored": True, "afterProcessIds": [22],
+        }
+        for drift in (None, "containerId", "runtimeOwner", "sourceCommit",
+                      "buildCommit", "deploymentEnvironment", "beforeProcessIds",
+                      "afterProcessIds", "restored"):
+            with self.subTest(drift=drift):
+                changed = dict(restored)
+                if drift in ("beforeProcessIds", "afterProcessIds"):
+                    changed[drift] = [33] if drift == "beforeProcessIds" else [11]
+                elif drift == "restored":
+                    changed[drift] = False
+                elif drift:
+                    changed[drift] = "foreign"
+                capability = MagicMock()
+                capability.invoke.side_effect = [dict(stopped), changed]
+                if drift:
+                    with self.assertRaises(RuntimeOwnerBlocked):
+                        runtime_owner_module.restart_social_receiver_station(
+                            capability, deployment_environment="synthetic-receiver",
+                            source_commit=commit,
+                        )
+                else:
+                    self.assertEqual(
+                        runtime_owner_module.restart_social_receiver_station(
+                            capability, deployment_environment="synthetic-receiver",
+                            source_commit=commit,
+                        ),
+                        {"stop": stopped, "start": restored},
+                    )
+                self.assertEqual(
+                    capability.invoke.call_args_list,
+                    [call("mobile.station-outage", operation, {}, timeout_seconds=720.0)
+                     for operation in ("stop", "start")],
+                )
+
+    def test_receiver_station_restart_preserves_original_restoration_failure(self):
+        capability = MagicMock()
+        failure = RuntimeError("original restoration failure")
+        capability.invoke.side_effect = [{"stopped": True}, failure]
+        with self.assertRaises(RuntimeError) as raised:
+            runtime_owner_module.restart_social_receiver_station(
+                capability, deployment_environment="synthetic-receiver",
+                source_commit="a" * 40,
+            )
+        self.assertIs(raised.exception, failure)
+        self.assertEqual([item.args[1] for item in capability.invoke.call_args_list],
+                         ["stop", "start"])
+
+    def test_receiver_outage_restores_after_publication_failure_and_retains_primary_error(self):
+        for restoration_fails in (False, True):
+            with self.subTest(restoration_fails=restoration_fails):
+                capability = MagicMock()
+                primary = RuntimeError("original publication failure")
+                secondary = RuntimeError("original restoration failure")
+                capability.invoke.side_effect = [
+                    {"stopped": True}, secondary if restoration_fails else {"restored": True},
+                ]
+                action = MagicMock(side_effect=primary)
+                with self.assertRaises(RuntimeError) as raised:
+                    runtime_owner_module.restart_social_receiver_station(
+                        capability, deployment_environment="synthetic-receiver",
+                        source_commit="a" * 40, during_outage=action,
+                    )
+                self.assertIs(raised.exception, primary)
+                action.assert_called_once_with({"stopped": True})
+                self.assertEqual([item.args[1] for item in capability.invoke.call_args_list],
+                                 ["stop", "start"])
+                if restoration_fails:
+                    self.assertTrue(primary.secondary_cleanup_failures)
+
     def test_native_invoke_reports_privacy_safe_app_error(self) -> None:
         client = MagicMock()
         client.driver.execute_async_script.return_value = {
@@ -2996,6 +3176,9 @@ class RuntimeOwnerTest(unittest.TestCase):
                     "station-five-arm-peer",
                 ]
             },
+            {"blockedByViewer": True, "revision": 7},
+            {"state": "UNBLOCKED"},
+            {"blockedByViewer": False, "revision": 8},
             {"requestId": "friend-request-1"},
             {"accepted": True},
         )
@@ -3014,6 +3197,9 @@ class RuntimeOwnerTest(unittest.TestCase):
                     "station-five-arm-peer",
                 ]
             },
+            {"blockedByViewer": True, "revision": 13},
+            {"state": "UNBLOCKED"},
+            {"blockedByViewer": False, "revision": 14},
             {"accepted": True, "requestId": "friend-request-1"},
             {"accepted": True},
         )
@@ -3062,6 +3248,23 @@ class RuntimeOwnerTest(unittest.TestCase):
             ),
             alice.harness.call_args_list,
         )
+        for client, target, station, revision in (
+            (alice, "ptid:bob", "station-five-arm-peer", 7),
+            (bob, "ptid:alice", "station-four-peer", 13),
+        ):
+            unblock = call("unblockActor", {
+                "actorPtid": target,
+                "homeStationPeerId": station,
+                "observedRevision": revision,
+            }, timeout=120)
+            self.assertIn(unblock, client.harness.call_args_list)
+            self.assertLess(
+                client.harness.call_args_list.index(unblock),
+                next(
+                    index for index, invocation in enumerate(client.harness.call_args_list)
+                    if invocation.args[0] in {"sendFriendRequest", "acceptFriendRequest"}
+                ),
+            )
         self.assertFalse(
             any(
                 invocation.args[0] in {
@@ -3072,7 +3275,112 @@ class RuntimeOwnerTest(unittest.TestCase):
             )
         )
 
-    def test_social_suite_archives_owner_federation_when_join_fails(self) -> None:
+    def test_social_unblocked_baseline_rejects_invalid_or_unconverged_status(self) -> None:
+        for statuses in (
+            ({"blockedByViewer": "false", "revision": 1},),
+            ({"blockedByViewer": False, "revision": True},),
+            ({"blockedByViewer": False, "revision": -1},),
+            ({"blockedByViewer": False, "revision": 2**53},),
+            (
+                {"blockedByViewer": True, "revision": 4},
+                {"state": "UNBLOCKED"},
+                {"blockedByViewer": True, "revision": 5},
+            ),
+        ):
+            with self.subTest(statuses=statuses):
+                client = MagicMock(harness_namespace="moments")
+                client.harness.side_effect = statuses
+                with self.assertRaises(RuntimeOwnerBlocked) as raised:
+                    runtime_owner_module._ensure_social_actor_unblocked(
+                        client, actor_ptid="ptid:bob",
+                        home_station_peer_id="station-bob",
+                    )
+                self.assertEqual("FIXTURE_OWNER_UNAVAILABLE", raised.exception.code)
+                self.assertEqual("fixture:cross-station-social-block", raised.exception.resource)
+
+    def test_social_unblocked_baseline_does_not_mutate_ready_relationship(self) -> None:
+        client = MagicMock(harness_namespace="moments")
+        client.harness.return_value = {"blockedByViewer": False, "revision": 3}
+        runtime_owner_module._ensure_social_actor_unblocked(
+            client, actor_ptid="ptid:bob", home_station_peer_id="station-bob",
+        )
+        client.harness.assert_called_once_with(
+            "relationshipStatus", {"actorPtid": "ptid:bob"}, timeout=120,
+        )
+
+    def test_temporary_social_block_restores_before_logout_on_every_exit(self) -> None:
+        for failure_stage in (None, "block", "assertion"):
+            with self.subTest(failure_stage=failure_stage):
+                client = MagicMock(harness_namespace="moments")
+                state = {"blockedByViewer": False, "revision": 3}
+                events = []
+
+                def harness(action, payload, **_kwargs):
+                    events.append(action)
+                    if action == "relationshipStatus":
+                        return dict(state)
+                    if action == "blockActor":
+                        state.update(blockedByViewer=True, revision=4)
+                        if failure_stage == "block":
+                            raise RunnerError("lost block response")
+                        return {"state": "BLOCKED"}
+                    if action == "unblockActor":
+                        self.assertEqual(4, payload["observedRevision"])
+                        state.update(blockedByViewer=False, revision=5)
+                        return {"state": "UNBLOCKED"}
+                    if action == "clearLocalState":
+                        self.assertFalse(state["blockedByViewer"])
+                        return {}
+                    self.fail(f"unexpected action {action}")
+
+                client.harness.side_effect = harness
+
+                def run():
+                    with _runtime_cleanup_scope(ExitStack()) as cleanup:
+                        cleanup.callback(client.harness, "clearLocalState", {})
+                        with runtime_owner_module._temporary_social_actor_block(
+                            client, actor_ptid="ptid:bob",
+                            home_station_peer_id="station-bob",
+                        ):
+                            self.assertTrue(state["blockedByViewer"])
+                            if failure_stage == "assertion":
+                                raise RunnerError("receiver denial failed")
+
+                if failure_stage:
+                    with self.assertRaises(
+                        RuntimeOwnerBlocked if failure_stage == "block" else RunnerError,
+                    ):
+                        run()
+                else:
+                    run()
+                self.assertFalse(state["blockedByViewer"])
+                self.assertLess(events.index("unblockActor"), events.index("clearLocalState"))
+                self.assertEqual(1, events.count("unblockActor"))
+
+    def test_social_block_cleanup_failure_keeps_original_assertion_failure(self) -> None:
+        client = MagicMock(harness_namespace="moments")
+        client.harness.side_effect = (
+            {"blockedByViewer": False, "revision": 3},
+            {"state": "BLOCKED"},
+            {"blockedByViewer": True, "revision": 4},
+            RunnerError("unblock transport failed"),
+        )
+        with self.assertRaisesRegex(RunnerError, "receiver denial failed") as raised:
+            with runtime_owner_module._temporary_social_actor_block(
+                client, actor_ptid="ptid:bob", home_station_peer_id="station-bob",
+            ):
+                raise RunnerError("receiver denial failed")
+        self.assertIn(
+            "unblock transport failed",
+            _error_message_with_cleanup(raised.exception),
+        )
+
+    def test_social_suite_seeds_canonical_federation_in_both_stations(self) -> None:
+        expected_federation = (
+            runtime_owner_module.fixture_federation_id_from_station_ids(
+                ("primary-peer", "secondary-peer"),
+            )
+        )
         with (
             patch.object(
                 runtime_owner_module,
@@ -3084,17 +3392,16 @@ class RuntimeOwnerTest(unittest.TestCase):
             ) as login,
             patch.object(
                 runtime_owner_module,
-                "_station_proto_post",
-                side_effect=(
-                    _proto_bytes(1, "suite-federation"),
-                    _proto_bytes(1, "pending"),
-                    _proto_uint(1, 1),
-                ),
-            ) as post,
-            self.assertRaises(RuntimeOwnerBlocked),
+                "seed_federation_context",
+                side_effect=(expected_federation, expected_federation),
+            ) as seed,
+            patch.object(
+                runtime_owner_module,
+                "purge_federation_context",
+            ) as purge,
             ExitStack() as cleanup,
         ):
-            runtime_owner_module._prepare_social_suite_federation(
+            federation_id = runtime_owner_module._prepare_social_suite_federation(
                 primary_url="http://primary-transport",
                 secondary_url="http://secondary-transport",
                 primary_peer_id="primary-peer",
@@ -3103,23 +3410,60 @@ class RuntimeOwnerTest(unittest.TestCase):
                 fixture_epoch="fixture-epoch",
                 cleanup_stack=cleanup,
             )
+            self.assertEqual(
+                "station-fedlab-a,station-fedlab-b",
+                os.environ[
+                    runtime_owner_module.RESET_ENVIRONMENTS_AUTHORIZATION_ENV
+                ],
+            )
 
+        self.assertEqual(expected_federation, federation_id)
         self.assertEqual(2, login.call_count)
         self.assertTrue(all(
             item.kwargs["account"] == runtime_owner_module.ACTOR_ACCOUNTS["alice"]
             for item in login.call_args_list
         ))
-        self.assertEqual(3, post.call_count)
-        self.assertIn(
-            (1, 2, b"https://primary-product"),
-            list(_proto_fields(post.call_args_list[1].args[1])),
+        self.assertEqual(2, seed.call_count)
+        self.assertEqual(
+            ["http://primary-transport", "http://secondary-transport"],
+            [item.args[0] for item in seed.call_args_list],
         )
         self.assertEqual(
-            "primary-owner-access",
-            post.call_args_list[2].kwargs["bearer_token"],
+            [
+                "station-fedlab-a",
+                "station-fedlab-b",
+            ],
+            [item.args[1] for item in seed.call_args_list],
         )
-        self.assertTrue(post.call_args_list[2].args[0].endswith(
-            "/suite-federation/delete",
+        self.assertEqual(
+            ["primary-peer", "secondary-peer"],
+            [item.args[2] for item in seed.call_args_list],
+        )
+        seeded_members = seed.call_args_list[0].args[3]
+        self.assertEqual(
+            ["primary-peer", "secondary-peer"],
+            [member.home_station_peer_id for member in seeded_members],
+        )
+        self.assertEqual(
+            ["primary-transport", "secondary-transport"],
+            [member.home_station_domain for member in seeded_members],
+        )
+        cleanup.close()
+        self.assertNotIn(
+            runtime_owner_module.RESET_ENVIRONMENTS_AUTHORIZATION_ENV,
+            os.environ,
+        )
+        purge.assert_has_calls((
+            call(
+                "http://primary-transport",
+                expected_federation,
+                "station-fedlab-a",
+            ),
+            call(
+                "http://secondary-transport",
+                expected_federation,
+                "station-fedlab-b",
+            ),
         ))
 
     def test_cross_station_fixture_maps_routing_failure_without_identity_leak(
@@ -4684,6 +5028,48 @@ class RuntimeOwnerTest(unittest.TestCase):
             self.assertEqual(0o600, target.stat().st_mode & 0o777)
             with self.assertRaises(FileExistsError):
                 _copy_immutable(source, target)
+
+    def test_social_frame_replay_retains_failed_original_observations(self) -> None:
+        before = {"sourceCommit": COMMIT, "runId": "original-suite",
+                  "projections": {"resource": {"rows": 1, "sha256": "a" * 64}}}
+        valid_response = {"disposition": 4, "errorCode": 2}
+        changed_digest = {**before, "projections": {
+            "resource": {"rows": 1, "sha256": "b" * 64}}}
+        changed_count = {**before, "projections": {
+            "resource": {"rows": 2, "sha256": "a" * 64}}}
+        for response, after in (
+            ({"disposition": 4, "errorCode": 8}, before),
+            (valid_response, changed_digest),
+            (valid_response, changed_count),
+        ):
+            with self.subTest(response=response, after=after), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "AS24" / "frame-untrusted-station.json"
+                with self.assertRaisesRegex(RuntimeOwnerBlocked, "AS24 untrusted-station"):
+                    _record_social_frame_replay(
+                        path, "untrusted-station", before, response, after, (4, 2),
+                    )
+                observed = json.loads(path.read_text())
+                self.assertEqual(observed["before"], before)
+                self.assertEqual(observed["response"], response)
+                self.assertEqual(observed["after"], after)
+                self.assertEqual(observed["expectedResult"], valid_response)
+                self.assertEqual(0o600, path.stat().st_mode & 0o777)
+                with self.assertRaises(FileExistsError):
+                    _record_social_frame_replay(
+                        path, "untrusted-station", before, valid_response, before, (4, 2),
+                    )
+                self.assertEqual(json.loads(path.read_text()), observed)
+
+    def test_social_frame_replay_requires_exact_result_and_unchanged_rows(self) -> None:
+        snapshot = {"projections": {"resource": {"rows": 1, "sha256": "a" * 64}}}
+        response = {"disposition": 4, "errorCode": 2}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "frame-untrusted-station.json"
+            observed = _record_social_frame_replay(
+                path, "untrusted-station", snapshot, response, snapshot, (4, 2),
+            )
+            self.assertEqual(observed, json.loads(path.read_text()))
+            self.assertEqual(observed["response"], response)
 
     def test_continuation_evidence_is_staged_in_child_result_directory(
         self,

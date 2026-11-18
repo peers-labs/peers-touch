@@ -834,7 +834,6 @@ func (s *PrivateContentService) projectPrivateComment(
 		attestation,
 		mentionRouting,
 		nil,
-		nil,
 	)
 	if s.localStationPeerID != "" &&
 		read.AuthorHomeStationPeerID != "" &&

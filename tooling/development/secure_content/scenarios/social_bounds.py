@@ -24,7 +24,6 @@ EXPECTED_CLIENTS = (
 )
 EXPECTED_BUDGET_SECONDS = 1200
 MAX_OBJECTS = 10
-MAX_POLL_OPTIONS = 20
 
 
 def _require(condition: bool, message: str) -> None:
@@ -208,65 +207,6 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
             label="object over-limit",
         )
 
-        poll_options = [
-            f"Option {index + 1}"
-            for index in range(MAX_POLL_OPTIONS)
-        ]
-        poll_post_id = _publish(
-            alice,
-            {
-                "draftId": "w8-bounds-poll-at-limit",
-                "revision": 1,
-                "text": "secure-content-w8-bounds-poll",
-                "audienceKind": "FRIENDS",
-                "momentKind": "POLL",
-                "poll": {
-                    "question": "Choose bounded options",
-                    "options": poll_options,
-                    "minChoices": 1,
-                    "maxChoices": MAX_POLL_OPTIONS,
-                    "expiresAtSeconds": int(time.time()) + 3600,
-                },
-            },
-            label="poll at-limit",
-        )
-        poll_projection = _mapping(
-            bob.call(
-                "readPrivateMoment",
-                {"postId": poll_post_id},
-            ),
-            "poll at-limit receiver projection",
-        )
-        poll = _mapping(
-            poll_projection.get("subtypeEvidence"),
-            "poll at-limit evidence",
-        )
-        _require(
-            poll_projection.get("state") == "CONTENT_READY"
-            and poll.get("optionLabelSha256")
-            == [_sha256(option) for option in poll_options]
-            and poll.get("maxChoices") == MAX_POLL_OPTIONS,
-            "social-bounds twenty-option Poll projection differs",
-        )
-        _assert_rejected(
-            alice,
-            {
-                "draftId": "w8-bounds-poll-over-limit",
-                "revision": 1,
-                "text": "secure-content-w8-bounds-poll-over",
-                "audienceKind": "FRIENDS",
-                "momentKind": "POLL",
-                "poll": {
-                    "question": "Choose too many options",
-                    "options": [*poll_options, "Option 21"],
-                    "minChoices": 1,
-                    "maxChoices": MAX_POLL_OPTIONS + 1,
-                    "expiresAtSeconds": int(time.time()) + 3600,
-                },
-            },
-            label="poll over-limit",
-        )
-
         for client in (alice, bob, eve):
             client.call("clearLocalState")
 
@@ -274,8 +214,6 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
         "runtimeBounds": {
             "objectCountAccepted": MAX_OBJECTS,
             "objectCountRejected": MAX_OBJECTS + 1,
-            "pollOptionCountAccepted": MAX_POLL_OPTIONS,
-            "pollOptionCountRejected": MAX_POLL_OPTIONS + 1,
         },
         "recipientTruncationObserved": False,
         "partialCommitObserved": False,

@@ -223,12 +223,89 @@ live schema and Station identity, then inventories unchanged schema/reset/journa
 bytes with the explicit logical role-to-physical Profile mapping. Preparation
 epoch and Evidence Run ID are distinct identities and are bound independently.
 
+The private and public Native Suites both compose the declared shared Relay
+through `SocialRelayFixture`. Relay equipment precedes retained service/source
+leases; both Stations join through `RelayAttachmentFixture` after private schema
+verification. The parent inventories the attested Relay, both unchanged Station
+identities and active route generations before actor resolution or client launch.
+DHT locator publication alone does not establish this profile/content route.
+The private Suite does not acquire the public opaque-capture capability. New
+attachments, invitations and CA additions retain the original owner's cleanup;
+existing active operator attachments are reused without replacement.
+
 `PreparedSocialNativeRuntime` delegates binary, ports, Station discovery, storage
 and process ownership to the prepared Native binding. Authentication uses the
 original Foundation Harness; logout and stop use `NativeClientLifecycleLedger`.
 Alice and Bob launch once, Eve is fixture-only, and fresh-storage Bob2 replaces
 Bob. The Suite retains one preparation, three launches and at most two Native
 windows; no scenario rebuilds or redeploys.
+
+AS18 uses the original follow, Circle and Conversation owners to publish the
+`FOLLOWERS`, `CIRCLE`, `GROUP`, `CUSTOM_ALLOW` and `CUSTOM_DENY(FOLLOWERS)` matrix.
+Each resource is read through Alice's local author path and Bob's remote receiver
+path; Conversation membership is observed before publication. The Native
+unsupported-PUBLIC-base probe retains the existing prepare and local-durable-row
+rejection counters. These actions do not by themselves prove the separate
+cross-Federation, unresolved-recipient or per-slot deduplication obligations.
+
+AS21 admits and commits the exact retained text draft while the receiver is
+online, preserving CSS-D10's authoritative PreKey revalidation before commit.
+The explicitly opt-in `social_acceptance` receiver returns a standard retryable
+result for one parent-bound private Post frame under a source/run/Profile/
+Station/actor-bound lease of at most 90 seconds. The parent proves one original
+pending outbox, the held frame's exact wire hash, and zero receiver resource rows
+before stopping that same receiver container. Two publication retries during
+the genuine outage must retain the original Post and frame. After fail-safe
+restoration and hold release, the unchanged domain receiver validates and
+persists that frame; the durable command settles before receiver readback and
+renderer-reload checks. Release is retained before arming and runs on failure.
+Ordinary builds have no controller or control-file reader; invalidations always
+delegate unchanged. The two rule schemas share only their bounded, same-euid,
+no-follow, flock-protected atomic file owner.
+
+The Suite-owned `social-private-delivery` capability installs a digest-bound
+probe once in each existing PostgreSQL container. AS21 observes one original
+outbox frame during both pending attempts, then the same delivered frame and
+one actual receiver resource row. The probe reads credentials and the existing
+Station key inside the container; it cannot create, rotate or export Station keys.
+Its standalone replay composition installs the unchanged canonical
+`federation.RegisterPeerScopes` policies before constructing the production
+HTTP transport. Conflicting registrations fail closed. The delivery source
+Gate exercises real HTTP token minting from a fresh registry, immutable frame
+transmission and repeated initialization after registry sealing.
+
+AS24 sends the original duplicate plus signed late, expired, hash-conflicted,
+untrusted-signature, wrong-Station and wrong-actor frames through the original
+Federation HTTP transport and `/federation/delivery`. Each exact typed result
+is compared with before/after hashes and counts of the addressed resource,
+envelope and tombstone rows. The untrusted-signature fixture retains the real
+source identity, signing key ID and valid outer peer authentication, but signs
+the inner frame with a fresh in-memory Ed25519 key. That adversarial key is
+never registered, persisted or exported and is cleared immediately after
+signing. The delivery source Gate verifies both successful outer authentication
+and rejected inner signature. Each original replay observation is persisted
+immutably in the owner-private AS24 directory before its assertion, including
+failed responses; this does not publish a partial Scenario result.
+A late original delivery after the genuine AS22
+deletion must remain denied; valid target content is reacquired and observed
+on Bob2. These observations remain unproven until the source-bound Suite passes.
+
+AS23 restarts the receiver Station before replacing Bob. The prepared parent
+binds the existing `mobile.station-outage` capability to Bob's exact
+source-attested deployment; the shared handler retains Profile authorization,
+container identity, stop/start and fail-safe restoration. This does not allocate
+a Mobile runtime. The original producer requires unchanged source and container
+with different process IDs, then records both operations in AS23 evidence
+before the empty-device recovery and painted comment readback. A failed restart
+or restoration prevents Suite publication. AS21 outbox and AS24 frame
+observations use the same prepared parent and require its successful cleanup.
+
+Before friendship preparation, the original Suite Fixture owner verifies that
+Alice and Bob do not directionally block each other, restoring retained test
+blocks through the existing revision-bound Social command and reading back both
+projections. The poll-denial scenario restores its block before authenticated
+client cleanup on every exit. A failed restore prevents successful publication
+of the Suite result and preserves any primary scenario failure.
 
 `social-private-desktop-e2e` and `social-cross-station-desktop-functional` declare
 the producer dependency in the execution graph. Consumers require the original

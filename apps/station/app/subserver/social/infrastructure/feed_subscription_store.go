@@ -21,6 +21,11 @@ func (s *FeedLogStore) SetSubscriptionTx(ctx context.Context, tx *gorm.DB,
 	if author == "" || subscriber == "" || author == subscriber || authorStation == "" || subscriberStation == "" {
 		return nil, false, domain.ErrFeedInvalid
 	}
+	// Share the original audience fence with prepare/submit and local follow
+	// mutations. Acquire it before the subscription row lock on both Stations.
+	if err := lockSocialRelationshipAuthority(tx.WithContext(ctx), author); err != nil {
+		return nil, false, err
+	}
 	if err := tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&key).Error; err != nil {
 		return nil, false, err
 	}

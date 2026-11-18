@@ -10,6 +10,7 @@ import (
 	"errors"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
@@ -255,8 +256,31 @@ func TestFeedFederatedReadBindsRequesterHomeAndCanonicalIntent(t *testing.T) {
 	}
 }
 
+type feedRepairObservationFixture struct {
+	actor, source          string
+	after, verified        uint64
+	events, threads, bytes int
+	applied                bool
+	calls                  int
+}
+
+func (*feedRepairObservationFixture) DropNotification(string, string, uint64, string, time.Time) bool {
+	return false
+}
+
+func (o *feedRepairObservationFixture) ObserveRepair(actor, source string,
+	after, verified uint64, events, threads, responseBytes int, applied bool, _ time.Time,
+) {
+	o.actor, o.source, o.after, o.verified = actor, source, after, verified
+	o.events, o.threads, o.bytes, o.applied = events, threads, responseBytes, applied
+	o.calls++
+}
+
 func TestFeedExplicitReadRetainsBoundedPrefixAndRechecksExposure(t *testing.T) {
-	for _, scenario := range []string{"continuation", "offline-after-import", "block-during-pull"} {
+	for _, scenario := range []string{
+		"continuation", "offline-after-import", "block-during-pull",
+		"already-imported", "invalid-signature", "oversized-response",
+	} {
 		t.Run(scenario, func(t *testing.T) {
 			s, database, identity, submit := feedServiceFixture(t)
 			ctx := context.Background()
@@ -288,6 +312,20 @@ func TestFeedExplicitReadRetainsBoundedPrefixAndRechecksExposure(t *testing.T) {
 				Head: &model.FeedHead{ActorPtid: author, ChainId: domain.PublicFeedChainID,
 					Sequence: event.Statement.Sequence, EventHash: hash},
 			}
+			if scenario == "already-imported" {
+				if err := s.Import(ctx, author, "station-a", source.Bundle); err != nil {
+					t.Fatal(err)
+				}
+				source.Bundle.Events = nil
+			}
+			if scenario == "invalid-signature" {
+				source.Bundle.Events[0].DeviceSignature[0] ^= 1
+			}
+			if scenario == "oversized-response" {
+				for len(source.Bundle.Events) <= 32 {
+					source.Bundle.Events = append(source.Bundle.Events, proto.Clone(event).(*model.FeedEvent))
+				}
+			}
 			if scenario == "continuation" {
 				source.Head.Sequence++
 				source.Head.EventHash = bytes.Repeat([]byte{7}, 32)
@@ -302,8 +340,11 @@ func TestFeedExplicitReadRetainsBoundedPrefixAndRechecksExposure(t *testing.T) {
 					request.Limit != 32 || !request.IncludeThread || request.AfterThreadCursor != 0 {
 					t.Fatalf("foreground read lost its authenticated bounded binding: %+v", request)
 				}
-				if calls == 1 && request.AfterSequence != 0 {
+				if calls == 1 && request.AfterSequence != 0 && scenario != "already-imported" {
 					t.Fatal("pull did not start at the replica checkpoint")
+				}
+				if scenario == "already-imported" && request.AfterSequence != event.Statement.Sequence {
+					t.Fatal("read lost its already verified prefix")
 				}
 				if calls > 1 {
 					if request.AfterSequence != event.Statement.Sequence {
@@ -326,7 +367,26 @@ func TestFeedExplicitReadRetainsBoundedPrefixAndRechecksExposure(t *testing.T) {
 			}
 			read := &model.ReadFeedRequest{ActorPtid: author, ChainId: domain.PublicFeedChainID,
 				Limit: 64, IncludeThread: true}
+			observation := &feedRepairObservationFixture{}
+			s.SetFederationObservation(observation)
 			response, err := s.ReadForViewer(ctx, viewer, read)
+			if scenario == "invalid-signature" || scenario == "oversized-response" {
+				if err == nil || response != nil || observation.calls != 0 {
+					t.Fatalf("rejected pull claimed verified repair: %v %v %+v", response, err, observation)
+				}
+				return
+			}
+			expectedEvents := len(source.Bundle.Events)
+			expectedAfter := uint64(0)
+			if scenario == "already-imported" {
+				expectedAfter = event.Statement.Sequence
+			}
+			if observation.calls != 1 || observation.actor != author || observation.source != "station-a" ||
+				observation.after != expectedAfter || observation.verified != event.Statement.Sequence ||
+				observation.events != expectedEvents || observation.threads != 0 ||
+				observation.bytes != proto.Size(source) || !observation.applied {
+				t.Fatalf("foreground verified import was not observed: %+v", observation)
+			}
 			if scenario == "block-during-pull" {
 				if !errors.Is(err, domain.ErrFeedWriter) || response != nil {
 					t.Fatalf("read exposed bytes after block: %v %v", response, err)
@@ -355,6 +415,9 @@ func TestFeedExplicitReadRetainsBoundedPrefixAndRechecksExposure(t *testing.T) {
 			response, err = s.ReadForViewer(ctx, viewer, read)
 			if !errors.Is(err, offline) || response != nil {
 				t.Fatalf("offline foreground read downgraded to cached success: %v %v", response, err)
+			}
+			if observation.calls != 1 {
+				t.Fatal("offline pull claimed another verified repair")
 			}
 		})
 	}

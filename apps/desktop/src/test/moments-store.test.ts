@@ -55,7 +55,7 @@ import {
   selectPrivateCommentThread,
   usePrivateCommentsStore,
 } from '../store/privateComments';
-import { normalizePrivateMomentProjection, privateMomentsNative } from '../services/privateMomentsNative';
+import { normalizePrivateMomentProjection } from '../services/privateMomentsNative';
 import { useRelationshipsStore } from '../store/relationships';
 import { useSessionStore } from '../store/session';
 import { EVENT, eventBus } from '../kernel/events';
@@ -189,7 +189,7 @@ afterEach(() => {
 });
 
 describe('Desktop Search no-store page continuity', () => {
-  function searchFixture() {
+  function searchFixture(remoteOwner = false) {
     useSessionStore.setState({
       authenticated: true, currentUser: { actorPtid: 'alice' } as never, sessionEpoch: 1,
     });
@@ -231,14 +231,15 @@ describe('Desktop Search no-store page continuity', () => {
             authorityNamespace: 'social-private:alice', kind: 'social-comment', id,
             contentRevision: String(traversal), anchor: { kind: 'comment', id },
           },
-          readValidity: { readScope: 'alice', policyRevision: readRevision },
+          readValidity: { readScope: 'alice', policyRevision: readRevision, ownerCheckRequired: remoteOwner },
         })),
       });
     });
     invokeMock.mockImplementation(async (cmd, args) => {
       if (cmd === 'frontend_log' || cmd === 'search_cancel') return undefined;
       if (cmd === 'search_read_state') {
-        return bytesOk(SearchReadStateSchema, { partition: 'alice', sources: sourcesView() });
+        return bytesOk(SearchReadStateSchema, { partition: 'alice', sources: sourcesView().map(source =>
+          remoteOwner ? { ...source, sourceRevision: '', policyRevision: '' } : source) });
       }
       if (cmd === 'search_submit') {
         return submit(fromBinary(SubmitRequestSchema, Uint8Array.from(
@@ -266,6 +267,31 @@ describe('Desktop Search no-store page continuity', () => {
   async function settle() {
     await vi.waitFor(() => expect(useSearchStore.getState().status).toBe('ready'));
   }
+
+  it('reacquires an invalidated remote no-store result even without an owner revision change', async () => {
+    const { submit, changePages } = searchFixture(true);
+    changePages([['public-original']]);
+    await runSearchQuery('en');
+    await settle();
+    await reconcileSearchQuery('en');
+    expect(submit).toHaveBeenCalledTimes(1);
+    changePages([[]]);
+    expect(invalidateSearchSources(['social-public'])).toBe(true);
+    useSearchStore.setState({ status: 'idle' });
+    expect(resultIds()).toEqual([]);
+    await reconcileSearchQuery('en');
+    await settle();
+    expect(submit).toHaveBeenCalledTimes(2);
+    expect(useSearchStore.getState()).toMatchObject({
+      status: 'ready', displayedQuery: 'history',
+      response: { items: [], coverage: [
+        { sourceId: 'social-private', state: SourceState.READY },
+        { sourceId: 'social-public', state: SourceState.READY },
+      ] },
+    });
+    await reconcileSearchQuery('en');
+    expect(submit).toHaveBeenCalledTimes(2);
+  });
 
   it('installs a fresh payload and issued cursor when unchanged row keys are refreshed', async () => {
     const { submit } = searchFixture();
@@ -1103,7 +1129,6 @@ describe('moments store: createPost / deletePost', () => {
     const privateAudience = create(AudienceSchema, {
       kind: Audience_Kind.FRIENDS,
     });
-    const expiresAtSeconds = 4_000_000_000;
     const cases: Array<{
       draftId: string;
       draft: MomentDraft;
@@ -1162,46 +1187,6 @@ describe('moments store: createPost / deletePost', () => {
             url: 'https://example.test/private',
             title: 'Private link',
             description: 'description',
-          },
-        },
-      },
-      {
-        draftId: 'draft-private-poll',
-        draft: {
-          kind: 'poll',
-          text: 'private poll',
-          audience: privateAudience,
-          poll: {
-            question: 'Choose one',
-            options: ['First', 'Second'],
-            minChoices: 1,
-            maxChoices: 1,
-            expiresAtSeconds,
-            durationHours: 1,
-            multipleChoice: false,
-          },
-        },
-        projectionContent: {
-          kind: 'POLL',
-          text: 'private poll',
-          question: 'Choose one',
-          options: ['First', 'Second'],
-          opaque_option_ids: ['11'.repeat(32), '22'.repeat(32)],
-          option_set_sha256: '77'.repeat(32),
-          min_choices: 1,
-          max_choices: 1,
-          expires_at_seconds: expiresAtSeconds,
-        },
-        expectedNative: {
-          moment_kind: 'POLL',
-          text: 'private poll',
-          files: [],
-          poll: {
-            question: 'Choose one',
-            options: ['First', 'Second'],
-            min_choices: 1,
-            max_choices: 1,
-            expires_at_seconds: expiresAtSeconds,
           },
         },
       },
@@ -1632,53 +1617,6 @@ describe('moments store: createPost / deletePost', () => {
 });
 
 describe('private Moments Native projection', () => {
-  it.each(['bootstrap', 'reconcile'] as const)('preserves a committed ballot across a delayed same-session %s', async action => {
-    installEventWindowStub();
-    Object.assign(window, { __TAURI_INTERNALS__: {} });
-    const wire = {
-      post_id: 'poll', content_id: 'poll', generation: '8', author_ptid: 'ptid:author',
-      audience_kind: 'FRIENDS', state: 'CONTENT_READY',
-      content: {
-        kind: 'POLL', text: '', question: 'Choose', options: ['First', 'Second'],
-        opaque_option_ids: ['1'.repeat(64), '2'.repeat(64)], option_set_sha256: '3'.repeat(64),
-        min_choices: 1, max_choices: 1, expires_at_seconds: 4_000_000_000,
-        result: { vote_counts: ['0', '0'], selected_options: [], voter_count: '0',
-          projection_revision: '10', command_id: '', vote_actor_ptid: '' },
-      },
-    };
-    usePrivateMomentsStore.getState().activateActor('ptid:viewer', 5);
-    usePrivateMomentsStore.setState({
-      scope: { actorPtid: 'ptid:viewer', rendererGeneration: 5, nativeSessionGeneration: '9' },
-      postsById: { poll: normalizePrivateMomentProjection(wire) },
-    });
-    let complete!: (value: ReturnType<typeof statusOk>) => void;
-    enqueue(action === 'bootstrap' ? 'social_private_moments_bootstrap' : 'social_private_moments_reconcile',
-      new Promise(resolve => { complete = resolve; }));
-    const pending = action === 'bootstrap' ? usePrivateMomentsStore.getState().bootstrap(5)
-      : usePrivateMomentsStore.getState().reconcile(['poll'], 'late-read', 5);
-    const committed = {
-      voteCounts: ['0', '1'], selectedOptions: [1], voterCount: '1',
-      projectionRevision: '11', commandId: 'ballot', voteActorPtid: 'ptid:viewer',
-    };
-    vi.spyOn(privateMomentsNative, 'votePoll').mockResolvedValueOnce({
-      command: { commandId: 'ballot', postId: 'poll', commentId: '', kind: ReactionKind.REACTION_UNSPECIFIED,
-        operation: 'VOTE_POLL', selectedOpaqueOptionIds: ['2'.repeat(64)],
-        state: 'REACTION_COMMITTED', attemptCount: 1, projectionRevision: '11' },
-      reactions: [], projectionRevision: '11', exactReplay: false, poll: committed,
-    });
-    await usePrivateMomentsStore.getState().votePoll('poll', [1]);
-    complete(statusOk({ actor_ptid: 'ptid:viewer', device_id: 'device', session_generation: '9',
-      projections: [wire], reaction_commands: [] }));
-    await pending;
-    expect(usePrivateMomentsStore.getState().postsById.poll.content).toMatchObject({ result: committed });
-    expect(usePrivateMomentsStore.getState().reactionCommands).toEqual({});
-    enqueue('social_private_moment_read', statusOk({
-      ...wire, state: 'NOT_FOUND_OR_NOT_AUTHORIZED', content: undefined,
-    }));
-    await usePrivateMomentsStore.getState().readMoment('poll');
-    expect(usePrivateMomentsStore.getState().postsById.poll.content).toBeUndefined();
-  });
-
   it('accepts only an opaque window-authorized private media URL', () => {
     const projection = normalizePrivateMomentProjection({
       post_id: 'post-private-media',
@@ -1962,6 +1900,48 @@ describe('private Moments Native projection', () => {
       'private-media://localhost/01ARZ3NDEKTSV4RRFFQ69G5FAV',
     );
   });
+
+  it.each(['bootstrap', 'reconcile'] as const)(
+    'preserves private activation identity across same-session %s',
+    async action => {
+      installEventWindowStub();
+      Object.assign(window, { __TAURI_INTERNALS__: {} });
+      usePrivateMomentsStore.getState().activateActor('ptid:viewer', 5);
+      const snapshot = (generation: string) => statusOk({
+        actor_ptid: 'ptid:viewer',
+        device_id: 'device-1',
+        session_generation: generation,
+        projections: [],
+      });
+      enqueue('social_private_moments_bootstrap', snapshot('9'));
+      await usePrivateMomentsStore.getState().bootstrap(5);
+      const activation = usePrivateMomentsStore.getState().scope;
+
+      enqueue(
+        action === 'bootstrap'
+          ? 'social_private_moments_bootstrap' : 'social_private_moments_reconcile',
+        snapshot('9'),
+      );
+      if (action === 'bootstrap') {
+        await usePrivateMomentsStore.getState().bootstrap(5);
+      } else {
+        await usePrivateMomentsStore.getState().reconcile(['poll'], 'periodic', 5);
+      }
+      expect(usePrivateMomentsStore.getState().scope).toBe(activation);
+
+      enqueue('social_private_moments_bootstrap', snapshot('10'));
+      await usePrivateMomentsStore.getState().bootstrap(5);
+      const advanced = usePrivateMomentsStore.getState().scope;
+      expect(advanced).not.toBe(activation);
+      expect(advanced.nativeSessionGeneration).toBe('10');
+
+      usePrivateMomentsStore.getState().activateActor('ptid:viewer', 5);
+      enqueue('social_private_moments_bootstrap', snapshot('10'));
+      await usePrivateMomentsStore.getState().bootstrap(5);
+      expect(usePrivateMomentsStore.getState().scope).toEqual(advanced);
+      expect(usePrivateMomentsStore.getState().scope).not.toBe(advanced);
+    },
+  );
 
   it('retains the projection reference when a same-generation reconcile is unchanged', async () => {
     installEventWindowStub();

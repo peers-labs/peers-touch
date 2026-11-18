@@ -1,4 +1,7 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, type KeyboardEvent, type MouseEvent } from 'react';
+import {
+  useEffect, useLayoutEffect, useMemo, useRef, useState,
+  type CSSProperties, type KeyboardEvent, type MouseEvent,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/react/shallow';
 import { Popover as PeersPopover } from '@peers-touch/ui';
@@ -43,6 +46,11 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
   const navigating = useRef(false);
   const composing = useRef(false);
   const press = useRef<{ x: number; y: number } | null>(null);
+  const [entering, setEntering] = useState(() => document.visibilityState === 'visible'
+    && !window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const entranceStyle: CSSProperties & { '--pt-search-entrance': string } = {
+    '--pt-search-entrance': entering ? 'pt-search-in 0.16s ease-out' : 'none',
+  };
   const functions = useMemo(() => {
     const query = view.query.normalize('NFKC').trim().toLowerCase();
     return SEARCH_FUNCTIONS.filter(item => !query
@@ -68,6 +76,16 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
   // Enter waits only while the FIND for this exact draft is in flight.
   const awaitingFinal = presentation.isProgressive;
 
+  useLayoutEffect(() => {
+    // WKWebView may suspend an opacity animation when the window goes into
+    // the background. Retire it rather than retain an invisible panel layer.
+    const settleHiddenEntrance = () => {
+      if (document.visibilityState !== 'visible') setEntering(false);
+    };
+    settleHiddenEntrance();
+    document.addEventListener('visibilitychange', settleHiddenEntrance);
+    return () => document.removeEventListener('visibilitychange', settleHiddenEntrance);
+  }, []);
   useEffect(() => {
     inputRef.current?.focus();
     return () => {
@@ -317,7 +335,12 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
   return (
     <div className="pt-search-overlay" role="dialog" aria-modal="true" aria-label={t('search.label')}>
       <div className="pt-search-scrim" onClick={searchActions.close} />
-      <div className="pt-search-panel">
+      <div className="pt-search-panel" style={entranceStyle}
+        onAnimationEnd={event => {
+          if (event.target === event.currentTarget && event.animationName === 'pt-search-in') {
+            setEntering(false);
+          }
+        }}>
       <div className="pt-search-field-area">
         <div className="pt-search-field" data-focus-boundary>
           <Search size={17} aria-hidden="true" />

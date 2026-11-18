@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 from collections.abc import Mapping
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from tooling.acceptance.core._paths import REPO_ROOT
 from tooling.acceptance.core.attestation import (
@@ -20,6 +21,7 @@ from tooling.acceptance.core.attestation import (
 from tooling.acceptance.core.errors import BlockedError
 from tooling.acceptance.core.launch_context import EphemeralGateLaunchContext
 from tooling.acceptance.core.evidence_store import (
+    ArtifactRef,
     current_artifact_ref,
     write_current_artifact,
 )
@@ -52,6 +54,9 @@ from tooling.acceptance.fixtures.chat_reset_targets import (
 from .home_station import HomeStationProvisioner
 from .remote_source_identity import resolve_remote_source_identity
 from .station_equipment import equip_station_profile
+
+if TYPE_CHECKING:
+    from .social_relay import SocialRelayFixture
 
 
 _CROSS_STATION_SOCIAL_GATE_ROLES = {
@@ -610,6 +615,18 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
                     fixture_id=self.fixture_id,
                     friendship_roles=self._friendship_roles(gate_id, roles),
                 )
+                if gate_id == "social-cross-station-native-e2e":
+                    from tooling.acceptance.fixtures.chat_native_reset import (
+                        reset_fixture_follow_edges,
+                    )
+
+                    follow_targets: dict[tuple[str, str], list[str]] = {}
+                    for actor in actor_manifest.actors:
+                        follow_targets.setdefault(
+                            role_targets[actor.role], [],
+                        ).append(actor.ptid)
+                    for (station_url, environment), ptids in follow_targets.items():
+                        reset_fixture_follow_edges(station_url, environment, ptids)
             if gate_id == "federation-two-station-lifecycle-e2e":
                 actor_ref = self._persist_station_keyed_actor_manifest(
                     manifest=actor_manifest,
@@ -729,19 +746,26 @@ class CrossStationSocialNativeProvisioner(
     def _station_equipment_options(
         self, manifest: RuntimeManifest, service_id: str, profile_name: str,
     ) -> dict[str, object]:
-        if manifest.gate_id != "social-public-feed-native-e2e":
+        if manifest.gate_id not in {
+            "social-public-feed-native-e2e", "social-cross-station-native-e2e",
+        }:
             return {}
         receiver = next(client for client in self.contract.clients if client.id == "bob")
         if service_id != receiver.service_bindings["station"].service_id:
             return {}
         # Register before deploying: partial preparation must also restore.
         # Reverse cleanup releases retained source/service leases first.
-        self.register_cleanup(
-            f"social-notification-runtime:{profile_name}",
-            lambda: equip_station_profile(
+        def restore() -> None:
+            if self._social_relay_fixture is not None:
+                self._social_relay_fixture.attachments.assert_attachments_retired()
+            equip_station_profile(
                 profile_name, manifest.source_commit, repo_root=REPO_ROOT,
                 recreate_runtime=True,
-            ),
+            )
+
+        self.register_cleanup(
+            f"social-notification-runtime:{profile_name}",
+            restore,
         )
         return {"social_notification_run_id": manifest.run_id}
 
@@ -753,6 +777,12 @@ class CrossStationSocialNativeProvisioner(
             CAPABILITY_ID, SocialFeedNotificationHandler,
         )
         from tooling.acceptance.fixtures.social_relay_capture import CAPABILITY_ID as CAPTURE_ID
+        if gate_id == "social-cross-station-native-e2e":
+            return self._private_station_outage_context(
+                gate_id=gate_id, evidence_run_id=evidence_run_id,
+                provisioning_run_id=provisioning_run_id,
+                required_capabilities=required_capabilities,
+            )
         if gate_id != "social-public-feed-native-e2e":
             return super().create_gate_launch_context(
                 gate_id=gate_id, evidence_run_id=evidence_run_id,
@@ -792,37 +822,163 @@ class CrossStationSocialNativeProvisioner(
         if self._social_relay_fixture is None:
             raise BlockedError(reason="Public Social has no prepared Relay capture owner",
                                resource=CAPTURE_ID)
-        context.register_capability(CAPTURE_ID, self._social_relay_fixture.capture_handler())
+        context.register_capability(CAPTURE_ID, self._social_relay_fixture.capture_handler(
+            evidence_environment=self.evidence_run.subprocess_environment({}),
+        ))
         return context
+
+    def _private_station_outage_context(
+        self, *, gate_id: str, evidence_run_id: str, provisioning_run_id: str,
+        required_capabilities: tuple[str, ...],
+    ) -> EphemeralGateLaunchContext:
+        from tooling.acceptance.provisioners.mobile_simulator import (
+            MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+            MOBILE_STATION_OUTAGE_CHANNEL_TIMEOUT_SECONDS,
+            MobileStationOutageCapabilityHandler,
+        )
+        from tooling.acceptance.fixtures.social_private_delivery import (
+            CAPABILITY_ID as DELIVERY_CAPABILITY, SocialPrivateDeliveryHandler,
+        )
+        if (
+            required_capabilities != (MOBILE_STATION_OUTAGE_CAPABILITY_ID, DELIVERY_CAPABILITY)
+            or self._manifest is None or not self._manifest.is_ready()
+            or self._manifest.gate_id != gate_id
+            or evidence_run_id != self.evidence_run.run_id
+            or provisioning_run_id != self._manifest.run_id
+            or evidence_run_id == provisioning_run_id
+        ):
+            raise BlockedError(
+                reason="Private Social outage requires its prepared parent and exact run",
+                resource=f"ephemeral-capabilities:{gate_id}",
+            )
+        clients = {client.id: client for client in self._manifest.clients}
+        receiver_id = clients["bob"].service_bindings["station"].service_id
+        sender_id = clients["alice"].service_bindings["station"].service_id
+        receiver = self._manifest.services[receiver_id]
+        if (
+            receiver_id == sender_id or receiver.service_kind != "station"
+            or receiver.live_commit != self._manifest.source_commit
+            or receiver.workspace_digest != "clean"
+            or not receiver.deployment_environment
+        ):
+            raise BlockedError(
+                reason="Private Social outage target is not its source-attested receiver",
+                resource=MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+            )
+        if not isinstance(self._manifest.actor_manifest_ref, dict):
+            raise BlockedError(
+                reason="Private Social delivery requires its prepared Actor manifest",
+                resource=DELIVERY_CAPABILITY,
+            )
+        actor_ref = ArtifactRef.from_dict(self._manifest.actor_manifest_ref)
+        if actor_ref.gate_id != gate_id or actor_ref.run_id != evidence_run_id:
+            raise BlockedError(
+                reason="Private Social delivery Actor reference belongs to another run",
+                resource=DELIVERY_CAPABILITY,
+            )
+        actor_manifest = self.evidence_run.store.read_json(actor_ref)
+        if (
+            actor_manifest.get("artifactKind") != "acceptance-actor-manifest"
+            or actor_manifest.get("environmentId") != self._manifest.environment_id
+            or actor_manifest.get("runId") != provisioning_run_id
+        ):
+            raise BlockedError(
+                reason="Private Social delivery Actor manifest belongs to another run",
+                resource=DELIVERY_CAPABILITY,
+            )
+        actors = {actor["role"]: actor for actor in actor_manifest["actors"]}
+        # Reuse the original exact-container stop/start owner. Its name does
+        # not allocate a Mobile client or simulator.
+        handler = MobileStationOutageCapabilityHandler(
+            deployment_environment=receiver.deployment_environment,
+            expected_commit=self._manifest.source_commit,
+        )
+        context = EphemeralGateLaunchContext(
+            required_capabilities=required_capabilities,
+            request_timeout_seconds=MOBILE_STATION_OUTAGE_CHANNEL_TIMEOUT_SECONDS,
+        )
+        context.register_capability(MOBILE_STATION_OUTAGE_CAPABILITY_ID, handler)
+
+        def restore() -> None:
+            result = handler.close()
+            if not result.closed or not result.secrets_zeroized:
+                raise BlockedError(
+                    reason="Private Social outage cleanup did not restore its receiver",
+                    resource=MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+                )
+
+        self.register_cleanup("private-social-station-outage", restore)
+        source = self._manifest.services[sender_id]
+        delivery_handler = SocialPrivateDeliveryHandler(
+            repo_root=REPO_ROOT, source_commit=self._manifest.source_commit,
+            run_id=provisioning_run_id,
+            source_deployment=load_env_file(resolve_deployment_environment_path(
+                source.deployment_environment, repo_root=REPO_ROOT,
+            )),
+            receiver_deployment=load_env_file(resolve_deployment_environment_path(
+                receiver.deployment_environment, repo_root=REPO_ROOT,
+            )),
+            source_station=source.runtime_identity, receiver_station=receiver.runtime_identity,
+            receiver_origin=receiver.endpoint,
+            receiver_actor=actors["bob"]["ptid"], outsider_actor=actors["eve"]["ptid"],
+            receiver_profile=self._required_station_profiles()[receiver_id],
+        )
+
+        def clear_delivery() -> None:
+            # The control file belongs to the original receiver container.
+            # Restore an interrupted outage before attempting its removal.
+            restore()
+            result = delivery_handler.close()
+            if not result.closed or not result.secrets_zeroized:
+                raise BlockedError(
+                    reason="Private Social delivery fixture cleanup failed",
+                    resource=DELIVERY_CAPABILITY,
+                )
+
+        self.register_cleanup("private-social-delivery-probe", clear_delivery)
+        delivery_handler.prepare()
+        context.register_capability(DELIVERY_CAPABILITY, delivery_handler)
+        return context
+
+    def _equip_social_relay(self, manifest: RuntimeManifest) -> SocialRelayFixture:
+        from .social_relay import SocialRelayFixture
+        profiles = resolve_service_profiles(
+            self.contract, self._relay_profiles, kinds=frozenset({"relay"}), repo_root=REPO_ROOT,
+        )
+        if set(profiles) != {"relay"}:
+            raise BlockedError(reason="Cross-Station Social requires the declared Relay service",
+                               resource="social-relay-binding")
+        relay = SocialRelayFixture(
+            profile=profiles["relay"], repo_root=REPO_ROOT,
+            register_cleanup=self.register_cleanup,
+            acquire_profile_lease=self.acquire_profile_lease,
+            acquire_source_lease=self.acquire_remote_git_source_lease,
+        )
+        self._social_relay_fixture = relay
+        relay.equip(manifest)
+        return relay
+
+    def _attach_social_relay(
+        self, manifest: RuntimeManifest, relay: SocialRelayFixture,
+        stations: dict[str, ServiceAttestation],
+    ) -> dict[str, ServiceAttestation]:
+        services = {**stations, "relay": relay.attach(manifest, stations)}
+        if manifest.gate_id == "social-public-feed-native-e2e":
+            relay.prepare_capture_probe()
+        self.evidence_run.write_json(
+            "runtime/social-relay-preparation.json", relay.inventory,
+            role="social-relay-preparation",
+        )
+        return services
 
     def _provision_station_services(
         self, manifest: RuntimeManifest,
     ) -> dict[str, ServiceAttestation]:
         if manifest.gate_id == "social-public-feed-native-e2e":
-            from .social_relay import SocialRelayFixture
-            profiles = resolve_service_profiles(
-                self.contract, self._relay_profiles, kinds=frozenset({"relay"}), repo_root=REPO_ROOT,
-            )
-            if set(profiles) != {"relay"}:
-                raise BlockedError(reason="Public Social requires the declared Relay service",
-                                   resource="social-relay-binding")
-            relay = SocialRelayFixture(
-                profile=profiles["relay"], repo_root=REPO_ROOT,
-                register_cleanup=self.register_cleanup,
-                acquire_profile_lease=self.acquire_profile_lease,
-                acquire_source_lease=self.acquire_remote_git_source_lease,
-            )
             # Both deployment owners finish before retained service/source leases.
-            relay.equip(manifest)
+            relay = self._equip_social_relay(manifest)
             services = super()._provision_station_services(manifest)
-            services["relay"] = relay.attach(manifest, services)
-            relay.prepare_capture_probe()
-            self.evidence_run.write_json(
-                "runtime/social-relay-preparation.json", relay.inventory,
-                role="social-relay-preparation",
-            )
-            self._social_relay_fixture = relay
-            return services
+            return self._attach_social_relay(manifest, relay, services)
         if manifest.gate_id != "social-cross-station-native-e2e":
             return super()._provision_station_services(manifest)
         from tooling.acceptance.core import workspace_id
@@ -846,6 +1002,9 @@ class CrossStationSocialNativeProvisioner(
                     resource=f"service-profile:{role}",
                 )
             targets[role] = target
+        # DHT locators alone cannot supply the profile/content Circuit route.
+        # Reuse Public Social's owner rather than relying on ambient attachments.
+        relay = self._equip_social_relay(manifest)
         # Deploy/reset owns its leases. Prepare both targets before retaining
         # the Suite's source/service leases; then attest again under those locks.
         paths = {
@@ -897,7 +1056,7 @@ class CrossStationSocialNativeProvisioner(
         self.evidence_run.write_json(
             SCHEMA_INVENTORY_PATH, inventory, role="private-social-schema-inventory",
         )
-        return services
+        return self._attach_social_relay(manifest, relay, services)
 
     def _resolve_active_profile(self) -> tuple[str, Path, int, dict[str, str]]:
         profile, profile_path, slot, environment = (

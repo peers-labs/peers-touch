@@ -6,7 +6,6 @@ import "google/protobuf/timestamp.proto";
 import "domain/activity/activity.proto";
 import "domain/common/common.proto";
 import "domain/social/feed_log.proto";
-import "domain/social/poll.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
 
@@ -18,6 +17,8 @@ message Post {
   reserved "author_id";
   reserved 4;
   reserved "visibility";
+  reserved 34;
+  reserved "poll_post";
 
   string id = 1;
   string author_ptid = 2;
@@ -35,7 +36,6 @@ message Post {
     ImagePost image_post = 31;
     VideoPost video_post = 32;
     LinkPost link_post = 33;
-    PollPost poll_post = 34;
     RepostPost repost_post = 35;
     LocationPost location_post = 36;
   }
@@ -60,11 +60,13 @@ message Post {
 }
 
 enum PostType {
+  reserved 4;
+  reserved "POLL";
+
   TEXT = 0;
   IMAGE = 1;
   VIDEO = 2;
   LINK = 3;
-  POLL = 4;
   REPOST = 5;
   LOCATION = 6;
 }
@@ -136,14 +138,6 @@ message LinkPost {
   LinkPreview link = 2;
   repeated string hashtags = 3;
   repeated string mentions = 4;
-}
-
-message PollPost {
-  string text = 1;
-  peers_touch.model.social.feed.v1.FeedPollDefinition poll = 2;
-  repeated string hashtags = 3;
-  repeated string mentions = 4;
-  PollResult result = 5;
 }
 
 message RepostPost {
@@ -230,6 +224,8 @@ message Location {
 message CreatePostRequest {
   reserved 2;
   reserved "visibility";
+  reserved 14;
+  reserved "poll";
 
   PostType type = 1;
   string reply_to_post_id = 3;
@@ -241,7 +237,6 @@ message CreatePostRequest {
     CreateImagePostRequest image = 11;
     CreateVideoPostRequest video = 12;
     CreateLinkPostRequest link = 13;
-    CreatePollPostRequest poll = 14;
     CreateRepostRequest repost = 15;
     CreateLocationPostRequest location = 16;
   }
@@ -268,18 +263,6 @@ message CreateVideoPostRequest {
 message CreateLinkPostRequest {
   string text = 1;
   string url = 2;
-}
-
-message CreatePollPostRequest {
-  string text = 1;
-  string question = 2;
-  repeated string options = 3;
-  int32 duration_hours = 4;
-  bool multiple_choice = 5;
-  uint32 min_choices = 6;
-  uint32 max_choices = 7;
-  // Exactly one explicit deadline or duration measured from signed creation.
-  int64 expires_at_unix_ms = 8;
 }
 
 message CreateRepostRequest {

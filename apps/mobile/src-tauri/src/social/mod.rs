@@ -1,5 +1,4 @@
 pub mod adapter;
-pub(crate) mod private_poll;
 pub(crate) mod private_reaction;
 pub mod search;
 
@@ -506,7 +505,7 @@ impl PrivateSocialEngine {
         }
         let transport = NativeSocialTransport::new(self.session.clone())?;
         let repost = self.load_repost_source_material(intent, &draft, &transport)?;
-        let (prepare, poll) = prepare_moment_request(
+        let prepare = prepare_moment_request(
             &self.session.scope.actor_ptid,
             &draft,
             intent,
@@ -546,7 +545,6 @@ impl PrivateSocialEngine {
             intent,
             plan,
             attachments,
-            poll,
             repost,
         )?;
         self.store.persist_submission(&prepared.command)?;
@@ -1386,9 +1384,7 @@ impl PrivateSocialEngine {
             .store
             .read_projections()?
             .into_iter()
-            .map(|projection| {
-                PrivateMomentReadProjection::decode(&projection).map(private_poll::conceal_legacy)
-            })
+            .map(|projection| PrivateMomentReadProjection::decode(&projection))
             .collect::<Result<Vec<_>, _>>()?;
         let comment_drafts = self
             .store
@@ -1883,19 +1879,6 @@ pub fn social_private_reconcile<R: Runtime>(
         let report = engine
             .reconcile(input.activation_generation)
             .map_err(MobileError::social)?;
-        for bytes in engine
-            .store
-            .read_projections()
-            .map_err(MobileError::social)?
-        {
-            let parent =
-                PrivateMomentReadProjection::decode(&bytes).map_err(MobileError::social)?;
-            if parent.state == PrivateReadState::ContentReady
-                && private_poll::requires_definition_read(&parent)
-            {
-                engine.read_text(input.activation_generation, &parent.post_id)?;
-            }
-        }
         return Ok(PrivateSocialReconcileResult {
             report,
             invalidated_read_projections: Vec::new(),

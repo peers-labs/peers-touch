@@ -7,10 +7,70 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[4]
 DESKTOP = ROOT / "apps" / "desktop" / "src"
+MOMENTS_OWNER = DESKTOP / "runtimes" / "momentsRuntime.ts"
+SEARCH_OBSERVER = DESKTOP / "runtimes" / "searchInvalidations.ts"
+MOMENT_SUBSCRIPTION = re.compile(
+    r"eventBus\.subscribe(?:\(\s*EVENT\.MOMENT_[A-Z_]+"
+    r"|Many\(\s*\[[^\]]*EVENT\.MOMENT_[A-Z_]+)"
+)
+GUARDED_SEARCH_SUBSCRIPTION = re.compile(
+    r"eventBus\.subscribeMany\(\s*\["
+    r"(?:\s*EVENT\.MOMENT_[A-Z_]+\s*,?)+\s*\],\s*"
+    r"\(\s*\{\s*payload\s*\}\s*\)\s*=>\s*\{\s*"
+    r"if\s*\(\s*matchesCurrentMomentEvent\(\s*payload\s*\)\s*\)"
+    r"\s*social\(\s*\);\s*\}\s*\)"
+)
+SEARCH_RESYNC_SUBSCRIPTION = re.compile(
+    r"eventBus\.subscribe\(\s*EVENT\.MOMENT_RESYNC_REQUESTED\s*,\s*social\s*\)"
+)
 
 
 def source(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def is_read_only_search_observer(text: str) -> bool:
+    """Admit the declared invalidation observer, never a second Store owner."""
+    for imports, module in re.findall(
+        r"import\s*\{([^}]+)\}\s*from\s*['\"]([^'\"]+)['\"]", text
+    ):
+        if module == "../runtimes/momentsRuntime" or module == "./momentsRuntime":
+            if imports.strip() != "matchesCurrentMomentEvent":
+                return False
+        if module.startswith("../store/") and imports.strip() not in (
+            "useMomentsStore",
+            "usePrivateMomentsStore",
+            "usePrivateCommentsStore",
+        ):
+            return False
+
+    body = re.sub(r"^\s*import[\s\S]*?;\s*", "", text, flags=re.MULTILINE)
+    for use in re.finditer(r"\buse(?:Private)?(?:Moments|Comments)Store\b", body):
+        if not re.match(r"\s*\.subscribe\s*\(", body[use.end():]):
+            return False
+    if re.search(r"\.\s*(?:getState|setState)\s*\(", body):
+        return False
+    if not re.search(
+        r"const\s+social\s*=\s*\(\s*\)\s*=>\s*changed\(\s*"
+        r"\[\s*'device\.social'\s*,\s*'station\.social\.public'\s*\]\s*\);",
+        body,
+    ):
+        return False
+    return all(
+        GUARDED_SEARCH_SUBSCRIPTION.match(body, subscription.start())
+        or SEARCH_RESYNC_SUBSCRIPTION.match(body, subscription.start())
+        for subscription in MOMENT_SUBSCRIPTION.finditer(body)
+    )
+
+
+def duplicate_projection_owners(sources: dict[Path, str]) -> list[str]:
+    return sorted(
+        str(path.relative_to(ROOT))
+        for path, text in sources.items()
+        if path != MOMENTS_OWNER
+        and MOMENT_SUBSCRIPTION.search(text)
+        and not (path == SEARCH_OBSERVER and is_read_only_search_observer(text))
+    )
 
 
 class CrossStationEventBusContractTest(unittest.TestCase):
@@ -35,27 +95,73 @@ class CrossStationEventBusContractTest(unittest.TestCase):
                 )
             )
 
-        owner = DESKTOP / "runtimes" / "momentsRuntime.ts"
         consumers = set(
             re.findall(
                 r"eventBus\.subscribe\(\s*EVENT\.(MOMENT_[A-Z_]+)",
-                source(owner),
+                source(MOMENTS_OWNER),
             )
         )
 
         self.assertEqual(catalog, producers, "orphan Moment event producer")
         self.assertEqual(catalog, consumers, "orphan Moment event consumer")
 
-        duplicate_owners: list[str] = []
-        for path in DESKTOP.rglob("*.ts*"):
-            if ".test." in path.name or path == owner:
-                continue
-            if re.search(
-                r"eventBus\.subscribe\(\s*EVENT\.MOMENT_[A-Z_]+",
-                source(path),
-            ):
-                duplicate_owners.append(str(path.relative_to(ROOT)))
+        duplicate_owners = duplicate_projection_owners({
+            path: source(path)
+            for path in DESKTOP.rglob("*.ts*")
+            if ".test." not in path.name
+        })
         self.assertEqual([], duplicate_owners, "duplicate Moments projection owner")
+
+    def test_search_observes_original_stores_without_owning_projection(self) -> None:
+        self.assertEqual(
+            [],
+            duplicate_projection_owners({SEARCH_OBSERVER: source(SEARCH_OBSERVER)}),
+        )
+
+    def test_search_cannot_acquire_or_mutate_moments_store(self) -> None:
+        text = source(SEARCH_OBSERVER)
+        for replacement in (
+            "useMomentsStore.getState().syncProjection('search');",
+            "useMomentsStore.setState({ postsById: {} });",
+            "const projection = useMomentsStore;",
+            "usePrivateMomentsStore.getState().reconcileMomentsProjection();",
+            "usePrivateMomentsStore.setState({ postsById: {} });",
+            "const projection = usePrivateMomentsStore;",
+            "usePrivateCommentsStore.getState().reset();",
+        ):
+            with self.subTest(replacement=replacement):
+                mutated = text.replace(
+                    "const social = () =>",
+                    replacement + "\n  const social = () =>",
+                    1,
+                )
+                self.assertNotEqual(text, mutated)
+                self.assertEqual(
+                    [str(SEARCH_OBSERVER.relative_to(ROOT))],
+                    duplicate_projection_owners({SEARCH_OBSERVER: mutated}),
+                )
+
+    def test_search_cannot_drop_moment_identity_guard(self) -> None:
+        text = source(SEARCH_OBSERVER)
+        mutated = text.replace("if (matchesCurrentMomentEvent(payload)) ", "", 1)
+        self.assertNotEqual(text, mutated)
+        self.assertEqual(
+            [str(SEARCH_OBSERVER.relative_to(ROOT))],
+            duplicate_projection_owners({SEARCH_OBSERVER: mutated}),
+        )
+
+    def test_another_subscriber_is_not_a_declared_search_observer(self) -> None:
+        other = DESKTOP / "runtimes" / "secondMomentsProjection.ts"
+        for text in (
+            "eventBus.subscribe(EVENT.MOMENT_CREATED, writeProjection);",
+            "eventBus.subscribeMany([EVENT.MOMENT_CREATED], writeProjection);",
+            source(SEARCH_OBSERVER),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(
+                    [str(other.relative_to(ROOT))],
+                    duplicate_projection_owners({other: text}),
+                )
 
     def test_pages_do_not_own_freshness_or_private_native_listeners(self) -> None:
         violations: list[str] = []

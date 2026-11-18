@@ -2028,7 +2028,6 @@ fn decrypt_comment_resource(
         || proof.mention_routing_sha256 != mention_routing_hash.as_slice()
         || proof.subtype_authority_sha256 != empty_hash.as_slice()
         || verification.subtype_authority.is_some()
-        || private.poll.is_some()
         || !private.objects.is_empty()
         || proof.station_signing_key_id != attestation.proof_signing_key_id
         || !canonical_identifier(&proof.station_signing_key_id)

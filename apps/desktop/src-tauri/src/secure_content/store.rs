@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
-use crate::social::{PrivatePollResultProjection, PrivateReactionOperation};
+use crate::social::PrivateReactionOperation;
 use prost::Message;
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use secure_content_core::object::{
@@ -1885,16 +1885,6 @@ impl SecureContentStore {
             post_id,
             Some(generation),
         )?;
-        let current: Option<Vec<u8>> = transaction
-            .query_row(
-                "SELECT projection_bytes FROM secure_content_moment_projections WHERE post_id = ?1",
-                params![post_id],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(|error| error.to_string())?;
-        let merged = crate::social::merge_poll_readback(current.as_deref(), projection_bytes)?;
-        let projection_bytes = merged.as_slice();
         transaction
             .execute(
                 "INSERT INTO secure_content_roots(
@@ -1965,7 +1955,7 @@ impl SecureContentStore {
             projection_bytes,
         )?;
         transaction.commit().map_err(|error| error.to_string())?;
-        Ok(merged)
+        Ok(projection_bytes.to_vec())
     }
 
     pub fn content_root(
@@ -2014,16 +2004,6 @@ impl SecureContentStore {
                 return Err("private Social projection revision changed".to_string());
             }
         }
-        let current: Option<Vec<u8>> = transaction
-            .query_row(
-                "SELECT projection_bytes FROM secure_content_moment_projections WHERE post_id = ?1",
-                params![post_id],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(|error| error.to_string())?;
-        let merged = crate::social::merge_poll_readback(current.as_deref(), projection_bytes)?;
-        let projection_bytes = merged.as_slice();
         transaction
             .execute(
                 "UPDATE secure_content_moment_projections
@@ -2069,9 +2049,7 @@ impl SecureContentStore {
     ) -> Result<StoredReactionCommand, String> {
         if command.command_id.trim().is_empty()
             || command.post_id.trim().is_empty()
-            || (command.operation == PrivateReactionOperation::VotePoll
-                && (command.kind != 0 || !command.comment_id.is_empty()))
-            || (command.operation != PrivateReactionOperation::VotePoll && command.kind <= 0)
+            || command.kind <= 0
             || command.request_bytes.is_empty()
             || Sha256::digest(&command.request_bytes).as_slice() != command.request_sha256
             || command.state != ReactionCommandState::Pending
@@ -2316,13 +2294,11 @@ impl SecureContentStore {
         result_sha256: &[u8; 32],
         projection_revision: u64,
         reactions: &[crate::social::PrivateReactionSummaryProjection],
-        poll: Option<&PrivatePollResultProjection>,
     ) -> Result<bool, String> {
         if result_bytes.is_empty()
             || Sha256::digest(result_bytes).as_slice() != result_sha256
             || projection_revision == 0
             || command.post_id.trim().is_empty()
-            || (command.operation == PrivateReactionOperation::VotePoll) != poll.is_some()
         {
             return Err("secure content Reaction completion is invalid".to_string());
         }
@@ -2372,22 +2348,13 @@ impl SecureContentStore {
                     params![post_id, comment_id], |row| row.get(0),
                 )
             }.map_err(|error| error.to_string())?;
-            let projection_bytes = if let Some(poll) = poll {
-                if !comment_id.is_empty()
-                    || poll.projection_revision != projection_revision.to_string()
-                {
-                    return Err("secure content poll completion target is invalid".into());
-                }
-                crate::social::project_poll_target(post_id, &current_bytes, poll)?
-            } else {
-                crate::social::project_reaction_target(
-                    post_id,
-                    comment_id,
-                    &current_bytes,
-                    reactions,
-                    projection_revision,
-                )?
-            };
+            let projection_bytes = crate::social::project_reaction_target(
+                post_id,
+                comment_id,
+                &current_bytes,
+                reactions,
+                projection_revision,
+            )?;
             let projection_changed = if comment_id.is_empty() {
                 transaction.execute(
                     "UPDATE secure_content_moment_projections
@@ -5452,7 +5419,7 @@ mod tests {
         let result_bytes = b"committed-private-reaction".to_vec();
         let result_sha256: [u8; 32] = Sha256::digest(&result_bytes).into();
         assert!(store
-            .mark_reaction_committed(&retry, &result_bytes, &result_sha256, 4, &[], None)
+            .mark_reaction_committed(&retry, &result_bytes, &result_sha256, 4, &[])
             .unwrap());
         let committed = store
             .reaction_command(&command.command_id)

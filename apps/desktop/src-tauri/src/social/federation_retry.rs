@@ -1,6 +1,6 @@
 //! Bounded retry for the asynchronous cross-station private content flow.
 //!
-//! A remote (cross-station) private comment, reaction or poll operation is
+//! A remote (cross-station) private comment or reaction operation is
 //! resolved by an asynchronous federation round-trip. On the first call the
 //! home station durably enqueues the interaction and answers
 //! `SOCIAL_PRIVATE_DEPENDENCY_FAILURE` until the source station produces the

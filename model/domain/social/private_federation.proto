@@ -16,7 +16,8 @@ enum FederatedPrivateResourceKind {
   FEDERATED_PRIVATE_RESOURCE_KIND_POST = 1;
   FEDERATED_PRIVATE_RESOURCE_KIND_COMMENT = 2;
   FEDERATED_PRIVATE_RESOURCE_KIND_REACTION_PROJECTION = 3;
-  FEDERATED_PRIVATE_RESOURCE_KIND_POLL_PROJECTION = 4;
+  reserved 4;
+  reserved "FEDERATED_PRIVATE_RESOURCE_KIND_POLL_PROJECTION";
 }
 
 message FederatedPrivateResourceDelivery {
@@ -29,11 +30,12 @@ message FederatedPrivateResourceDelivery {
   FederatedPrivateResourceKind resource_kind = 7;
   .peers_touch.model.secure_content.v1.SecureResourceRef resource = 8;
   uint64 lifecycle_revision = 9;
+  reserved 19;
+  reserved "poll";
   oneof metadata {
     PostMetadata post = 10;
     CommentMetadata comment = 11;
     PrivateReactionProjection reaction = 18;
-    PrivatePollProjection poll = 19;
   }
   .peers_touch.model.secure_content.v1.EncryptedPayload payload = 12;
   repeated .peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope target_actor_envelopes = 13;
@@ -90,7 +92,8 @@ enum FederatedPrivateInteractionOperation {
   FEDERATED_PRIVATE_INTERACTION_OPERATION_SUBMIT_COMMENT = 2;
   FEDERATED_PRIVATE_INTERACTION_OPERATION_REACT = 3;
   FEDERATED_PRIVATE_INTERACTION_OPERATION_UNREACT = 4;
-  FEDERATED_PRIVATE_INTERACTION_OPERATION_VOTE_POLL = 5;
+  reserved 5;
+  reserved "FEDERATED_PRIVATE_INTERACTION_OPERATION_VOTE_POLL";
 }
 
 enum FederatedPrivateInteractionResultKind {

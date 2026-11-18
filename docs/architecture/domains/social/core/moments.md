@@ -1,9 +1,11 @@
 # Moments —— 朋友圈 / 动态 / 时刻
 
-评论点赞、投票、接纳时间与恢复状态按已接受的
+评论点赞、接纳时间与恢复状态按已接受的
 [交互合同](../federation/interaction-completion.md) 和
 [D-08](../federation/decisions.md#d-08-评论点赞与投票延伸原交互权威) 实施。
 评论继承父帖权限；计数来自已验证回读，UI 只保留未提交的选择。
+投票（Poll）能力已整体下线：proto 字段与枚举值保留编号占用（reserved），
+D-08 中与 ballot 相关的部分同步退役，评论/反应权威仍然有效。
 
 公开对象的当前写入权威见 [朋友圈主权架构 §6.0](../federation/actor-feed-log.md#60-v1-冻结合同)：根签创世与固定设备授权、设备签名事件、事务内验签追加与投影。`MomentService` 与 `PublicPostRepository` 不再提供公开对象创建或删除方法；公开旧 RPC 返回 `FEED_SIGNED_WRITE_REQUIRED`。下文的旧 CRUD 流程和仓库写入示例不再定义当前公开写入路径。搜索索引绑定签名投影的公开正文列，非公开受众继续由 Secure Content 管线独立拥有。
 

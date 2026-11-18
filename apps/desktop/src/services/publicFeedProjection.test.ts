@@ -3,11 +3,10 @@ import { clone, create, toBinary } from '@bufbuild/protobuf';
 import {
   FeedEventSchema, FeedEventStatementSchema, FeedEventKind,
   FeedPayloadSchema, FeedPostMutationSchema, FeedCommentMutationSchema, FeedReactionMutationSchema,
-  FeedPollBallotMutationSchema, FeedPollAdmissionSchema, FeedPollAdmissionResult,
 } from '../gen/proto/domain/social/feed_log_pb';
 import {
   AudienceSchema, Audience_Kind, CreatePostRequestSchema,
-  CreateTextPostRequestSchema, CreatePollPostRequestSchema, PostType, PostSchema,
+  CreateTextPostRequestSchema, PostSchema,
 } from '../gen/proto/domain/social/post_pb';
 import { CommentSchema, CreateCommentRequestSchema } from '../gen/proto/domain/social/comment_pb';
 import { PublicFeedProjection } from './publicFeedProjection';
@@ -40,6 +39,8 @@ describe('Native-verified public Feed projection binding', () => {
     const modified = clone(PostSchema, projected);
     if (modified.content.case === 'textPost') modified.content.value.text = 'Station rewrite';
     expect(() => projection.bindPost(modified, actor)).toThrow('FEED_PROJECTION_TAMPERED');
+    expect(() => projection.bindPost(modified, actor))
+      .toThrow(/FEED_PROJECTION_TAMPERED fields=[^\n]*textPost/);
     expect(() => projection.bindPost({ ...projected, publicFeedRef: 'oss://other/post/42' }, actor)).toThrow('FEED_PROJECTION_UNVERIFIED');
     expect(() => projection.bindPost({ ...projected, authorPtid: 'ptid:mallory' }, actor)).toThrow('FEED_PROJECTION_UNVERIFIED');
   });
@@ -153,65 +154,5 @@ describe('Native-verified public Feed projection binding', () => {
     projection.apply(deleted, 'home-b');
     projection.apply(reaction(11n, ref), home);
     expect(projection.reactionSummaries(ref, actor)).toEqual([]);
-  });
-
-  it('derives unique poll votes from admitted receipts and preserves immutable creation across edits', () => {
-    const projection = new PublicFeedProjection();
-    const creation = postEvent();
-    const request = create(CreatePostRequestSchema, { type: PostType.POLL,
-      audience: create(AudienceSchema, { kind: Audience_Kind.PUBLIC }),
-      content: { case: 'poll', value: create(CreatePollPostRequestSchema, {
-        text: 'original', question: 'Which route?', options: ['Direct', 'Relay'], durationHours: 1,
-      }) },
-    });
-    const postPayload = (value: typeof request) => toBinary(FeedPayloadSchema, create(FeedPayloadSchema, {
-      mutation: { case: 'post', value: create(FeedPostMutationSchema, {
-        postId: '42', createRequest: toBinary(CreatePostRequestSchema, value),
-      }) },
-    }));
-    creation.payload = postPayload(request);
-    projection.apply(creation, home);
-    const ref = `oss://${home}/post/42`;
-    const vote = (sequence: bigint, index: number) => create(FeedEventSchema, {
-      statement: create(FeedEventStatementSchema, { actorPtid: 'ptid:bob', kind: FeedEventKind.POLL_BALLOT_SET,
-        sequence, createdAtUnixMs: 1_700_000_000_001n }),
-      payload: toBinary(FeedPayloadSchema, create(FeedPayloadSchema, { mutation: { case: 'pollBallot',
-        value: create(FeedPollBallotMutationSchema, { targetPostRef: ref, definitionHash: new Uint8Array(32), optionIndices: [index] }) } })),
-    });
-    const admission = (result = FeedPollAdmissionResult.ACCEPTED) => create(FeedPollAdmissionSchema, {
-      statement: { targetPostRef: ref, homeStationPeerId: home, eventHash: new Uint8Array(32), result },
-    });
-    const result = () => {
-      const signed = projection.posts.get(ref)!;
-      const bound = projection.bindPost(signed, 'ptid:bob');
-      if (bound.content.case !== 'pollPost') throw new Error('poll missing');
-      return bound.content.value.result!;
-    };
-    projection.apply(vote(3n, 0), 'home-b');
-    expect(result().totalVotes).toBe(0n);
-    projection.apply(vote(3n, 0), 'home-b', admission());
-    projection.apply(vote(4n, 1), 'home-b', admission());
-    projection.apply(vote(3n, 0), 'home-b', admission());
-    projection.apply(vote(5n, 0), 'home-b', admission(FeedPollAdmissionResult.CLOSED));
-    expect(result()).toMatchObject({ totalVotes: 1n, userVotes: [1] });
-    expect(result().options.map(option => option.votes)).toEqual([0n, 1n]);
-    const projected = clone(PostSchema, projection.posts.get(ref)!);
-    if (projected.content.case === 'pollPost') projected.content.value.result = { ...result(), totalVotes: 999n };
-    expect(projection.bindPost(projected, 'ptid:bob').content).toMatchObject({
-      case: 'pollPost', value: { result: { totalVotes: 1n } },
-    });
-    const edit = clone(FeedEventSchema, creation);
-    edit.statement!.kind = FeedEventKind.POST_UPDATED;
-    edit.statement!.sequence = 2n;
-    edit.statement!.createdAtUnixMs += 3_600_001n;
-    const updated = clone(CreatePostRequestSchema, request);
-    if (updated.content.case === 'poll') updated.content.value.text = 'after closure';
-    edit.payload = postPayload(updated);
-    projection.apply(edit, home);
-    expect(result()).toMatchObject({ totalVotes: 1n, userVotes: [1] });
-    if (updated.content.case === 'poll') updated.content.value.options[0] = 'changed';
-    edit.statement!.sequence = 3n;
-    edit.payload = postPayload(updated);
-    expect(() => projection.apply(edit, home)).toThrow('FEED_INVALID');
   });
 });

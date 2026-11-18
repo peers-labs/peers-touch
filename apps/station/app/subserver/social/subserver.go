@@ -231,9 +231,6 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 		stationPeerID:     federationRuntime.LocalStationPeerID(),
 		proofKeyAuthority: privateProofKeyAuthority,
 	}
-	if err := s.feedLogSvc.ConfigurePollAuthority(privateStationSigner, privateStationSigner.verifyFeedPollStation); err != nil {
-		return err
-	}
 	s.privateContentSvc, err = application.NewPrivateContentService(
 		privateContentStore,
 		privateAudienceAuthority,
@@ -355,6 +352,12 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	s.federatedRelationshipSvc.
 		WithActorDeviceKeyResolver(actorDeviceKeyPort{}).
 		WithPrivateContentRevoker(s.privateContentSvc)
+	privateReceiver, err := configurePrivateDeliveryAcceptance(
+		s.privateContentSvc, federationRuntime.LocalStationPeerID(),
+	)
+	if err != nil {
+		return fmt.Errorf("configure private Social Acceptance receiver: %w", err)
+	}
 	if err := federationRuntime.RegisterReceivers(func(registry *delivery.Registry) error {
 		if err := s.feedLogSvc.RegisterReceivers(registry); err != nil {
 			return err
@@ -373,7 +376,7 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 		}
 		if err := infrastructure.RegisterFederatedPrivateResourceReceivers(
 			registry,
-			s.privateContentSvc,
+			privateReceiver,
 		); err != nil {
 			return err
 		}

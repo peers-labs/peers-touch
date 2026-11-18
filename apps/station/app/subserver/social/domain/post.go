@@ -24,7 +24,7 @@ type Post struct {
 	AuthorPTID    string
 	PublicFeedRef string
 
-	// Type matches `model.PostType` (TEXT / IMAGE / VIDEO / LINK / POLL /
+	// Type matches `model.PostType` (TEXT / IMAGE / VIDEO / LINK /
 	// REPOST / LOCATION). Stored as the proto enum's String() form on the
 	// DB side — varchar(20) — so admin queries are readable.
 	Type model.PostType

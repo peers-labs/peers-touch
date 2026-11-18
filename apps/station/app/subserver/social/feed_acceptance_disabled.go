@@ -2,9 +2,18 @@
 
 package social
 
-import "github.com/peers-labs/peers-touch/station/app/subserver/social/application"
+import (
+	"github.com/peers-labs/peers-touch/station/app/subserver/social/application"
+	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
+)
 
 // Ordinary builds contain no local fault controller or control-file reader.
 func configureFeedAcceptance(_ *application.FeedLogService, _ string) error {
 	return nil
+}
+
+func configurePrivateDeliveryAcceptance(receiver infrastructure.FederatedPrivateResourceReceiver,
+	_ string,
+) (infrastructure.FederatedPrivateResourceReceiver, error) {
+	return receiver, nil
 }

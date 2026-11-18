@@ -193,7 +193,13 @@ Pick one based on intent:
 
 ### Pitfalls
 
+- [`pitfalls/private-outage-must-follow-source-commit.md`](pitfalls/private-outage-must-follow-source-commit.md) — private delivery outage starts after an online commit and an observed original undelivered frame.
+- [`pitfalls/standalone-federation-probe-scope-initialization.md`](pitfalls/standalone-federation-probe-scope-initialization.md) — standalone replay probes install canonical peer scopes before real HTTP token minting.
+- [`pitfalls/private-audience-fixture-must-exclude-author.md`](pitfalls/private-audience-fixture-must-exclude-author.md) — explicit recipient fixtures exclude the author while retaining its original implicit-grant readback.
+- [`pitfalls/private-followers-remote-subscription.md`](pitfalls/private-followers-remote-subscription.md) — private follower preparation and current reads consume the authenticated remote subscription with Home and revision fences.
+- [`pitfalls/comment-revalidation-must-preserve-ui-intent.md`](pitfalls/comment-revalidation-must-preserve-ui-intent.md) — acquired empty threads, collapse choices and confirmed comment mutations survive background reads and return to an alive page.
 - [`pitfalls/desktop-header-drag-regions-fragmented.md`](pitfalls/desktop-header-drag-regions-fragmented.md) — Desktop pane headers consume one shell drag adapter; custom controls and forwarded composite roots require real hit testing.
+- [`pitfalls/private-comment-author-recovery-delivery.md`](pitfalls/private-comment-author-recovery-delivery.md) — complete resource delivery retains remote Comment authors' recovery envelopes and replacement-device root/reply readback.
 - [`pitfalls/private-endpoint-account-hint-equality.md`](pitfalls/private-endpoint-account-hint-equality.md) — verified private endpoints compare actor/device identity without treating account routing hints as authorization.
 - [`pitfalls/automatic-merge-can-propagate-accepted-ui-loss.md`](pitfalls/automatic-merge-can-propagate-accepted-ui-loss.md) — all bilateral and automatic merge paths require final-source preservation proof; keyword-only checks do not prove enforcement.
 - [`pitfalls/feed-derived-counts-must-preserve-authored-time.md`](pitfalls/feed-derived-counts-must-preserve-authored-time.md) — derived counts and authored edits must preserve signed post timestamps.
@@ -218,7 +224,9 @@ Pick one based on intent:
 - [`pitfalls/acceptance-active-docs-must-not-promote-drafts.md`](pitfalls/acceptance-active-docs-must-not-promote-drafts.md) — active Acceptance docs must keep draft proposals non-normative, inventory implemented paths only, and treat Plans as optional.
 - [`pitfalls/native-chat-gates-require-federation-context.md`](pitfalls/native-chat-gates-require-federation-context.md) — Native Direct and Group creation must pass a Federation shared by every participating client.
 - [`pitfalls/native-semantic-startup-with-object-identity.md`](pitfalls/native-semantic-startup-with-object-identity.md) — startup and chooser proof keep one scoped AX object baseline, strict deadlines, original selector and complete cleanup.
-- [`pitfalls/native-social-controls-must-reveal-clipped-targets.md`](pitfalls/native-social-controls-must-reveal-clipped-targets.md) — reveal exact Social controls before viewport visibility waits; missing and hidden targets remain failures.
+- [`pitfalls/native-social-controls-must-reveal-clipped-targets.md`](pitfalls/native-social-controls-must-reveal-clipped-targets.md) — reveal exact Social controls before viewport visibility waits and check canonical geometry tokens; hidden targets, stale sizes and missing tokens remain failures.
+- [`pitfalls/public-feed-integrity-recovery-phases.md`](pitfalls/public-feed-integrity-recovery-phases.md) — retain the original bounded Native rejection before observing the next passive Runtime recovery cycle.
+- [`pitfalls/modal-feedback-must-escape-inert-content.md`](pitfalls/modal-feedback-must-escape-inert-content.md) — render window-local modal failure feedback through the existing overlay host while retaining identity lifetime and background isolation.
 - [`pitfalls/public-api-owner-must-follow-resource-domain.md`](pitfalls/public-api-owner-must-follow-resource-domain.md) — public capabilities must be registered by their resource owner, never by an internal implementation namespace.
 - [`pitfalls/conversation-production-schema-migration-single-source.md`](pitfalls/conversation-production-schema-migration-single-source.md) — Conversation production migration must delegate to the persistence-owned canonical schema instead of copying its model list.
 - [`pitfalls/ios-simulator-uninstall-retains-keychain.md`](pitfalls/ios-simulator-uninstall-retains-keychain.md) — independent Mobile Acceptance runs must use fresh Simulators because application uninstall preserves Keychain state.

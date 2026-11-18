@@ -1,4 +1,4 @@
-"""Source-authoritative private Comment, Reaction and Poll Gate."""
+"""Source-authoritative private Comment and Reaction Gate."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from tooling.acceptance.core import AcceptanceGate
 from .cross_station_support import SourceCommand, run_source_commands
 
 
-TEST_PATTERN = "^TestFederatedPrivate(Comment|Reaction|Poll)"
+TEST_PATTERN = "^TestFederatedPrivate(Comment|Reaction)"
 COMMANDS = (
     SourceCommand(
         name="interaction-test-discovery",
@@ -67,7 +67,7 @@ COMMANDS = (
             "src/runtimes/momentsRuntime.test.ts",
             "src/acceptance/moments/harness.test.ts",
             "-t",
-            "comment|reaction|ballot|poll|eventBus|pending|retr",
+            "comment|reaction|eventBus|pending|retr",
         ),
         timeout_seconds=600,
         required_output_pattern=r"Tests\s+[1-9][0-9]* passed",
@@ -92,7 +92,6 @@ class Gate(AcceptanceGate):
             "provenScope": [
                 "source-authoritative Comment prepare/submit/replay",
                 "source-authoritative Reaction and unreaction convergence",
-                "source-authoritative private Poll signature, replacement, replay and projection",
             ],
             "unprovenScope": ["Native Alice/Bob interaction visibility"],
         }

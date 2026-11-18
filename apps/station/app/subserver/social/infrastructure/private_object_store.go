@@ -1799,10 +1799,16 @@ func authorizePrivateFollower(
 	viewerPTID string,
 ) error {
 	var count int64
-	if err := tx.Table("follows AS follow").
-		Joins("JOIN touch_actor AS follower ON follower.id = follow.follower_id").
-		Joins("JOIN touch_actor AS owner ON owner.id = follow.following_id").
+	if err := privateLocalFollowerQuery(tx).
 		Where("follower.ptid = ? AND owner.ptid = ?", viewerPTID, ownerPTID).
+		Count(&count).Error; err != nil {
+		return err
+	}
+	if count == 1 {
+		return nil
+	}
+	if err := privateRemoteFollowerQuery(tx).
+		Where("subscription.subscriber_ptid = ? AND subscription.author_ptid = ?", viewerPTID, ownerPTID).
 		Count(&count).Error; err != nil {
 		return err
 	}

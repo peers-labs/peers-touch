@@ -247,7 +247,7 @@ class MobileProductionFixture:
         elif operation == "subtypes":
             sender = self._sender(payload)
             for index, kind in enumerate(
-                ("TEXT", "POLL", "LINK", "LOCATION", "REPOST"),
+                ("TEXT", "LINK", "LOCATION", "REPOST"),
                 start=1,
             ):
                 intent: dict[str, Any] = {
@@ -259,15 +259,7 @@ class MobileProductionFixture:
                     "mentions": [],
                     "files": [],
                 }
-                if kind == "POLL":
-                    intent["poll"] = {
-                        "question": "Choose one",
-                        "options": ["First", "Second"],
-                        "minChoices": 1,
-                        "maxChoices": 1,
-                        "expiresAtSeconds": int(time.time()) + 3600,
-                    }
-                elif kind == "LINK":
+                if kind == "LINK":
                     intent["link"] = {
                         "url": "https://example.test/secure-content",
                         "title": "Secure Content",

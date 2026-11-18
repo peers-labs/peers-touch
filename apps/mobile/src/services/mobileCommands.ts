@@ -689,7 +689,6 @@ export type PrivateMomentKind =
   | 'IMAGE'
   | 'VIDEO'
   | 'LINK'
-  | 'POLL'
   | 'REPOST'
   | 'LOCATION';
 
@@ -798,18 +797,6 @@ export type PrivateMomentReadContent =
   | { kind: 'VIDEO'; text: string; media: PrivateMomentMediaProjection[] }
   | { kind: 'LINK'; text: string; url: string; title: string }
   | {
-    kind: 'POLL';
-    text: string;
-    question: string;
-    options: string[];
-    opaqueOptionIds?: string[];
-    optionSetSha256?: string;
-    result?: PrivatePollResultProjection;
-    minChoices: number;
-    maxChoices: number;
-    expiresAtSeconds: number;
-  }
-  | {
     kind: 'REPOST';
     comment: string;
     sourcePostId: string;
@@ -861,15 +848,6 @@ export interface PrivateReactionSummaryProjection {
   reactedByViewer: boolean;
 }
 
-export interface PrivatePollResultProjection {
-  voteCounts: string[];
-  selectedOptions: number[];
-  voterCount: string;
-  projectionRevision: string;
-  commandId: string;
-  voteActorPtid: string;
-}
-
 export type PrivateReactionCommandState =
   | 'REACTION_PENDING'
   | 'REACTION_RETRYING'
@@ -882,8 +860,7 @@ export interface PrivateReactionCommandProjection {
   postId: string;
   commentId: string;
   kind: number;
-  operation: 'REACT' | 'UNREACT' | 'VOTE_POLL';
-  selectedOpaqueOptionIds?: string[];
+  operation: 'REACT' | 'UNREACT';
   state: PrivateReactionCommandState;
   attemptCount: number;
   projectionRevision: string;
@@ -897,7 +874,6 @@ export interface PrivateReactionMutationResult {
   reactions: PrivateReactionSummaryProjection[];
   projectionRevision: string;
   exactReplay: boolean;
-  poll?: PrivatePollResultProjection;
 }
 
 export type PrivateCommentState =
@@ -1101,15 +1077,6 @@ export async function privateSocialReact(
       commentId: input.commentId ?? '',
       kind: input.kind,
     },
-  });
-}
-
-export async function privateSocialPollVote(
-  input: PrivateSocialAccountInput & { postId: string; selectedOptions: readonly number[] },
-): Promise<PrivateReactionMutationResult> {
-  requirePrivateSocialMutation(input);
-  return invoke<PrivateReactionMutationResult>('social_private_poll_vote', {
-    input: { ...privateSocialReactionScope(input), postId: input.postId, selectedOptions: [...input.selectedOptions] },
   });
 }
 

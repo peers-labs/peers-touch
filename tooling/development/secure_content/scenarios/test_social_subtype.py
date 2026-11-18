@@ -145,17 +145,6 @@ class _FakeProductClient:
                     "urlSha256": _digest(str(link["url"])),
                     "titleSha256": _digest(str(link["title"])),
                 }
-            elif kind == "POLL":
-                poll = post["poll"]
-                result["subtypeEvidence"] = {
-                    "questionSha256": _digest(str(poll["question"])),
-                    "optionLabelSha256": [
-                        _digest(str(option))
-                        for option in poll["options"]
-                    ],
-                    "minChoices": poll["minChoices"],
-                    "maxChoices": poll["maxChoices"],
-                }
             elif kind == "LOCATION":
                 location = post["location"]
                 result["subtypeEvidence"] = {
@@ -231,7 +220,6 @@ class SocialSubtypeScenarioTest(unittest.TestCase):
                 "IMAGE",
                 "VIDEO",
                 "LINK",
-                "POLL",
                 "REPOST",
                 "LOCATION",
             },
@@ -256,7 +244,6 @@ class SocialSubtypeScenarioTest(unittest.TestCase):
                 "IMAGE",
                 "VIDEO",
                 "LINK",
-                "POLL",
                 "LOCATION",
                 "TEXT",
                 "REPOST",

@@ -19,7 +19,7 @@ export function SocialActionBar({ postId, reactions = [], commentCount = 0, comm
   const pendingRef = useRef(new Set<ReactionKind>());
   const [pending, setPending] = useState<ReadonlySet<ReactionKind>>(new Set());
   const commands = reactionCommands.filter(command =>
-    command.postId === postId && !command.commentId && command.operation !== 'VOTE_POLL');
+    command.postId === postId && !command.commentId);
   const isPrivatePending = (kind: ReactionKind) => commands.some(command =>
     command.kind === kind && (command.state === 'REACTION_PENDING' || command.state === 'REACTION_RETRYING'));
   const toggle = async (kind: ReactionKind) => {
