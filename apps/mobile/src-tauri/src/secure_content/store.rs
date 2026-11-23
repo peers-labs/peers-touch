@@ -1890,9 +1890,7 @@ impl PrivateSocialStore {
     ) -> Result<StoredReactionCommand, String> {
         if command.command_id.trim().is_empty()
             || command.post_id.trim().is_empty()
-            || (command.operation == PrivateReactionOperation::VotePoll
-                && (command.kind != 0 || !command.comment_id.is_empty()))
-            || (command.operation != PrivateReactionOperation::VotePoll && command.kind <= 0)
+            || command.kind <= 0
             || command.request_bytes.is_empty()
             || Sha256::digest(&command.request_bytes).as_slice() != command.request_sha256
             || command.state != ReactionCommandState::Pending
@@ -2144,7 +2142,6 @@ impl PrivateSocialStore {
         result_sha256: &[u8; 32],
         projection_revision: u64,
         reactions: &[crate::secure_content::receiver::PrivateReactionSummaryProjection],
-        poll: Option<&crate::secure_content::receiver::PrivatePollResultProjection>,
     ) -> Result<bool, String> {
         if result_bytes.is_empty()
             || Sha256::digest(result_bytes).as_slice() != result_sha256
@@ -2209,24 +2206,13 @@ impl PrivateSocialStore {
                     params![post_id, comment_id], |row| row.get(0),
                 ).map_err(|error| error.to_string())?
             };
-            let projection_json = if command.operation == PrivateReactionOperation::VotePoll {
-                let poll = poll.ok_or("private poll completion projection is unavailable")?;
-                if poll.projection_revision != projection_revision.to_string() {
-                    return Err("private poll completion revision is invalid".into());
-                }
-                crate::social::private_poll::project_target(post_id, &current_bytes, poll)?
-            } else {
-                if poll.is_some() {
-                    return Err("private Reaction cannot contain a poll result".into());
-                }
-                crate::social::private_reaction::project_reaction_target(
-                    post_id,
-                    comment_id,
-                    &current_bytes,
-                    reactions,
-                    projection_revision,
-                )?
-            };
+            let projection_json = crate::social::private_reaction::project_reaction_target(
+                post_id,
+                comment_id,
+                &current_bytes,
+                reactions,
+                projection_revision,
+            )?;
             let projection_changed = if comment_id.is_empty() {
                 transaction.execute(
                     "UPDATE mobile_private_social_read_projections
@@ -2838,9 +2824,7 @@ fn merge_receiver_reactions(
         )
     }.optional().map_err(|error| error.to_string())?;
     if comment_id.is_empty() {
-        let incoming_bytes =
-            crate::social::private_poll::merge_readback(current_bytes.as_deref(), incoming_bytes)?;
-        let mut incoming = PrivateMomentReadProjection::decode(&incoming_bytes)?;
+        let mut incoming = PrivateMomentReadProjection::decode(incoming_bytes)?;
         if incoming.post_id != post_id {
             return Err("private Social receiver target identity is invalid".to_string());
         }
@@ -4014,7 +3998,7 @@ mod tests {
         let result_bytes = vec![9, 8, 7];
         let result_sha256: [u8; 32] = Sha256::digest(&result_bytes).into();
         assert!(store
-            .mark_reaction_committed(&retry, &result_bytes, &result_sha256, 2, &[], None)
+            .mark_reaction_committed(&retry, &result_bytes, &result_sha256, 2, &[])
             .unwrap());
         let committed = store.reaction_command("reaction-1").unwrap().unwrap();
         assert_eq!(committed.state, ReactionCommandState::Committed);
@@ -4111,7 +4095,7 @@ mod tests {
             ..root.clone()
         };
         assert!(!store
-            .mark_reaction_committed(&wrong, result, &hash, 2, &[], None)
+            .mark_reaction_committed(&wrong, result, &hash, 2, &[])
             .unwrap());
         assert_eq!(
             store.reaction_command("root").unwrap().unwrap().state,
@@ -4125,7 +4109,7 @@ mod tests {
             },
         ];
         assert!(store
-            .mark_reaction_committed(&root, result, &hash, 2, &reactions, None)
+            .mark_reaction_committed(&root, result, &hash, 2, &reactions)
             .unwrap());
         let root_projection =
             crate::secure_content::private_comment::PrivateCommentProjection::decode(
@@ -4173,7 +4157,7 @@ mod tests {
         let result = b"older-result";
         let hash = Sha256::digest(result).into();
         assert!(store
-            .mark_reaction_committed(&command, result, &hash, 4, &[], None)
+            .mark_reaction_committed(&command, result, &hash, 4, &[])
             .unwrap());
         assert_eq!(store.comment_projection("root").unwrap().unwrap(), current);
         assert!(crate::social::private_reaction::project_reaction_target(

@@ -4091,6 +4091,14 @@ body:has([data-chat-rail-resize][data-dragging='true']) {
   color: var(--pt-muted);
 }
 .sc-verdict--compact { font-size: 10px; }
+/* In-flight indicator shown after the user accepts a retry: the failure icon
+   is replaced by a quiet spinner, signalling the send is being re-attempted. */
+.sc-verdict--retrying {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--pt-muted);
+}
 .sc-verdict[data-message-delivery-state='fully_delivered'] { color: var(--pt-secondary); }
 .sc-verdict[data-message-delivery-state='submit_overdue'],
 .sc-verdict[data-message-delivery-state='undeliverable_suspected'] { color: var(--pt-warning); }
@@ -4613,3 +4621,59 @@ body:has([data-chat-rail-resize][data-dragging='true']) {
    a wrapping single-row override. The footer keeps tools left / send right via
    space-between and every control stays mounted and keyboard-reachable
    (chat-layout-contract §6/§7). */
+
+/* ===== Optimistic outbound (sender-only instant preview) =====
+   The local image renders at full opacity immediately; in-flight state is a
+   light scrim with a centered spinner, never an opaque black placeholder. The
+   scrim is removed on send without swapping the <img>, so there is no reflow. */
+.sc-optimistic-stack { display: flex; flex-direction: column; gap: 10px; }
+.sc-optimistic-row { display: flex; justify-content: flex-end; }
+.sc-optimistic-bubble {
+  max-width: min(320px, 100%);
+  padding: 8px 10px;
+  border-radius: var(--pt-radius-lg, 14px);
+  background: var(--pt-ownBubble);
+  color: var(--pt-onPrimary);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.sc-optimistic-bubble .sc-msg-attachments { margin-top: 0; align-items: flex-end; }
+.sc-optimistic-image { position: relative; overflow: hidden; border-radius: 8px; }
+.sc-optimistic-image img {
+  display: block;
+  width: auto;
+  max-width: min(240px, 100%);
+  max-height: 260px;
+}
+.sc-optimistic-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  /* Light, readable scrim over the already-visible local image. */
+  background: rgba(17, 24, 39, 0.28);
+  color: #fff;
+  border-radius: inherit;
+}
+.sc-optimistic-text { font-size: 13.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.sc-optimistic-meta { display: flex; align-items: center; justify-content: flex-end; }
+.sc-optimistic-time { font-size: 10px; opacity: 0.75; }
+.sc-optimistic-failed {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  opacity: 0.9;
+}
+.sc-optimistic-retrying {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  opacity: 0.85;
+}
+.sc-optimistic-row[data-optimistic-status='failed'] .sc-optimistic-bubble {
+  outline: 1px solid var(--pt-danger, #d92d20);
+}

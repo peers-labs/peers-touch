@@ -43,18 +43,46 @@ remote multiaddresses. The Relay still has no business route or payload parser.
 
 The source-bound `social-relay-opaque` capability owns a unique capture process
 and directory in the prepared Relay network namespace. Its BPF filter matches
-the actual four-tuples of both authenticated TCP legs, including distinct
-source ports behind a shared NAT. Immediate packet delivery and complete
-snapshots avoid an empty kernel-buffer readback. Time and file-size limits,
+the actual four-tuples of all authenticated TCP legs for both Nodes, including distinct
+source ports behind a shared NAT. The namespace listener is resolved from the
+reviewed published TCP port through
+the same source/PID-verified container's Docker bindings. Require one container
+port and one to four authenticated connections per Node on that listener; the published
+host port is not a container packet-filter port.
+libp2p may retain simultaneous-dial connections and place streams on either.
+Capture the complete bounded connection set in deterministic identity order,
+never an arbitrary first connection. Both sets must remain identical through
+finish. Every captured tuple is decoded and scanned for plaintext. Each Node
+must have at least one individual tuple with positive payload bytes in both
+directions; idle siblings need not carry traffic, and two opposite one-way
+siblings cannot substitute for a bidirectional leg.
+Immediate packet delivery and complete snapshots avoid an empty kernel-buffer
+readback. Time and file-size limits,
 Linux parent-death signaling, exact PID/start-time checks, SIGINT flush, zero
 kernel drops and child extinction are required; forced, partial, empty or
 single-leg capture cannot pass. Capture artifacts retain the original bytes.
+The original provisioner passes its bound evidence run's environment through
+`SocialRelayFixture.capture_handler` to the parent handler's existing artifact
+writer. The handler snapshots that environment for both pcap and observation
+refs; it does not depend on child-only run variables or mutate the parent's
+process environment. Provisioning identity remains the separate capture scope.
+Capture failures retain an owner-produced stage observation through the
+existing resource-diagnostic boundary. Worker startup diagnostics use a closed
+category projection and the original owned cleanup inventory; arbitrary
+command output, credentials and packet bytes are excluded.
+A missing or over-bound TCP set retains that failing sample: Station/Node identity
+hashes, the exact candidate count, at most four connection/address hashes and
+numeric ports, plus an explicit truncation flag. This diagnostic does not select
+a candidate or retry a snapshot to hide connection churn.
 
 The original Public Suite publishes namespaced content and confirms a
 bilateral comment through real UI. Verified author head, painted receiver
 content, unchanged route/connection identity, positive traffic in both
 directions on both legs and absent exact plaintext markers are one assertion.
 Transport-only qualification and source checks cannot replace that Journey.
+The scenario assigns distinct actor labels to both screenshot/DOM pairs before
+capture finish; the evidence store continues to reject conflicting bytes at
+an existing path.
 
 ## 3. Replaced Boundaries
 
@@ -186,15 +214,21 @@ rechecks exact source, protocol and executable identity, and attaches the two
 already prepared Stations. Each Station's container and peer identity is checked
 around attachment preparation. The original joined route generation and public
 dial metadata are retained in an immutable preparation inventory. Private
-Social and Federation lifecycle consumers retain their original Station-only
-preparation. This inventory is equipment evidence; it cannot establish actual
+Social composes the same Relay equipment and attachment owner, preserving its
+canonical physical schema preparation before actor resolution. Only Public
+Social prepares the opaque capture capability. Federation lifecycle retains
+its original Station-only preparation. This inventory is equipment evidence; it cannot establish actual
 Social traffic, receiver convergence or Relay opacity.
 
 CA additions use unique run-scoped paths, exclusive partial writes and atomic
 no-clobber publication. Cleanup is registered before writing, admits empty
 partial writes, verifies file type/mode/owner and final certificate digest, and
 rejects a replaced Compose container before mutation. It removes only its own
-paths and restarts that same container to retire cached trust.
+paths and restarts that same container to retire cached trust. An attempted
+import remains pending in the shared fixture until its original detach callback
+confirms absence. CA removal for that Station and Social notification-runtime
+restoration refuse to destroy retirement dependencies while it is pending.
+The Social parent retains this fixture before equipment can partially fail.
 
 Existing active attachments with the exact Relay origin are reused without
 cleanup ownership. Existing recovering, disabled-but-live or foreign-origin

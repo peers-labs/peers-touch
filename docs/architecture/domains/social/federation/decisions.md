@@ -261,3 +261,8 @@ Native 验 Actor 事件和接纳回执后重放计数。私密 typed target 与 
 **Consequences**：同步生成协议、所有 Native verifier、Runtime、peers-ui、
 原型和原 Gate。作者站遗漏、时钟错误和停机是明确边界；回执不证明汇总完整性。
 精确重试保留原命令字节，结果未知与提交后回读等待分别呈现。
+
+> **2026-11 退役注记**：社交投票（Poll）能力已整体下线，相关 proto 消息、
+> 字段与枚举值以 `reserved` 保留编号，typed/opaque ballot 及接纳回执链路删除。
+> 本决策中评论与反应（reaction）延伸原交互权威的部分继续有效；仅 ballot
+> 相关条款退役。

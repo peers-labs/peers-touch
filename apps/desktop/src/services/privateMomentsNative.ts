@@ -19,7 +19,6 @@ export const PRIVATE_MOMENTS_COMMANDS = {
   react: 'social_private_react',
   unreact: 'social_private_unreact',
   retryReaction: 'social_private_reaction_retry',
-  votePoll: 'social_private_poll_vote',
 } as const;
 
 const SUPPORTED_REACTION_KINDS = new Set<ReactionKind>([
@@ -132,8 +131,7 @@ export interface PrivateReactionCommandProjection {
   postId: string;
   commentId: string;
   kind: ReactionKind;
-  operation: 'REACT' | 'UNREACT' | 'VOTE_POLL';
-  selectedOpaqueOptionIds?: string[];
+  operation: 'REACT' | 'UNREACT';
   state: PrivateReactionState;
   attemptCount: number;
   projectionRevision: string;
@@ -147,16 +145,6 @@ export interface PrivateReactionMutationResult {
   reactions: ReactionSummary[];
   projectionRevision: string;
   exactReplay: boolean;
-  poll?: PrivatePollResultProjection;
-}
-
-export interface PrivatePollResultProjection {
-  voteCounts: string[];
-  selectedOptions: number[];
-  voterCount: string;
-  projectionRevision: string;
-  commandId: string;
-  voteActorPtid: string;
 }
 
 export function privateReactionTargetKey(
@@ -215,18 +203,6 @@ export type PrivateMomentContentProjection =
       text: string;
       url: string;
       title: string;
-    }
-  | {
-      kind: 'POLL';
-      text: string;
-      question: string;
-      options: string[];
-      opaqueOptionIds?: string[];
-      optionSetSha256?: string;
-      result?: PrivatePollResultProjection;
-      minChoices: number;
-      maxChoices: number;
-      expiresAtSeconds: number;
     }
   | {
       kind: 'REPOST';
@@ -328,13 +304,6 @@ export interface PrivateMomentPublishIntent {
     longitude: number;
     address?: string;
     placeId?: string;
-  };
-  poll?: {
-    question: string;
-    options: string[];
-    minChoices: number;
-    maxChoices: number;
-    expiresAtSeconds: number;
   };
   repost?: {
     sourcePostId: string;
@@ -510,7 +479,6 @@ const REACTION_STATES = new Set<PrivateReactionState>([
 const REACTION_OPERATIONS = new Set<PrivateReactionCommandProjection['operation']>([
   'REACT',
   'UNREACT',
-  'VOTE_POLL',
 ]);
 
 export class PrivateMomentsNativeError extends Error {
@@ -631,14 +599,11 @@ function normalizeReactionCommand(value: unknown): PrivateReactionCommandProject
   const retryNotBeforeUnixMs = optionalNumber(
     value.retry_not_before_unix_ms ?? value.retryNotBeforeUnixMs,
   );
-  const selectedOpaqueOptionIds = value.selected_opaque_option_ids ?? value.selectedOpaqueOptionIds ?? [];
   if (
     !commandId
     || !postId
     || kind === undefined
-    || (operation === 'VOTE_POLL'
-      ? kind !== ReactionKind.REACTION_UNSPECIFIED || commentId !== ''
-      : !SUPPORTED_REACTION_KINDS.has(kind))
+    || !SUPPORTED_REACTION_KINDS.has(kind)
     || (commentId !== '' && kind !== ReactionKind.REACTION_LIKE)
     || !REACTION_OPERATIONS.has(operation)
     || !REACTION_STATES.has(state)
@@ -646,12 +611,6 @@ function normalizeReactionCommand(value: unknown): PrivateReactionCommandProject
     || !Number.isSafeInteger(attemptCount)
     || attemptCount < 0
     || !projectionRevision
-    || !Array.isArray(selectedOpaqueOptionIds)
-    || selectedOpaqueOptionIds.some(id => typeof id !== 'string' || !/^[a-f0-9]{64}$/.test(id))
-    || (operation === 'VOTE_POLL'
-      ? selectedOpaqueOptionIds.length === 0
-        || selectedOpaqueOptionIds.some((id, index) => index > 0 && selectedOpaqueOptionIds[index - 1] >= id)
-      : selectedOpaqueOptionIds.length !== 0)
   ) {
     throw privateProjectionContractError('private Reaction command identity is invalid');
   }
@@ -661,7 +620,6 @@ function normalizeReactionCommand(value: unknown): PrivateReactionCommandProject
     commentId,
     kind,
     operation,
-    selectedOpaqueOptionIds,
     state,
     attemptCount,
     projectionRevision,
@@ -692,30 +650,6 @@ function normalizeReactionMutationResult(value: unknown): PrivateReactionMutatio
     reactions: normalizeReactionSummaries(value.reactions),
     projectionRevision,
     exactReplay,
-    poll: value.poll === undefined || value.poll === null ? undefined : normalizePollResult(value.poll),
-  };
-}
-
-function normalizePollResult(value: unknown): PrivatePollResultProjection {
-  if (!isRecord(value)) throw privateProjectionContractError('private poll result is malformed');
-  const voteCounts = value.vote_counts ?? value.voteCounts;
-  const selectedOptions = value.selected_options ?? value.selectedOptions;
-  const voterCount = generationField(value.voter_count ?? value.voterCount);
-  const projectionRevision = generationField(value.projection_revision ?? value.projectionRevision);
-  if (!Array.isArray(voteCounts) || voteCounts.some(count => !generationField(count))
-    || !Array.isArray(selectedOptions) || selectedOptions.some((index, position) =>
-      !Number.isSafeInteger(index) || index < 0 || index >= voteCounts.length
-      || (position > 0 && selectedOptions[position - 1] >= index))
-    || !voterCount || !projectionRevision) {
-    throw privateProjectionContractError('private poll result identity is invalid');
-  }
-  return {
-    voteCounts: voteCounts.map(count => generationField(count)!),
-    selectedOptions,
-    voterCount,
-    projectionRevision,
-    commandId: stringField(value.command_id ?? value.commandId),
-    voteActorPtid: stringField(value.vote_actor_ptid ?? value.voteActorPtid),
   };
 }
 
@@ -849,45 +783,6 @@ function normalizeContent(value: unknown): PrivateMomentContentProjection | unde
       throw privateProjectionContractError('private link projection is incomplete');
     }
     return { kind, text, url, title };
-  }
-  if (kind === 'POLL') {
-    const question = stringField(value.question);
-    const options = Array.isArray(value.options)
-      ? value.options.map(stringField)
-      : [];
-    const minChoices = optionalNumber(value.min_choices ?? value.minChoices);
-    const maxChoices = optionalNumber(value.max_choices ?? value.maxChoices);
-    const expiresAtSeconds = optionalNumber(
-      value.expires_at_seconds ?? value.expiresAtSeconds,
-    );
-    const opaqueOptionIds = value.opaque_option_ids ?? value.opaqueOptionIds;
-    const optionSetSha256 = stringField(value.option_set_sha256 ?? value.optionSetSha256);
-    if (
-      !question
-      || options.length < 2
-      || options.some((option) => !option)
-      || minChoices === undefined
-      || maxChoices === undefined
-      || expiresAtSeconds === undefined
-      || !Array.isArray(opaqueOptionIds) || opaqueOptionIds.length !== options.length
-      || opaqueOptionIds.some(id => typeof id !== 'string' || !/^[a-f0-9]{64}$/.test(id))
-      || new Set(opaqueOptionIds).size !== opaqueOptionIds.length
-      || !/^[a-f0-9]{64}$/.test(optionSetSha256)
-    ) {
-      throw privateProjectionContractError('private poll projection is incomplete');
-    }
-    return {
-      kind,
-      text,
-      question,
-      options,
-      opaqueOptionIds,
-      optionSetSha256,
-      result: value.result === undefined || value.result === null ? undefined : normalizePollResult(value.result),
-      minChoices,
-      maxChoices,
-      expiresAtSeconds,
-    };
   }
   if (kind === 'REPOST') {
     const comment = stringField(value.comment);
@@ -1297,15 +1192,6 @@ function nativeIntent(
           place_id: intent.location.placeId ?? '',
         }
       : undefined,
-    poll: intent.poll
-      ? {
-          question: intent.poll.question,
-          options: [...intent.poll.options],
-          min_choices: intent.poll.minChoices,
-          max_choices: intent.poll.maxChoices,
-          expires_at_seconds: intent.poll.expiresAtSeconds,
-        }
-      : undefined,
     repost: intent.repost
       ? {
           source_post_id: intent.repost.sourcePostId,
@@ -1420,18 +1306,6 @@ export const privateMomentsNative = {
         post_id: input.postId,
       },
       'RECOVERY_KEY_UNAVAILABLE',
-    ));
-  },
-
-  async votePoll(input: {
-    actorPtid: string; rendererGeneration: number; postId: string; selectedOptions: readonly number[];
-  }): Promise<PrivateReactionMutationResult> {
-    assertNative('PRIVATE_UNSUPPORTED_ON_DEVICE');
-    return normalizeReactionMutationResult(await invokePrivateNative(
-      PRIVATE_MOMENTS_COMMANDS.votePoll,
-      { actor_ptid: input.actorPtid, renderer_generation: input.rendererGeneration,
-        post_id: input.postId, selected_options: [...input.selectedOptions] },
-      'REACTION_REJECTED',
     ));
   },
 

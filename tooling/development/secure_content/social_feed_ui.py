@@ -17,6 +17,20 @@ if TYPE_CHECKING:
 CARDS = '.moments-app [data-acceptance-id="social-moment-card"][data-post-id]'
 SEARCH = '.moments-app input[data-scope-search="feed"]'
 
+ACQUIRED_COMMENT_BASELINE_JS = """
+const thread = document.querySelector(arguments[0])?.querySelector('[data-moments-comment-thread]');
+return Boolean(thread && !thread.querySelector('.pt-spinner')
+  && thread.querySelectorAll('[data-moments-comment]').length === arguments[1]
+  && (arguments[1] > 0 || thread.querySelector('.pt-mom-comment-status')?.textContent.trim()));
+"""
+
+
+def wait_for_acquired_comments(ui: SocialCommentUI, post: str, rows: int) -> None:
+    wait_until(
+        lambda: ui.driver.execute_script(ACQUIRED_COMMENT_BASELINE_JS, post, rows),
+        f"{ui.actor} acquired Comment baseline", timeout=30,
+    )
+
 
 def _sha(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
@@ -141,7 +155,8 @@ def assert_identity_search(ui: SocialCommentUI, post_id: str) -> dict[str, Any]:
 
 
 START_STABLE_FEED_JS = """
-const selector = arguments[0], cardsSelector = arguments[1];
+const selector = arguments[0], cardsSelector = arguments[1], options = arguments[2] || {};
+const expectedRows = options.rows ?? 2, expanded = options.expanded ?? true;
 if (window.__PT_SOCIAL_FEED_OBSERVATION__) throw new Error('Social observer already active');
 const app = document.querySelector('.moments-app'), card = document.querySelector(selector);
 const cards = Array.from(document.querySelectorAll(cardsSelector));
@@ -149,34 +164,57 @@ const body = card?.querySelector(':scope > .sk-post-body > p');
 const thread = card?.querySelector('[data-moments-comment-thread]');
 const toggle = card?.querySelector('[data-acceptance-id="social-open-comments"]');
 const rows = Array.from(thread?.querySelectorAll('[data-moments-comment]') || []);
-if (!app || !body?.textContent || !thread || !toggle || rows.length !== 2)
+const empty = thread?.querySelector('.pt-mom-comment-status');
+const editor = thread?.querySelector('[data-acceptance-id="social-comment-input"]');
+if (!app || !body?.textContent || !thread || thread.querySelector('.pt-spinner')
+  || !toggle || rows.length !== expectedRows
+  || (expectedRows === 0 && !empty?.textContent.trim())
+  || (options.editor && !editor))
   throw new Error('Social stable feed baseline missing');
 const protectedNodes = new Set(cards);
-for (const node of [body, toggle, thread, ...rows,
+for (const node of [body, toggle, thread, ...(empty ? [empty] : []),
+  ...(editor ? [editor] : []), ...rows,
   ...rows.flatMap(row => Array.from(row.querySelectorAll('.sk-comment-text, [data-comment-like]')))]) {
   protectedNodes.add(node);
   for (const child of node.childNodes) protectedNodes.add(child);
 }
 const text = body.textContent, count = toggle.textContent;
+const draft = editor && {value: editor.value, start: editor.selectionStart,
+  end: editor.selectionEnd, direction: editor.selectionDirection,
+  focused: document.activeElement === editor};
+const scrollNodes = [];
+for (let node = card.parentElement; node; node = node.parentElement) {
+  if (node.scrollHeight > node.clientHeight) scrollNodes.push([node, node.scrollTop, node.scrollLeft]);
+}
 const rowState = rows.map(row => ({
   text: row.querySelector('.sk-comment-text')?.textContent,
   control: row.querySelector('[data-comment-like]'),
   count: row.querySelector('[data-comment-like]')?.getAttribute('data-comment-like-count'),
   selected: row.querySelector('[data-comment-like]')?.getAttribute('aria-pressed'),
 }));
-const stats = {frames: 0, mutations: 0, violations: []};
-let stopped = false, frame;
+const stats = {frames: 0, mutations: 0, violations: [], aliveReturned: false, returnedFrames: 0};
+let stopped = false, frame, active = true, left = false;
 const fail = code => { if (!stats.violations.includes(code)) stats.violations.push(code); };
 const check = () => {
   const current = Array.from(document.querySelectorAll(cardsSelector));
   if (current.length !== cards.length || current.some((node, index) => node !== cards[index]))
     fail('feed-card-identity-or-order');
   if (!card.isConnected || !body.isConnected || body.textContent !== text) fail('parent-body');
-  if (toggle.getAttribute('aria-expanded') !== 'true' || toggle.textContent !== count)
+  if (toggle.getAttribute('aria-expanded') !== String(expanded) || toggle.textContent !== count)
     fail('comment-expansion-or-count');
   if (!thread.isConnected || thread.querySelector('.pt-spinner')) fail('thread-loading-or-removal');
+  if (expectedRows === 0 && (thread.querySelector('.pt-mom-comment-status') !== empty
+    || !empty?.isConnected || !empty.textContent.trim())) fail('acquired-empty-removed');
+  if (draft && options.editor) {
+    if (!editor.isConnected || editor.value !== draft.value
+      || editor.selectionStart !== draft.start || editor.selectionEnd !== draft.end
+      || editor.selectionDirection !== draft.direction) fail('editor-draft-or-selection');
+    if (!options.alive && draft.focused && document.activeElement !== editor) fail('editor-focus');
+  }
+  if (active && scrollNodes.some(([node, top, left]) =>
+    Math.abs(node.scrollTop - top) > 1 || Math.abs(node.scrollLeft - left) > 1)) fail('feed-scroll');
   const style = getComputedStyle(card);
-  if (style.visibility === 'hidden' || style.display === 'none' || Number(style.opacity) === 0)
+  if (active && (style.visibility === 'hidden' || style.display === 'none' || Number(style.opacity) === 0))
     fail('card-hidden');
   const currentRows = Array.from(thread.querySelectorAll('[data-moments-comment]'));
   if (currentRows.length !== rows.length || currentRows.some((node, index) => node !== rows[index]))
@@ -192,27 +230,57 @@ const check = () => {
 const observer = new MutationObserver(records => {
   stats.mutations += records.length;
   for (const record of records) {
+    // The page also acquires unrelated threads while the Runtime reconciles.
+    // Keep the loading oracle bound to this original acquired thread.
+    if (record.target === thread || (record.target && thread.contains(record.target))) {
+      for (const added of record.addedNodes || []) {
+        if (added.nodeType === 1 && (added.matches('.pt-spinner') || added.querySelector('.pt-spinner')))
+          fail('thread-loading-or-removal');
+      }
+    }
     for (const removed of record.removedNodes) {
       if (Array.from(protectedNodes).some(node => removed === node || removed.contains(node)))
         fail('protected-node-removed');
     }
     if (record.type === 'characterData' && protectedNodes.has(record.target)
       && record.oldValue !== record.target.textContent) fail('protected-text-changed');
+    if (record.type === 'attributes' && protectedNodes.has(record.target)
+      && ['aria-expanded', 'aria-pressed', 'data-comment-like-count'].includes(record.attributeName)
+      && record.oldValue !== record.target.getAttribute(record.attributeName))
+      fail('confirmed-control-transient-change');
   }
   check();
 });
-observer.observe(app, {subtree: true, childList: true, attributes: true,
+observer.observe(app, {subtree: true, childList: true, attributes: true, attributeOldValue: true,
   characterData: true, characterDataOldValue: true});
 const sample = () => {
   if (stopped) return;
   stats.frames += 1;
+  if (active && stats.aliveReturned) stats.returnedFrames += 1;
   check();
   frame = requestAnimationFrame(sample);
 };
 check();
 frame = requestAnimationFrame(sample);
-window.__PT_SOCIAL_FEED_OBSERVATION__ = () => {
+window.__PT_SOCIAL_FEED_OBSERVATION__ = phase => {
+  if (phase !== undefined) {
+    if (!options.alive || (phase !== 'inactive' && phase !== 'active')
+      || (phase === 'inactive' && (left || !active))
+      || (phase === 'active' && (!left || active)))
+      throw new Error('Invalid Social observer page transition');
+    if (phase === 'inactive') {
+      check();
+      active = false;
+      left = true;
+    } else {
+      active = true;
+      stats.aliveReturned = true;
+      check();
+    }
+    return {active};
+  }
   check();
+  if (options.alive && (!active || !stats.aliveReturned)) fail('alive-return-missing');
   stopped = true;
   cancelAnimationFrame(frame);
   observer.disconnect();
@@ -223,12 +291,38 @@ return {started: true};
 """
 
 
-def assert_stable_reconcile(ui: SocialCommentUI, post_id: str) -> dict[str, Any]:
+def assert_stable_reconcile(
+    ui: SocialCommentUI, post_id: str, *, phase: str = "expanded",
+    rows: int = 2, expanded: bool = True, alive: bool = False,
+) -> dict[str, Any]:
     """Observe real Runtime reconciles and Native frames, retaining the original thread."""
     post = ui.open_thread(post_id)
-    ui.driver.execute_script(START_STABLE_FEED_JS, post, CARDS)
+    wait_for_acquired_comments(ui, post, rows)
+    editor_selector = f'{post} [data-acceptance-id="social-comment-input"]'
+    editor = ui.click(editor_selector, f"{phase}-draft")
+    editor.send_keys("Retained acceptance draft")
+    ui.driver.execute_script("arguments[0].setSelectionRange(2, 8);", editor)
+    if not expanded:
+        ui.click(f'{post} [data-acceptance-id="social-open-comments"]', f"{phase}-collapse")
+    ui.driver.execute_script(
+        START_STABLE_FEED_JS, post, CARDS,
+        {"rows": rows, "expanded": expanded, "editor": True, "alive": alive},
+    )
     completed = 0
     try:
+        if alive:
+            ui.driver.execute_script("return window.__PT_SOCIAL_FEED_OBSERVATION__('inactive');")
+            ui.click(
+                '[data-pt-primary-nav="chat"] button, [data-pt-primary-nav="chat"] [role="button"]',
+                "alive-leave-moments",
+            )
+            wait_until(lambda: not ui.visible(post), "Moments page inactive", timeout=30)
+            ui.click(
+                '[data-pt-primary-nav="moments"] button, [data-pt-primary-nav="moments"] [role="button"]',
+                "alive-return-moments",
+            )
+            wait_until(lambda: ui.visible(post), "Retained Moments page active", timeout=30)
+            ui.driver.execute_script("return window.__PT_SOCIAL_FEED_OBSERVATION__('active');")
         for _ in range(2):
             result = call_async_harness(
                 ui.driver, "reconcileFeedProjection", namespace="moments", script_timeout=120,
@@ -239,7 +333,7 @@ def assert_stable_reconcile(ui: SocialCommentUI, post_id: str) -> dict[str, Any]
         deadline = time.monotonic() + 30
         if not ui.driver.execute_async_script(search_capture.CAPTURE_PAINT_JS, 30_000):
             raise RuntimeError("Stable feed Native paint frames timed out")
-        screenshot = ui.evidence_root / "private-feed-stable-reconcile.png"
+        screenshot = ui.evidence_root / f"private-feed-stable-{phase}.png"
         dom = screenshot.with_suffix(".html")
         if not ui.driver.save_screenshot(str(screenshot)):
             raise RuntimeError("Stable feed Native screenshot failed")
@@ -251,12 +345,19 @@ def assert_stable_reconcile(ui: SocialCommentUI, post_id: str) -> dict[str, Any]
         stats = ui.driver.execute_script(
             "return window.__PT_SOCIAL_FEED_OBSERVATION__?.();",
         )
-    if not stats or stats["frames"] < 2 or stats["violations"]:
+        if not expanded:
+            ui.click(f'{post} [data-acceptance-id="social-open-comments"]', f"{phase}-restore")
+        wait_until(lambda: ui.visible(editor_selector), "Retained comment editor", timeout=30).clear()
+    if (not stats or stats["frames"] < 2 or stats["violations"]
+        or (alive and (not stats["aliveReturned"] or stats["returnedFrames"] < 2))):
         raise RuntimeError(f"Native repeated feed reconcile was not stable: {stats}")
     result = {
-        "actor": ui.actor, "postIdSha256": _sha(post_id), "runtimeReconciles": completed,
-        **stats, "parentRetained": True, "rootAndReplyRetained": True,
-        "screenshot": str(screenshot), "dom": str(dom),
+        "actor": ui.actor, "phase": phase, "postIdSha256": _sha(post_id),
+        "runtimeReconciles": completed, "rows": rows, "expanded": expanded, "aliveReturn": alive,
+        **stats, "parentRetained": True, "editorRetained": True,
+        "automationSessionId": str(ui.driver.session_id),
+        "screenshot": {"path": str(screenshot), "sha256": hashlib.sha256(screenshot.read_bytes()).hexdigest()},
+        "dom": {"path": str(dom), "sha256": hashlib.sha256(dom.read_bytes()).hexdigest()},
     }
     ui.assertions.append({"assertion": "stable-feed-reconcile", **result})
     return result

@@ -83,7 +83,6 @@ type FeedInteractionRecord struct {
 	OutboundFrameID           string    `gorm:"size:512;not null"`
 	DeliveryRevision          uint64    `gorm:"not null"`
 	NextAttemptAt             time.Time `gorm:"not null;index"`
-	PollAdmission             []byte    `gorm:"type:bytea"`
 	AdmissionReturnRequired   bool      `gorm:"not null;default:false;index"`
 	AdmissionReturned         bool      `gorm:"not null;default:false;index"`
 	AdmissionFrameID          string    `gorm:"size:512;not null;default:''"`
@@ -157,7 +156,7 @@ func (s *FeedLogStore) Migrate(ctx context.Context) error {
 		&FeedChainRecord{}, &FeedEventRecord{}, &FeedFanoutRecord{},
 		&FeedSubscriptionRecord{}, &FeedInteractionRecord{},
 		&FeedObjectRecord{},
-		&FeedReactionVersion{}, &FeedPollVersion{},
+		&FeedReactionVersion{},
 		&FeedInteractionFanout{},
 		&FeedThreadHead{}, &FeedThreadRecord{}, &FeedQuarantineRecord{},
 	)

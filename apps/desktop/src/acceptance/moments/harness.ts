@@ -40,7 +40,10 @@ import { useSessionStore } from '../../store/session';
 import { useFederationStore } from '../../store/federation';
 import { federationRuntime } from '../../runtimes/federationRuntime';
 import { registerAcceptanceHarness } from '../registry';
-import { feedSearchIdentities, reconcileFeedProjection } from './feedObservation';
+import {
+  beginCommentReadReconcile, clearCommentReadReconcile, commentReadReconcileStatus,
+  feedSearchIdentities, reconcileFeedProjection, releaseCommentReadReconcile,
+} from './feedObservation';
 
 declare const __PT_SOURCE_COMMIT__: string;
 
@@ -56,7 +59,7 @@ interface StagePrivateDraftInput {
   groupConversationId?: string;
   baseKind?: 'PUBLIC' | 'FOLLOWERS';
   actorPtids?: string[];
-  momentKind?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'LINK' | 'POLL' | 'REPOST' | 'LOCATION';
+  momentKind?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'LINK' | 'REPOST' | 'LOCATION';
   mentions?: PrivateMomentPublishIntent['mentions'];
   files?: Array<{
     intentId: string;
@@ -64,7 +67,6 @@ interface StagePrivateDraftInput {
   }>;
   link?: PrivateMomentPublishIntent['link'];
   location?: PrivateMomentPublishIntent['location'];
-  poll?: PrivateMomentPublishIntent['poll'];
   repost?: PrivateMomentPublishIntent['repost'];
 }
 
@@ -460,14 +462,6 @@ async function privateProjectionEvidence(
       urlSha256: await sha256(content.url),
       titleSha256: await sha256(content.title),
     };
-  } else if (content?.kind === 'POLL') {
-    subtypeEvidence = {
-      questionSha256: await sha256(content.question),
-      optionLabelSha256: await Promise.all(content.options.map(sha256)),
-      minChoices: content.minChoices,
-      maxChoices: content.maxChoices,
-      expiresAtSeconds: content.expiresAtSeconds,
-    };
   } else if (content?.kind === 'REPOST') {
     subtypeEvidence = {
       commentSha256: await sha256(content.comment),
@@ -488,6 +482,7 @@ async function privateProjectionEvidence(
     platform: usePrivateMomentsStore.getState().platform,
     state: projection.state,
     errorCode: projection.errorCode,
+    remoteDeliveryState: projection.remoteDeliveryState,
     postIdSha256: await sha256(projection.postId),
     contentIdSha256: await sha256(projection.contentId),
     authorPtidSha256: projection.authorPtid
@@ -523,7 +518,6 @@ function publicPostText(post: Post): string {
     case 'imagePost':
     case 'videoPost':
     case 'linkPost':
-    case 'pollPost':
     case 'locationPost':
       return post.content.value.text;
     case 'repostPost':
@@ -606,7 +600,6 @@ async function stagePrivateDraft(input: StagePrivateDraftInput) {
     text: input.text,
     audience: privateAudience(input),
     mentions: (input.mentions ?? []).map(mention => create(MentionSchema, mention)),
-    poll: input.poll,
     files: (input.files ?? []).map((file) => ({
       intentId: file.intentId,
       filePath: file.filePath,
@@ -626,7 +619,7 @@ async function publishPrivateDraft() {
   let errorMessage: string | undefined;
   try {
     const result = await publishTypedPrivateMoment({
-      momentKind: draft.poll ? 'POLL' : draft.files.length > 0 ? 'IMAGE' : 'TEXT',
+      momentKind: draft.files.length > 0 ? 'IMAGE' : 'TEXT',
       text: draft.text,
       files: draft.files,
       audienceKind: audienceName(draft.audience.kind) as StagePrivateDraftInput['audienceKind'],
@@ -638,7 +631,6 @@ async function publishPrivateDraft() {
       draftId: draft.draftId,
       revision: draft.revision,
       mentions: draft.mentions,
-      poll: draft.poll,
     });
     transientPostId = result.transientPostId;
   } catch (error) {
@@ -662,6 +654,35 @@ async function publishPrivateDraft() {
       : {}),
     draft: await draftEvidence(useMomentsStore.getState().composerDraft),
   };
+}
+
+async function admitPrivateTextDraft() {
+  const draft = useMomentsStore.getState().composerDraft;
+  const { platform, scope } = usePrivateMomentsStore.getState();
+  if (!draft || draft.files.length || draft.mentions.length) {
+    throw new Error('moments.acceptance.textAdmissionDraftMissing');
+  }
+  if (platform !== 'native' || !scope.actorPtid || scope.rendererGeneration < 1) {
+    throw new Error('moments.acceptance.nativeScopeMissing');
+  }
+  const audience = draft.audience.kind === Audience_Kind.FRIENDS
+    ? { kind: 'FRIENDS' as const }
+    : draft.audience.kind === Audience_Kind.CUSTOM_ALLOW
+      ? { kind: 'CUSTOM_ALLOW' as const, actorPtids: [...draft.audience.actorPtids] }
+      : undefined;
+  if (!audience) throw new Error('moments.acceptance.textAdmissionAudienceUnsupported');
+  const result = await privateMomentsNative.admit({
+    actorPtid: scope.actorPtid,
+    rendererGeneration: scope.rendererGeneration,
+    draftId: draft.draftId,
+    draftRevision: draft.revision,
+    audience,
+    momentKind: 'TEXT',
+    text: draft.text,
+    mentions: [],
+    files: [],
+  });
+  return { state: result.state, draft: await draftEvidence(draft) };
 }
 
 async function publishUnsupportedCustomDenyPublic(
@@ -779,19 +800,6 @@ async function publishTypedPrivateMoment(input: StagePrivateDraftInput) {
       if (!input.link) throw new Error('moments.acceptance.linkMissing');
       draft = { ...base, kind: 'link', text: input.text, link: input.link };
       break;
-    case 'POLL':
-      if (!input.poll) throw new Error('moments.acceptance.pollMissing');
-      draft = {
-        ...base,
-        kind: 'poll',
-        text: input.text,
-        poll: {
-          ...input.poll,
-          durationHours: 1,
-          multipleChoice: input.poll.maxChoices > 1,
-        },
-      };
-      break;
     case 'REPOST':
       if (!input.repost) throw new Error('moments.acceptance.repostMissing');
       draft = {
@@ -831,6 +839,10 @@ export function installAcceptanceHarness(): void {
   registerAcceptanceHarness('moments', {
     feedSearchIdentities,
     reconcileFeedProjection,
+    beginCommentReadReconcile,
+    commentReadReconcileStatus,
+    releaseCommentReadReconcile,
+    clearCommentReadReconcile,
     async snapshot() {
       const privateState = usePrivateMomentsStore.getState();
       const sessionIdentity = await activeSessionIdentity();
@@ -852,6 +864,10 @@ export function installAcceptanceHarness(): void {
 
     async stagePrivateDraft(input: StagePrivateDraftInput) {
       return stagePrivateDraft(input);
+    },
+
+    async admitPrivateTextDraft() {
+      return admitPrivateTextDraft();
     },
 
     async acceptanceActorIdentity() {
@@ -1705,63 +1721,6 @@ export function installAcceptanceHarness(): void {
       return {
         commandIdSha256: await sha256(command.commandId),
         commentIdSha256: await sha256(input.commentId),
-        state: command.state,
-        operation: command.operation,
-        attemptCount: command.attemptCount,
-        nativeRetryCount: replays.length,
-        replays,
-      };
-    },
-
-    async replayPrivatePollVote(input: { postId: string }) {
-      if (!input.postId?.trim()) throw new Error('moments.acceptance.postIdMissing');
-      const scope = usePrivateMomentsStore.getState().scope;
-      if (!scope.actorPtid) throw new Error('moments.acceptance.sessionIdentityMissing');
-      const snapshot = await privateMomentsNative.bootstrap({
-        actorPtid: scope.actorPtid,
-        rendererGeneration: scope.rendererGeneration,
-      });
-      const command = snapshot.reactionCommands.find(candidate =>
-        candidate.postId === input.postId && candidate.operation === 'VOTE_POLL');
-      if (!command || command.state !== 'REACTION_COMMITTED') {
-        throw new Error('moments.acceptance.committedPollMissing');
-      }
-      const replays = [];
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        if (usePrivateMomentsStore.getState().scope !== scope) {
-          throw new Error('moments.acceptance.sessionReplaced');
-        }
-        const result = await privateMomentsNative.retryReaction({
-          actorPtid: scope.actorPtid,
-          rendererGeneration: scope.rendererGeneration,
-          commandId: command.commandId,
-        });
-        if (usePrivateMomentsStore.getState().scope !== scope
-          || result.command.commandId !== command.commandId
-          || result.command.postId !== input.postId
-          || result.command.commentId !== ''
-          || result.command.operation !== 'VOTE_POLL'
-          || result.command.state !== 'REACTION_COMMITTED'
-          || result.command.attemptCount !== command.attemptCount
-          || JSON.stringify(result.command.selectedOpaqueOptionIds)
-            !== JSON.stringify(command.selectedOpaqueOptionIds)
-          || !result.poll) {
-          throw new Error('moments.acceptance.pollReplayMismatch');
-        }
-        replays.push({
-          voteCounts: result.poll.voteCounts,
-          selectedOptions: result.poll.selectedOptions,
-          voterCount: result.poll.voterCount,
-          projectionRevision: result.poll.projectionRevision,
-          exactReplay: result.exactReplay,
-        });
-      }
-      if (JSON.stringify(replays[0]) !== JSON.stringify(replays[1])) {
-        throw new Error('moments.acceptance.pollReplayMismatch');
-      }
-      return {
-        commandIdSha256: await sha256(command.commandId),
-        postIdSha256: await sha256(input.postId),
         state: command.state,
         operation: command.operation,
         attemptCount: command.attemptCount,

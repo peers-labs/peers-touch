@@ -16,7 +16,6 @@ const mocks = vi.hoisted(() => {
     circles: [],
     circleMembers: {},
     syncProjection: vi.fn<() => Promise<void>>(),
-    reconcilePublicPollCommands: vi.fn<() => Promise<void>>(),
     hydratePrivateMoments: vi.fn(),
     listMyCircles: vi.fn<() => Promise<void>>(),
     loadMyStats: vi.fn<() => Promise<void>>(),
@@ -238,7 +237,6 @@ beforeEach(() => {
   mocks.moments.circleMembers = {};
   mocks.privateMoments.postsById = {};
   mocks.moments.syncProjection.mockResolvedValue(undefined);
-  mocks.moments.reconcilePublicPollCommands.mockReset().mockResolvedValue(undefined);
   feedMocks.resume.mockReset().mockResolvedValue(undefined);
   mocks.moments.hydratePrivateMoments.mockClear();
   mocks.moments.listMyCircles.mockResolvedValue(undefined);
@@ -868,9 +866,7 @@ describe('momentsRuntime identity fence', () => {
     await flushRuntime();
 
     expect(mocks.moments.syncProjection).toHaveBeenCalledWith('periodic reconcile');
-    expect(mocks.moments.reconcilePublicPollCommands).toHaveBeenCalledTimes(2);
-    expect(mocks.moments.syncProjection.mock.invocationCallOrder[1])
-      .toBeLessThan(mocks.moments.reconcilePublicPollCommands.mock.invocationCallOrder[1]);
+    expect(mocks.moments.syncProjection).toHaveBeenCalledTimes(2);
   });
 
   it('waits for a Home Station identity without failing runtime bootstrap', async () => {
@@ -922,7 +918,6 @@ describe('momentsRuntime identity fence', () => {
     expect(mocks.moments.setPublicFeedRecoveryError).toHaveBeenCalledWith('Error: FEED_IDENTITY_REQUIRED');
     expect(mocks.privateMoments.bootstrap).toHaveBeenCalled();
     expect(mocks.privateMoments.reconcile).toHaveBeenCalled();
-    expect(mocks.moments.reconcilePublicPollCommands).not.toHaveBeenCalled();
     intervalCallbacks[0]?.();
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(mocks.moments.setPublicFeedRecoveryError).toHaveBeenLastCalledWith(null);
@@ -976,7 +971,6 @@ describe('momentsRuntime identity fence', () => {
       stationIdentity: 'peer:station-b',
     });
     expect(mocks.moments.syncProjection).toHaveBeenCalledTimes(2);
-    expect(mocks.moments.reconcilePublicPollCommands).toHaveBeenCalledTimes(1);
   });
 
   it('preserves the logical projection scope across a same-Station route switch', async () => {

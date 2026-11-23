@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Icon, MomentComposerSurface, MomentPollComposer, TextArea,
-  createMomentPollDraft, momentPollDraftError, type MomentPollDraftValue } from '@peers-touch/ui';
+import { Button, Icon, MomentComposerSurface, TextArea } from '@peers-touch/ui';
 import type { MomentDraft } from '../../services/social_api';
 import { useScopedFeedback } from '../../hooks/useAppFeedback';
 import { create } from '@bufbuild/protobuf';
@@ -164,9 +163,6 @@ export function MomentComposer({ initialAudience, onPublished, onDismiss }: Mome
   }));
 
   const [text, setText] = useState<string>(() => draft?.text ?? '');
-  const [poll, setPoll] = useState<MomentPollDraftValue | undefined>(() => draft?.poll);
-  const pollMirrorRef = useRef(poll);
-  const pollError = poll ? momentPollDraftError(poll) : undefined;
   const [audience, setAudience] = useState<Audience>(
     () => draft?.audience ?? initialAudience ?? defaultAudience(),
   );
@@ -316,8 +312,6 @@ export function MomentComposer({ initialAudience, onPublished, onDismiss }: Mome
   );
   const canPublish =
     !!text.trim()
-    && !pollError
-    && !(poll && pending.length > 0)
     && audienceComplete
     && uploadingCount === 0
     && errorCount === 0
@@ -329,7 +323,6 @@ export function MomentComposer({ initialAudience, onPublished, onDismiss }: Mome
     nextText: string,
     nextAudience: Audience,
     nextPending: PendingImage[],
-    nextPoll: MomentPollDraftValue | undefined,
   ) => {
     setDraft({
       draftId,
@@ -337,7 +330,6 @@ export function MomentComposer({ initialAudience, onPublished, onDismiss }: Mome
       text: nextText,
       audience: nextAudience,
       mentions: [],
-      poll: nextPoll,
       files: nextPending.map((item) => ({
         intentId: item.localId,
         filePath: item.filePath,
@@ -355,7 +347,6 @@ export function MomentComposer({ initialAudience, onPublished, onDismiss }: Mome
     text: string;
     audience: Audience;
     pending: PendingImage[];
-    poll?: MomentPollDraftValue;
   } | null>(null);
 
   const cancelScheduledDraftWrite = useCallback(() => {
@@ -380,7 +371,6 @@ export function MomentComposer({ initialAudience, onPublished, onDismiss }: Mome
       text: nextText,
       audience: nextAudience,
       pending: nextPending,
-      poll: pollMirrorRef.current,
     };
     draftWriteTimerRef.current = window.setTimeout(() => {
       draftWriteTimerRef.current = null;
@@ -392,7 +382,6 @@ export function MomentComposer({ initialAudience, onPublished, onDismiss }: Mome
           scheduled.text,
           scheduled.audience,
           scheduled.pending,
-          scheduled.poll,
         );
       }
     }, DRAFT_PERSIST_DEBOUNCE_MS);
@@ -416,7 +405,6 @@ export function MomentComposer({ initialAudience, onPublished, onDismiss }: Mome
           scheduled.text,
           scheduled.audience,
           scheduled.pending,
-          scheduled.poll,
         );
       }
     };
@@ -445,7 +433,7 @@ export function MomentComposer({ initialAudience, onPublished, onDismiss }: Mome
       scheduleDraftWrite(draftRevision.current, nextText, nextAudience, nextPending);
     } else {
       cancelScheduledDraftWrite();
-      writeDraft(draftRevision.current, nextText, nextAudience, nextPending, pollMirrorRef.current);
+      writeDraft(draftRevision.current, nextText, nextAudience, nextPending);
     }
   };
 
@@ -454,7 +442,7 @@ export function MomentComposer({ initialAudience, onPublished, onDismiss }: Mome
     if (draftRevision.current === 0) {
       draftRevision.current = 1;
     }
-    writeDraft(draftRevision.current, text, audience, pending, pollMirrorRef.current);
+    writeDraft(draftRevision.current, text, audience, pending);
     return draftRevision.current;
   };
 
@@ -598,10 +586,6 @@ export function MomentComposer({ initialAudience, onPublished, onDismiss }: Mome
       return;
     }
     if (!paths.length) return;
-    if (pollMirrorRef.current) {
-      feedback.warning(t('moments.compose.poll.exclusive'));
-      return;
-    }
 
     // Cheap bounded magic-header preflight: an unsupported type
     // (notably HEIC without a native transcoder) is rejected before it
@@ -710,14 +694,6 @@ export function MomentComposer({ initialAudience, onPublished, onDismiss }: Mome
       feedback.warning(t('moments.compose.emptyError'));
       return;
     }
-    if (poll && momentPollDraftError(poll)) {
-      feedback.warning(t(`moments.compose.poll.error.${momentPollDraftError(poll)}`));
-      return;
-    }
-    if (poll && pending.length > 0) {
-      feedback.warning(t('moments.compose.poll.exclusive'));
-      return;
-    }
     if (uploadingCount > 0) {
       feedback.warning(t('moments.compose.imageUploading'));
       return;
@@ -729,11 +705,7 @@ export function MomentComposer({ initialAudience, onPublished, onDismiss }: Mome
 
     if (privateAudience) {
       const publishRevision = checkpointDraft();
-      const privateDraft: MomentDraft = poll
-        ? { kind: 'poll', text: trimmed, audience, draftId, draftRevision: publishRevision,
-            poll: { ...poll, question: poll.question.trim(), options: poll.options.map(option => option.trim()),
-              durationHours: 0, multipleChoice: poll.maxChoices > 1 } }
-        : pending.length > 0
+      const privateDraft: MomentDraft = pending.length > 0
         ? {
             kind: 'image' as const,
             text: trimmed,
@@ -802,7 +774,6 @@ export function MomentComposer({ initialAudience, onPublished, onDismiss }: Mome
         cancelScheduledDraftWrite();
         setText('');
         setPending([]);
-        setPoll(undefined); pollMirrorRef.current = undefined;
         setReadinessReady(false);
         clearDraft();
         clearPrivatePublishState();
@@ -853,11 +824,7 @@ export function MomentComposer({ initialAudience, onPublished, onDismiss }: Mome
           ? { ...item, status: 'done', cid: resolved.cid, image: resolved.attachment, uploaded: resolved }
           : item;
       }));
-      const id = poll
-        ? await createPost({ kind: 'poll', text: trimmed, audience, draftId, draftRevision: draftRevision.current,
-            poll: { ...poll, question: poll.question.trim(), options: poll.options.map(option => option.trim()),
-              durationHours: 0, multipleChoice: poll.maxChoices > 1 } })
-        : decision.imageIds.length > 0
+      const id = decision.imageIds.length > 0
           ? await createPost({
               kind: 'image',
               text: trimmed,
@@ -872,7 +839,6 @@ export function MomentComposer({ initialAudience, onPublished, onDismiss }: Mome
       cancelScheduledDraftWrite();
       setText('');
       setPending([]);
-      setPoll(undefined); pollMirrorRef.current = undefined;
       clearDraft();
       onPublished?.(id);
     } catch (err) {
@@ -899,8 +865,6 @@ export function MomentComposer({ initialAudience, onPublished, onDismiss }: Mome
 
   const busy = checkingReadiness || submitting;
   const disabledReason = !text.trim() ? t('moments.compose.emptyError')
-    : pollError ? t(`moments.compose.poll.error.${pollError}`)
-    : poll && pending.length > 0 ? t('moments.compose.poll.exclusive')
     : !audienceComplete ? t('moments.private.state.AUDIENCE_REQUIRED.description')
       : uploadingCount > 0 ? t('moments.compose.imageUploading')
         : errorCount > 0 ? t('moments.compose.imageHasErrors') : t('moments.reaction.pending');
@@ -918,28 +882,12 @@ export function MomentComposer({ initialAudience, onPublished, onDismiss }: Mome
       value={text} disabled={busy} onValueChange={next => {
         setText(next); persistDraft(next, audience, pending, 'trailing');
       }} placeholder={t('moments.compose.placeholder')} maxLength={5000} />}
-    poll={poll && <MomentPollComposer value={poll} disabled={busy}
-      onChange={next => {
-        setPoll(next); pollMirrorRef.current = next; persistDraft(text, audience, pending);
-      }}
-      error={pollError ? t(`moments.compose.poll.error.${pollError}`) : undefined}
-      copy={{ question: t('moments.compose.poll.question'), option: index => t('moments.compose.poll.option', { index }),
-        add: t('moments.compose.poll.addOption'), remove: t('moments.compose.poll.removeOption'),
-        minimum: t('moments.compose.poll.minimum'), maximum: t('moments.compose.poll.maximum'),
-        expiry: t('moments.compose.poll.expiry'), description: t('moments.compose.poll.description') }} />}
-    toolbar={<><Button actionId="compose.images" emphasis="quiet" leading={<Icon iconId="image-plus" size={15} />}
+    toolbar={<Button actionId="compose.images" emphasis="quiet" leading={<Icon iconId="image-plus" size={15} />}
       label={pending.length ? `${t('moments.compose.attachImage')} ${pending.length}/${MAX_IMAGES_PER_POST}`
         : t('moments.compose.attachImage')}
-      availability={slotsLeft <= 0 || busy || !!poll ? { kind: 'disabled', reason: poll
-        ? t('moments.compose.poll.exclusive') : t('moments.compose.imageMaxReached', { max: MAX_IMAGES_PER_POST }) } : undefined}
-      onActivate={() => void handlePickImages()} />
-      <Button actionId="compose.poll" emphasis="quiet" label={t(poll ? 'moments.compose.poll.remove' : 'moments.compose.poll.add')}
-        data-acceptance-id="social-compose-poll"
-        availability={pending.length > 0 || busy ? { kind: 'disabled', reason: t('moments.compose.poll.exclusive') } : undefined}
-        onActivate={() => {
-          const next = poll ? undefined : createMomentPollDraft();
-          setPoll(next); pollMirrorRef.current = next; persistDraft(text, audience, pending);
-        }} /></>}
+      availability={slotsLeft <= 0 || busy
+        ? { kind: 'disabled', reason: t('moments.compose.imageMaxReached', { max: MAX_IMAGES_PER_POST }) } : undefined}
+      onActivate={() => void handlePickImages()} />}
     audience={<AudiencePicker value={audience} people={audiencePeople} circles={circleOptions} groups={groupOptions}
       onChange={handleAudienceChange} disabled={busy} />}
     status={privateAudience && privatePublishState !== 'IDLE'

@@ -16,19 +16,22 @@ enum PrivateMomentKind {
   PRIVATE_MOMENT_KIND_IMAGE = 2;
   PRIVATE_MOMENT_KIND_VIDEO = 3;
   PRIVATE_MOMENT_KIND_LINK = 4;
-  PRIVATE_MOMENT_KIND_POLL = 5;
+  reserved 5;
+  reserved "PRIVATE_MOMENT_KIND_POLL";
   PRIVATE_MOMENT_KIND_REPOST = 6;
   PRIVATE_MOMENT_KIND_LOCATION = 7;
 }
 
 message PreparePrivateMomentRequest {
+  reserved 7;
+  reserved "poll_authority";
+
   string content_id = 1;
   .peers_touch.model.social.v1.Audience audience = 2;
   uint32 object_count = 3;
   string command_id = 4;
   PrivateMomentKind kind = 5;
   PrivateRepostAuthority repost_authority = 6;
-  PrivatePollAuthority poll_authority = 7;
 }
 
 message PreparePrivateMomentResponse {
@@ -52,12 +55,13 @@ message PreparePrivateCommentResponse {
 
 message PrivateMomentContent {
   uint32 format_version = 1;
+  reserved 6;
+  reserved "poll";
   oneof body {
     PrivateTextContent text = 2;
     PrivateImageContent image = 3;
     PrivateVideoContent video = 4;
     PrivateLinkContent link = 5;
-    PrivatePollContent poll = 6;
     PrivateRepostContent repost = 7;
     PrivateLocationContent location = 8;
   }
@@ -102,29 +106,14 @@ message PrivateLinkContent {
   repeated .peers_touch.model.social.v1.Mention mentions = 4;
 }
 
-message PrivatePollOption {
-  bytes opaque_option_id = 1;
-  string label = 2;
-}
-
-message PrivatePollContent {
-  string text = 1;
-  string question = 2;
-  repeated PrivatePollOption options = 3;
-  bytes option_set_sha256 = 4;
-  uint32 min_choices = 5;
-  uint32 max_choices = 6;
-  .google.protobuf.Timestamp expires_at = 7;
-  repeated .peers_touch.model.social.v1.Mention mentions = 8;
-}
-
 enum PrivateRenderedSourceKind {
   PRIVATE_RENDERED_SOURCE_KIND_UNSPECIFIED = 0;
   PRIVATE_RENDERED_SOURCE_KIND_TEXT = 1;
   PRIVATE_RENDERED_SOURCE_KIND_IMAGE = 2;
   PRIVATE_RENDERED_SOURCE_KIND_VIDEO = 3;
   PRIVATE_RENDERED_SOURCE_KIND_LINK = 4;
-  PRIVATE_RENDERED_SOURCE_KIND_POLL = 5;
+  reserved 5;
+  reserved "PRIVATE_RENDERED_SOURCE_KIND_POLL";
   PRIVATE_RENDERED_SOURCE_KIND_LOCATION = 6;
 }
 
@@ -140,12 +129,13 @@ message PublicRenderedSourceSnapshot {
   .google.protobuf.Timestamp created_at = 3;
   PrivateRenderedSourceKind kind = 4;
   repeated .peers_touch.model.social.v1.Mention typed_mentions = 5;
+  reserved 14;
+  reserved "poll";
   oneof body {
     .peers_touch.model.social.v1.TextPost text = 10;
     .peers_touch.model.social.v1.ImagePost image = 11;
     .peers_touch.model.social.v1.VideoPost video = 12;
     .peers_touch.model.social.v1.LinkPost link = 13;
-    .peers_touch.model.social.v1.PollPost poll = 14;
     .peers_touch.model.social.v1.LocationPost location = 15;
   }
 }
@@ -155,12 +145,13 @@ message PrivateRenderedSourceSnapshot {
   .peers_touch.model.actor.v1.ActorRef author = 2;
   .google.protobuf.Timestamp created_at = 3;
   PrivateRenderedSourceKind kind = 4;
+  reserved 14;
+  reserved "poll";
   oneof body {
     PrivateTextContent text = 10;
     PrivateImageContent image = 11;
     PrivateVideoContent video = 12;
     PrivateLinkContent link = 13;
-    PrivatePollContent poll = 14;
     PrivateLocationContent location = 15;
   }
 }
@@ -229,15 +220,6 @@ message SignedMentionRouting {
   bytes sender_signature = 9;
 }
 
-message PrivatePollAuthority {
-  .peers_touch.model.secure_content.v1.SecureResourceRef resource = 1;
-  repeated bytes opaque_option_ids = 2;
-  bytes option_set_sha256 = 3;
-  uint32 min_choices = 4;
-  uint32 max_choices = 5;
-  .google.protobuf.Timestamp expires_at = 6;
-}
-
 message PublicRepostSourceProof {
   bytes canonical_public_post_sha256 = 1;
 }
@@ -257,15 +239,6 @@ message PrivateRepostAuthority {
     PublicRepostSourceProof public_source = 4;
     PrivateRepostSourceProof private_source = 5;
   }
-}
-
-message VotePrivatePollRequest {
-  string post_id = 1;
-  repeated bytes opaque_option_ids = 2;
-  string command_id = 3;
-  bytes option_set_sha256 = 4;
-  string actor_signing_key_id = 5;
-  bytes actor_device_signature = 6;
 }
 
 message PrivateMomentDomainBinding {
@@ -321,30 +294,12 @@ message SubmitPrivateContentHashInput {
   bytes subtype_authority_sha256 = 8;
 }
 
-message VotePrivatePollHashInput {
-  uint32 format_version = 1;
-  string command_id = 2;
-  string post_id = 3;
-  repeated bytes opaque_option_ids = 4;
-  bytes option_set_sha256 = 5;
-  string actor_signing_key_id = 6;
-}
-
-message PrivatePollProjection {
-  repeated PrivatePollOptionResult options = 1;
-  uint64 voter_count = 2;
-  string post_id = 3;
-  bytes option_set_sha256 = 4;
-  uint64 projection_revision = 5;
-  string command_id = 6;
-  string vote_actor_ptid = 7;
-}
-
 message PrivateContentVerification {
   .peers_touch.model.secure_content.v1.ViewerContentCommitProof commit_proof = 1;
   SignedMentionRouting mention_routing = 2;
+  reserved 3;
+  reserved "poll_authority";
   oneof subtype_authority {
-    PrivatePollAuthority poll_authority = 3;
     PrivateRepostAuthority repost_authority = 4;
   }
   .peers_touch.model.secure_content.v1.StationContentSigningKeyAttestation station_signing_key_attestation = 5;
@@ -354,10 +309,12 @@ message PrivateContentVerification {
 }
 
 message PrivateContentAccess {
+  reserved 4;
+  reserved "poll";
+
   .peers_touch.model.secure_content.v1.EncryptedPayload payload = 1;
   .peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope viewer_envelope = 2;
   repeated .peers_touch.model.secure_content.v1.EncryptedObjectDescriptor objects = 3;
-  PrivatePollProjection poll = 4;
   PrivateContentVerification verification = 5;
 }
 
@@ -419,12 +376,14 @@ message CommentResource {
 }
 
 message SubmitPrivateMomentRequest {
+  reserved 6;
+  reserved "poll_authority";
+
   .peers_touch.model.secure_content.v1.ContentEncryptionPlan plan = 1;
   .peers_touch.model.secure_content.v1.EncryptedPayload payload = 2;
   repeated .peers_touch.model.secure_content.v1.PreparedContentKeyEnvelope envelopes = 3;
   repeated .peers_touch.model.secure_content.v1.EncryptedObjectDescriptor objects = 4;
   SignedMentionRouting mention_routing = 5;
-  PrivatePollAuthority poll_authority = 6;
   PrivateRepostAuthority repost_authority = 7;
   string command_id = 8;
 }
@@ -555,23 +514,6 @@ message ListMomentCommentsResponse {
   repeated CommentResource comments = 1;
   string next_cursor = 2;
   bool has_more = 3;
-}
-
-message PrivatePollOptionResult {
-  bytes opaque_option_id = 1;
-  uint64 vote_count = 2;
-  bool selected_by_viewer = 3;
-}
-
-message VotePrivatePollResponse {
-  repeated PrivatePollOptionResult options = 1;
-  uint64 voter_count = 2;
-  bool exact_replay = 3;
-  string command_id = 4;
-  string post_id = 5;
-  bytes option_set_sha256 = 6;
-  uint64 projection_revision = 7;
-  .google.protobuf.Timestamp admitted_at = 8;
 }
 
 message ListRecoverablePrivateContentRequest {

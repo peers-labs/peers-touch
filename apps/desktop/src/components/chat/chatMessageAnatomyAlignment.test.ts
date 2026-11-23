@@ -99,6 +99,19 @@ describe('delivery receipt ticks (north-star .sk-msg-status parity)', () => {
     expect(recovery).toContain('label={retryActionLabel}');
   });
 
+  it('hides the failure icon and shows an in-flight indicator after an accepted retry', () => {
+    // A bounded local override treats the re-queued message as in-flight so
+    // the recovery icon does not instantly reappear while the outbox retries.
+    expect(verdictSource).toContain('retryOptimisticallyAccepted');
+    expect(verdictSource).toContain('RETRY_ACCEPTED_WINDOW_MS');
+    expect(verdictSource).toContain('sc-verdict--retrying');
+    expect(verdictSource).toContain('data-message-retry-accepted');
+    // The override clears once the durable fact leaves the terminal failure.
+    expect(verdictSource).toMatch(/message\.deliveryState !== 'failed'/);
+    const retryingRule = rule('.sc-verdict--retrying');
+    expect(retryingRule).toContain('display: inline-flex');
+  });
+
   it('paints the ticks muted by default and pine for the read state', () => {
     const status = rule('.sc-msg-status');
     expect(status).toContain('gap: 3px');

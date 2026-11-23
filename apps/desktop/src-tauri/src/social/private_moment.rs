@@ -46,7 +46,7 @@ use super::private_mention::{
 };
 use super::projection::{
     canonical_identifier, checked_timestamp_millis, decrypt_projection_from_response,
-    object_descriptor_set_hash, private_poll_option_set_hash, remote_delivery_state,
+    object_descriptor_set_hash, remote_delivery_state,
     repost_source_material_from_response, sender_key_requirement,
     verify_recovery_envelope_for_response, DecryptedPrivateMoment, PrivateMediaState,
     PrivateMomentContentProjection, PrivateMomentProjection, PrivateMomentPublishResult,
@@ -91,24 +91,8 @@ pub struct PrivateMomentLocationIntent {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct PrivateMomentPollIntent {
-    pub question: String,
-    pub options: Vec<String>,
-    pub min_choices: u32,
-    pub max_choices: u32,
-    pub expires_at_seconds: i64,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct PrivateMomentRepostIntent {
     pub source_post_id: String,
-}
-
-#[derive(Clone, Debug)]
-struct PrivateMomentPollMaterial {
-    authority: social::PrivatePollAuthority,
-    options: Vec<social::PrivatePollOption>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -144,8 +128,6 @@ pub struct PrivateMomentPublishIntent {
     pub link: Option<PrivateMomentLinkIntent>,
     #[serde(default)]
     pub location: Option<PrivateMomentLocationIntent>,
-    #[serde(default)]
-    pub poll: Option<PrivateMomentPollIntent>,
     #[serde(default)]
     pub repost: Option<PrivateMomentRepostIntent>,
     #[serde(default)]
@@ -372,12 +354,6 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             .filter(|post_id| canonical_identifier(post_id))
             .map(ToOwned::to_owned)
             .collect::<BTreeSet<_>>();
-        for bytes in self.lease.store.projections()? {
-            let projection = PrivateMomentProjection::decode_local(&bytes)?;
-            if super::private_poll::requires_definition_read(&projection) {
-                reconciled_post_ids.insert(projection.post_id);
-            }
-        }
         match self.remote_private_moment_ids() {
             Ok(discovered) => reconciled_post_ids.extend(discovered),
             Err(error) if error == "secure content session generation is stale" => {
@@ -516,22 +492,14 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         let content_id = reservation.content_id;
         *cleanup_content_id = Some(content_id.clone());
         let audience = private_audience(intent).map_err(PrivatePublishFailure::cleanup)?;
-        let poll_material = private_poll_material(intent, &content_id, kind)
-            .map_err(PrivatePublishFailure::cleanup)?;
         let repost_material = self.load_repost_source_material(
             intent,
             kind,
             reservation.repost_commitment_salt.as_ref(),
         )?;
-        let subtype_prepare_authority_sha256 = poll_material
+        let subtype_prepare_authority_sha256 = repost_material
             .as_ref()
-            .map(|poll| poll.authority.encode_to_vec())
-            .or_else(|| {
-                repost_material
-                    .as_ref()
-                    .map(|repost| repost.authority.encode_to_vec())
-            })
-            .map(|authority| Sha256::digest(authority).to_vec())
+            .map(|repost| Sha256::digest(repost.authority.encode_to_vec()).to_vec())
             .unwrap_or_default();
         let prepare = social::PreparePrivateMomentRequest {
             content_id: content_id.clone(),
@@ -542,7 +510,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             repost_authority: repost_material
                 .as_ref()
                 .map(|repost| repost.authority.clone()),
-            poll_authority: poll_material.as_ref().map(|poll| poll.authority.clone()),
+            ..Default::default()
         };
         tracing::info!("private Moment preparation started");
         let plan = self
@@ -678,7 +646,6 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             intent,
             kind,
             attachment_metadata,
-            poll_material.as_ref(),
             repost_material.as_ref(),
             &mentions,
             reservation.mention_commitment_salt.as_ref(),
@@ -758,9 +725,9 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             envelopes,
             objects: descriptors,
             mention_routing,
-            poll_authority: poll_material.map(|poll| poll.authority),
             repost_authority: repost_material.map(|repost| repost.authority),
             command_id: submit_command_id.clone(),
+            ..Default::default()
         };
         let request_bytes = request.encode_to_vec();
         let command = StoredMomentCommand {
@@ -982,7 +949,6 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                 social::private_content_verification::SubtypeAuthority::RepostAuthority(
                     authority,
                 ) => Some(authority),
-                _ => None,
             })
             .ok_or_else(|| "private repost authority is unavailable".to_string())?;
         let source_post_id = repost
@@ -2193,14 +2159,6 @@ fn private_moment_intent_hash(intent: &PrivateMomentPublishIntent) -> Result<[u8
             )
             .map_err(|error| error.to_string())?;
     }
-    if let Some(poll) = intent.poll.as_ref() {
-        encoder
-            .singular_bytes(
-                14,
-                &serde_json::to_vec(poll).map_err(|error| error.to_string())?,
-            )
-            .map_err(|error| error.to_string())?;
-    }
     if let Some(repost) = intent.repost.as_ref() {
         encoder
             .singular_bytes(
@@ -2263,19 +2221,6 @@ fn apply_terminal_media_failure(
 pub(super) fn scrub_persisted_projection(
     mut projection: PrivateMomentProjection,
 ) -> PrivateMomentProjection {
-    if super::private_poll::requires_definition_read(&projection) {
-        if matches!(
-            projection.state,
-            super::projection::PrivateReadState::ContentReady
-                | super::projection::PrivateReadState::RemoteSourceUnavailable
-        ) {
-            projection.state = super::projection::PrivateReadState::LoadingAuthorizedResource;
-        }
-        projection.content = None;
-        projection.mentions.clear();
-        projection.reactions.clear();
-        projection.error_code = Some("PRIVATE_POLL_DEFINITION_REQUIRED".into());
-    }
     match projection.content.as_mut() {
         Some(PrivateMomentContentProjection::Image { media, .. })
         | Some(PrivateMomentContentProjection::Video { media, .. }) => {
@@ -2546,7 +2491,6 @@ fn validate_publish_intent(intent: &PrivateMomentPublishIntent) -> Result<(), St
             if !intent.files.is_empty()
                 || intent.link.is_some()
                 || intent.location.is_some()
-                || intent.poll.is_some()
                 || intent.repost.is_some() =>
         {
             return Err("private text Moment contains subtype fields".to_string());
@@ -2555,7 +2499,6 @@ fn validate_publish_intent(intent: &PrivateMomentPublishIntent) -> Result<(), St
             if intent.files.is_empty()
                 || intent.link.is_some()
                 || intent.location.is_some()
-                || intent.poll.is_some()
                 || intent.repost.is_some() =>
         {
             return Err("private image Moment requires a file".to_string());
@@ -2564,7 +2507,6 @@ fn validate_publish_intent(intent: &PrivateMomentPublishIntent) -> Result<(), St
             if intent.files.is_empty()
                 || intent.link.is_some()
                 || intent.location.is_some()
-                || intent.poll.is_some()
                 || intent.repost.is_some() =>
         {
             return Err("private video Moment requires media files".to_string());
@@ -2572,7 +2514,6 @@ fn validate_publish_intent(intent: &PrivateMomentPublishIntent) -> Result<(), St
         social::PrivateMomentKind::Link
             if !intent.files.is_empty()
                 || intent.location.is_some()
-                || intent.poll.is_some()
                 || intent.repost.is_some()
                 || intent.link.as_ref().is_none_or(|link| {
                     link.url.trim() != link.url
@@ -2585,7 +2526,6 @@ fn validate_publish_intent(intent: &PrivateMomentPublishIntent) -> Result<(), St
         social::PrivateMomentKind::Location
             if !intent.files.is_empty()
                 || intent.link.is_some()
-                || intent.poll.is_some()
                 || intent.repost.is_some()
                 || intent.location.as_ref().is_none_or(|location| {
                     location.name.trim().is_empty()
@@ -2597,32 +2537,10 @@ fn validate_publish_intent(intent: &PrivateMomentPublishIntent) -> Result<(), St
         {
             return Err("private location Moment metadata is invalid".to_string());
         }
-        social::PrivateMomentKind::Poll
-            if !intent.files.is_empty()
-                || intent.link.is_some()
-                || intent.location.is_some()
-                || intent.repost.is_some()
-                || intent.poll.as_ref().is_none_or(|poll| {
-                    poll.question.trim().is_empty()
-                        || poll.question.trim() != poll.question
-                        || !(2..=20).contains(&poll.options.len())
-                        || poll
-                            .options
-                            .iter()
-                            .any(|option| option.trim().is_empty() || option.trim() != option)
-                        || poll.min_choices < 1
-                        || poll.min_choices > poll.max_choices
-                        || poll.max_choices > poll.options.len() as u32
-                        || poll.expires_at_seconds <= super::projection::current_unix_seconds()
-                }) =>
-        {
-            return Err("private poll Moment metadata is invalid".to_string());
-        }
         social::PrivateMomentKind::Repost
             if !intent.files.is_empty()
                 || intent.link.is_some()
                 || intent.location.is_some()
-                || intent.poll.is_some()
                 || intent.repost.as_ref().is_none_or(|repost| {
                     repost.source_post_id.trim().is_empty()
                         || repost.source_post_id.trim() != repost.source_post_id
@@ -2636,7 +2554,6 @@ fn validate_publish_intent(intent: &PrivateMomentPublishIntent) -> Result<(), St
         | social::PrivateMomentKind::Image
         | social::PrivateMomentKind::Video
         | social::PrivateMomentKind::Link
-        | social::PrivateMomentKind::Poll
         | social::PrivateMomentKind::Repost
         | social::PrivateMomentKind::Location => {}
         social::PrivateMomentKind::Unspecified => {
@@ -2675,7 +2592,6 @@ fn private_payload(
     intent: &PrivateMomentPublishIntent,
     kind: social::PrivateMomentKind,
     images: Vec<social::PrivateAttachmentMetadata>,
-    poll_material: Option<&PrivateMomentPollMaterial>,
     repost_material: Option<&PrivateRepostSourceMaterial>,
     mentions: &[social::Mention],
     mention_commitment_salt: Option<&[u8; 32]>,
@@ -2737,24 +2653,6 @@ fn private_payload(
                 mentions: mentions.to_vec(),
             })
         }
-        social::PrivateMomentKind::Poll => {
-            let poll_intent = intent.poll.as_ref().ok_or_else(|| {
-                PrivatePublishFailure::cleanup("private poll Moment metadata is unavailable")
-            })?;
-            let poll = poll_material.ok_or_else(|| {
-                PrivatePublishFailure::cleanup("private poll Moment authority is unavailable")
-            })?;
-            social::private_moment_content::Body::Poll(social::PrivatePollContent {
-                text: intent.text.clone(),
-                question: poll_intent.question.clone(),
-                options: poll.options.clone(),
-                option_set_sha256: poll.authority.option_set_sha256.clone(),
-                min_choices: poll.authority.min_choices,
-                max_choices: poll.authority.max_choices,
-                expires_at: poll.authority.expires_at.clone(),
-                mentions: mentions.to_vec(),
-            })
-        }
         social::PrivateMomentKind::Repost => {
             let repost = repost_material.ok_or_else(|| {
                 PrivatePublishFailure::cleanup("private repost source material is unavailable")
@@ -2803,71 +2701,11 @@ fn private_payload(
     })
 }
 
-fn private_poll_material(
-    intent: &PrivateMomentPublishIntent,
-    content_id: &str,
-    kind: social::PrivateMomentKind,
-) -> Result<Option<PrivateMomentPollMaterial>, String> {
-    if kind != social::PrivateMomentKind::Poll {
-        return Ok(None);
-    }
-    let poll = intent
-        .poll
-        .as_ref()
-        .ok_or_else(|| "private poll Moment metadata is unavailable".to_string())?;
-    let options = poll
-        .options
-        .iter()
-        .enumerate()
-        .map(|(index, label)| {
-            let mut encoder = CanonicalMessageEncoder::new();
-            encoder
-                .singular_bytes(1, b"peers-touch:secure-content:poll-option:v1")
-                .map_err(|error| error.to_string())?;
-            encoder
-                .singular_bytes(2, content_id.as_bytes())
-                .map_err(|error| error.to_string())?;
-            encoder
-                .singular_varint(3, (index + 1) as u64)
-                .map_err(|error| error.to_string())?;
-            Ok(social::PrivatePollOption {
-                opaque_option_id: Sha256::digest(encoder.finish()).to_vec(),
-                label: label.clone(),
-            })
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-    let mut opaque_option_ids = options
-        .iter()
-        .map(|option| option.opaque_option_id.clone())
-        .collect::<Vec<_>>();
-    opaque_option_ids.sort();
-    let option_set_sha256 = private_poll_option_set_hash(&opaque_option_ids)?.to_vec();
-    Ok(Some(PrivateMomentPollMaterial {
-        authority: social::PrivatePollAuthority {
-            resource: Some(wire::SecureResourceRef {
-                owner_domain: wire::SecureContentOwnerDomain::Social as i32,
-                content_id: content_id.to_string(),
-                generation: 1,
-            }),
-            opaque_option_ids,
-            option_set_sha256,
-            min_choices: poll.min_choices,
-            max_choices: poll.max_choices,
-            expires_at: Some(prost_types::Timestamp {
-                seconds: poll.expires_at_seconds,
-                nanos: 0,
-            }),
-        },
-        options,
-    }))
-}
-
 fn resolve_moment_kind(kind_str: &str) -> Result<social::PrivateMomentKind, String> {
     match kind_str {
         "IMAGE" => Ok(social::PrivateMomentKind::Image),
         "VIDEO" => Ok(social::PrivateMomentKind::Video),
         "LINK" => Ok(social::PrivateMomentKind::Link),
-        "POLL" => Ok(social::PrivateMomentKind::Poll),
         "REPOST" => Ok(social::PrivateMomentKind::Repost),
         "LOCATION" => Ok(social::PrivateMomentKind::Location),
         "TEXT" => Ok(social::PrivateMomentKind::Text),
@@ -3020,7 +2858,6 @@ mod tests {
             files: Vec::new(),
             link: None,
             location: None,
-            poll: None,
             repost: None,
             admission_only: false,
         }
@@ -3183,7 +3020,6 @@ mod tests {
             files: Vec::new(),
             link: None,
             location: None,
-            poll: None,
             repost: None,
             admission_only: false,
         };
@@ -3275,94 +3111,6 @@ mod tests {
     }
 
     #[test]
-    fn secure_content_private_poll_binds_opaque_options_to_authority_and_payload() {
-        let mut intent = publish_intent("draft-poll", 1);
-        intent.moment_kind = "POLL".to_string();
-        intent.poll = Some(PrivateMomentPollIntent {
-            question: "Choose one".to_string(),
-            options: vec!["First".to_string(), "Second".to_string()],
-            min_choices: 1,
-            max_choices: 1,
-            expires_at_seconds: 4_000_000_000,
-        });
-
-        assert!(validate_publish_intent(&intent).is_ok());
-        let first = private_poll_material(&intent, "content-poll", social::PrivateMomentKind::Poll)
-            .unwrap()
-            .unwrap();
-        let second =
-            private_poll_material(&intent, "content-poll", social::PrivateMomentKind::Poll)
-                .unwrap()
-                .unwrap();
-        assert_eq!(first.authority, second.authority);
-        assert_eq!(first.options, second.options);
-        assert!(first
-            .authority
-            .opaque_option_ids
-            .windows(2)
-            .all(|pair| pair[0] < pair[1]));
-        assert_eq!(
-            first.authority.option_set_sha256,
-            private_poll_option_set_hash(&first.authority.opaque_option_ids)
-                .unwrap()
-                .to_vec()
-        );
-
-        let payload = private_payload(
-            &intent,
-            social::PrivateMomentKind::Poll,
-            Vec::new(),
-            Some(&first),
-            None,
-            &[],
-            None,
-            None,
-        )
-        .unwrap();
-        let social::private_moment_content::Body::Poll(poll) = payload.body.unwrap() else {
-            panic!("poll intent must produce a poll payload");
-        };
-        assert_eq!(poll.question, "Choose one");
-        assert_eq!(
-            poll.options
-                .iter()
-                .map(|option| option.label.as_str())
-                .collect::<Vec<_>>(),
-            vec!["First", "Second"]
-        );
-        assert_eq!(poll.option_set_sha256, first.authority.option_set_sha256);
-        assert_eq!(poll.expires_at, first.authority.expires_at);
-    }
-
-    #[test]
-    fn secure_content_private_poll_rejects_invalid_bounds_before_prepare() {
-        let mut intent = publish_intent("draft-poll-bounds", 1);
-        intent.moment_kind = "POLL".to_string();
-        intent.poll = Some(PrivateMomentPollIntent {
-            question: "Choose one".to_string(),
-            options: vec!["Only".to_string()],
-            min_choices: 1,
-            max_choices: 1,
-            expires_at_seconds: 4_000_000_000,
-        });
-        assert!(validate_publish_intent(&intent).is_err());
-
-        intent
-            .poll
-            .as_mut()
-            .unwrap()
-            .options
-            .push("Second".to_string());
-        intent.poll.as_mut().unwrap().min_choices = 2;
-        intent.poll.as_mut().unwrap().max_choices = 1;
-        assert!(validate_publish_intent(&intent).is_err());
-
-        intent.poll.as_mut().unwrap().min_choices = 1;
-        intent.poll.as_mut().unwrap().expires_at_seconds = 1;
-        assert!(validate_publish_intent(&intent).is_err());
-    }
-
-    #[test]
     fn secure_content_private_draft_hash_is_stable_until_content_changes() {
         let intent = PrivateMomentPublishIntent {
             actor_ptid: "ptid:alice".to_string(),
@@ -3382,7 +3130,6 @@ mod tests {
             files: Vec::new(),
             link: None,
             location: None,
-            poll: None,
             repost: None,
             admission_only: false,
         };

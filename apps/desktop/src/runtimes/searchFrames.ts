@@ -233,7 +233,7 @@ export function searchPresentation(input: PresentationInput): SearchPresentation
     ? pendingSources(observation, input.progressiveSources)
     : [];
   const showEmpty = finalMatches
-    && input.status !== 'loading'
+    && input.status === 'ready'
     && !input.errorKey
     && (observation?.items.length ?? 0) === 0;
   const showQuickFunctions = input.mode === 'suggest' && !draft;

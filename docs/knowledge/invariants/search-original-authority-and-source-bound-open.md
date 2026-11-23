@@ -3,6 +3,8 @@ kind: invariant
 title: Search preserves original read authority and open bindings
 status: active
 owns:
+  - tooling/acceptance/gates/social/public_feed_native.py
+  - tooling/acceptance/gates/social/test_public_feed_native.py
   - packages/search-core/
   - apps/desktop/src-tauri/src/application/search/
   - apps/desktop/src-tauri/src/application/station_runtime/client.rs
@@ -25,6 +27,7 @@ owns:
   - apps/desktop/src/store/search.ts
   - apps/desktop/src/services/search.ts
   - apps/desktop/src/components/search/SearchOverlay.tsx
+  - apps/desktop/src/components/search/SearchOverlay.css
   - apps/desktop/src/test/moments-store.test.ts
   - apps/desktop/src/services/socialOpenResource.ts
   - apps/mobile/src-tauri/src/runtime/search.rs
@@ -52,6 +55,7 @@ owns:
   - tooling/acceptance/gates/social/content_search_contract.py
   - tooling/acceptance/gates/social/content_search_desktop.py
   - tooling/acceptance/gates/social/content_search_mobile.py
+  - tooling/acceptance/gates/social/cross_station_eventbus_contract_test.py
 referenced-by: []
 related:
   - ../../architecture/domains/search/design.md
@@ -81,6 +85,13 @@ Open MUST consume a reference issued by the current source session and its
 allowlisted resolver binding. Social comments retain their own canonical ID,
 typed parent and exact comment anchor. A caller URL, source ID alone, first
 timeline page or first comment page cannot establish target identity.
+Native Social supporting references come from the current
+`deviceSearchPresentation` snapshot, matching its displayed query and filter.
+The inherited `deviceSearchPage` diagnostic defaults to MESSAGE and issues a
+new query; it cannot describe a painted Social response. An omitted empty
+`items` field never supplies a successful reference. The original Public Gate
+regressions reject closed/stale intent, wrong source and missing resource while
+retaining the exact presented reference.
 An older query session MUST NOT shadow a current valid issuance of the same
 resource. Search design §4.1 owns the matching rule: all current binding,
 identity, resource and expiry checks still apply, followed by original-owner
@@ -116,6 +127,32 @@ resource denial. Acquired-resource absence and explicit authority failure retain
 the original purge and denial contract in Secure Content operations §2.1.
 Original-owner invalidations hide the affected source immediately; they do
 not expose stale content while another source completes.
+Desktop's declared `searchInvalidations` observer follows the read-only ownership
+boundary in Desktop runtime-projections §6.1. Social contract checks must admit
+that observer while rejecting Store acquisition/writes, unqualified Moment
+callbacks and any undeclared subscriber, including `subscribeMany`.
+That observer must compare retained content and scope rather than Store object
+references. An unchanged private bootstrap may copy its maps and threads.
+Passive Public reconciliation may change feed membership without emitting a
+local Moment event or deleting the normalized Post. Observe original Public
+content, membership and integrity refusal through the same read-only subscriber;
+ignore feed loading, cursor and timestamp changes. Otherwise a replicated
+tombstone leaves the displayed Search result behind after the original feed
+and Native owner have removed it.
+An invalidation leaves Search `idle`; that state itself requires one original
+reacquisition even if the pinned remote owner reports unchanged empty revision
+metadata. Immediate concealment cannot qualify a completed empty query.
+The empty presentation requires `ready`, and Native tombstone proof must
+observe the original completed response as well as absent painted rows.
+The original Harness serializes that response with protobuf `toJson`; coverage
+uses canonical `SOURCE_STATE_READY`, not the TypeScript enum member name
+`READY`. Gate fixtures must retain the actual wire representation, require
+their qualification predicate to succeed, and reject partial or wrong-source
+coverage. An omitted empty `items` field remains the canonical empty page.
+Comment loading and pagination bookkeeping alone cannot conceal Search or
+cancel its active original-owner read; content/removal/refusal and identity
+changes still invalidate immediately. Verify this against the real private
+Stores through `searchInvalidations.test.ts`, then the original Native Journey.
 Current query and continuation cancellation must follow the response's actual
 source vector. An unrelated notification may evict that source's cached frames,
 but must not cancel a qualified current query, clear its cursor or reread a
@@ -173,6 +210,12 @@ Native Search capture MUST wait for a stable terminal rendering inside its
 existing bounded capture deadline. A stable pending frame during original-owner
 revalidation is not terminal evidence. Diagnostics may record that frame, but
 all product terminal, readability and retained-context assertions remain required.
+The original Desktop overlay must retire its entrance animation when the
+document becomes hidden, and skip entrance on a hidden or reduced-motion mount,
+following Desktop Search continuity. A background WKWebView can retain the
+invisible initial compositor layer while DOM opacity already reads as one.
+Native proof must still require settled motion and visible immutable pixels;
+loosening capture readiness cannot repair that product defect.
 The Social capture includes the original thread's loading state, parent,
 source, body and comment anchor in the before/after rendering comparison.
 Desktop captures consume the shared Moments card's body and highlighted comment

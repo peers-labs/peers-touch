@@ -12,8 +12,13 @@
         "truth_sources": ["Native-verified public/v1 bytes and two deployed Station projections", "Canonical signed Circuit route verification and immutable source-bound dual-leg Relay packet observations"],
         "surfaces": ["Native Desktop composer, remote feed, comment, reaction and restart", "Operator-protected standard Relay connection metadata and parent-owned bounded packet capture"],
         "proven_by": ["social-public-feed-native-e2e"],
-        "proven_scope": ["Named publication, late follower, interaction, restart and opaque Relay scenarios only after the same current-source Native Suite and owned cleanup pass"],
-        "unproven_scope": ["Native edit/tombstone and public Search", "Lost ACK and dropped notification faults", "Second writer denial, projection tamper and head rollback faults", "Prototype visual parity", "Mobile Native"]
+        "proven_scope": [
+          "Named publication, late follower, non-follower interaction, public edit, restart readback, Search and tombstone scenarios only after the same current-source Native Suite and owned cleanup pass",
+          "Named comment reactions, single/multiple-choice polls and poll cutoff plus confirmed comment revalidation against held original responses under the same Suite",
+          "Named lost ACK, dropped federation notification, corrupt payload, rollback head and second-device writer denial faults under the same Suite",
+          "Named Circle member pagination, cancel, partial-save retry, block and account-epoch scenarios plus opaque Relay observations under the same Suite"
+        ],
+        "unproven_scope": ["Prototype visual parity", "Mobile Native", "Fault combinations or audience/lifecycle variants outside the original named Suite"]
       }
     },
     {
@@ -31,7 +36,7 @@
         "surfaces": ["Go source checks and Native Rust journal/cache tests"],
         "proven_by": ["social-public-feed-source"],
         "proven_scope": ["Source-level authorization, projection, bounded replication, receipt conflict and ACK retry checks, Desktop consumption and Mobile typed public-write denial"],
-        "unproven_scope": ["AFL-J01 through AFL-J04 Native double-Station product Journeys", "Mobile Native cutover", "Desktop Native consumer Journeys"]
+        "unproven_scope": ["Native product Journeys require the independent social-public-feed-native-e2e Suite; this source Gate cannot prove them", "Mobile Native cutover"]
       }
     },
     {
@@ -70,14 +75,17 @@
       "domain": "social",
       "direction": "acceptance_validates_product",
       "features": ["social-private-moments-desktop"],
-      "required_gates": ["social-private-desktop-e2e"],
+      "required_gates": ["social-private-desktop-e2e", "social-cross-station-native-e2e"],
       "synthetic_paths": ["docs/architecture/domains/social/core/acceptance-matrix.md"],
       "evidence": {
-        "truth_sources": ["Station relationship, audience, Circle and Conversation membership authorities"],
-        "surfaces": ["Native Desktop Moment composer and receiver timeline/detail"],
-        "proven_by": ["social-private-desktop-e2e"],
-        "proven_scope": ["SOC-SEC-AS01, AS05 and AS15 on Native Desktop"],
-        "unproven_scope": ["Mobile parity; AS12 is retained as historical cutover evidence"]
+        "truth_sources": ["Station relationship, follow, Circle, Conversation and explicit audience authorities"],
+        "surfaces": ["Native Desktop private publisher and receiver timeline/detail"],
+        "proven_by": ["social-cross-station-native-e2e"],
+        "proven_scope": [
+          "AS17 FRIENDS media and AS18 CUSTOM_ALLOW painted remote recipient, only when the original current-source Suite passes",
+          "AS18 original local-author and remote-recipient authorized readbacks for FOLLOWERS, CIRCLE, GROUP, mixed CUSTOM_ALLOW and FOLLOWERS-based CUSTOM_DENY, with original Conversation membership and unsupported PUBLIC-base denial observations, only when the original current-source Suite passes"
+        ],
+        "unproven_scope": ["SOC-SEC-AS01 full subtype matrix, AS05 complete Circle/Conversation expansion matrix and AS15 audience bounds on Native Desktop", "Independent painted UI assertions for every AS18 audience subtype", "Mobile parity; AS12 is retained as historical cutover evidence"]
       }
     },
     {
@@ -85,14 +93,14 @@
       "domain": "social",
       "direction": "acceptance_validates_product",
       "features": ["social-private-moments-desktop"],
-      "required_gates": ["social-private-desktop-e2e"],
+      "required_gates": ["social-private-desktop-e2e", "social-cross-station-delivery", "social-cross-station-native-e2e"],
       "synthetic_paths": ["apps/station/app/subserver/social/application/private_content_service.go"],
       "evidence": {
-        "truth_sources": ["Station private Post, Comment, envelope and object persistence readback"],
-        "surfaces": ["Native Desktop private Moment, comment and attachment rendering"],
-        "proven_by": ["social-private-desktop-e2e"],
-        "proven_scope": ["SOC-SEC-AS01, AS02, AS06 and AS07 on Native Desktop"],
-        "unproven_scope": ["Mobile Native confidentiality"]
+        "truth_sources": ["Station source/recipient delivery tests and AS19 unauthorized response corpus"],
+        "surfaces": ["Source tests, Native authorized receiver and unauthorized HTTP response"],
+        "proven_by": ["social-cross-station-delivery", "social-cross-station-native-e2e"],
+        "proven_scope": ["Source-level delivery confidentiality; AS19 private Moment/poll denial contains no tested private markers when the original Suite passes"],
+        "unproven_scope": ["SOC-SEC-AS01, AS02, AS06 and AS07 full live persistence/plaintext corpus", "Mobile Native confidentiality"]
       }
     },
     {
@@ -100,14 +108,14 @@
       "domain": "social",
       "direction": "acceptance_validates_product",
       "features": ["social-private-moments-desktop"],
-      "required_gates": ["social-private-desktop-e2e"],
+      "required_gates": ["social-private-desktop-e2e", "social-cross-station-delivery", "social-cross-station-revocation-recovery"],
       "synthetic_paths": ["apps/station/app/subserver/social/application/private_object_service.go"],
       "evidence": {
         "truth_sources": ["Station Social authorization and object-grant authorities"],
-        "surfaces": ["Native Desktop Moment detail and media viewer plus direct HTTP negatives"],
-        "proven_by": ["social-private-desktop-e2e"],
-        "proven_scope": ["SOC-SEC-AS03, AS04, AS06, AS07 and AS09"],
-        "unproven_scope": ["Mobile Native object authorization"]
+        "surfaces": ["Source-level viewer delivery and revocation checks"],
+        "proven_by": ["social-cross-station-delivery", "social-cross-station-revocation-recovery"],
+        "proven_scope": ["Source-level viewer-scoped delivery/revocation only; these Gates do not establish live object HTTP authorization"],
+        "unproven_scope": ["SOC-SEC-AS03, AS04, AS06, AS07 and AS09 live parent/comment/object authorization corpus", "Mobile Native object authorization"]
       }
     },
     {
@@ -115,14 +123,14 @@
       "domain": "social",
       "direction": "acceptance_validates_product",
       "features": ["social-private-moments-desktop"],
-      "required_gates": ["social-private-desktop-e2e"],
+      "required_gates": ["social-private-desktop-e2e", "social-cross-station-native-e2e"],
       "synthetic_paths": ["apps/desktop/src/acceptance/moments/harness.ts"],
       "evidence": {
         "truth_sources": ["Desktop secure-content storage, device identity and actor recovery envelopes"],
-        "surfaces": ["Bob restart and Bob replacement-device recovery states"],
-        "proven_by": ["social-private-desktop-e2e"],
-        "proven_scope": ["SOC-SEC-AS02 and AS08 on Native Desktop"],
-        "unproven_scope": ["Mobile Native recovery"]
+        "surfaces": ["Bob renderer reload, receiver Station process restart and Bob replacement-device recovery states"],
+        "proven_by": ["social-cross-station-native-e2e"],
+        "proven_scope": ["AS21 renderer reload and AS23 replacement-device exact history recovery after the original source-attested receiver Station process restart, only when the current-source Suite passes"],
+        "unproven_scope": ["SOC-SEC-AS02 process restart and AS08 complete revocation/recovery matrix", "Mobile Native recovery"]
       }
     },
     {
@@ -130,14 +138,14 @@
       "domain": "social",
       "direction": "acceptance_validates_product",
       "features": ["social-private-moments-desktop"],
-      "required_gates": ["social-private-desktop-e2e"],
+      "required_gates": ["social-private-desktop-e2e", "social-cross-station-prekey", "social-cross-station-delivery", "social-cross-station-native-e2e"],
       "synthetic_paths": ["model/domain/social/private_content.proto"],
       "evidence": {
         "truth_sources": ["viewer-scoped Social responses and one-time Content PreKey plans"],
-        "surfaces": ["Bob response projection and direct HTTP response corpus"],
-        "proven_by": ["social-private-desktop-e2e"],
-        "proven_scope": ["SOC-SEC-AS03, AS13 and AS16"],
-        "unproven_scope": ["Cross-platform metadata parity"]
+        "surfaces": ["Source-level PreKey/delivery checks and AS19 unauthorized HTTP corpus"],
+        "proven_by": ["social-cross-station-prekey", "social-cross-station-delivery", "social-cross-station-native-e2e"],
+        "proven_scope": ["Source-level viewer/PreKey minimization and AS19 tested denial markers when the original Suite passes"],
+        "unproven_scope": ["SOC-SEC-AS03, AS13 and AS16 complete live metadata/PreKey corpus", "Cross-platform metadata parity"]
       }
     },
     {
@@ -145,14 +153,14 @@
       "domain": "social",
       "direction": "acceptance_validates_product",
       "features": ["social-private-moments-desktop"],
-      "required_gates": ["social-private-desktop-e2e"],
+      "required_gates": ["social-private-desktop-e2e", "social-cross-station-native-e2e"],
       "synthetic_paths": ["apps/station/app/subserver/social/application/secure_content_reset.go"],
       "evidence": {
         "truth_sources": ["Station Post deletion, relationship and delivery/grant revocation state"],
         "surfaces": ["Native Desktop timeline/detail after delete or block"],
-        "proven_by": ["social-private-desktop-e2e"],
-        "proven_scope": ["SOC-SEC-AS08 and AS09"],
-        "unproven_scope": ["Deletion of maliciously retained recipient copies"]
+        "proven_by": ["social-cross-station-native-e2e"],
+        "proven_scope": ["AS22 receiver deletion plus same-station-regression deleted/blocked private poll denial when the original Suite passes"],
+        "unproven_scope": ["SOC-SEC-AS08 and AS09 full object-grant revocation matrix", "Deletion of maliciously retained recipient copies"]
       }
     },
     {
@@ -160,14 +168,14 @@
       "domain": "social",
       "direction": "acceptance_validates_product",
       "features": ["social-private-moments-desktop"],
-      "required_gates": ["social-private-desktop-e2e"],
+      "required_gates": ["social-private-desktop-e2e", "social-cross-station-native-e2e"],
       "synthetic_paths": ["apps/station/app/subserver/social/application/moment_service.go"],
       "evidence": {
         "truth_sources": ["Station public Post and object paths"],
-        "surfaces": ["Native Desktop publish plus anonymous HTTP read"],
-        "proven_by": ["social-private-desktop-e2e"],
-        "proven_scope": ["SOC-SEC-AS10 through Native Desktop plus anonymous HTTP read"],
-        "unproven_scope": ["Mobile UI continuity"]
+        "surfaces": ["Original publisher projection, anonymous HTTP read and retained Native client"],
+        "proven_by": ["social-cross-station-native-e2e"],
+        "proven_scope": ["same-station-regression anonymous public body read and Native publisher projection when the original Suite passes"],
+        "unproven_scope": ["SOC-SEC-AS10 full public composer/media journey", "Mobile UI continuity"]
       }
     },
     {
@@ -181,7 +189,7 @@
         "truth_sources": ["Social platform matrix and current Native Desktop runtime report"],
         "surfaces": ["Native Desktop Private Moments"],
         "proven_by": ["social-private-desktop-e2e"],
-        "proven_scope": ["Desktop-applicable Social scenarios only"],
+        "proven_scope": ["AS20, AS23 and same-station-regression comment interaction only when the attached original Suite passes"],
         "unproven_scope": ["SOC-SEC-AS14 Mobile parity"]
       }
     },

@@ -22,12 +22,12 @@ func testFeedAcceptanceControl(t *testing.T) (*feedAcceptanceControl, feedAccept
 		t.Fatal(err)
 	}
 	now := time.Now()
-	scope := feedAcceptanceScope{
+	scope := socialAcceptanceScope{
 		RunID:   "144e7dea1a920510",
 		Profile: "reviewed-fixture", Commit: strings.Repeat("a", 40), Station: "receiver",
 	}
 	rule := feedAcceptanceRule{
-		feedAcceptanceScope: scope, ID: "lost-notification",
+		socialAcceptanceScope: scope, ID: "lost-notification",
 		Actor: "author", SourceStation: "sender", MinimumHead: 7,
 		IssuedMillis: now.UnixMilli(), ExpiresMillis: now.Add(feedAcceptanceLease).UnixMilli(),
 		Bounded: true,

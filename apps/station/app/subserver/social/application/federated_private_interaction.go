@@ -425,8 +425,7 @@ func (s *PrivateContentService) routeFederatedPrivateInteraction(
 			return infrastructure.ErrPrivateContentConflict
 		}
 		if operation == privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_REACT ||
-			operation == privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_UNREACT ||
-			operation == privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_VOTE_POLL {
+			operation == privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_UNREACT {
 			if err := s.interactionStore.ValidateRemotePrivateReactionParent(ctx, federationTx,
 				authority.SourceStationPeerID, s.localStationPeerID, authority.FederationID,
 				authority.Parent, privateInteractionCommentID(request), author.Endpoint.GetActor().GetPtid(),
@@ -566,8 +565,7 @@ func (s *PrivateContentService) ReceiveFederatedPrivateInteractionCommand(
 			), nil
 		}
 		if command.GetOperation() == privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_REACT ||
-			command.GetOperation() == privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_UNREACT ||
-			command.GetOperation() == privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_VOTE_POLL {
+			command.GetOperation() == privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_UNREACT {
 			commentID, err := privateInteractionCommandCommentID(command)
 			if err != nil {
 				return federationdelivery.TerminalResult(federationdelivery.FrameErrorDomainRejected), nil
@@ -816,12 +814,6 @@ func (s *PrivateContentService) ReceiveFederatedPrivateInteractionResult(
 			result.GetCanonicalResult(),
 			frame,
 		); err != nil {
-			return deliveryResultForPrivateContentError(err), nil
-		}
-	}
-	if result.GetKind() == privatecontentpb.FederatedPrivateInteractionResultKind_FEDERATED_PRIVATE_INTERACTION_RESULT_KIND_COMMITTED &&
-		command.GetOperation() == privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_VOTE_POLL {
-		if err := s.importPrivatePollResult(ctx, transaction, command, result.GetCanonicalResult(), frame); err != nil {
 			return deliveryResultForPrivateContentError(err), nil
 		}
 	}
@@ -1101,17 +1093,6 @@ func (s *PrivateContentService) executeFederatedPrivateInteraction(
 			CommentId:          request.GetCommentId(),
 			ProjectionRevision: response.ProjectionRevision,
 		})
-	case privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_VOTE_POLL:
-		request := &privatecontentpb.VotePrivatePollRequest{}
-		if err := proto.Unmarshal(command.GetCanonicalOperation(), request); err != nil {
-			return nil, socialdomain.WrapPrivateContentError(socialdomain.PrivateContentInvalidArgument,
-				"social.private_content.decode_poll", err)
-		}
-		response, err := bound.executePrivatePoll(ctx, transaction, command, request)
-		if err != nil {
-			return nil, err
-		}
-		return socialdomain.CanonicalProtoBytes(response)
 	default:
 		return nil, socialdomain.NewPrivateContentError(
 			socialdomain.PrivateContentUnsupported,
@@ -1368,17 +1349,6 @@ func (s *PrivateContentService) validateFederatedPrivateInteractionCommand(
 			)
 		}
 		signedRequest = request
-	case privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_VOTE_POLL:
-		request := &privatecontentpb.VotePrivatePollRequest{}
-		if err := proto.Unmarshal(command.GetCanonicalOperation(), request); err != nil ||
-			socialdomain.ValidateVotePrivatePollRequest(request, operation) != nil ||
-			request.GetPostId() != command.GetParent().GetContentId() ||
-			request.GetCommandId() != command.GetCommandId() ||
-			request.GetActorSigningKeyId() != command.GetActorSigningKeyId() ||
-			!bytes.Equal(request.GetActorDeviceSignature(), command.GetActorDeviceSignature()) {
-			return socialdomain.NewPrivateContentError(socialdomain.PrivateContentInvalidArgument, operation, "canonical_operation", "is not the bound ballot")
-		}
-		signedRequest = request
 	default:
 		return socialdomain.NewPrivateContentError(
 			socialdomain.PrivateContentUnsupported,
@@ -1554,8 +1524,6 @@ func federatedPrivateInteractionRequestSignature(
 		return request.GetActorSigningKeyId(),
 			append([]byte(nil), request.GetActorDeviceSignature()...),
 			nil
-	case *privatecontentpb.VotePrivatePollRequest:
-		return request.GetActorSigningKeyId(), append([]byte(nil), request.GetActorDeviceSignature()...), nil
 	default:
 		return "", nil, socialdomain.NewPrivateContentError(
 			socialdomain.PrivateContentUnsupported,
@@ -1614,10 +1582,6 @@ func canonicalFederatedPrivateInteractionRequestSigningBytes(
 		unsigned = cloned
 	case *actormodel.UnreactToPostRequest:
 		cloned := proto.Clone(request).(*actormodel.UnreactToPostRequest)
-		cloned.ActorDeviceSignature = nil
-		unsigned = cloned
-	case *privatecontentpb.VotePrivatePollRequest:
-		cloned := proto.Clone(request).(*privatecontentpb.VotePrivatePollRequest)
 		cloned.ActorDeviceSignature = nil
 		unsigned = cloned
 	default:
@@ -2021,8 +1985,6 @@ func privateInteractionCommandCommentID(command *privatecontentpb.FederatedPriva
 		request = &actormodel.ReactToPostRequest{}
 	case privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_UNREACT:
 		request = &actormodel.UnreactToPostRequest{}
-	case privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_VOTE_POLL:
-		request = &privatecontentpb.VotePrivatePollRequest{}
 	default:
 		return "", infrastructure.ErrPrivateContentInvalid
 	}

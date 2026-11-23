@@ -84,6 +84,7 @@ class SocialPrivateDesktopGateTest(unittest.TestCase):
             mock.patch.object(module, "attach_suite_evidence") as attach,
             mock.patch.object(module, "_interaction_observations", return_value={}) as observations,
             mock.patch.object(module, "_validate_comment_trace") as validate_trace,
+            mock.patch.object(module, "_validate_feed_reconcile") as validate_feed,
         ):
             result = gate.run()
 
@@ -99,6 +100,7 @@ class SocialPrivateDesktopGateTest(unittest.TestCase):
         self.assertEqual(list(INTERACTION_SCENARIOS), result["provenScope"])
         self.assertEqual(3, observations.call_count)
         validate_trace.assert_called_once_with({}, {}, {})
+        validate_feed.assert_called_once_with({})
         self.assertEqual(
             list(EXPLICITLY_UNPROVEN_SCENARIOS),
             result["unprovenScenarios"],
@@ -225,6 +227,37 @@ class SocialPrivateDesktopGateTest(unittest.TestCase):
     def test_unpainted_dom_cannot_prove_comment_like(self) -> None:
         trace = self._trace()
         trace[0]["commentReactionAssertions"][0]["paintFrames"] = 0
+        with self.assertRaisesRegex(GateError, "painted button"):
+            _validate_comment_trace(*trace)
+
+    def test_feed_trace_rejects_missing_transient_failure_and_wrong_collapse(self):
+        values = [{
+            "actor": actor, "phase": phase, "runtimeReconciles": 2, "frames": 3,
+            "violations": [], "parentRetained": True, "editorRetained": True,
+            "rows": 0 if phase == "acquired-empty" else 2,
+            "expanded": phase in ("acquired-empty", "expanded"),
+            "aliveReturn": phase == "alive-return",
+            "aliveReturned": phase == "alive-return",
+            "returnedFrames": 3 if phase == "alive-return" else 0,
+            "postIdSha256": "p" * 64, "automationSessionId": actor + "-session",
+        } for actor in ("alice", "bob")
+          for phase in ("acquired-empty", "expanded", "collapsed", "alive-return")]
+        module._validate_feed_reconcile({"feedReconcile": values})
+        for field, value in (("violations", ["protected-node-removed"]), ("frames", 0),
+                             ("expanded", False), ("editorRetained", False)):
+            invalid = copy.deepcopy(values)
+            invalid[0][field] = value
+            with self.subTest(field=field), self.assertRaisesRegex(GateError, "stable Native"):
+                module._validate_feed_reconcile({"feedReconcile": invalid})
+        with self.assertRaisesRegex(GateError, "required Native phases"):
+            module._validate_feed_reconcile({"feedReconcile": values[:-1]})
+        for field, value in (("aliveReturned", False), ("returnedFrames", 0)):
+            invalid = copy.deepcopy(values)
+            invalid[3][field] = value
+            with self.subTest(field=field), self.assertRaisesRegex(GateError, "stable Native"):
+                module._validate_feed_reconcile({"feedReconcile": invalid})
+        trace = self._trace()
+        trace[0]["commentReactionAssertions"].append({"assertion": "canonical-feed-search"})
         with self.assertRaisesRegex(GateError, "painted button"):
             _validate_comment_trace(*trace)
 

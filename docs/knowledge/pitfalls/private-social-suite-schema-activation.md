@@ -14,6 +14,8 @@ owns:
   - tooling/acceptance/gates/social/cross_station_support.py
   - tooling/acceptance/tests/test_private_social_native_provisioner.py
   - apps/station/app/subserver/social/infrastructure/secure_content_reset_types.go
+  - apps/station/app/subserver/social/infrastructure/secure_content_reset_store.go
+  - apps/station/app/subserver/social/infrastructure/secure_content_reset_store_test.go
 related:
   - docs/architecture/shared/security/secure-content/decisions.md
   - docs/global/local-dev-environment.md
@@ -73,6 +75,32 @@ inventories bind the provisioning epoch inside original current-run ArtifactRefs
 Consumer manifests must preserve both identities and retain successful cleanup.
 Historical activation ancestry cannot replace that current binding.
 
+Public Poll rows use `encoding/json` of the canonical
+`model.CreatePollPostRequest`. The reset owner's strict attachment audit must
+decode that same model. A duplicate five-field Poll struct rejected valid
+`min_choices`, `max_choices` and `expires_at_unix_ms`, blocking both private
+Social and Search preparation before mutation. Unknown object fields, wrong
+field types and trailing JSON still fail the audit. Duration and deadline Poll
+rows participate in the original byte-equal public snapshot across the reset.
+
+Private delivery capability preparation reads the independent Actor manifest
+through `RuntimeManifest.actor_manifest_ref` and the bound Evidence Store.
+`RuntimeManifest` has no `actors` field. Require the current Evidence Run,
+environment and provisioning epoch before using the receiver and outsider
+identities. Regression must use the real RuntimeManifest and ActorManifest
+types; adding `actors` to a permissive runtime substitute hides this failure.
+
+The cross-Station private Suite starts its FOLLOWERS relationship baseline
+after the original bound Actor producer, inside the same reset-profile context.
+Chat reset seeds preset follows; those can target local accounts without an
+enrolled content-key identity and reject the later mixed FOLLOWERS publication
+with `RECIPIENT_KEY_UNAVAILABLE`. Group the manifest's exact Actor PTIDs by their
+bound Station and call `reset_fixture_follow_edges` once per target before
+readiness. Keep friendship preparation, live reset lease and target verification
+with their original owners. Other Gates retain their original follow baseline.
+The private provisioner regressions require both exact subsets, ordering within
+the reset context, and refusal to mark ready after a reset failure.
+
 ## How to detect a recurrence
 
 - Run the Social Search Desktop or Mobile native Suite against a reviewed
@@ -84,6 +112,10 @@ Historical activation ancestry cannot replace that current binding.
   from `apps/station/app`.
 - Confirm schema preparation occurs once at Suite scope, before the first
   scenario; public snapshot equality is checked by the reset owner.
+- Run `go test ./subserver/social/infrastructure -run
+  'TestExtractLegacyAttachmentKeysPollUsesCanonicalRequest|TestGORMSecureContentResetStoreCommitDatabase'`
+  from `apps/station/app`; canonical marshaled Polls must survive the reset
+  while unknown object fields, invalid types and trailing JSON remain rejected.
 - Run `python3 -m unittest
   tooling.development.secure_content.test_activation_transport`; profile and
   deploy children must omit parent lease metadata while the parent retains it.

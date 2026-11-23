@@ -225,6 +225,12 @@ pub(crate) fn sign_friend_request_command(
         receiver: Some(person_actor_ref(input.receiver_ptid)),
         sender_home_station_peer_id: input.sender_home_station_peer_id,
         receiver_home_station_peer_id: input.receiver_home_station_peer_id,
+        // Domain invariant (Station ValidateFriendRequestCommand): a decision
+        // command must carry an empty message; only SEND may include one. The
+        // wire-command builder enforces this so accept/reject stay valid even
+        // when a caller forwards the original request's message. The helper
+        // keeps the action->message rule in one place and also covers the
+        // Unspecified action, which never produces a signed body.
         message: friend_request_command_body_message(input.action, &input.message),
         observed_request_state: match input.action {
             model::social::FriendRequestAction::Send => {

@@ -149,7 +149,6 @@ fn compile_protos() {
         "domain/social/post.proto",
         "domain/social/comment.proto",
         "domain/social/media.proto",
-        "domain/social/poll.proto",
         "domain/social/relationship.proto",
         "domain/social/circle.proto",
         "domain/social/private_content.proto",

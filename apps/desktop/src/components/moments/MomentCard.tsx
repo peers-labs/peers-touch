@@ -11,7 +11,6 @@ import { MomentAttachments, MomentVideoAttachment } from './MomentAttachments';
 import { MomentAuthorTrigger } from './MomentAuthorTrigger';
 import { MomentTextEditor } from './MomentTextEditor';
 import { MomentCommentsSection } from './MomentCommentsSection';
-import { MomentPoll } from './MomentPoll';
 import { PrivateMediaGrid } from './PrivateMediaGrid';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { useActorIdentity } from '../common/useActorIdentity';
@@ -170,7 +169,6 @@ export const MomentCard = memo(function MomentCard({ post, reactions, explanatio
           : <span>{content.value.link.title}</span>}
         {content.value.link.description && <span> · {content.value.link.description}</span>}
       </p>}
-      {!isPrivate && content.case === 'pollPost' && <MomentPoll key={post.id} post={post} />}
       {!isPrivate && content.case === 'locationPost' && content.value.location && <p><MapPin size={15} />
         {content.value.location.name}{content.value.location.address && <span> · {content.value.location.address}</span>}
       </p>}
@@ -179,7 +177,6 @@ export const MomentCard = memo(function MomentCard({ post, reactions, explanatio
       </blockquote>}
       {privateContent?.kind === 'LINK' && <p><ExternalLink size={15} />
         <a href={privateContent.url} target="_blank" rel="noreferrer">{privateContent.title}</a></p>}
-      {privateContent?.kind === 'POLL' && <MomentPoll key={post.id} post={post} />}
       {privateContent?.kind === 'LOCATION' && <p><MapPin size={15} /> {privateContent.name}
         {privateContent.address && <span> · {privateContent.address}</span>}</p>}
       {original && <blockquote><MomentCard post={original} embedded defaultCommentsOpen={false}
@@ -187,7 +184,7 @@ export const MomentCard = memo(function MomentCard({ post, reactions, explanatio
     </>}
     actions={<SocialActionBar postId={post.id} reactions={shownReactions} commentCount={Number(post.stats?.commentsCount ?? 0n)}
       commentsOpen={commentsOpen} reactionCommands={isPrivate ? Object.values(reactionCommands).filter(command =>
-        command.postId === post.id && !command.commentId && command.operation !== 'VOTE_POLL')
+        command.postId === post.id && !command.commentId)
         .map(command => ({ ...command, recovery: projectPrivateReactionRecovery(recoveryState, command) })) : undefined}
       onRetryReaction={isPrivate && !unavailable ? async (kind, commandId) => {
         try { await retryReaction(post.id, '', kind, commandId); } catch { feedback.error(t('moments.reaction.retryUnavailable')); }

@@ -32,7 +32,6 @@ from tooling.acceptance.gates.mobile.simulator_runtime_binding import (
 )
 from tooling.development.secure_content.social_interaction_ui import (
     SocialCommentUI,
-    SocialPollUI,
 )
 
 
@@ -195,9 +194,7 @@ class Gate(AcceptanceGate):
                 raise GateError("Desktop interaction session is unavailable")
             interaction_root = current_run_directory(repo_root=REPO_ROOT) / "interactions"
             comment_ui = SocialCommentUI(desktop_session, "alice", interaction_root)
-            poll_ui = SocialPollUI(desktop_session, "alice", interaction_root / "polls")
             comment_rows: list[dict[str, Any]] = []
-            poll_rows: list[dict[str, Any]] = []
 
             desktop_text = f"as25-desktop-ios-{time.time_ns()}"
             self._scenario_start("desktop-publish-ios-receive")
@@ -335,22 +332,7 @@ class Gate(AcceptanceGate):
                     self._exercise_mixed_comment_like(
                         desktop_id, mobile_id, comment_ui, post_id, comment_id, text, depth, evidence,
                     )
-            for multiple in (False, True):
-                options = ["one", "two", "three"] if multiple else ["one", "two"]
-                poll_text = f"as25-private-poll-{time.time_ns()}"
-                poll_id = self._publish_desktop_private_text(
-                    desktop_id, poll_text, poll={
-                        "question": poll_text, "options": options,
-                        "minChoices": 1, "maxChoices": 2 if multiple else 1,
-                        "expiresAtSeconds": int(time.time()) + 7200,
-                    },
-                )
-                self._wait_for_mobile_private_read(mobile_id, poll_id, expected_state="CONTENT_READY")
-                poll_rows.append(self._exercise_mixed_poll(
-                    desktop_id, mobile_id, poll_ui, poll_id, multiple, evidence,
-                ))
             evidence["desktopCommentInteractions"] = comment_ui.assertions
-            evidence["desktopPollInteractions"] = poll_ui.assertions
             self.assert_condition(
                 "comment_reaction_convergence",
                 (
@@ -385,17 +367,6 @@ class Gate(AcceptanceGate):
                 ),
                 compact_json(eve_read),
             )
-            for row in poll_rows:
-                denied = self._wait_for_mobile_private_read(
-                    eve_id, row["postId"], expected_state="NOT_FOUND_OR_NOT_AUTHORIZED",
-                )
-                self._wait_mobile_post_absent(eve_id, row["postId"])
-                self.assert_condition(
-                    "unauthorized_poll_material_absent",
-                    denied.get("contentKind") is None and denied.get("textSha256") is None
-                    and not denied.get("mediaStates"),
-                )
-            evidence["evePollDenial"] = self._capture_mobile(eve_id, "private-polls-denied")
             self._scenario_end(
                 "unauthorized-denial",
                 ui_resource="mobile-eve:open-moments-feed",
@@ -416,16 +387,6 @@ class Gate(AcceptanceGate):
             for row in comment_rows:
                 self._assert_mobile_comment_like(
                     mobile_id, row["postId"], row["commentId"], 2, True, "restart",
-                )
-            for row in poll_rows:
-                self._wait_for_mobile_private_read(
-                    mobile_id, row["postId"], expected_state="CONTENT_READY",
-                )
-                self._assert_mobile_poll(
-                    mobile_id, row["postId"], row["counts"], row["choices"], 2, "restart",
-                )
-                self._desktop_moments_action(
-                    desktop_id, "deletePrivateMoment", {"postId": row["postId"]},
                 )
             self._desktop_moments_action(
                 desktop_id,
@@ -454,15 +415,6 @@ class Gate(AcceptanceGate):
             )
             self._open_mobile_moments(mobile_id)
             self._wait_mobile_post_absent(mobile_id, desktop_post_id)
-            for row in poll_rows:
-                denied = self._wait_for_mobile_private_read(
-                    mobile_id, row["postId"], expected_state=PRIVATE_READ_TERMINAL_STATES,
-                )
-                self._wait_mobile_post_absent(mobile_id, row["postId"])
-                self.assert_condition(
-                    "revoked_poll_no_resurrection",
-                    denied.get("contentKind") is None and denied.get("textSha256") is None,
-                )
             evidence["revocation"] = self._capture_mobile(
                 mobile_id,
                 "revocation-after-restart",
@@ -605,8 +557,6 @@ class Gate(AcceptanceGate):
         self,
         client_id: str,
         text: str,
-        *,
-        poll: Mapping[str, Any] | None = None,
     ) -> str:
         draft_id = f"as25-desktop-{time.time_ns()}"
         staged = self._desktop_moments_action(
@@ -616,8 +566,7 @@ class Gate(AcceptanceGate):
                 "draftId": draft_id,
                 "revision": 1,
                 "text": text,
-                "momentKind": "POLL" if poll else "TEXT",
-                **({"poll": dict(poll)} if poll else {}),
+                "momentKind": "TEXT",
             },
         )
         if staged.get("present") is not True:
@@ -1196,95 +1145,6 @@ class Gate(AcceptanceGate):
         evidence.setdefault("commentExactRetries", []).append({"mobile": replay, "desktop": desktop_replay})
         ui.assert_like(post_id, text, depth, 2, True, "exact-retry")
         captures.append(self._assert_mobile_comment_like(mobile_id, post_id, comment_id, 2, True, "exact-retry"))
-
-    def _mobile_poll_selector(self, post_id: str) -> str:
-        post = self._selector_token(post_id, "Post")
-        return f'[data-post-id="{post}"] [data-acceptance-id="social-poll"]'
-
-    def _select_mobile_poll(
-        self, client_id: str, post_id: str, choices: list[int], option_count: int,
-    ) -> None:
-        self._open_mobile_moments(client_id)
-        selector = self._mobile_poll_selector(post_id)
-        self.runtime.wait_until(
-            lambda: self._mobile_observe(client_id, selector),
-            "Mobile private poll", timeout_seconds=STEP_TIMEOUT,
-        )
-        selected = [
-            index for index in range(option_count)
-            if self._mobile_observe(client_id, f'{selector} [data-poll-option="{index}"]:has(input:checked)')
-        ]
-        # Remove stale multi-select choices before adding replacements at maxChoices.
-        if option_count > 2:
-            for index in selected:
-                if index not in choices:
-                    self._mobile_click(
-                        client_id, f'{selector} [data-poll-option="{index}"] label',
-                        "Mobile remove unsubmitted poll choice",
-                    )
-        for index in choices:
-            if index not in selected:
-                self._mobile_click(
-                    client_id, f'{selector} [data-poll-option="{index}"] label',
-                    "Mobile select poll choice",
-                )
-
-    def _assert_mobile_poll(
-        self, client_id: str, post_id: str, counts: list[int],
-        choices: list[int], voters: int, phase: str,
-    ) -> dict[str, Any]:
-        self._open_mobile_moments(client_id)
-        selector = self._mobile_poll_selector(post_id)
-        selector += f'[data-poll-state="ready"]:not(:has([role="alert"])):has([data-poll-voters="{voters}"])'
-        for index, count in enumerate(counts):
-            selector += f':has([data-poll-option="{index}"] [data-poll-count="{count}"])'
-            checked = ":checked" if index in choices else ":not(:checked)"
-            selector += f':has([data-poll-option="{index}"] input{checked})'
-        return self._capture_mobile_interaction(
-            client_id, selector, f"poll-{phase}-{self._sha256(post_id)[:12]}",
-        )
-
-    def _exercise_mixed_poll(
-        self, desktop_id: str, mobile_id: str, ui: SocialPollUI,
-        post_id: str, multiple: bool, evidence: dict[str, Any],
-    ) -> dict[str, Any]:
-        first, retained = ([0, 1], [1, 2]) if multiple else ([1], [0])
-        first_counts = [1, 1, 0] if multiple else [0, 1]
-        both_counts = [1, 2, 1] if multiple else [1, 1]
-        final_counts = [0, 2, 2] if multiple else [2, 0]
-        captures = evidence.setdefault("mobilePollInteractions", [])
-        ui.submit(post_id, first)
-        ui.assert_poll(post_id, first_counts, first, 1, "desktop-first")
-        captures.append(self._assert_mobile_poll(mobile_id, post_id, first_counts, [], 1, "desktop-first"))
-        self._select_mobile_poll(mobile_id, post_id, retained, len(final_counts))
-        self._mobile_click(
-            mobile_id,
-            f'{self._mobile_poll_selector(post_id)} [data-acceptance-id="social-poll-submit"]'
-            ':not([disabled]):not([aria-disabled="true"])',
-            "Mobile submit full private ballot",
-        )
-        captures.append(self._assert_mobile_poll(mobile_id, post_id, both_counts, retained, 2, "two-actors"))
-        ui.assert_poll(post_id, both_counts, first, 2, "two-actors")
-        ui.submit(post_id, retained)
-        ui.assert_poll(post_id, final_counts, retained, 2, "replace")
-        captures.append(self._assert_mobile_poll(mobile_id, post_id, final_counts, retained, 2, "replace"))
-        self._select_mobile_poll(mobile_id, post_id, first, len(final_counts))
-        self._mobile_click(
-            mobile_id,
-            f'{self._mobile_poll_selector(post_id)} [data-action-id="moment.poll.cancel.{post_id}"]',
-            "Mobile cancel unsubmitted choices",
-        )
-        captures.append(self._assert_mobile_poll(mobile_id, post_id, final_counts, retained, 2, "cancel"))
-        replay = self._mobile_action(mobile_id, "moments.private.interaction.replay", {"postId": post_id})
-        desktop_replay = self._desktop_moments_action(desktop_id, "replayPrivatePollVote", {"postId": post_id})
-        self.assert_condition(
-            "poll_exact_native_retry",
-            replay.get("nativeRetryCount") == 2 and desktop_replay.get("nativeRetryCount") == 2,
-        )
-        evidence.setdefault("pollExactRetries", []).append({"mobile": replay, "desktop": desktop_replay})
-        ui.assert_poll(post_id, final_counts, retained, 2, "exact-retry")
-        captures.append(self._assert_mobile_poll(mobile_id, post_id, final_counts, retained, 2, "exact-retry"))
-        return {"postId": post_id, "counts": final_counts, "choices": retained}
 
     @staticmethod
     def _private_comment_retry_delay(

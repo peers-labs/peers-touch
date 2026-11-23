@@ -1816,7 +1816,11 @@ focus or HID delivery.
   Exact-PID panel presence remains a separate native read in the same scope.
   Pointer observation uses the same ctypes boundary for
   CoreGraphics and releases its event; it does not initialize a separate Quartz
-  Python module. Focus must stabilize within the original one-second deadline,
+  Python module. Frontmost PID observation loads the AppKit framework and
+  resolves NSWorkspace through the Objective-C bridge directly, without
+  initializing the full AppKit Python wrapper. Every call still queries the
+  current frontmost application; no PID or focus state is cached.
+  Focus must stabilize within the original one-second deadline,
   including child initialization; control and full observation retain their
   two- and three-second subprocess limits respectively.
   The child protocol and pure identity conversion are lean Driver leaves;

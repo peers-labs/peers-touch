@@ -59,6 +59,13 @@ from tooling.acceptance.fixtures.chat_native_actors import (
     FederationRoutingActor,
     prepare_federation_routing,
 )
+from tooling.acceptance.fixtures.chat_native_reset import (
+    FixtureActorRecord,
+    RESET_ENVIRONMENTS_AUTHORIZATION_ENV,
+    fixture_federation_id_from_station_ids,
+    purge_federation_context,
+    seed_federation_context,
+)
 from tooling.acceptance.gates.agent.foundation_runtime_client import (
     FoundationClientError,
     FoundationClientSpec,
@@ -82,7 +89,11 @@ from tooling.acceptance.provisioners.secure_content_remote_recipient import (
     W8RemoteRecipientFixtureOwner,
 )
 from tooling.acceptance.transports.ssh import SshTunnel
-from tooling.development.secure_content import runtime_manifest, schema_activation
+from tooling.development.secure_content import (
+    runtime_manifest,
+    runtime_schema,
+    schema_activation,
+)
 from tooling.development.secure_content.activation_transport import (
     ActivationTransportError,
     ReviewedSchemaActivationTransport,
@@ -111,9 +122,7 @@ from tooling.development.secure_content.mobile_fixture import (
 )
 from tooling.development.secure_content.social_interaction_ui import (
     SocialCommentUI,
-    SocialPollUI,
     exercise_comment_likes,
-    exercise_private_poll,
 )
 from tooling.development.secure_content.runtime_fixture import (
     RuntimeFixtureBinding,
@@ -752,8 +761,8 @@ W8_SCENARIOS = (
         variant_id="bounds",
         requires_remote_recipient=False,
         receiver_client_id=DESKTOP_CLIENTS[1][0],
-        action_text="secure-content-w8-bounds-poll",
-        visible_text="secure-content-w8-bounds-poll",
+        action_text="secure-content-w8-bounds-objects",
+        visible_text="secure-content-w8-bounds-objects",
     ),
 )
 
@@ -1566,6 +1575,144 @@ def _run_social_acceptance_pre_restart(
     )
 
 
+def restart_social_receiver_station(
+    capability_client: EphemeralGateClient,
+    *,
+    deployment_environment: str,
+    source_commit: str,
+    during_outage: Callable[[Mapping[str, Any]], None] | None = None,
+) -> dict[str, Any]:
+    """Restart the original receiver without provisioning another runtime."""
+    from tooling.acceptance.provisioners.mobile_simulator import (
+        MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+        MOBILE_STATION_OUTAGE_CHANNEL_TIMEOUT_SECONDS,
+    )
+    stopped = capability_client.invoke(
+        MOBILE_STATION_OUTAGE_CAPABILITY_ID, "stop", {},
+        timeout_seconds=MOBILE_STATION_OUTAGE_CHANNEL_TIMEOUT_SECONDS,
+    )
+    # Always request restoration after an acknowledged stop. The parent also
+    # retains its fail-safe close for cancellation or an unknown stop outcome.
+    restored: Mapping[str, Any] = {}
+    def restore() -> None:
+        nonlocal restored
+        restored = capability_client.invoke(
+            MOBILE_STATION_OUTAGE_CAPABILITY_ID, "start", {},
+            timeout_seconds=MOBILE_STATION_OUTAGE_CHANNEL_TIMEOUT_SECONDS,
+        )
+    with _runtime_cleanup_scope(ExitStack()) as cleanup:
+        cleanup.callback(restore)
+        if during_outage is not None:
+            if stopped.get("stopped") is not True:
+                raise RuntimeOwnerBlocked(
+                    "CLIENT_RUNTIME_UNAVAILABLE", "Receiver outage was not acknowledged",
+                    resource="station:cross-station-social-bob",
+                )
+            during_outage(stopped)
+    if (
+        stopped.get("stopped") is not True or restored.get("restored") is not True
+        or stopped.get("deploymentEnvironment") != deployment_environment
+        or restored.get("deploymentEnvironment") != deployment_environment
+        or not stopped.get("containerId")
+        or restored.get("containerId") != stopped["containerId"]
+        or not stopped.get("runtimeOwner")
+        or restored.get("runtimeOwner") != stopped["runtimeOwner"]
+        or not stopped.get("beforeProcessIds")
+        or restored.get("beforeProcessIds") != stopped["beforeProcessIds"]
+        or not restored.get("afterProcessIds")
+        or restored["afterProcessIds"] == stopped["beforeProcessIds"]
+        or any(
+            not commits_match(str(value.get(field) or ""), source_commit)
+            for value in (stopped, restored)
+            for field in ("sourceCommit", "buildCommit")
+        )
+    ):
+        raise RuntimeOwnerBlocked(
+            "SOURCE_ATTESTATION_MISMATCH",
+            "Private Social receiver restart did not retain its source/container",
+            resource="station:cross-station-social-bob",
+        )
+    return {"stop": dict(stopped), "start": dict(restored)}
+
+
+def _commit_private_receiver_outage(
+    capability_client: EphemeralGateClient, *,
+    publish: Callable[[], Mapping[str, Any]],
+    observe: Callable[[str, str], dict[str, Any]],
+    deployment_environment: str, source_commit: str, provisioning_run_id: str,
+) -> dict[str, Any]:
+    """CSS-D10 stays online until one original Post/outbox has committed."""
+    pending = {"REMOTE_DELIVERY_PENDING", "REMOTE_DELIVERY_RETRYING"}
+    def require_pending(value: Mapping[str, Any], post_id: str | None = None) -> str:
+        actual = value.get("transientPostId")
+        if value.get("state") not in pending or not actual or (post_id and actual != post_id):
+            raise RuntimeOwnerBlocked(
+                "CLIENT_RUNTIME_UNAVAILABLE",
+                f"AS21 original publication was not pending (state={value.get('state')!r})",
+                resource="client:cross-station-social-alice",
+            )
+        return str(actual)
+    def require_outbox(value: Mapping[str, Any], frame_hash: str | None = None) -> None:
+        if (value.get("outboxRows") != 1
+                or value.get("outboxState") not in {"pending", "leased", "retry_wait"}
+                or (frame_hash and value.get("originalFrameSha256") != frame_hash)):
+            raise RuntimeOwnerBlocked(
+                "CLIENT_RUNTIME_UNAVAILABLE", "AS21 did not retain one original pending outbox frame",
+                resource="station:cross-station-social-alice",
+            )
+    def release() -> None:
+        capability_client.invoke("social-private-delivery", "release", {}, timeout_seconds=45)
+    with _runtime_cleanup_scope(ExitStack()) as cleanup:
+        # Retain release before arming, including an unknown arm response.
+        cleanup.callback(release)
+        capability_client.invoke("social-private-delivery", "hold", {}, timeout_seconds=45)
+        committed = publish()
+        post_id = require_pending(committed)
+        committed_outbox = observe("outbox", post_id)
+        require_outbox(committed_outbox)
+        def observe_held_frame() -> Mapping[str, Any] | None:
+            value = capability_client.invoke(
+                "social-private-delivery", "read-hold", {}, timeout_seconds=45,
+            )
+            if value.get("expired"):
+                raise RuntimeOwnerBlocked(
+                    "FIXTURE_OWNER_UNAVAILABLE", "AS21 receiver hold expired before outage",
+                    resource="fixture:social-private-delivery",
+                )
+            return value if value.get("effectCount", 0) > 0 else None
+        held_frame = wait_until(observe_held_frame, "AS21 original held frame", timeout=45)
+        before_delivery = observe("snapshot", post_id)
+        if (
+            held_frame.get("sourceCommit") != source_commit
+            or held_frame.get("runId") != provisioning_run_id
+            or held_frame.get("frameSha256") != committed_outbox.get("originalFrameSha256")
+            or before_delivery["projections"]["social_remote_private_resources"]["rows"] != 0
+        ):
+            raise RuntimeOwnerBlocked(
+                "CLIENT_RUNTIME_UNAVAILABLE", "AS21 did not commit one undelivered original frame before outage",
+                resource="station:cross-station-social-alice",
+            )
+        publications, outboxes = [], []
+        def publish_during_outage(stopped: Mapping[str, Any]) -> None:
+            for _ in range(2):
+                value = publish()
+                require_pending(value, post_id)
+                outbox = observe("outbox", post_id)
+                require_outbox(outbox, committed_outbox["originalFrameSha256"])
+                publications.append(value)
+                outboxes.append(outbox)
+        restart = restart_social_receiver_station(
+            capability_client, deployment_environment=deployment_environment,
+            source_commit=source_commit, during_outage=publish_during_outage,
+        )
+    return {
+        "postId": post_id, "committedPublication": committed,
+        "committedOutbox": committed_outbox, "heldFrame": held_frame,
+        "beforeDelivery": before_delivery, "stationOutage": restart,
+        "outagePublications": publications, "outageOutbox": outboxes,
+    }
+
+
 def _chat_harness(
     client: FoundationRuntimeClient,
     method: str,
@@ -2097,63 +2244,90 @@ def _prepare_social_suite_federation(
     fixture_epoch: str,
     cleanup_stack: ExitStack,
 ) -> str:
-    owner_tokens = {}
-    for service_id, url, peer_id in (
-        ("primary", primary_url, primary_peer_id),
-        ("secondary", secondary_url, secondary_peer_id),
-    ):
-        owner_tokens[service_id], _ = _station_login(
+    stations = (
+        (
+            "primary",
+            primary_url,
+            primary_peer_id,
+            runtime_schema.RUNTIME_TARGETS["fedlab-a"].deployment_environment,
+        ),
+        (
+            "secondary",
+            secondary_url,
+            secondary_peer_id,
+            runtime_schema.RUNTIME_TARGETS["fedlab-b"].deployment_environment,
+        ),
+    )
+    owner_actors: dict[str, str] = {}
+    for service_id, url, peer_id, _environment_name in stations:
+        _token, actor_ptid = _station_login(
             url,
             station_peer_id=peer_id,
             account=ACTOR_ACCOUNTS["alice"],
             password=ACTOR_PASSWORD,
         )
-    created = _station_proto_post(
-        f"{primary_url.rstrip('/')}/sub-federation/federations",
-        _proto_bytes(1, f"CSS-09 {fixture_epoch}")
-        + _proto_bytes(2, "Suite-owned Social Federation")
-        + _proto_bytes(3, "single_admin"),
-        bearer_token=owner_tokens["primary"],
+        owner_actors[service_id] = actor_ptid
+
+    previous_reset_environments = os.environ.get(
+        RESET_ENVIRONMENTS_AUTHORIZATION_ENV,
     )
-    federation_id = _proto_first_bytes(created, 1).decode("utf-8")
-    if not federation_id:
-        raise RuntimeOwnerBlocked(
-            "FIXTURE_OWNER_UNAVAILABLE",
-            "Station owner did not create the Social Suite Federation",
-            resource="fixture:cross-station-social-federation",
+    os.environ[RESET_ENVIRONMENTS_AUTHORIZATION_ENV] = ",".join(
+        station[3] for station in stations
+    )
+
+    def restore_reset_environment_authorization() -> None:
+        if previous_reset_environments is None:
+            os.environ.pop(RESET_ENVIRONMENTS_AUTHORIZATION_ENV, None)
+        else:
+            os.environ[
+                RESET_ENVIRONMENTS_AUTHORIZATION_ENV
+            ] = previous_reset_environments
+
+    cleanup_stack.callback(restore_reset_environment_authorization)
+
+    def actor_record(service_id: str, url: str, peer_id: str) -> FixtureActorRecord:
+        station_domain = urllib.parse.urlparse(url).netloc
+        return FixtureActorRecord(
+            ptid=owner_actors[service_id],
+            preferred_username=ACTOR_ACCOUNTS["alice"],
+            name=f"CSS-09 {fixture_epoch} {service_id}",
+            summary="",
+            icon="",
+            image="",
+            url=primary_product_url if service_id == "primary" else url,
+            federated_handle="",
+            home_station_peer_id=peer_id,
+            home_station_domain=station_domain,
+            visibility=3,
+            locator_seq=0,
         )
 
-    def archive() -> None:
-        result = _station_proto_post(
-            f"{primary_url.rstrip('/')}/sub-federation/federations/"
-            f"{urllib.parse.quote(federation_id, safe='')}/delete",
-            _proto_bytes(1, federation_id),
-            bearer_token=owner_tokens["primary"],
+    members = (
+        actor_record("primary", primary_url, primary_peer_id),
+        actor_record("secondary", secondary_url, secondary_peer_id),
+    )
+    federation_id = fixture_federation_id_from_station_ids(
+        member.home_station_peer_id for member in members
+    )
+    for _service_id, url, peer_id, environment_name in stations:
+        seeded = seed_federation_context(
+            url,
+            environment_name,
+            peer_id,
+            members,
         )
-        if not any(
-            field == 1 and wire == 0 and value == 1
-            for field, wire, value in _proto_fields(result)
-        ):
+        if seeded != federation_id:
             raise RuntimeOwnerBlocked(
-                "CLEANUP_FAILED",
-                "Station owner did not archive the Social Suite Federation",
+                "FIXTURE_OWNER_UNAVAILABLE",
+                "Station owner did not seed the canonical Social Suite Federation",
                 resource="fixture:cross-station-social-federation",
             )
 
-    cleanup_stack.callback(archive)
-    joined = _station_proto_post(
-        f"{secondary_url.rstrip('/')}/sub-federation/federations/join",
-        _proto_bytes(1, primary_product_url)
-        + _proto_bytes(2, federation_id)
-        + _proto_bytes(3, "Suite-owned cross-Station Social"),
-        bearer_token=owner_tokens["secondary"],
-    )
-    if _proto_first_bytes(joined, 1).decode("utf-8") != "active":
-        raise RuntimeOwnerBlocked(
-            "FIXTURE_OWNER_UNAVAILABLE",
-            "Station owner did not join the Social Suite Federation",
-            resource="fixture:cross-station-social-federation",
-        )
+    def purge() -> None:
+        for _service_id, url, _peer_id, environment_name in stations:
+            purge_federation_context(url, federation_id, environment_name)
+
+    cleanup_stack.callback(purge)
     return federation_id
 
 
@@ -2266,6 +2440,15 @@ def _prepare_cross_station_social_fixture(
             "Alice did not resolve Bob through the shared Federation",
             resource="fixture:cross-station-social-actors",
         )
+    for client, target_ptid, home_station in (
+        (alice, bob_ptid, bob_station),
+        (bob, alice_ptid, alice_station),
+    ):
+        _ensure_social_actor_unblocked(
+            client,
+            actor_ptid=target_ptid,
+            home_station_peer_id=home_station,
+        )
     sent = _moments_harness(
         alice,
         "sendFriendRequest",
@@ -2304,6 +2487,75 @@ def _prepare_cross_station_social_fixture(
         "bobStationPeerId": bob_station,
         "federationId": federation_id,
     }
+
+
+def _ensure_social_actor_unblocked(
+    client: FoundationRuntimeClient,
+    *,
+    actor_ptid: str,
+    home_station_peer_id: str,
+) -> Mapping[str, Any]:
+    def observe() -> Mapping[str, Any]:
+        relationship = _moments_harness(
+            client, "relationshipStatus", {"actorPtid": actor_ptid},
+        )
+        revision = relationship.get("revision")
+        if (
+            not isinstance(relationship.get("blockedByViewer"), bool)
+            or not isinstance(revision, int)
+            or isinstance(revision, bool)
+            or not 0 <= revision <= 2**53 - 1
+        ):
+            raise RuntimeOwnerBlocked(
+                "FIXTURE_OWNER_UNAVAILABLE",
+                "Social Fixture relationship projection is invalid",
+                resource="fixture:cross-station-social-block",
+            )
+        return relationship
+
+    relationship = observe()
+    if relationship["blockedByViewer"]:
+        _moments_harness(client, "unblockActor", {
+            "actorPtid": actor_ptid,
+            "homeStationPeerId": home_station_peer_id,
+            "observedRevision": relationship["revision"],
+        })
+        relationship = observe()
+    if relationship["blockedByViewer"]:
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            "Social Fixture did not converge to an unblocked relationship",
+            resource="fixture:cross-station-social-block",
+        )
+    return relationship
+
+
+@contextmanager
+def _temporary_social_actor_block(
+    client: FoundationRuntimeClient,
+    *,
+    actor_ptid: str,
+    home_station_peer_id: str,
+) -> Iterator[None]:
+    relationship = _ensure_social_actor_unblocked(
+        client,
+        actor_ptid=actor_ptid,
+        home_station_peer_id=home_station_peer_id,
+    )
+    with _runtime_cleanup_scope(ExitStack()) as cleanup:
+        # Register before the command: a lost response may follow a commit.
+        cleanup.callback(
+            _ensure_social_actor_unblocked,
+            client,
+            actor_ptid=actor_ptid,
+            home_station_peer_id=home_station_peer_id,
+        )
+        _moments_harness(client, "blockActor", {
+            "actorPtid": actor_ptid,
+            "homeStationPeerId": home_station_peer_id,
+            "observedRevision": relationship["revision"],
+        })
+        yield
 
 
 def _wait_for_federated_actor_resolution(
@@ -2464,6 +2716,39 @@ def _write_immutable_json(path: Path, payload: Mapping[str, Any]) -> Path:
         handle.flush()
         os.fsync(handle.fileno())
     return path
+
+
+def _record_social_frame_replay(
+    path: Path,
+    mutation: str,
+    before: Mapping[str, Any],
+    response: Mapping[str, Any],
+    after: Mapping[str, Any],
+    expected_result: tuple[int, int],
+) -> dict[str, Any]:
+    observation = {
+        "mutation": mutation,
+        "before": dict(before),
+        "response": dict(response),
+        "after": dict(after),
+        "expectedResult": {
+            "disposition": expected_result[0],
+            "errorCode": expected_result[1],
+        },
+    }
+    # Retain the original observations even when the assertion fails. This is
+    # owner-private diagnostic evidence, not a published Scenario result.
+    _write_immutable_json(path, observation)
+    if (
+        (response.get("disposition"), response.get("errorCode")) != expected_result
+        or before["projections"] != after["projections"]
+    ):
+        raise RuntimeOwnerBlocked(
+            "CLIENT_RUNTIME_UNAVAILABLE",
+            f"AS24 {mutation} did not preserve receiver rows with its exact typed disposition",
+            resource="station:cross-station-social-bob",
+        )
+    return observation
 
 
 def _copy_immutable(path: Path, output: Path) -> tuple[dict[str, Any], dict[str, str]]:
@@ -7104,6 +7389,30 @@ class W7RuntimeOwner:
             "worktreeSetDigest": runtime_manifest.canonical_digest(source),
         }
         control_commit = source["commit"]
+        capability_client = EphemeralGateClient.from_environment()
+        if capability_client is None:
+            raise RuntimeOwnerBlocked(
+                "FIXTURE_OWNER_UNAVAILABLE",
+                "Private Social requires its prepared Station outage capability",
+                resource="fixture:private-social-station-outage",
+            )
+        def delivery_observation(operation: str, post_id: str, mutation: str | None = None) -> dict:
+            payload = {"postId": post_id}
+            if mutation is not None:
+                payload["mutation"] = mutation
+            value = capability_client.invoke(
+                "social-private-delivery", operation, payload, timeout_seconds=45,
+            )
+            if (
+                value.get("sourceCommit") != control_commit
+                or value.get("runId") != prepared.manifest["runId"]
+                or value.get("postIdSha256") != _sha256(post_id)
+            ):
+                raise RuntimeOwnerBlocked(
+                    "FIXTURE_OWNER_UNAVAILABLE", "Private delivery observation changed source or target",
+                    resource="fixture:social-private-delivery",
+                )
+            return dict(value)
         result_path = self.result_root / "suite" / "result.json"
         if result_path.exists():
             raise RuntimeOwnerBlocked(
@@ -7122,6 +7431,7 @@ class W7RuntimeOwner:
         fixture_epoch = prepared.manifest["runId"]
         transport_stack = ExitStack()
         transport_stack.callback(prepared.cleanup)
+        transport_stack.callback(capability_client.close)
         ledger = SuiteRuntimeLedger(
             SOCIAL_CROSS_STATION_RUNTIME_REUSE,
             suite_runtime_id=run_id,
@@ -7248,6 +7558,10 @@ class W7RuntimeOwner:
                 "federationIdSha256": _sha256(
                     fixture_identity["federationId"]
                 ),
+                "relationshipBaseline": {
+                    "aliceBlocksBob": False,
+                    "bobBlocksAlice": False,
+                },
             }
             fixture_evidence["artifactDigest"] = (
                 runtime_manifest.canonical_digest(fixture_evidence)
@@ -7597,35 +7911,87 @@ class W7RuntimeOwner:
                 actor_label="Bob",
             )
             scenario_state["as18Post"] = as18_post
-            private_polls = [
-                {
-                    "postId": publish_typed({
-                        "draftId": f"css09-as18-poll-{int(multiple)}",
-                        "revision": 1,
-                        "text": f"css09-cross-station-poll-{int(multiple)}",
-                        "audienceKind": "CUSTOM_ALLOW",
-                        "actorPtids": [fixture_identity["bobPtid"]],
-                        "momentKind": "POLL",
-                        "poll": {
-                            "question": f"css09-private-question-{int(multiple)}",
-                            "options": ["opaque label A", "opaque label B", "opaque label C"]
-                            if multiple else ["opaque label A", "opaque label B"],
-                            "minChoices": 1,
-                            "maxChoices": 2 if multiple else 1,
-                            "expiresAtSeconds": int(time.time()) + 7200,
-                        },
-                    }, label="AS18 private poll"),
-                    "multiple": multiple,
-                }
-                for multiple in (False, True)
-            ]
+            _moments_harness(current_bob, "followActor", {
+                "actorPtid": fixture_identity["alicePtid"],
+            })
+            circle = _moments_harness(alice, "createAudienceCircle", {
+                "name": "css09-mixed-audience",
+            })
+            circle_id = _required_text(circle.get("circleId"), "AS18 Circle identity")
+            for ptid in (fixture_identity["alicePtid"], fixture_identity["bobPtid"]):
+                _moments_harness(alice, "addAudienceCircleMember", {
+                    "circleId": circle_id, "actorPtid": ptid,
+                })
+            group = _chat_harness(alice, "createGroup", {
+                "name": "css09-mixed-audience",
+                "federationId": fixture_identity["federationId"],
+                "memberPtids": [fixture_identity["bobPtid"]],
+            })
+            group_id = _required_text(group.get("groupUlid"), "AS18 Group identity")
+            def observe_group_members() -> Mapping[str, Any] | None:
+                snapshot = _chat_harness(alice, "syncGroup", {"groupUlid": group_id})
+                return snapshot if set(snapshot.get("memberPtids", ())) == {
+                    fixture_identity["alicePtid"], fixture_identity["bobPtid"],
+                } else None
+            group_members = wait_until(
+                observe_group_members, "AS18 original Conversation membership",
+                timeout=180,
+            )
+            audience_matrix = []
+            for kind, options in (
+                ("FOLLOWERS", {}),
+                ("CIRCLE", {"circleId": circle_id}),
+                ("GROUP", {"groupConversationId": group_id}),
+                # The author reads through its original implicit author grant;
+                # CUSTOM_ALLOW lists only other recipients.
+                ("CUSTOM_ALLOW", {"actorPtids": [fixture_identity["bobPtid"]]}),
+                ("CUSTOM_DENY", {"baseKind": "FOLLOWERS", "actorPtids": [eve_ptid]}),
+            ):
+                text = f"css09-cross-station-mixed-{kind.lower()}"
+                post_id = publish_typed({
+                    "draftId": f"css09-as18-{kind.lower()}", "revision": 1,
+                    "text": text, "audienceKind": kind, "momentKind": "TEXT", **options,
+                }, label=f"AS18 mixed {kind}")
+                projections = [
+                    _wait_for_private_moment_state(
+                        client, post_id=post_id, expected_state="CONTENT_READY",
+                        actor_label=label,
+                    )
+                    for client, label in ((alice, "Alice local"), (current_bob, "Bob remote"))
+                ]
+                if any(read.get("textSha256") != _sha256(text)
+                       or read.get("audienceKind") != kind for read in projections):
+                    raise RuntimeOwnerBlocked(
+                        "CLIENT_RUNTIME_UNAVAILABLE", f"AS18 {kind} recipient readback differs",
+                        resource="client:cross-station-social-bob",
+                    )
+                audience_matrix.append({
+                    "audienceKind": kind, "postIdSha256": _sha256(post_id),
+                    "localAuthor": projections[0], "remoteRecipient": projections[1],
+                })
+            unsupported = _moments_harness(alice, "publishUnsupportedCustomDenyPublic", {
+                "draftId": "css09-as18-deny-public", "revision": 1, "text": "css09-deny-public",
+                "audienceKind": "CUSTOM_DENY", "baseKind": "PUBLIC",
+                "actorPtids": [fixture_identity["bobPtid"]], "momentKind": "TEXT",
+            })
+            if (unsupported.get("state") != "PRIVATE_UNSUPPORTED"
+                or unsupported.get("rejectionEvidence", {}).get("receivedPreparePlanCount") != 0
+                or unsupported.get("rejectionEvidence", {}).get("desktopLocalDurableRowCount") != 0):
+                raise RuntimeOwnerBlocked(
+                    "CLIENT_RUNTIME_UNAVAILABLE", "AS18 unsupported audience crossed prepare",
+                    resource="client:cross-station-social-alice",
+                )
             record_scenario(
                 "AS18",
                 receiver=current_bob,
                 visible_text=as18_text,
                 observations={
                     "audienceKind": as18_read.get("audienceKind"),
-                    "deduplicatedRemoteRecipientCount": 1,
+                    "audienceMatrix": audience_matrix,
+                    "groupMembershipPtidSha256": sorted(
+                        _sha256(ptid) for ptid in group_members["memberPtids"]
+                    ),
+                    "unsupportedPublicBase": unsupported,
                     "sourceGateIds": [
                         "social-cross-station-contract",
                         "social-cross-station-prekey",
@@ -7660,20 +8026,6 @@ class W7RuntimeOwner:
                     "AS19 unauthorized fixture exposed private material",
                     resource="fixture-account:eve",
                 )
-            for poll in private_polls:
-                status, body = _http_get(
-                    f"{secondary_station_url.rstrip('/')}/api/v1/social/moments/{poll['postId']}",
-                    authorization=f"Bearer {eve_token}",
-                    headers={"X-Device-ID": "css09-eve-untrusted-device"},
-                )
-                if status != 404 or any(marker in body for marker in (
-                    b"opaque label", b"css09-private-question", b"voter_count",
-                    b"opaque_option_ids", b"option_set_sha256",
-                )):
-                    raise RuntimeOwnerBlocked(
-                        "CLIENT_RUNTIME_UNAVAILABLE", "AS19 private poll denial exposed material",
-                        resource="fixture-account:eve",
-                    )
             record_scenario(
                 "AS19",
                 receiver=current_bob,
@@ -7754,30 +8106,7 @@ class W7RuntimeOwner:
             for text, depth in ((as20_comment, 0), (as20_reply, 1)):
                 alice_comment_ui.assert_like(as20_post, text, depth, 1, True, "durable-retry")
                 bob_comment_ui.assert_like(as20_post, text, depth, 1, False, "durable-retry")
-            bob_poll_ui = SocialPollUI(current_bob, "bob", interaction_evidence_root)
-            alice_poll_ui = SocialPollUI(alice, "alice", interaction_evidence_root)
-            ballot_results = []
-            for poll in private_polls:
-                for client in (alice, current_bob):
-                    _wait_for_private_moment_state(
-                        client, post_id=poll["postId"], expected_state="CONTENT_READY",
-                        actor_label="private poll reader",
-                    )
-                result = exercise_private_poll(
-                    bob_poll_ui, alice_poll_ui, post_id=poll["postId"], multiple=poll["multiple"],
-                )
-                result["exactRetries"] = [
-                    _moments_harness(client, "replayPrivatePollVote", {"postId": poll["postId"]})
-                    for client in (alice, current_bob)
-                ]
-                for ui in (alice_poll_ui, bob_poll_ui):
-                    ui.assert_poll(
-                        result["postId"], result["counts"], result["choices"], 2, "durable-retry",
-                    )
-                ballot_results.append(result)
             supporting_artifacts.extend(str(path) for ui in (alice_comment_ui, bob_comment_ui)
-                                        for path in ui.artifacts)
-            supporting_artifacts.extend(str(path) for ui in (alice_poll_ui, bob_poll_ui)
                                         for path in ui.artifacts)
             record_scenario(
                 "AS20",
@@ -7791,14 +8120,11 @@ class W7RuntimeOwner:
                     "reactionProjected": True,
                     "commentTextSha256": _sha256(as20_comment),
                     "commentReactionActions": bob_comment_ui.actions + alice_comment_ui.actions,
-                    "commentReactionAssertions": bob_comment_ui.assertions + alice_comment_ui.assertions,
+                    "commentReactionAssertions": bob_comment_ui.reaction_assertions + alice_comment_ui.reaction_assertions,
                     "commentReactionReplays": replay_evidence,
                     "feedSearch": comment_interactions["feedSearch"],
                     "identitySearch": comment_interactions["identitySearch"],
                     "feedReconcile": comment_interactions["feedReconcile"],
-                    "pollActions": bob_poll_ui.actions + alice_poll_ui.actions,
-                    "pollAssertions": bob_poll_ui.assertions + alice_poll_ui.assertions,
-                    "pollResults": ballot_results,
                     "sourceGateIds": ["social-cross-station-interaction"],
                 },
             )
@@ -7808,12 +8134,44 @@ class W7RuntimeOwner:
                 SuiteRuntimeAction.SCENARIO_START,
                 scenario_id="AS21",
             )
-            as21_text = "css09-cross-station-reconcile-after-reload"
-            as21_post = _publish_friends_moment(
-                alice,
-                draft_id="css09-as21",
-                text=as21_text,
+            as21_text = "css09-cross-station-durable-outage-replay"
+            staged = _moments_harness(alice, "stagePrivateDraft", {
+                "draftId": "css09-as21", "revision": 1, "text": as21_text,
+                "audienceKind": "CUSTOM_ALLOW", "actorPtids": [fixture_identity["bobPtid"]],
+                "momentKind": "TEXT",
+            })
+            admission = _moments_harness(alice, "admitPrivateTextDraft")
+            if admission.get("state") != "READY_PRIVATE" or admission.get("draft") != staged:
+                raise RuntimeOwnerBlocked(
+                    "CLIENT_RUNTIME_UNAVAILABLE", "AS21 did not prepare its exact retained draft",
+                    resource="client:cross-station-social-alice",
+                )
+            outage = _commit_private_receiver_outage(
+                capability_client,
+                publish=lambda: _moments_harness(alice, "publishPrivateDraft"),
+                observe=delivery_observation,
+                deployment_environment=secondary_attestation.deployment_environment,
+                source_commit=control_commit, provisioning_run_id=prepared.manifest["runId"],
             )
+            as21_post = outage["postId"]
+            def observe_settled_publication() -> Mapping[str, Any] | None:
+                value = _moments_harness(alice, "publishPrivateDraft")
+                if value.get("state") not in PRIVATE_PUBLISH_RECONCILING_STATES | {"PUBLISHED"}:
+                    raise RuntimeOwnerBlocked(
+                        "CLIENT_RUNTIME_UNAVAILABLE",
+                        f"AS21 durable retry failed (state={value.get('state')!r})",
+                        resource="client:cross-station-social-alice",
+                    )
+                return value if value.get("state") == "PUBLISHED" else None
+            settled = wait_until(
+                observe_settled_publication,
+                "AS21 original durable publication after receiver recovery", timeout=180,
+            )
+            if settled.get("transientPostId") != as21_post:
+                raise RuntimeOwnerBlocked(
+                    "CLIENT_RUNTIME_UNAVAILABLE", "AS21 recovery changed the committed Post",
+                    resource="client:cross-station-social-alice",
+                )
             before_reload = _wait_for_moments_snapshot(current_bob)
             after_reload = _refresh_and_wait_for_moments_snapshot(current_bob)
             as21_read = _wait_for_private_moment_state(
@@ -7822,12 +8180,20 @@ class W7RuntimeOwner:
                 expected_state="CONTENT_READY",
                 actor_label="Bob",
             )
-            reload_poll_ui = SocialPollUI(current_bob, "bob", owner_root / "scenarios" / "AS21" / "painted")
-            for result in ballot_results:
-                reload_poll_ui.assert_poll(
-                    result["postId"], result["counts"], result["choices"], 2, "renderer-reload",
+            settled_outbox = delivery_observation("outbox", as21_post)
+            delivered_rows = delivery_observation("snapshot", as21_post)
+            if (
+                settled_outbox.get("outboxRows") != 1
+                or settled_outbox.get("outboxState") != "delivered"
+                or len({value["originalFrameSha256"] for value in [
+                    outage["committedOutbox"], *outage["outageOutbox"], settled_outbox,
+                ]}) != 1
+                or delivered_rows["projections"]["social_remote_private_resources"]["rows"] != 1
+            ):
+                raise RuntimeOwnerBlocked(
+                    "CLIENT_RUNTIME_UNAVAILABLE", "AS21 did not converge on one original outbox and receiver row",
+                    resource="station:cross-station-social-bob",
                 )
-            supporting_artifacts.extend(str(path) for path in reload_poll_ui.artifacts)
             record_scenario(
                 "AS21",
                 receiver=current_bob,
@@ -7835,8 +8201,17 @@ class W7RuntimeOwner:
                 observations={
                     "contentReady": as21_read.get("state") == "CONTENT_READY",
                     "rendererReloaded": True,
-                    "pollActions": reload_poll_ui.actions,
-                    "pollAssertions": reload_poll_ui.assertions,
+                    "stationOutage": outage["stationOutage"],
+                    "admission": admission,
+                    "committedPublication": outage["committedPublication"],
+                    "committedOutbox": outage["committedOutbox"],
+                    "heldFrame": outage["heldFrame"],
+                    "beforeDelivery": outage["beforeDelivery"],
+                    "outagePublications": outage["outagePublications"],
+                    "outageOutbox": outage["outageOutbox"],
+                    "settledOutbox": settled_outbox,
+                    "receiverRows": delivered_rows,
+                    "settledPublication": settled,
                     "bootIdentityStable": (
                         before_reload.get("bootIdentitySha256")
                         == after_reload.get("bootIdentitySha256")
@@ -7901,6 +8276,17 @@ class W7RuntimeOwner:
                 SuiteRuntimeAction.SCENARIO_START,
                 scenario_id="AS23",
             )
+            station_restart = restart_social_receiver_station(
+                capability_client,
+                deployment_environment=secondary_attestation.deployment_environment,
+                source_commit=control_commit,
+            )
+            prepared.verify_source()
+            ledger.record(
+                SuiteRuntimeAction.SUPPORTING_OBSERVATION,
+                scenario_id="AS23",
+                resource_id="station:receiver:same-container-new-process",
+            )
             _stop_client_or_raise(
                 current_bob,
                 purpose="Cross-Station Social Bob replacement",
@@ -7953,7 +8339,7 @@ class W7RuntimeOwner:
                 )
             _prepare_private_content_keys(bob2)
             recovered_interaction_parents = []
-            for post_id in (as20_post, *(result["postId"] for result in ballot_results)):
+            for post_id in (as20_post,):
                 parent_recovery = _moments_harness(
                     bob2,
                     "recoverPrivateMoment",
@@ -7973,15 +8359,6 @@ class W7RuntimeOwner:
             bob2_comment_ui.open_thread(as20_post)
             for text, depth in ((as20_comment, 0), (as20_reply, 1)):
                 bob2_comment_ui.assert_like(as20_post, text, depth, 1, False, "replacement-readback")
-            bob2_poll_ui = SocialPollUI(bob2, "bob2", owner_root / "scenarios" / "AS23" / "painted")
-            for result in ballot_results:
-                _wait_for_private_moment_state(
-                    bob2, post_id=result["postId"], expected_state="CONTENT_READY", actor_label="Bob2",
-                )
-                bob2_poll_ui.assert_poll(
-                    result["postId"], result["counts"], result["choices"], 2, "replacement-readback",
-                )
-            supporting_artifacts.extend(str(path) for path in bob2_poll_ui.artifacts)
             supporting_artifacts.extend(str(path) for path in bob2_comment_ui.artifacts)
             bob2_snapshot = _wait_for_moments_snapshot(bob2)
             prepared.verify_snapshot(bob2_id, bob2_snapshot)
@@ -8009,6 +8386,7 @@ class W7RuntimeOwner:
                 receiver=current_bob,
                 visible_text=recovery_text,
                 observations={
+                    "stationRestart": station_restart,
                     "beforeRecovery": "RECOVERY_REQUIRED",
                     "afterRecovery": "CONTENT_READY",
                     "preparedRecoveryEpoch": recovery_preparation[
@@ -8021,8 +8399,6 @@ class W7RuntimeOwner:
                     "commentReactionActions": bob2_comment_ui.actions,
                     "recoveredInteractionParents": recovered_interaction_parents,
                     "commentReactionAssertions": bob2_comment_ui.assertions,
-                    "pollActions": bob2_poll_ui.actions,
-                    "pollAssertions": bob2_poll_ui.assertions,
                     "sourceGateIds": [
                         "social-cross-station-revocation-recovery"
                     ],
@@ -8053,12 +8429,56 @@ class W7RuntimeOwner:
                     "AS24 exact receiver replay did not remain idempotent",
                     resource=f"client:{bob2_id}",
                 )
+            frame_replays = []
+            replay_target = _moments_harness(
+                current_bob, "recoverPrivateMoment", {"postId": as17_post},
+            )
+            if (
+                replay_target.get("state") != "CONTENT_READY"
+                or replay_target.get("textSha256") != _sha256(as17_text)
+            ):
+                raise RuntimeOwnerBlocked(
+                    "CLIENT_RUNTIME_UNAVAILABLE", "AS24 could not acquire its actual replay target",
+                    resource=f"client:{bob2_id}",
+                )
+            expected_frame_results = {
+                "duplicate": (2, 0),
+                "reordered": (4, 8),
+                "expired": (4, 6),
+                "hash-conflict": (5, 5),
+                "untrusted-station": (4, 2),
+                "wrong-station": (4, 2),
+                "wrong-actor": (4, 8),
+            }
+            for mutation, expected_result in expected_frame_results.items():
+                target_post = as22_post if mutation == "reordered" else as17_post
+                before = delivery_observation("snapshot", target_post)
+                response = delivery_observation("replay", target_post, mutation)
+                after = delivery_observation("snapshot", target_post)
+                replay_path = owner_root / "scenarios" / "AS24" / f"frame-{mutation}.json"
+                supporting_artifacts.append(str(replay_path))
+                frame_replays.append(_record_social_frame_replay(
+                    replay_path, mutation, before, response, after, expected_result,
+                ))
+                if mutation == "reordered":
+                    _wait_for_private_moment_states(
+                        current_bob, post_id=as22_post,
+                        expected_states=("DELETED_OR_REVOKED", "NOT_FOUND_OR_NOT_AUTHORIZED"),
+                        actor_label="Bob2 late revoked frame",
+                    )
+                else:
+                    _wait_for_private_moment_state(
+                        current_bob, post_id=as17_post,
+                        expected_state="CONTENT_READY", actor_label="Bob2 valid frame target",
+                    )
             record_scenario(
                 "AS24",
                 receiver=current_bob,
-                visible_text=recovery_text,
+                visible_text=as17_text,
+                absent_texts=(as22_text,),
                 observations={
                     "exactReplayStable": True,
+                    "federationFrameReplays": frame_replays,
                     "projectionDigest": _sha256(
                         json.dumps(
                             first_replay,
@@ -8129,42 +8549,6 @@ class W7RuntimeOwner:
                 local_ui.toggle_like(private_post, text, depth, 1, True, f"local-{label}-unlike")
                 local_ui.assert_like(private_post, text, depth, 0, False, f"local-{label}-unlike")
             supporting_artifacts.extend(str(path) for path in local_ui.artifacts)
-            poll_denial_ui = SocialPollUI(
-                current_bob, "bob2", owner_root / "scenarios" / "same-station-regression" / "painted",
-            )
-            deleted_poll, blocked_poll = (result["postId"] for result in ballot_results)
-            _moments_harness(alice, "deletePrivateMoment", {"postId": deleted_poll})
-            deleted_read = _wait_for_private_moment_states(
-                current_bob, post_id=deleted_poll,
-                expected_states={"DELETED_OR_REVOKED", "NOT_FOUND_OR_NOT_AUTHORIZED"},
-                actor_label="Bob2 deleted poll",
-            )
-            if deleted_read.get("contentKind") or deleted_read.get("subtypeEvidence"):
-                raise RuntimeOwnerBlocked(
-                    "CLIENT_RUNTIME_UNAVAILABLE", "Deleted poll retained readable material",
-                    resource="client:cross-station-social-bob2",
-                )
-            poll_denial_ui.assert_denied(deleted_poll, "deleted")
-            relationship = _moments_harness(
-                alice, "relationshipStatus", {"actorPtid": fixture_identity["bobPtid"]},
-            )
-            _moments_harness(alice, "blockActor", {
-                "actorPtid": fixture_identity["bobPtid"],
-                "homeStationPeerId": secondary_attestation.runtime_identity,
-                "observedRevision": relationship["revision"],
-            })
-            blocked_read = _wait_for_private_moment_states(
-                current_bob, post_id=blocked_poll,
-                expected_states={"DELETED_OR_REVOKED", "NOT_FOUND_OR_NOT_AUTHORIZED"},
-                actor_label="Bob2 blocked poll",
-            )
-            if blocked_read.get("contentKind") or blocked_read.get("subtypeEvidence"):
-                raise RuntimeOwnerBlocked(
-                    "CLIENT_RUNTIME_UNAVAILABLE", "Blocked poll retained readable material",
-                    resource="client:cross-station-social-bob2",
-                )
-            poll_denial_ui.assert_denied(blocked_poll, "blocked")
-            supporting_artifacts.extend(str(path) for path in poll_denial_ui.artifacts)
             record_scenario(
                 "same-station-regression",
                 receiver=alice,
@@ -8177,8 +8561,6 @@ class W7RuntimeOwner:
                     "privateParentReady": True,
                     "commentReactionActions": local_ui.actions,
                     "commentReactionAssertions": local_ui.assertions,
-                    "pollDenialActions": poll_denial_ui.actions,
-                    "pollDenialAssertions": poll_denial_ui.assertions,
                     "sameStationPrivateGate": "social-private-desktop-e2e",
                 },
             )

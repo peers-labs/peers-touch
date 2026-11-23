@@ -266,6 +266,8 @@ class PreparedSocialNativeTest(unittest.TestCase):
             raise failure
 
         with (
+            mock.patch.object(runtime_owner.EphemeralGateClient, "from_environment",
+                              return_value=mock.Mock()) as capability,
             mock.patch.object(prepared, "schema_bindings", return_value={
                 "station-four": mock.Mock(), "station-five-arm": mock.Mock(),
             }),
@@ -277,6 +279,7 @@ class PreparedSocialNativeTest(unittest.TestCase):
             with self.assertRaises(FoundationClientError) as raised:
                 owner.run_social_cross_station_suite(prepared=prepared)
         self.assertIs(failure, raised.exception)
+        capability.return_value.invoke.assert_not_called()
         self.assertTrue(any("logout rejected" in note for note in failure.__notes__))
         self.binding.finalize_cleanup.assert_called_once()
         fixtures.assert_not_called()

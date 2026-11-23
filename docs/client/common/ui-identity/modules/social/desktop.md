@@ -125,6 +125,14 @@ Rules:
   it preserves its editor instance. Public comment drafts use the same logical
   post identity across feed aliases. Initial acquisition is separate from
   revalidation, including acquired-empty snapshots.
+- Native Acceptance keeps these assertions in the original Suites:
+  private AS20 observes both clients through
+  `tooling/development/secure_content/social_feed_ui.py`; the public Suite uses
+  `tooling/acceptance/gates/social/public_comment_revalidation.py` for unchanged,
+  empty, collapse, alive-return and late create/delete/LIKE read races.
+  [Private Feature](../../../../../../tooling/acceptance/features/social-private-moments-desktop.yaml)
+  and [Public Feature](../../../../../../tooling/acceptance/features/social-public-signed-feed.yaml)
+  own the evidence requirements. Source checks do not establish Native proof.
 - Repeated public reads reuse unchanged rows and arrays. A head page replaces
   its acquired range while retaining paginated rows and their cursor outside
   that range; a complete authoritative page removes absent rows. Confirmed
@@ -178,6 +186,10 @@ Rules:
   Actor, completed Station binding and session epoch before asynchronous work;
   old or unmounted callbacks cannot notify a new session. Identity changes
   dismiss existing notices and settle queued confirmations.
+- The App feedback host uses the existing UIProvider overlay element so a
+  failed modal command can paint and dismiss its notice while retaining the
+  editor draft. It must not live inside the modal's inert background content.
+  Legacy shell feedback uses UIProvider's feedback slot for the same boundary.
 - Circle lists are the publisher's private audience management. They do not
   define a separately readable Circle feed or a group membership product.
 - Block dispatches the original relationship command and private revoke policy;

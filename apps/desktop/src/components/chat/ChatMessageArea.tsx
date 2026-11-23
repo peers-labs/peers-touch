@@ -43,6 +43,11 @@ import { newSendIntentId } from '../../utils/messagingSendIntent';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
 import { errorMessage, presentError } from '../../services/errorPresenter';
 import { ChatComposer, type ChatComposerDraft } from './ChatComposer';
+import {
+  canRetryOptimistic,
+  createOptimisticMessage,
+  type OptimisticOutboundMessage,
+} from '../../messaging/optimisticOutbound';
 import { TypingIndicator } from './message/TypingIndicator';
 import {
   DESKTOP_CHAT_COMPOSER_CAPABILITIES_MAIN,
@@ -53,6 +58,7 @@ import {
   replyPreviewForMessage,
 } from './message/chatMessageModel';
 import { ChatMessageTimeline } from './message/ChatMessageTimeline';
+import { OptimisticOutboundStack } from './message/OptimisticOutboundStack';
 import {
   chatMessageTailScrollTop,
   isChatMessageTailPinned,
@@ -121,6 +127,11 @@ export function ChatMessageArea({
     pinnedMessages,
     reactToMessage,
     pinMessage,
+    addOptimisticOutbound,
+    patchOptimisticOutbound,
+    retryOptimisticOutbound,
+    reconcileOptimisticOutbound,
+    getOptimisticOutbound,
   } = useActiveSocialChatSlice((s) => ({
     activeTab: s.activeTab,
     activeSessionUlid: s.activeSessionUlid,
@@ -160,6 +171,11 @@ export function ChatMessageArea({
     pinnedMessages: s.pinnedMessages,
     reactToMessage: s.reactToMessage,
     pinMessage: s.pinMessage,
+    addOptimisticOutbound: s.addOptimisticOutbound,
+    patchOptimisticOutbound: s.patchOptimisticOutbound,
+    retryOptimisticOutbound: s.retryOptimisticOutbound,
+    reconcileOptimisticOutbound: s.reconcileOptimisticOutbound,
+    getOptimisticOutbound: s.getOptimisticOutbound,
   }));
   const actorStationEntries = useActiveChatFederationSlice(
     (state) => state.actorStationEntries,
@@ -250,6 +266,19 @@ export function ChatMessageArea({
   const mainTimelineMessages = useMemo(
     () => currentMessages.filter((message) => !messageThreadRootUlid(message)),
     [currentMessages],
+  );
+  // Drop optimistic rows whose admitted messageId now exists in the projected
+  // timeline. Runs on every projection change; the store no-ops when nothing
+  // reconciled, so this cannot cause a render loop.
+  useEffect(() => {
+    const visibleIds = new Set(currentMessages.map((message) => message.ulid));
+    reconcileOptimisticOutbound(visibleIds);
+  }, [currentMessages, reconcileOptimisticOutbound]);
+  const optimisticOutbound = useActiveSocialChatSlice((s) => s.optimisticOutbound);
+  const visibleOptimistic = useMemo(
+    () => getOptimisticOutbound(activeTab, activeUlid ?? ''),
+    // Re-derive whenever the global optimistic slice or the active surface changes.
+    [getOptimisticOutbound, activeTab, activeUlid, optimisticOutbound],
   );
   const pinnedMessageUlids = useMemo(
     () => new Set(Object.keys(pinnedMessages).filter((ulid) => Boolean(pinnedMessages[ulid]))),
@@ -691,7 +720,10 @@ export function ChatMessageArea({
   }, [fireTyping]);
 
   const handleSend = async (draft: ChatComposerDraft): Promise<boolean> => {
-    if ((!draft.text && draft.attachments.length === 0) || !activeUlid) return false;
+    const hasLocalAttachments = (draft.localAttachments?.length ?? 0) > 0;
+    if ((!draft.text && draft.attachments.length === 0 && !hasLocalAttachments) || !activeUlid) {
+      return false;
+    }
     const content = draft.text;
     const replyRef = replyToUlid || undefined;
     const editTarget = editingUlid;
@@ -727,6 +759,69 @@ export function ChatMessageArea({
         setReplyToUlid(null);
         setEditingUlid(null);
         setSending(false);
+        return true;
+      }
+      if (hasLocalAttachments) {
+        // Optimistic path: commit a sender-only row from the on-device blobs
+        // immediately, then stage and send in the background without blocking
+        // the composer. Reconciliation removes the row once the durable
+        // message projects back with the admitted messageId.
+        const sendIntentId = newSendIntentId();
+        const localId = `opt-${sendIntentId}`;
+        const optimistic = createOptimisticMessage({
+          localId,
+          sendIntentId,
+          conversationUlid: activeUlid,
+          kind: activeTab,
+          text: content,
+          drafts: draft.localAttachments ?? [],
+          messageType: draft.messageType,
+          replyToUlid: replyRef,
+        });
+        addOptimisticOutbound(optimistic);
+        setReplyToUlid(null);
+        setSending(false);
+        void (async () => {
+          try {
+            const intents = draft.resolveAttachments
+              ? await draft.resolveAttachments()
+              : draft.attachments;
+            // Durable on-device intents are the reusable retry payload: once
+            // staging succeeds a later offline/failed send can be re-driven
+            // without re-picking the original File.
+            patchOptimisticOutbound(localId, { status: 'sending', stagedIntents: intents });
+            const outcome = activeTab === 'friend'
+              ? await sendFriendMessage(
+                activeUlid,
+                activeConversation?.peerPtid || '',
+                content,
+                draft.messageType,
+                replyRef,
+                intents.length > 0 ? intents : undefined,
+                undefined,
+                sendIntentId,
+              )
+              : await sendGroupMessage(
+                activeUlid,
+                content,
+                draft.messageType,
+                replyRef,
+                intents.length > 0 ? intents : undefined,
+                undefined,
+                sendIntentId,
+              );
+            patchOptimisticOutbound(localId, {
+              status: 'sent',
+              reconciledMessageId: outcome.messageId,
+            });
+          } catch (error) {
+            log.error('chat', 'optimistic attachment send failed', error);
+            patchOptimisticOutbound(localId, {
+              status: 'failed',
+              errorCode: errorMessage(error),
+            });
+          }
+        })();
         return true;
       }
       if (activeTab === 'friend') {
@@ -772,6 +867,58 @@ export function ChatMessageArea({
       // because onSend resolved false.
       return false;
     }
+  };
+
+  /**
+   * Re-drive a failed optimistic row in place. The row keeps its stable
+   * localId (so the bubble and rendered <img> never remount), flips back to
+   * the in-flight scrim immediately, and only returns to the failed state if
+   * the re-send genuinely fails again. Staging already produced durable
+   * intents on the first attempt, so the original File does not need to be
+   * re-picked.
+   */
+  const handleRetryOptimistic = (message: OptimisticOutboundMessage): void => {
+    if (!canRetryOptimistic(message)) return;
+    const freshSendIntentId = newSendIntentId();
+    retryOptimisticOutbound(message.localId, freshSendIntentId);
+    const intents = message.stagedIntents ?? [];
+    void (async () => {
+      try {
+        const outcome = message.kind === 'friend'
+          ? await sendFriendMessage(
+            message.conversationUlid,
+            getIMConversations().find(
+              (conversation) => conversation.kind === 'friend'
+                && conversation.id === message.conversationUlid,
+            )?.peerPtid || '',
+            message.text,
+            message.messageType,
+            message.replyToUlid,
+            intents.length > 0 ? intents : undefined,
+            undefined,
+            freshSendIntentId,
+          )
+          : await sendGroupMessage(
+            message.conversationUlid,
+            message.text,
+            message.messageType,
+            message.replyToUlid,
+            intents.length > 0 ? intents : undefined,
+            undefined,
+            freshSendIntentId,
+          );
+        patchOptimisticOutbound(message.localId, {
+          status: 'sent',
+          reconciledMessageId: outcome.messageId,
+        });
+      } catch (error) {
+        log.error('chat', 'optimistic message retry failed', error);
+        patchOptimisticOutbound(message.localId, {
+          status: 'failed',
+          errorCode: errorMessage(error),
+        });
+      }
+    })();
   };
 
   /** Voice / video calls gate on authoritative peer presence. The
@@ -1311,7 +1458,7 @@ export function ChatMessageArea({
             <PtSpin size="small" />
           </div>
         )}
-        {mainTimelineMessages.length === 0 ? (
+        {mainTimelineMessages.length === 0 && visibleOptimistic.length === 0 ? (
           <div className="sc-conversation__center">
             <PtEmpty
               icon={<Icon iconId="message-circle" size={36} className="sc-conversation-empty__icon" />}
@@ -1355,6 +1502,7 @@ export function ChatMessageArea({
             threadCounts={threadCounts}
           />
         )}
+        <OptimisticOutboundStack messages={visibleOptimistic} onRetry={handleRetryOptimistic} />
         {peerIsTyping && !isAutomatedConversation && (
           <TypingIndicator
             kind={activeKind}

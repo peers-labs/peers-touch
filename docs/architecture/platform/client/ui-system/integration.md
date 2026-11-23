@@ -74,6 +74,9 @@ Host 提供 theme/density/locale/direction/motion/输入能力。
 reduced motion、命中区下限、可访问义务和状态 Owner 不能被局部覆盖。
 Portal 使用现有 Host，保留逻辑主对象和环境；
 trap/close/focus-restore 按显式浮层合同执行，不由 z-index 决定。
+应用壳通过公共 `useOverlayHost().element` 放置窗口内的 scoped FeedbackHost；
+全局反馈通过 `UIProvider.feedback` 槽位放置。两者都在 modal 的 inert
+背景内容之外，不复制浮层栈、焦点或命中规则。
 
 成熟 editor/media/focus/virtualization engine 通过原 adapter 内部复用，
 不对外暴露 supplier props，不改变 Definition/slot 语义。

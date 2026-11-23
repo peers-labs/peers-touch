@@ -654,9 +654,6 @@ func publishPrivateCommentParent(
 		"submit-comment-parent-"+label,
 		"private Comment parent",
 	)
-	if request.GetPollAuthority() != nil {
-		submit.PollAuthority = proto.Clone(request.GetPollAuthority()).(*privatecontentpb.PrivatePollAuthority)
-	}
 	response, err := fixture.service.SubmitPrivateMoment(
 		context.Background(),
 		fixture.author.Endpoint,

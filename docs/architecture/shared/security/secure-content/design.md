@@ -209,6 +209,15 @@ cannot begin or commit a transaction itself.
 | `CUSTOM_ALLOW` | explicit actor list | canonical list hash |
 | `CUSTOM_DENY` | explicit deny list over `FOLLOWERS` | canonical deny-list hash + follow-graph revision |
 
+The FOLLOWERS adapter reads same-Home follow rows and remote followers from the
+existing authenticated Feed subscription projection. Remote records must be
+enabled, revisioned, and bound to both Actors' canonical Home Stations on the
+public Feed chain. The subscription owner shares the Social audience transaction
+fence; subscription revisions enter the prepare commitment. Current private
+reads, including CUSTOM_DENY(FOLLOWERS), use the same predicates. A remote follow
+mirror cannot override a disabled subscription. No second writable follow graph
+or fixture-inserted audience is introduced.
+
 `friend_chat_friendships`, mutual-follow inference, and direct Conversation presence
 are not FRIENDS truth. Social replaces the production GROUP Noop with a narrow
 Conversation read port; it does not read Conversation tables.

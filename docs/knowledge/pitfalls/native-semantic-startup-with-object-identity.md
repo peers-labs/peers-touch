@@ -5,6 +5,7 @@ status: active
 owns:
   - apps/desktop/src-tauri/Cargo.lock
   - apps/desktop/src-tauri/src/main.rs
+  - apps/desktop/src-tauri/src/interface/tauri_commands/oss.rs
   - tooling/acceptance/drivers/native/
   - tooling/acceptance/provisioners/native_desktop_macos.py
   - tooling/acceptance/gates/chat/native_file_picker.py
@@ -64,6 +65,14 @@ session; Station leases do not isolate the operator pointer.
 
 The same exact-PID AX panel finder serves observation and selection. Panel
 presence is absent/present/absent, independently of window/sheet cardinality.
+OSS file, folder and Social image commands bind the actual Tauri caller window
+through `AsyncFileDialog.set_parent`. Rfd's implicit parent selection consults
+the process main window and then its first enumerated window; that is not the
+caller's identity. An original unparented qualifier entered the real Rust
+command and remained pending while the exact-PID panel was absent. That
+observation does not identify which implicit parent Rfd chose. The explicit
+binding must still pass the original open/select/close, callback-path, file-byte
+and operator-preservation qualification before it can support a Native Journey.
 Traverse controls by depth with the original bounds; release copied arrays and
 propagate unreadable subtrees when no earlier target exists. Home lookup requires
 sidebar AXStaticText before reading its value. Column-browser mutable selection
@@ -143,6 +152,16 @@ control/full subprocess limits remain two/three seconds. Checked
 one-shot mutations use their original operation deadline rather than inheriting
 the short read cap. No budget, cache, exception text or private title is added
 to manufacture a successful sample.
+
+A later real prelaunch request expired before its first focus-control read.
+The original shared frontmost PID helper initialized the full AppKit Python
+wrapper inside that startup budget. A controlled real-observer comparison
+reduced the initial sample from 0.493 to 0.283 seconds by loading the framework
+and resolving NSWorkspace directly through objc. The helper now uses that
+same system class and queries the application on every call. Regression
+checks reject a full wrapper import, observe changing PIDs and absent apps,
+and preserve native lookup failure. This removes measured startup overhead;
+it does not establish a unique historical cause or qualify a product Journey.
 
 The scoped observer starts a panel read observation after focus stabilizes:
 focus attribute reads narrow the shared AX session deadline, which must not

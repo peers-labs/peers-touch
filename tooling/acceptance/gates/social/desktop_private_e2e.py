@@ -121,7 +121,10 @@ def _interaction_observations(
             raise GateError(f"CSS-09 {scenario} interaction source identity is invalid")
         observations = artifact.get("observations")
         if isinstance(observations, Mapping):
-            for row in observations.get("commentReactionAssertions", ()):
+            for row in [
+                *observations.get("commentReactionAssertions", ()),
+                *observations.get("feedReconcile", ()),
+            ]:
                 if not isinstance(row, Mapping):
                     raise GateError("CSS-09 comment painted capture is malformed")
                 for role, suffix in (("screenshot", ".png"), ("dom", ".html")):
@@ -141,6 +144,34 @@ def _interaction_observations(
                         raise GateError("CSS-09 comment capture is not a Native PNG")
             return observations
     raise GateError(f"CSS-09 {scenario} lacks comment interaction artifacts")
+
+def _validate_feed_reconcile(cross: Mapping[str, Any]) -> None:
+    values = cross.get("feedReconcile")
+    expected = {(actor, phase) for actor in ("alice", "bob")
+                for phase in ("acquired-empty", "expanded", "collapsed", "alive-return")}
+    if not isinstance(values, list) or len(values) != len(expected):
+        raise GateError("CSS-09 feed reconciliation lacks required Native phases")
+    identities, sessions = {}, {}
+    for row in values:
+        if not isinstance(row, Mapping) or (row.get("actor"), row.get("phase")) not in expected:
+            raise GateError("CSS-09 feed reconciliation phase is invalid")
+        expected.remove((row["actor"], row["phase"]))
+        phase = row["phase"]
+        if (row.get("runtimeReconciles") != 2 or row.get("frames", 0) < 2
+            or row.get("violations") != [] or row.get("parentRetained") is not True
+            or row.get("editorRetained") is not True
+            or row.get("rows") != (0 if phase == "acquired-empty" else 2)
+            or row.get("expanded") is not (phase in ("acquired-empty", "expanded"))
+            or row.get("aliveReturn") is not (phase == "alive-return")
+            or (phase == "alive-return" and
+                (row.get("aliveReturned") is not True or row.get("returnedFrames", 0) < 2))
+            or not row.get("automationSessionId")
+            or not isinstance(row.get("postIdSha256"), str) or len(row["postIdSha256"]) != 64):
+            raise GateError("CSS-09 feed reconciliation is not stable Native evidence")
+        actor = row["actor"]
+        if (identities.setdefault("post", row["postIdSha256"]) != row["postIdSha256"]
+            or sessions.setdefault(actor, row["automationSessionId"]) != row["automationSessionId"]):
+            raise GateError("CSS-09 feed reconciliation target or session changed")
 
 
 def _validate_comment_trace(
@@ -267,10 +298,12 @@ class SocialPrivateDesktopGate(AcceptanceGate):
         )
         self.report.manifest = runtime_manifest
         attach_suite_evidence(self, result)
-        _validate_comment_trace(*(
+        observations = tuple(
             _interaction_observations(result, scenario)
             for scenario in INTERACTION_SCENARIOS
-        ))
+        )
+        _validate_comment_trace(*observations)
+        _validate_feed_reconcile(observations[0])
 
         self.assert_condition(
             "private-comment-like-retry-and-replacement",

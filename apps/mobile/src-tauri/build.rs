@@ -34,7 +34,6 @@ fn main() {
         "../../../model/domain/secure_content/object.proto",
         "../../../model/domain/social/post.proto",
         "../../../model/domain/social/comment.proto",
-        "../../../model/domain/social/poll.proto",
         "../../../model/domain/social/circle.proto",
         "../../../model/domain/social/private_content.proto",
         "../../../model/domain/social/private_federation.proto",

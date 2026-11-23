@@ -1,7 +1,12 @@
-"""Original Social UI controls must be revealed before viewport visibility."""
+"""Original Social UI controls retain viewport and canonical geometry checks."""
 
+import ast
+import inspect
+import json
 from pathlib import Path
+import subprocess
 from tempfile import TemporaryDirectory
+import textwrap
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -122,6 +127,70 @@ class SocialCommentViewportTest(unittest.TestCase):
                 self.assertFalse(driver.parent.expanded)
                 if options.get("hidden"):
                     self.assertTrue(driver.parent.hidden)
+
+
+class SocialCommentGeometryTest(unittest.TestCase):
+    def test_actual_like_predicate_uses_compact_token_and_rejects_geometry_drift(self):
+        tree = ast.parse(textwrap.dedent(inspect.getsource(SocialCommentUI.assert_like)))
+        scripts = [
+            node.args[0].value for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "execute_script"
+            and node.args and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+            and "const emoji = content?" in node.args[0].value
+        ]
+        self.assertEqual(2, len(scripts))
+        javascript = r"""
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+let actualHeight = 28, density = 'compact', token = '28px';
+const timestamp = '2026-11-14T18:00:00Z';
+const time = {dateTime: timestamp, title: new Date(timestamp).toLocaleString(),
+  textContent: 'just now'};
+const content = {textContent: '👍', querySelector: selector =>
+  selector === '.sk-comment-reaction-emoji' ? {textContent: '👍'} : null};
+const row = {querySelector: () => time};
+const post = {querySelector: () => ({textContent: '1'})};
+const button = {
+  querySelector: () => content,
+  getAttribute: name => name === 'data-density' ? density :
+    name === 'data-comment-like-count' ? '0' : name === 'aria-pressed' ? 'false' : null,
+  hasAttribute: () => false,
+  closest: selector => selector === '[data-comment-id]' ? row : post,
+  getBoundingClientRect: () => ({height: actualHeight, width: 13, x: 0, y: 0}),
+};
+global.getComputedStyle = () => ({
+  padding: '0px', borderWidth: '0px', backgroundColor: 'rgba(0, 0, 0, 0)',
+  display: 'flex', visibility: 'visible', opacity: '1',
+  getPropertyValue: name => name === '--pt-control-compact' ? token : '',
+});
+global.document = {querySelector: () => button, visibilityState: 'visible'};
+global.innerWidth = 864; global.innerHeight = 800;
+const predicate = new Function(input.find(script => script.includes('return emoji?')));
+const diagnostic = new Function(input.find(script => script.includes('checks:')));
+const results = [];
+for (const variant of [
+  [28, 'compact', '28px'], [22, 'compact', '28px'], [32, 'compact', '28px'],
+  [28, 'compact', ''], [28, 'compact', 'invalid'], [28, 'comfortable', '28px'],
+]) {
+  [actualHeight, density, token] = variant;
+  const observed = diagnostic('button', 0, false, 1);
+  results.push({valid: Boolean(predicate(button, 0, 1)),
+    height: observed.checks.height, density: observed.checks.density});
+}
+console.log(JSON.stringify(results));
+"""
+        result = subprocess.run(
+            ["node", "-e", javascript], input=json.dumps(scripts),
+            text=True, capture_output=True, check=True, timeout=10,
+        )
+        values = json.loads(result.stdout)
+        self.assertEqual([True, False, False, False, False, False],
+                         [value["valid"] for value in values])
+        self.assertEqual([True, False, False, False, False, True],
+                         [value["height"] for value in values])
+        self.assertFalse(values[-1]["density"])
 
 
 if __name__ == "__main__":

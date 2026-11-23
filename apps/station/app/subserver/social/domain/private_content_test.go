@@ -4,14 +4,10 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"testing"
-	"time"
 
 	"github.com/oklog/ulid/v2"
-	securecontentpb "github.com/peers-labs/peers-touch/station/frame/core/types/securecontent"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	privatecontentpb "github.com/peers-labs/peers-touch/station/frame/touch/model/privatecontent"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestPrivateContentRequiresCanonicalULID(t *testing.T) {
@@ -108,124 +104,6 @@ func TestCanonicalGroupRecipientSnapshotRoundTrip(t *testing.T) {
 	}
 }
 
-func privatePollVoteFixture(t *testing.T) (*privatecontentpb.VotePrivatePollRequest, *privatecontentpb.PrivatePollAuthority, time.Time) {
-	t.Helper()
-	at := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
-	id := ulid.Make().String()
-	first, second := bytes.Repeat([]byte{0x11}, 32), bytes.Repeat([]byte{0x22}, 32)
-	hash := sha256.Sum256(appendBytesField(appendBytesField(nil, 1, first), 1, second))
-	authority := &privatecontentpb.PrivatePollAuthority{
-		Resource: &securecontentpb.SecureResourceRef{
-			OwnerDomain: securecontentpb.SecureContentOwnerDomain_SECURE_CONTENT_OWNER_DOMAIN_SOCIAL,
-			ContentId:   id, Generation: 1,
-		},
-		OpaqueOptionIds: [][]byte{first, second}, OptionSetSha256: hash[:],
-		MinChoices: 1, MaxChoices: 1, ExpiresAt: timestamppb.New(at.Add(time.Minute)),
-	}
-	return &privatecontentpb.VotePrivatePollRequest{
-		PostId: id, CommandId: "private-vote", OpaqueOptionIds: [][]byte{first},
-		OptionSetSha256: hash[:], ActorSigningKeyId: "device-key",
-		ActorDeviceSignature: bytes.Repeat([]byte{0x33}, 64),
-	}, authority, at
-}
-
-func TestPrivatePollVoteCanonicalAuthorityAndSourceCutoff(t *testing.T) {
-	request, authority, at := privatePollVoteFixture(t)
-	if err := ValidatePrivatePollVote(request, authority, at, "test"); err != nil {
-		t.Fatal(err)
-	}
-	for _, test := range []struct {
-		name   string
-		change func(*privatecontentpb.VotePrivatePollRequest)
-		code   PrivateContentErrorCode
-	}{
-		{"empty", func(r *privatecontentpb.VotePrivatePollRequest) { r.OpaqueOptionIds = nil }, PrivateContentPollInvalidSelection},
-		{"duplicate", func(r *privatecontentpb.VotePrivatePollRequest) {
-			r.OpaqueOptionIds = [][]byte{r.OpaqueOptionIds[0], r.OpaqueOptionIds[0]}
-		}, PrivateContentPollInvalidSelection},
-		{"unordered", func(r *privatecontentpb.VotePrivatePollRequest) {
-			r.OpaqueOptionIds = [][]byte{authority.OpaqueOptionIds[1], authority.OpaqueOptionIds[0]}
-		}, PrivateContentPollInvalidSelection},
-		{"too-many", func(r *privatecontentpb.VotePrivatePollRequest) { r.OpaqueOptionIds = authority.OpaqueOptionIds }, PrivateContentPollInvalidSelection},
-		{"foreign-option", func(r *privatecontentpb.VotePrivatePollRequest) {
-			r.OpaqueOptionIds = [][]byte{bytes.Repeat([]byte{0x44}, 32)}
-		}, PrivateContentPollInvalidSelection},
-		{"wrong-definition", func(r *privatecontentpb.VotePrivatePollRequest) { r.OptionSetSha256 = bytes.Repeat([]byte{0x55}, 32) }, PrivateContentPollDefinitionChanged},
-		{"unsigned", func(r *privatecontentpb.VotePrivatePollRequest) { r.ActorDeviceSignature = nil }, PrivateContentInvalidArgument},
-		{"unknown-field", func(r *privatecontentpb.VotePrivatePollRequest) { r.ProtoReflect().SetUnknown([]byte{0x78, 1}) }, PrivateContentInvalidArgument},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			candidate := proto.Clone(request).(*privatecontentpb.VotePrivatePollRequest)
-			test.change(candidate)
-			if err := ValidatePrivatePollVote(candidate, authority, at, "test"); !IsPrivateContentCode(err, test.code) {
-				t.Fatalf("code = %s, want %s; error = %v", PrivateContentCodeOf(err), test.code, err)
-			}
-		})
-	}
-	for _, cutoff := range []time.Time{authority.ExpiresAt.AsTime(), authority.ExpiresAt.AsTime().Add(time.Hour)} {
-		if err := ValidatePrivatePollVote(request, authority, cutoff, "test"); !IsPrivateContentCode(err, PrivateContentPollClosed) {
-			t.Fatalf("source accepted a ballot at or after cutoff: %v", err)
-		}
-	}
-	if err := ValidatePrivatePollVote(request, nil, at, "test"); !IsPrivateContentCode(err, PrivateContentPollNotPoll) {
-		t.Fatalf("non-poll accepted: %v", err)
-	}
-}
-
-func TestPrivatePollIntentHashBindsCommandKeyDefinitionAndFullChoiceSet(t *testing.T) {
-	request, authority, _ := privatePollVoteFixture(t)
-	hash, err := VotePrivatePollRequestHash(request, "test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, change := range []func(*privatecontentpb.VotePrivatePollRequest){
-		func(r *privatecontentpb.VotePrivatePollRequest) { r.CommandId = "another-command" },
-		func(r *privatecontentpb.VotePrivatePollRequest) { r.ActorSigningKeyId = "another-device" },
-		func(r *privatecontentpb.VotePrivatePollRequest) { r.OptionSetSha256 = bytes.Repeat([]byte{0x66}, 32) },
-		func(r *privatecontentpb.VotePrivatePollRequest) {
-			r.OpaqueOptionIds = [][]byte{authority.OpaqueOptionIds[1]}
-		},
-	} {
-		candidate := proto.Clone(request).(*privatecontentpb.VotePrivatePollRequest)
-		change(candidate)
-		changed, err := VotePrivatePollRequestHash(candidate, "test")
-		if err != nil || bytes.Equal(hash, changed) {
-			t.Fatalf("different intent reused its hash: %v", err)
-		}
-	}
-}
-
-func TestPrivatePollProjectionRejectsImpossibleAndForeignResults(t *testing.T) {
-	request, authority, _ := privatePollVoteFixture(t)
-	projection := &privatecontentpb.PrivatePollProjection{
-		PostId: request.PostId, OptionSetSha256: request.OptionSetSha256, ProjectionRevision: 1,
-		CommandId: request.CommandId, VoteActorPtid: "ptid:viewer", VoterCount: 1,
-		Options: []*privatecontentpb.PrivatePollOptionResult{
-			{OpaqueOptionId: authority.OpaqueOptionIds[0], VoteCount: 1, SelectedByViewer: true},
-			{OpaqueOptionId: authority.OpaqueOptionIds[1]},
-		},
-	}
-	if err := ValidatePrivatePollProjection(projection, authority, "test"); err != nil {
-		t.Fatal(err)
-	}
-	for _, change := range []func(*privatecontentpb.PrivatePollProjection){
-		func(p *privatecontentpb.PrivatePollProjection) { p.Options[1].VoteCount = 1 },
-		func(p *privatecontentpb.PrivatePollProjection) { p.Options[0].VoteCount = 2 },
-		func(p *privatecontentpb.PrivatePollProjection) { p.Options[1].SelectedByViewer = true },
-		func(p *privatecontentpb.PrivatePollProjection) {
-			p.Options[0].OpaqueOptionId = bytes.Repeat([]byte{0x77}, 32)
-		},
-		func(p *privatecontentpb.PrivatePollProjection) { p.ProjectionRevision = 0 },
-		func(p *privatecontentpb.PrivatePollProjection) { p.PostId = ulid.Make().String() },
-	} {
-		candidate := proto.Clone(projection).(*privatecontentpb.PrivatePollProjection)
-		change(candidate)
-		if err := ValidatePrivatePollProjection(candidate, authority, "test"); !IsPrivateContentCode(err, PrivateContentIntegrityFailed) {
-			t.Fatalf("invalid projection accepted: %v", err)
-		}
-	}
-}
-
 func TestCanonicalRecipientLocalitiesRoundTrip(t *testing.T) {
 	localities := []RecipientLocality{
 		{
@@ -289,62 +167,6 @@ func TestCanonicalizePrivateMomentPrepareRejectsCustomDenyPublicAsUnsupported(
 		PrivateContentUnsupported,
 	) {
 		t.Fatalf("CUSTOM_DENY(PUBLIC) prepare error = %v", err)
-	}
-}
-
-func TestCanonicalizePrivateMomentPrepareBindsPollAuthority(t *testing.T) {
-	contentID := ulid.Make().String()
-	first := bytes.Repeat([]byte{0x11}, sha256.Size)
-	second := bytes.Repeat([]byte{0x22}, sha256.Size)
-	optionSetBytes := appendBytesField(nil, 1, first)
-	optionSetBytes = appendBytesField(optionSetBytes, 1, second)
-	optionSetHash := sha256.Sum256(optionSetBytes)
-	authority := &privatecontentpb.PrivatePollAuthority{
-		Resource: &securecontentpb.SecureResourceRef{
-			OwnerDomain: securecontentpb.
-				SecureContentOwnerDomain_SECURE_CONTENT_OWNER_DOMAIN_SOCIAL,
-			ContentId:  contentID,
-			Generation: 1,
-		},
-		OpaqueOptionIds: [][]byte{first, second},
-		OptionSetSha256: optionSetHash[:],
-		MinChoices:      1,
-		MaxChoices:      1,
-		ExpiresAt: timestamppb.New(
-			time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC),
-		),
-	}
-	material, err := CanonicalizePrivateMomentPrepare(
-		&privatecontentpb.PreparePrivateMomentRequest{
-			ContentId: contentID,
-			Audience: &model.Audience{
-				Kind: model.Audience_FRIENDS,
-			},
-			CommandId: "prepare-poll",
-			Kind: privatecontentpb.
-				PrivateMomentKind_PRIVATE_MOMENT_KIND_POLL,
-			PollAuthority: authority,
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(material.SubtypePrepareAuthorityBytes) == 0 ||
-		!bytes.Equal(
-			material.SubtypePrepareAuthoritySHA256[:],
-			privateSHA256ForTest(material.SubtypePrepareAuthorityBytes),
-		) {
-		t.Fatal("poll authority was not bound into the prepare material")
-	}
-	domainBinding := &privatecontentpb.PrivateMomentDomainBinding{}
-	if err := proto.Unmarshal(material.DomainBinding, domainBinding); err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(
-		domainBinding.GetSubtypePrepareAuthoritySha256(),
-		material.SubtypePrepareAuthoritySHA256[:],
-	) {
-		t.Fatal("poll authority was not bound into the domain binding")
 	}
 }
 

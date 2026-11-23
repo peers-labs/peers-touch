@@ -262,19 +262,6 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
                 },
             ),
             (
-                "POLL",
-                "secure-content-w8-subtype-poll",
-                {
-                    "poll": {
-                        "question": "Choose one",
-                        "options": ["First", "Second"],
-                        "minChoices": 1,
-                        "maxChoices": 1,
-                        "expiresAtSeconds": int(time.time()) + 3600,
-                    }
-                },
-            ),
-            (
                 "LOCATION",
                 "secure-content-w8-subtype-location",
                 {
@@ -329,18 +316,6 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
             == _sha256("https://example.test/secure-content")
             and link.get("titleSha256") == _sha256("Secure Content"),
             "social-subtype LINK metadata differs",
-        )
-        poll = _mapping(
-            projections["POLL"].get("subtypeEvidence"),
-            "POLL evidence",
-        )
-        _require(
-            poll.get("questionSha256") == _sha256("Choose one")
-            and poll.get("optionLabelSha256")
-            == [_sha256("First"), _sha256("Second")]
-            and poll.get("minChoices") == 1
-            and poll.get("maxChoices") == 1,
-            "social-subtype POLL metadata differs",
         )
         location = _mapping(
             projections["LOCATION"].get("subtypeEvidence"),
@@ -453,7 +428,6 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
             "IMAGE",
             "VIDEO",
             "LINK",
-            "POLL",
             "REPOST",
             "LOCATION",
         ),

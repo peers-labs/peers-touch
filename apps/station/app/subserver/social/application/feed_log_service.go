@@ -31,8 +31,6 @@ type FeedLogService struct {
 	federationObservation FeedFederationObservation
 	writePolicy           func(context.Context, delivery.Transaction, *model.FeedEvent) error
 	projector             *infrastructure.FeedProjector
-	pollSigner            PrivateContentStationSigner
-	verifyPollStation     func(context.Context, delivery.Transaction, string, string, []byte, []byte) error
 }
 
 func (s *FeedLogService) SetProjector(projector *infrastructure.FeedProjector) {
@@ -98,11 +96,7 @@ func (s *FeedLogService) Submit(ctx context.Context, actorPTID, deviceID string,
 		if err != nil {
 			return err
 		}
-		admissions, err := s.pollAdmissionsFor(ctx, tx, request.Bundle)
-		if err != nil {
-			return err
-		}
-		response = &model.SubmitFeedEventResponse{Head: head, Duplicate: duplicate, PollAdmissions: admissions}
+		response = &model.SubmitFeedEventResponse{Head: head, Duplicate: duplicate}
 		return nil
 	})
 	if err != nil {

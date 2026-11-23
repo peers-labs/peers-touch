@@ -200,6 +200,9 @@ Social profile invalidation.
   terminal rejection has no retry action. Exact retry callers share their flight,
   while a direct retry cannot overlap the original submission. Ballots remain
   separate from post-reaction presentation and admission.
+  An equivalent Native-session snapshot retains the current private Moments
+  activation identity. A newer Native generation or explicit reactivation
+  replaces it, including reactivation with the same Actor and renderer values.
 - merge private Comment content generation and reaction revision independently,
   including replacement pages and Native snapshots; a delayed reaction updates
   only the currently retained target and cannot recreate a deleted row or restore
@@ -243,6 +246,23 @@ interface RuntimeDescriptor {
 ```
 
 - A runtime is the SINGLE owner of one domain's projection store(s). No two runtimes own overlapping fields.
+- `searchInvalidations` is a declared read-only observer of the original Social
+  owners. Public/private Store subscriptions and identity-qualified Moment events only
+  invalidate Search source IDs. They must not acquire or mutate Moments Stores,
+  bootstrap Moments or reconcile its projection. The Social EventBus contract
+  checks both `subscribe` and `subscribeMany`; this observer does not create a
+  second Moments projection owner. Equivalent retained content and scope copies
+  do not invalidate Search. Comment loading, acquisition and cursor bookkeeping
+  alone do not change read authority; actual comment content, refusal state,
+  removal and identity changes still invalidate immediately.
+  Passive signed-feed acquisition also invalidates on retained Post/author/
+  Comment content, HOME/Public feed membership and integrity refusal changes.
+  A tombstone can remove a feed ID while retaining its normalized Post, so
+  membership must be observed independently. Feed loading, cursors and read
+  timestamps never supply content invalidation or a second refresh owner.
+  An invalidated Search frame remains `idle` until the Search owner reacquires
+  it, even when a pinned remote no-store source exposes no monotonic revision.
+  Only a `ready` response can present a completed empty query.
 - `install` runs once at boot. `bootstrap` runs once per `(actorId, runtime)` pair; the registry guards against duplicate concurrent bootstraps via per-runtime sequence numbers.
 - `app`-scope runtimes (social, moments) do not depend on the active actor at install time; their data either is identity-independent, is itself the source of truth for the active actor, or observes authenticated actor edges through its own bridge logic.
 - `settings` is `session`-scoped. Its L1 projections (active account, Agents) are Station-owned; its L2 personalization (language, chat shortcut, provider list filter) is read from the identity-scoped `config.preference` storage per authenticated actor and reset to identity-independent defaults on teardown. See [Client Settings Ownership](../../architecture/platform/client/settings-ownership.md).

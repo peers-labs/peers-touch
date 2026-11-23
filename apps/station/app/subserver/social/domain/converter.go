@@ -18,10 +18,12 @@ import (
 // lives in a single place. Callers keep using untyped `*model.Post` /
 // `*model.CreatePostRequest` at API boundaries; the application layer
 // hands a `domain.Post` to repositories.
-type PostConverter struct{}
+type PostConverter struct {
+	kinds *ContentKindRegistry
+}
 
 func NewPostConverter() *PostConverter {
-	return &PostConverter{}
+	return &PostConverter{kinds: DefaultContentKindRegistry()}
 }
 
 // ---------------------------------------------------------------------------
@@ -92,107 +94,20 @@ func (c *PostConverter) CreateRequestToDomain(
 //	           Attachments = JSON({video_id})
 //	LINK     → TextBody = req.link.text;
 //	           LinkPreview = JSON({url})  (server fetches title/desc in P3)
-//	POLL     → TextBody = req.poll.text;
-//	           Attachments = JSON(poll request body)
 //	REPOST   → TextBody = req.repost.comment;
 //	           RepostRef = original_post_id
 //	LOCATION → TextBody = req.location.text;
 //	           Attachments = JSON({location, image_ids})
 func (c *PostConverter) encodeContent(req *model.CreatePostRequest) (text, attachments, linkPreview, repostRef string, err error) {
-	switch req.Type {
-	case model.PostType_TEXT:
-		if r := req.GetText(); r != nil {
-			text = r.Text
-		}
-
-	case model.PostType_IMAGE:
-		if r := req.GetImage(); r != nil {
-			text = r.Text
-			if len(r.Images) > 0 {
-				b, e := json.Marshal(r.Images)
-				if e != nil {
-					err = fmt.Errorf("encode image attachments: %w", e)
-					return
-				}
-				attachments = string(b)
-			} else if len(r.ImageIds) > 0 {
-				b, e := json.Marshal(r.ImageIds)
-				if e != nil {
-					err = fmt.Errorf("encode image ids: %w", e)
-					return
-				}
-				attachments = string(b)
-			}
-		}
-
-	case model.PostType_VIDEO:
-		if r := req.GetVideo(); r != nil {
-			text = r.Text
-			if r.VideoId != "" {
-				b, e := json.Marshal(map[string]string{"video_id": r.VideoId})
-				if e != nil {
-					err = fmt.Errorf("encode video: %w", e)
-					return
-				}
-				attachments = string(b)
-			}
-		}
-
-	case model.PostType_LINK:
-		if r := req.GetLink(); r != nil {
-			text = r.Text
-			if r.Url != "" {
-				b, e := json.Marshal(map[string]string{"url": r.Url})
-				if e != nil {
-					err = fmt.Errorf("encode link: %w", e)
-					return
-				}
-				linkPreview = string(b)
-			}
-		}
-
-	case model.PostType_POLL:
-		if r := req.GetPoll(); r != nil {
-			text = r.Text
-			b, e := json.Marshal(r)
-			if e != nil {
-				err = fmt.Errorf("encode poll: %w", e)
-				return
-			}
-			attachments = string(b)
-		}
-
-	case model.PostType_REPOST:
-		if r := req.GetRepost(); r != nil {
-			text = r.Comment
-			repostRef = r.OriginalPostId
-		}
-
-	case model.PostType_LOCATION:
-		if r := req.GetLocation(); r != nil {
-			text = r.Text
-			payload := map[string]any{}
-			if r.Location != nil {
-				payload["location"] = r.Location
-			}
-			if len(r.ImageIds) > 0 {
-				payload["image_ids"] = r.ImageIds
-			}
-			if len(payload) > 0 {
-				b, e := json.Marshal(payload)
-				if e != nil {
-					err = fmt.Errorf("encode location: %w", e)
-					return
-				}
-				attachments = string(b)
-			}
-		}
-
-	default:
-		err = fmt.Errorf("unsupported post type: %s", req.Type)
+	handler, err := c.kinds.Get(req.Type)
+	if err != nil {
 		return
 	}
-	return
+	cols, err := handler.Encode(req)
+	if err != nil {
+		return
+	}
+	return cols.Text, cols.Attachments, cols.LinkPreview, cols.RepostRef, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -299,93 +214,13 @@ func (c *PostConverter) DomainToProto(p *Post) (*model.Post, error) {
 }
 
 func (c *PostConverter) decodeContent(out *model.Post, p *Post) error {
-	switch p.Type {
-	case model.PostType_TEXT:
-		out.Content = &model.Post_TextPost{TextPost: &model.TextPost{Text: p.TextBody}}
-
-	case model.PostType_IMAGE:
-		body := &model.ImagePost{Text: p.TextBody}
-		if p.AttachmentsJSON != "" {
-			var images []*model.ImageAttachment
-			if err := json.Unmarshal([]byte(p.AttachmentsJSON), &images); err == nil {
-				body.Images = images
-			} else {
-				var ids []string
-				if legacyErr := json.Unmarshal([]byte(p.AttachmentsJSON), &ids); legacyErr != nil {
-					return fmt.Errorf("decode image attachments: %w", err)
-				}
-				for _, id := range ids {
-					body.Images = append(body.Images, newImageAttachment(id))
-				}
-			}
-		}
-		out.Content = &model.Post_ImagePost{ImagePost: body}
-
-	case model.PostType_VIDEO:
-		body := &model.VideoPost{Text: p.TextBody}
-		if p.AttachmentsJSON != "" {
-			var v map[string]string
-			if err := json.Unmarshal([]byte(p.AttachmentsJSON), &v); err != nil {
-				return fmt.Errorf("decode video attachments: %w", err)
-			}
-			if id := v["video_id"]; id != "" {
-				body.Video = newVideoAttachment(id)
-			}
-		}
-		out.Content = &model.Post_VideoPost{VideoPost: body}
-
-	case model.PostType_LINK:
-		body := &model.LinkPost{Text: p.TextBody}
-		if p.LinkPreviewJSON != "" {
-			var lp model.LinkPreview
-			if err := json.Unmarshal([]byte(p.LinkPreviewJSON), &lp); err != nil {
-				return fmt.Errorf("decode link preview: %w", err)
-			}
-			body.Link = &lp
-		}
-		out.Content = &model.Post_LinkPost{LinkPost: body}
-
-	case model.PostType_POLL:
-		body := &model.PollPost{Text: p.TextBody}
-		if p.AttachmentsJSON != "" {
-			var request model.CreatePollPostRequest
-			if err := json.Unmarshal([]byte(p.AttachmentsJSON), &request); err != nil {
-				return fmt.Errorf("decode poll creation: %w", err)
-			}
-			definition, err := FeedPollDefinitionFor(&request, p.CreatedAt.UnixMilli())
-			if err != nil {
-				return err
-			}
-			body.Poll = definition
-		} else {
-			return fmt.Errorf("poll creation definition is missing")
-		}
-		out.Content = &model.Post_PollPost{PollPost: body}
-
-	case model.PostType_REPOST:
-		out.Content = &model.Post_RepostPost{RepostPost: &model.RepostPost{
-			Comment:        p.TextBody,
-			OriginalPostId: p.RepostOfRef,
-		}}
-
-	case model.PostType_LOCATION:
-		body := &model.LocationPost{Text: p.TextBody}
-		if p.AttachmentsJSON != "" {
-			var payload struct {
-				Location *model.Location `json:"location,omitempty"`
-				ImageIDs []string        `json:"image_ids,omitempty"`
-			}
-			if err := json.Unmarshal([]byte(p.AttachmentsJSON), &payload); err != nil {
-				return fmt.Errorf("decode location attachments: %w", err)
-			}
-			body.Location = payload.Location
-			for _, id := range payload.ImageIDs {
-				body.Images = append(body.Images, newImageAttachment(id))
-			}
-		}
-		out.Content = &model.Post_LocationPost{LocationPost: body}
+	handler, err := c.kinds.Get(p.Type)
+	if err != nil {
+		return err
 	}
-
+	if err := handler.Decode(out, p); err != nil {
+		return err
+	}
 	if p.MentionsJSON != "" {
 		var mentions []*model.Mention
 		if err := json.Unmarshal([]byte(p.MentionsJSON), &mentions); err == nil {

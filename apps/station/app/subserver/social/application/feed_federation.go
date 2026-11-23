@@ -321,7 +321,7 @@ func (s *FeedLogService) ProcessFederation(ctx context.Context) error {
 	sendInteraction := func(ctx context.Context, tx delivery.Transaction, target string, receipt *model.FeedInteraction) error {
 		return s.enqueue(ctx, tx, target, delivery.PayloadKindSocialPublicFeedInteraction, receipt)
 	}
-	if err := s.store.ProcessInteractions(ctx, s.projector, s.verifyStoredInteraction, s.forwardInteraction, s.returnPollAdmission); err != nil {
+	if err := s.store.ProcessInteractions(ctx, s.projector, s.verifyStoredInteraction, s.forwardInteraction); err != nil {
 		if firstError == nil {
 			firstError = err
 		}
@@ -405,7 +405,7 @@ func (s *FeedLogService) verifyStoredInteraction(ctx context.Context, tx deliver
 	if err := domain.VerifyFeedEvent(receipt.Event, receipt.WriterGrant); err != nil {
 		return err
 	}
-	return s.verifyPollAdmission(infrastructure.FeedTransactionContext(ctx, tx), tx.DB(), receipt)
+	return nil
 }
 
 func (s *FeedLogService) verifyPulledHead(ctx context.Context, actor string, response *model.ReadFeedResponse) error {

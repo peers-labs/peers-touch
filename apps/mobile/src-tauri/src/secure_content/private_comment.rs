@@ -1385,7 +1385,6 @@ fn decrypt_comment(
         || payload.aad_sha256 != domain_binding_sha256.as_slice()
         || Sha256::digest(&payload.ciphertext).as_slice() != payload.ciphertext_sha256
         || !private.objects.is_empty()
-        || private.poll.is_some()
         || verification.subtype_authority.is_some()
         || proof.format_version != PAYLOAD_FORMAT_VERSION
         || proof.domain_commit_id != metadata.comment_id

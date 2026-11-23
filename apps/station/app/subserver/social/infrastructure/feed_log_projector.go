@@ -31,13 +31,9 @@ func (FeedObjectRecord) TableName() string { return "social_feed_objects" }
 
 type FeedProjectionObserver func(context.Context, *gorm.DB, *model.FeedEvent, uint64, string) error
 type FeedProjector struct {
-	localStation  string
-	observer      FeedProjectionObserver
-	pollAuthority func(context.Context, *gorm.DB, *model.FeedInteraction) error
-}
-
-func (p *FeedProjector) SetPollAuthority(authority func(context.Context, *gorm.DB, *model.FeedInteraction) error) {
-	p.pollAuthority = authority
+	localStation string
+	observer     FeedProjectionObserver
+	interactions *InteractionRegistry
 }
 
 func (p *FeedProjector) SetObserver(observer FeedProjectionObserver) { p.observer = observer }
@@ -49,7 +45,19 @@ func (p *FeedProjector) observe(ctx context.Context, tx *gorm.DB, event *model.F
 }
 
 func NewFeedProjector(localStation string) *FeedProjector {
-	return &FeedProjector{localStation: localStation}
+	p := &FeedProjector{localStation: localStation}
+	// Handlers reference the projector's own projection methods; wire the
+	// immutable dispatch table after construction to avoid a self-reference.
+	registry, err := NewInteractionRegistry(
+		reactionInteractionHandler{projector: p},
+		commentInteractionHandler{projector: p},
+	)
+	if err != nil {
+		// Static handler set; a wiring duplicate is a compile-time mistake.
+		panic(err)
+	}
+	p.interactions = registry
+	return p
 }
 
 // Apply is called only after the entire append batch passes verification.
@@ -176,15 +184,6 @@ func (p *FeedProjector) applyPost(ctx context.Context, tx *gorm.DB, chain *FeedC
 	}
 	if chain.HomeStationPeerID == p.localStation {
 		if err := domain.ValidatePostMedia(ctx, request, NewOssMediaResolver(tx)); err != nil {
-			return err
-		}
-	}
-	if kind == model.FeedEventKind_FEED_EVENT_KIND_POST_UPDATED {
-		original, created, err := OriginalFeedPostRequest(ctx, tx, &object)
-		if err != nil {
-			return err
-		}
-		if err := domain.ValidateFeedPollPostUpdate(original, request, created); err != nil {
 			return err
 		}
 	}

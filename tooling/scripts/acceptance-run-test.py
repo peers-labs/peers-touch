@@ -427,10 +427,17 @@ class AcceptanceRunTest(unittest.TestCase):
             [
                 {
                     "id": "gate-a",
+                    "artifactKind": "development-functional-result",
                     "status": "passed",
                     "completionStatus": "DONE",
-                    "proofStatus": "PROVEN",
+                    "proofStatus": "NOT_APPLICABLE",
+                    "cleanupStatus": "passed",
+                    "verificationClass": "FUNCTIONAL_CHECK",
+                    "developmentRunId": "run-a",
                     "runManifest": {"path": "manifest.json"},
+                    "developmentManifest": {"path": "development-manifest.json"},
+                    "developmentArtifact": {"path": "development-result.json"},
+                    "secretScan": {"status": "passed"},
                     "largeProductReport": "x" * 2_000_000,
                 }
             ],
@@ -446,10 +453,17 @@ class AcceptanceRunTest(unittest.TestCase):
                 "results": [
                     {
                         "id": "gate-a",
+                        "artifactKind": "development-functional-result",
                         "status": "passed",
                         "completionStatus": "DONE",
-                        "proofStatus": "PROVEN",
+                        "proofStatus": "NOT_APPLICABLE",
+                        "cleanupStatus": "passed",
+                        "verificationClass": "FUNCTIONAL_CHECK",
+                        "developmentRunId": "run-a",
                         "runManifest": {"path": "manifest.json"},
+                        "developmentManifest": {"path": "development-manifest.json"},
+                        "developmentArtifact": {"path": "development-result.json"},
+                        "secretScan": {"status": "passed"},
                     }
                 ],
             },

@@ -4413,19 +4413,6 @@ func extractLegacyAttachmentKeys(postType string, raw string) ([]string, error) 
 		}
 
 		return normalizeObjectKeys(payload.ImageIDs)
-	case "POLL":
-		var payload struct {
-			Text           string   `json:"text"`
-			Question       string   `json:"question"`
-			Options        []string `json:"options"`
-			DurationHours  int32    `json:"duration_hours"`
-			MultipleChoice bool     `json:"multiple_choice"`
-		}
-		if err := decodeStrictJSON([]byte(raw), &payload); err != nil {
-			return nil, err
-		}
-
-		return []string{}, nil
 	default:
 		return nil, fmt.Errorf("post type %q cannot carry attachment JSON", postType)
 	}

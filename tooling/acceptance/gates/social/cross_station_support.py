@@ -492,6 +492,46 @@ def _is_receiver_evidence(path: Path, reference: str, scenario_id: str) -> bool:
     )
 
 
+def _validate_private_outage_observations(value: Mapping[str, Any], *, source: str, run: str) -> None:
+    try:
+        committed = value["committedPublication"]
+        post = committed["transientPostId"]
+        outbox = value["committedOutbox"]
+        frame = outbox["originalFrameSha256"]
+        held = value["heldFrame"]
+        publications, retries = value["outagePublications"], value["outageOutbox"]
+        all_outboxes = [outbox, *retries]
+        stop, start = value["stationOutage"]["stop"], value["stationOutage"]["start"]
+        valid = (
+            bool(post) and bool(re.fullmatch(r"[0-9a-f]{64}", frame))
+            and committed["state"] in {"REMOTE_DELIVERY_PENDING", "REMOTE_DELIVERY_RETRYING"}
+            and len(publications) == len(retries) == 2
+            and all(item["transientPostId"] == post and item["state"] in {
+                "REMOTE_DELIVERY_PENDING", "REMOTE_DELIVERY_RETRYING",
+            } for item in publications)
+            and all(item["outboxRows"] == 1 and item["outboxState"] in {
+                "pending", "leased", "retry_wait",
+            } and item["originalFrameSha256"] == frame for item in all_outboxes)
+            and held["sourceCommit"] == source and held["runId"] == run
+            and type(held["effectCount"]) is int and held["effectCount"] > 0
+            and held["expired"] is False and held["frameSha256"] == frame
+            and value["beforeDelivery"]["projections"]["social_remote_private_resources"]["rows"] == 0
+            and stop["stopped"] is True and start["restored"] is True
+            and bool(stop["containerId"]) and start["containerId"] == stop["containerId"]
+            and all(item["sourceCommit"] == source for item in (stop, start))
+            and value["settledPublication"]["transientPostId"] == post
+            and value["settledPublication"]["state"] == "PUBLISHED"
+            and value["settledOutbox"]["outboxRows"] == 1
+            and value["settledOutbox"]["outboxState"] == "delivered"
+            and value["settledOutbox"]["originalFrameSha256"] == frame
+            and value["receiverRows"]["projections"]["social_remote_private_resources"]["rows"] == 1
+        )
+    except (KeyError, TypeError, AttributeError):
+        valid = False
+    if not valid:
+        raise GateError("AS21 lacks original committed-before-outage delivery proof")
+
+
 def _validate_schema_inventory(payload: Mapping[str, Any], *, repo_root: Path) -> None:
     from tooling.development.secure_content import runtime_manifest
     from tooling.development.secure_content.runtime_schema import RUNTIME_TARGETS
@@ -734,6 +774,19 @@ def validate_suite_result(
         ):
             raise GateError(
                 f"CSS-09 scenario {scenario_id} lacks receiver-visible evidence"
+            )
+        if scenario_id == "AS21":
+            candidates = [
+                _load_json(path, "AS21 scenario observations")
+                for _, path in resolved_refs if path.suffix.lower() == ".json"
+            ]
+            observations = [item for item in candidates if item.get("artifactKind")
+                            == "social-cross-station-scenario-evidence" and item.get("scenarioId") == "AS21"]
+            if len(observations) != 1:
+                raise GateError("AS21 has no unique original scenario observation")
+            _validate_private_outage_observations(
+                observations[0].get("observations", {}),
+                source=source_commit, run=payload["provisioningRunId"],
             )
 
     return ValidatedSuiteResult(

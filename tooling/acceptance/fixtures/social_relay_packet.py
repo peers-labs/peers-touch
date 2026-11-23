@@ -62,8 +62,8 @@ def contiguous_streams(segments: list[tuple[int, bytes]]) -> list[bytes]:
 
 
 def validate_legs(legs: list[dict[str, object]]) -> None:
-    if len(legs) != 2 or legs[0] == legs[1]:
-        raise ValueError("two distinct prepared TCP legs are required")
+    if not 2 <= len(legs) <= 8 or any(leg in legs[:index] for index, leg in enumerate(legs)):
+        raise ValueError("bounded distinct prepared TCP legs are required")
     for leg in legs:
         if set(leg) != {"relayAddress", "relayPort", "stationAddress", "stationPort"}:
             raise ValueError("TCP leg fields are invalid")
@@ -77,8 +77,12 @@ def validate_legs(legs: list[dict[str, object]]) -> None:
 
 
 def observe(wire: bytes, *, legs: list[dict[str, object]],
-            markers: tuple[bytes, ...]) -> dict[str, object]:
+            markers: tuple[bytes, ...], station_legs: list[list[int]]) -> dict[str, object]:
     validate_legs(legs)
+    if (len(station_legs) != 2 or any(not 1 <= len(group) <= 4 for group in station_legs)
+            or any(type(index) is not int for group in station_legs for index in group)
+            or sorted(index for group in station_legs for index in group) != list(range(len(legs)))):
+        raise ValueError("two disjoint complete Station TCP leg sets are required")
     if not markers or any(not marker or len(marker) > 4096 for marker in markers):
         raise ValueError("capture marker scope is invalid")
     complete_capture(wire)
@@ -127,17 +131,18 @@ def observe(wire: bytes, *, legs: list[dict[str, object]],
                 flows.setdefault(flow, []).append((tcp.seq, bytes(tcp.data)))
         except (dpkt.UnpackError, IndexError, TypeError) as error:
             raise ValueError("capture packet cannot be decoded") from error
-    direction_bytes = [[0, 0], [0, 0]]
+    direction_bytes = [[0, 0] for _ in legs]
     plaintext_observed = any(marker in wire for marker in markers)
     for flow, segments in flows.items():
         runs = contiguous_streams(segments)
         index, direction = scoped_flows[flow]
         direction_bytes[index][direction] += sum(map(len, runs))
         plaintext_observed |= any(marker in run for run in runs for marker in markers)
-    if not all(count for leg in direction_bytes for count in leg):
-        raise ValueError("capture did not observe both directions on both prepared TCP legs")
+    if not all(any(all(direction_bytes[index]) for index in group) for group in station_legs):
+        raise ValueError("capture did not observe a bidirectional TCP leg for both prepared Stations")
     return {
         "captureSha256": hashlib.sha256(wire).hexdigest(),
         "captureBytes": len(wire), "records": records,
-        "directionBytes": direction_bytes, "plaintextObserved": plaintext_observed,
+        "directionBytes": direction_bytes, "stationLegs": station_legs,
+        "plaintextObserved": plaintext_observed,
     }

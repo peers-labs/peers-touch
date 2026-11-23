@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+from collections.abc import Mapping
 import hashlib
 import json
 from pathlib import Path
@@ -15,6 +16,7 @@ from tooling.acceptance.core import (
     EphemeralCapabilityBlocked, EphemeralCapabilityHandler, EphemeralHandlerCleanup,
 )
 from tooling.acceptance.core.evidence_store import current_artifact_ref, write_current_artifact
+from tooling.acceptance.core.resource_diagnostic import ResourceDiagnostic
 from tooling.acceptance.fixtures.social_relay_packet import observe, validate_legs
 from tooling.acceptance.provisioners.posix_service_runtime import mint_posix_relay_operator_token
 from tooling.acceptance.provisioners.relay_attachment import relay_json_request
@@ -42,7 +44,8 @@ def tcp_endpoint(address: str) -> tuple[str, int]:
 
 class SocialRelayCaptureHandler(EphemeralCapabilityHandler):
     def __init__(self, *, config, inventory: dict, trust_anchor: bytes,
-                 probe: Path, probe_digest: str, repo_root: Path) -> None:
+                 probe: Path, probe_digest: str, repo_root: Path,
+                 evidence_environment: Mapping[str, str]) -> None:
         if (inventory.get("artifactKind") != "social-relay-preparation"
                 or len(inventory.get("stations", {})) != 2
                 or config.role != "relay"
@@ -51,6 +54,7 @@ class SocialRelayCaptureHandler(EphemeralCapabilityHandler):
             raise ValueError("capture requires the prepared non-stable Social Relay")
         self.config, self.inventory, self.trust_anchor = config, inventory, trust_anchor
         self.probe, self.probe_digest, self.repo_root = probe, probe_digest, repo_root
+        self._evidence_environment = dict(evidence_environment)
         self.root = f"/tmp/peers-social-capture-{uuid4().hex}"
         self.worker_source = WORKER.read_text()
         self.worker_digest = hashlib.sha256(self.worker_source.encode()).hexdigest()
@@ -59,6 +63,7 @@ class SocialRelayCaptureHandler(EphemeralCapabilityHandler):
         self._markers: tuple[bytes, ...] = ()
         self._before: dict | None = None
         self._finished = False
+        self._diagnostic: dict = {}
 
     @property
     def allowed_operations(self) -> tuple[str, ...]:
@@ -82,10 +87,31 @@ class SocialRelayCaptureHandler(EphemeralCapabilityHandler):
         )
         self.remaining(deadline, cancellation)
         if result.returncode:
+            self._diagnostic["remoteExitCode"] = result.returncode
+            # The worker emits only its closed diagnostic projection. Never
+            # forward arbitrary stdout/stderr from privileged commands.
+            if self._diagnostic.get("stage", "").startswith("worker-"):
+                try:
+                    failure = json.loads(result.stdout)["error"]
+                    if (set(failure) == {"code", "errorType"}
+                            and failure["code"] in {
+                                "authority", "ownership", "binding", "source",
+                                "owner", "namespace", "tool-missing", "permission",
+                                "tcpdump", "startup", "operation",
+                            }
+                            and failure["errorType"] in {
+                                "ValueError", "OSError", "FileNotFoundError",
+                                "PermissionError", "ProcessLookupError",
+                                "SubprocessError", "TimeoutExpired",
+                            }):
+                        self._diagnostic["workerFailure"] = failure
+                except (KeyError, TypeError, ValueError):
+                    pass
             raise ValueError("owned Relay capture transport failed")
         return result.stdout
 
     def _control(self, operation, *, deadline, cancellation, payload=None) -> dict:
+        self._diagnostic["stage"] = f"worker-{operation}"
         raw = self._remote(
             ["sudo", "-n", "python3", "-c", self.worker_source, operation, self.root],
             deadline=deadline, cancellation=cancellation,
@@ -94,6 +120,7 @@ class SocialRelayCaptureHandler(EphemeralCapabilityHandler):
         return json.loads(raw)
 
     def _namespace(self, *, deadline, cancellation) -> dict:
+        self._diagnostic["stage"] = "namespace"
         runtime = self.inventory["relayRuntime"]
         pid, = runtime["processIds"]
         # Actual executable/container/PID identity is checked at every arm and
@@ -109,23 +136,32 @@ if (container["State"]["Pid"] != expected["pid"] or not container["State"]["Runn
     or labels.get("com.docker.compose.project") != expected["project"]
     or labels.get("com.docker.compose.service") != "relay"):
     raise ValueError("runtime differs")
+ports={int(name[:-4]) for name,bindings in container["NetworkSettings"]["Ports"].items()
+       if name.endswith("/tcp") and any(
+           entry["HostPort"] == str(expected["publishedPort"]) for entry in bindings or [])}
+if len(ports) != 1:
+    raise ValueError("Relay published TCP port binding differs")
 raw=pathlib.Path("/proc/"+str(expected["pid"])+"/stat").read_text()
 fields=raw[raw.rindex(")")+2:].split()
 if fields[0] == "Z": raise ValueError("runtime stopped")
-print(json.dumps({"pid":expected["pid"],"startTicks":fields[19]}))
+print(json.dumps({"pid":expected["pid"],"startTicks":fields[19],"tcpPort":ports.pop()}))
 """
         return json.loads(self._remote(
             ["python3", "-c", script], deadline=deadline, cancellation=cancellation,
             wire=json.dumps({
                 "containerId": runtime["containerId"], "pid": pid,
                 "commit": self.inventory["sourceCommit"], "project": self.config.compose_project,
+                "publishedPort": self.config.libp2p_port,
             }),
         ))
 
     def _snapshot(self, *, deadline, cancellation) -> dict:
-        namespace = self._namespace(deadline=deadline, cancellation=cancellation)
+        binding = self._namespace(deadline=deadline, cancellation=cancellation)
+        namespace = {key: binding[key] for key in ("pid", "startTicks")}
+        self._diagnostic["stage"] = "route-observer-source"
         if hashlib.sha256(self.probe.read_bytes()).hexdigest() != self.probe_digest:
             raise ValueError("source-bound route observer executable changed")
+        self._diagnostic["stage"] = "signed-routes"
         result = subprocess.run(
             [str(self.probe)], input=json.dumps({
                 "origin": self.config.public_base_url, "ca": self.trust_anchor.decode("ascii"),
@@ -139,12 +175,15 @@ print(json.dumps({"pid":expected["pid"],"startTicks":fields[19]}))
         )
         self.remaining(deadline, cancellation)
         if result.returncode:
+            self._diagnostic["observerExitCode"] = result.returncode
             raise ValueError("prepared signed Circuit routes could not be verified")
         routes = json.loads(result.stdout)
+        self._diagnostic["stage"] = "operator-token"
         token = mint_posix_relay_operator_token(self.config, transport=_DeadlineTransport(
             self.config.transport(), deadline, cancellation,
         ))
         try:
+            self._diagnostic["stage"] = "authenticated-metadata"
             status, stats = relay_json_request(
                 self.config.public_base_url + "/api/v1/relay/stats", method="GET",
                 token=token, trust_anchor=self.trust_anchor,
@@ -153,9 +192,11 @@ print(json.dumps({"pid":expected["pid"],"startTicks":fields[19]}))
         finally:
             token = ""
         if status != 200:
+            self._diagnostic["httpStatus"] = status
             raise ValueError("authenticated transport metadata is unavailable")
-        connections, legs = [], []
-        for record in self.inventory["stations"].values():
+        self._diagnostic["stage"] = "authenticated-tcp-legs"
+        connections, legs, station_legs = [], [], []
+        for record in sorted(self.inventory["stations"].values(), key=lambda value: value["stationPeerId"]):
             peer = record["stationPeerId"]
             route = routes[peer]
             candidates = []
@@ -167,24 +208,49 @@ print(json.dumps({"pid":expected["pid"],"startTicks":fields[19]}))
                     remote, remote_port = tcp_endpoint(connection["remote_multiaddr"])
                 except ValueError:
                     continue
-                if local_port == self.config.libp2p_port:
+                # Capture runs inside this attested container's namespace.
+                if local_port == binding["tcpPort"]:
                     candidates.append((connection, {
                         "relayAddress": local, "relayPort": local_port,
                         "stationAddress": remote, "stationPort": remote_port,
                     }))
-            if len(candidates) != 1:
-                raise ValueError("prepared Node does not own exactly one bound Relay TCP leg")
-            connection, leg = candidates[0]
-            connections.append({"stationPeerId": peer, "connectionId": connection["id"],
-                                "route": route})
-            legs.append(leg)
+            candidates.sort(key=lambda candidate: candidate[0]["id"])
+            if not 1 <= len(candidates) <= 4:
+                self._diagnostic["matchedConnections"] = len(candidates)
+                # Preserve the failing selection, not a later post-cleanup
+                # sample. Hash identities/addresses and bound the projection;
+                # operator metadata may not forward arbitrary connection text.
+                digest = lambda value: hashlib.sha256(value.encode()).hexdigest()
+                self._diagnostic["stationPeerIdSha256"] = digest(peer)
+                self._diagnostic["nodePeerIdSha256"] = digest(route["nodePeerId"])
+                self._diagnostic["tcpCandidates"] = [
+                    {"connectionIdSha256": digest(candidate["id"]),
+                     "relayAddressSha256": digest(candidate_leg["relayAddress"]),
+                     "relayPort": candidate_leg["relayPort"],
+                     "stationAddressSha256": digest(candidate_leg["stationAddress"]),
+                     "stationPort": candidate_leg["stationPort"]}
+                    for candidate, candidate_leg in candidates[:4]
+                ]
+                self._diagnostic["tcpCandidatesTruncated"] = len(candidates) > 4
+                raise ValueError("prepared Node has no bounded authenticated Relay TCP legs")
+            station_legs.append(list(range(len(legs), len(legs) + len(candidates))))
+            # libp2p can retain simultaneous-dial connections and place new
+            # streams on either. Capture the whole authenticated set; choosing
+            # one connection would omit traffic on its equally valid sibling.
+            for connection, leg in candidates:
+                connections.append({"stationPeerId": peer, "connectionId": connection["id"],
+                                    "route": route})
+                legs.append(leg)
+        self._diagnostic["stage"] = "tcp-leg-validation"
         validate_legs(legs)
-        return {"namespace": namespace, "legs": legs, "connections": connections}
+        return {"namespace": namespace, "legs": legs, "connections": connections,
+                "stationLegs": station_legs}
 
     def invoke(self, operation: str, payload: dict, *, deadline_monotonic: float,
                cancellation: threading.Event) -> dict:
         if self._closed or operation not in self.allowed_operations:
             raise EphemeralCapabilityBlocked("Relay capture is unavailable", resource=CAPABILITY_ID)
+        self._diagnostic = {"operation": operation, "stage": "input"}
         try:
             options = {"deadline": deadline_monotonic, "cancellation": cancellation}
             if operation == "arm":
@@ -201,6 +267,7 @@ print(json.dumps({"pid":expected["pid"],"startTicks":fields[19]}))
                     "namespace": self._before["namespace"], "legs": self._before["legs"],
                     "sourceDigest": self.worker_digest, "workerSource": self.worker_source,
                 })
+                self._diagnostic["stage"] = "capture-readiness"
                 if result.get("armed") is not True:
                     raise ValueError("capture readiness was not acknowledged")
                 self._before["processes"] = result
@@ -217,19 +284,27 @@ print(json.dumps({"pid":expected["pid"],"startTicks":fields[19]}))
             if self._before is None or not self._markers or self._finished:
                 raise ValueError("capture was not armed")
             captured = self._control("finish", **options)
+            self._diagnostic["stage"] = "capture-framing"
             self._finished = True
             wire = base64.b64decode(captured.pop("pcap"), validate=True)
             relative = f"runtime/social-relay-capture/{uuid4().hex}.pcap"
-            write_current_artifact(relative, wire, repo_root=self.repo_root)
-            reference = current_artifact_ref(relative, repo_root=self.repo_root).to_dict()
+            write_current_artifact(relative, wire, repo_root=self.repo_root,
+                                   environment=self._evidence_environment)
+            reference = current_artifact_ref(
+                relative, repo_root=self.repo_root,
+                environment=self._evidence_environment,
+            ).to_dict()
             if reference["sha256"] != hashlib.sha256(wire).hexdigest():
                 raise ValueError("immutable capture bytes changed")
             if (captured.get("stopped") is not True or captured.get("exitCode") != 0
                     or captured.get("reason") != "requested" or captured.get("kernelDrops") != 0):
                 raise ValueError("capture did not flush and stop without packet loss")
             after = self._snapshot(**options)
+            self._diagnostic["stage"] = "capture-continuity"
             if (after["namespace"] != self._before["namespace"]
-                    or after["legs"] != self._before["legs"]):
+                    or after["legs"] != self._before["legs"]
+                    or after["stationLegs"] != self._before["stationLegs"]
+                    or len(after["connections"]) != len(self._before["connections"])):
                 raise ValueError("capture namespace or TCP legs changed")
             for before, current in zip(self._before["connections"], after["connections"]):
                 if (before["stationPeerId"] != current["stationPeerId"]
@@ -237,7 +312,9 @@ print(json.dumps({"pid":expected["pid"],"startTicks":fields[19]}))
                         or any(before["route"][key] != current["route"][key] for key in (
                             "nodePeerId", "routeId", "generation", "addresses", "innerSpkiSha256"))):
                     raise ValueError("capture signed route or authenticated connection changed")
-            observation = observe(wire, legs=after["legs"], markers=self._markers)
+            self._diagnostic["stage"] = "opaque-packet-observation"
+            observation = observe(wire, legs=after["legs"],
+                                  station_legs=after["stationLegs"], markers=self._markers)
             evidence = {
                 "artifactKind": "social-relay-opaque-observation",
                 "sourceCommit": self.inventory["sourceCommit"], "runId": self.inventory["runId"],
@@ -247,13 +324,24 @@ print(json.dumps({"pid":expected["pid"],"startTicks":fields[19]}))
             }
             relative = relative.removesuffix(".pcap") + ".json"
             write_current_artifact(relative, (json.dumps(evidence, sort_keys=True) + "\n").encode(),
-                                   repo_root=self.repo_root)
-            return {**observation, "evidence": current_artifact_ref(relative, repo_root=self.repo_root).to_dict()}
+                                   repo_root=self.repo_root,
+                                   environment=self._evidence_environment)
+            return {**observation, "evidence": current_artifact_ref(
+                relative, repo_root=self.repo_root,
+                environment=self._evidence_environment,
+            ).to_dict()}
         except EphemeralCapabilityBlocked:
             raise
         except Exception as error:
             raise EphemeralCapabilityBlocked(
                 "Source-bound Relay capture operation failed", resource=CAPABILITY_ID,
+                diagnostic=ResourceDiagnostic.observed(
+                    owner="tooling/acceptance/fixtures/social_relay_capture.py",
+                    recovery_action="Repair the observed capture stage and repeat the original source-bound Public Social Suite.",
+                    resource=CAPABILITY_ID,
+                    expected={"operation": operation, "completed": True},
+                    observed={**self._diagnostic, "errorType": type(error).__name__},
+                ),
             ) from error
 
     def project_response(self, operation: str, response: dict) -> dict:
@@ -261,7 +349,7 @@ print(json.dumps({"pid":expected["pid"],"startTicks":fields[19]}))
             result = response.get("result")
             fields = {"arm": {"armed"}, "clear": {"cleared"}, "finish": {
                 "captureSha256", "captureBytes", "records", "directionBytes",
-                "plaintextObserved", "evidence",
+                "stationLegs", "plaintextObserved", "evidence",
             }}[operation]
             if not isinstance(result, dict) or set(result) != fields:
                 raise ValueError("capture projection fields are invalid")
@@ -279,11 +367,12 @@ print(json.dumps({"pid":expected["pid"],"startTicks":fields[19]}))
             except Exception:
                 return False
         self._markers = ()
+        self._evidence_environment.clear()
         self._closed = True
         return True
 
     def close(self) -> EphemeralHandlerCleanup:
+        complete = self.quarantine("close", deadline_monotonic=time.monotonic() + 15)
         return EphemeralHandlerCleanup(
-            closed=self.quarantine("close", deadline_monotonic=time.monotonic() + 15),
-            secrets_zeroized=True,
+            closed=complete, secrets_zeroized=complete,
         )

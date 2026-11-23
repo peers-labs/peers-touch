@@ -167,7 +167,8 @@ class DeviceSearchGate(NativeTwoClientGate):
             const watch = window.__PT_SEARCH_CAPTURE_WATCH__;
             if (watch && watch.observer.takeRecords().length) watch.revision += 1;
             const field = document.querySelector('.pt-search-field');
-            const modal = field?.closest('.ant-modal');
+            const modal = field?.closest('.pt-search-overlay[role="dialog"]');
+            const panel = modal?.querySelector('.pt-search-panel');
             const result = {
                 domRevision: watch?.revision || 0,
                 searchOpen: !!field, painted: !field,
@@ -182,13 +183,13 @@ class DeviceSearchGate(NativeTwoClientGate):
                     .map(row => row.innerText).join('\\n'),
                 loading: !!document.querySelector('.pt-search-status'),
             };
-            if (!field || !modal) return result;
+            if (!field || !modal || !panel) return result;
             const rect = field.getBoundingClientRect();
             result.bounds = rect.toJSON();
             result.geometry = {
                 viewport: {width: innerWidth, height: innerHeight},
                 ...Object.fromEntries(Object.entries({
-                    panel: '.ant-modal-container', field: '.pt-search-field',
+                    panel: '.pt-search-panel', field: '.pt-search-field',
                     intents: '.pt-search-intents', body: '.pt-search-body',
                     footer: '.pt-search-footer', coverage: '.pt-search-coverage',
                     actions: '.pt-search-footer-actions',
@@ -212,8 +213,8 @@ class DeviceSearchGate(NativeTwoClientGate):
             const hit = document.elementFromPoint(
                 rect.left + rect.width / 2, rect.top + rect.height / 2,
             );
-            result.painted = visible && !result.motionActive && !modal.className.includes('prepare')
-                && !!hit && modal.contains(hit);
+            result.painted = visible && !result.motionActive
+                && !!hit && panel.contains(hit);
             return result;
         """)
 
@@ -234,7 +235,7 @@ class DeviceSearchGate(NativeTwoClientGate):
     def open_search(self) -> None:
         if not self.receiver.find_elements(".pt-search-field input"):
             self.receiver.find_element(
-                '[data-pt-primary-nav="search"] [role="button"]', 20,
+                '[data-pt-primary-nav="search"] button[data-action-id="primary-nav.search"]', 20,
             ).click()
         self.field()
         self.record_geometry("surface_ready", self.wait_surface())
@@ -595,7 +596,7 @@ class DeviceSearchGate(NativeTwoClientGate):
                     field: document.querySelector('.pt-search-field')?.getBoundingClientRect().toJSON(),
                     body: body?.getBoundingClientRect().toJSON(),
                     viewport: {width: innerWidth, height: innerHeight},
-                    panel: document.querySelector('.pt-search-modal .ant-modal-container')?.getBoundingClientRect().toJSON(),
+                    panel: document.querySelector('.pt-search-panel')?.getBoundingClientRect().toJSON(),
                     intents: document.querySelector('.pt-search-intents')?.getBoundingClientRect().toJSON(),
                     footer: document.querySelector('.pt-search-footer')?.getBoundingClientRect().toJSON(),
                     coverage: document.querySelector('.pt-search-coverage')?.getBoundingClientRect().toJSON(),

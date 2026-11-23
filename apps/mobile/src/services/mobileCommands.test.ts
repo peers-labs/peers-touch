@@ -38,7 +38,6 @@ import {
   privateSocialPrepareText,
   privateSocialPublish,
   privateSocialReact,
-  privateSocialPollVote,
   privateSocialRead,
   privateSocialReactionRetry,
   privateSocialSubmitText,
@@ -210,7 +209,6 @@ describe('Mobile command mutation admission', () => {
       () => privateSocialReact({ ...scope, postId: 'post-1', kind: 2 }),
       () => privateSocialUnreact({ ...scope, postId: 'post-1', kind: 2 }),
       () => privateSocialReactionRetry({ ...scope, commandId: 'reaction-1' }),
-      () => privateSocialPollVote({ ...scope, postId: 'post-1', selectedOptions: [0] }),
     ];
 
     for (const write of writes) {
@@ -269,14 +267,7 @@ describe('Mobile command mutation admission', () => {
       draftRevision: 1,
       text: 'private',
       audience: { kind: 'FRIENDS' },
-      momentKind: 'POLL',
-      poll: {
-        question: 'Choose',
-        options: ['A', 'B'],
-        minChoices: 1,
-        maxChoices: 1,
-        expiresAtSeconds: 2_000_000_000,
-      },
+      momentKind: 'TEXT',
     });
     await privateSocialRead({ ...scope, postId: 'post-1' });
     await privateSocialOpenMedia({ ...scope, postId: 'post-1', objectId: 'object-1' });
@@ -291,10 +282,9 @@ describe('Mobile command mutation admission', () => {
     await privateSocialReact({ ...scope, postId: 'post-1', kind: 2 });
     await privateSocialUnreact({ ...scope, postId: 'post-1', kind: 2 });
     await privateSocialReactionRetry({ ...scope, commandId: 'reaction-1' });
-    await privateSocialPollVote({ ...scope, postId: 'post-1', selectedOptions: [0, 1] });
 
     expect(invokeMock.mock.calls).toEqual([
-      ['social_private_publish', { input: expect.objectContaining({ momentKind: 'POLL' }) }],
+      ['social_private_publish', { input: expect.objectContaining({ momentKind: 'TEXT' }) }],
       ['social_private_read', { input: { ...scope, postId: 'post-1' } }],
       ['social_private_open_media', {
         input: { ...scope, postId: 'post-1', objectId: 'object-1' },
@@ -331,15 +321,6 @@ describe('Mobile command mutation admission', () => {
           actorPtid: scope.actorPtid,
           activationGeneration: scope.activationGeneration,
           commandId: 'reaction-1',
-        },
-      }],
-      ['social_private_poll_vote', {
-        input: {
-          stationPeerId: scope.stationPeerId,
-          actorPtid: scope.actorPtid,
-          activationGeneration: scope.activationGeneration,
-          postId: 'post-1',
-          selectedOptions: [0, 1],
         },
       }],
     ]);
