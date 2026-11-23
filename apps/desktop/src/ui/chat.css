@@ -42,7 +42,11 @@
   flex-shrink: 0;
   overflow: hidden;
 }
-.sc-rail-subnav { flex: 1 1 auto; min-width: 0; }
+/* Spring wrapper (prototype .sk-rail-tabs parity): owns the flex budget and
+   keeps search/new right-anchored in every cramp state. The Segmented inside
+   stays a pure tile control — labelled it fills the wrapper, icon-only it
+   hugs its tiles while the wrapper's transparent remainder absorbs space. */
+.sc-rail-tabs { flex: 1 1 auto; min-width: 0; }
 /* Frameless rail tiles (prototype .sk-rail-new): no border in ANY state,
    hover flattens into a faint ink wash and brightens the glyph to ink. */
 .sc-rail-icon { flex-shrink: 0; color: var(--pt-secondary); }

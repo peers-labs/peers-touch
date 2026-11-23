@@ -615,6 +615,12 @@ export function ChatSessionList({
             </Menu>
           ) : (
             <>
+              {/* Spring wrapper (prototype .sk-rail-tabs parity): it owns the
+                  flex budget that anchors search/new to the right, while the
+                  Segmented inside only owns its tile content. Merging both
+                  roles onto the control made icon-only either stretch a dead
+                  pill or drag the actions left. */}
+              <div className="sc-rail-tabs">
               <Segmented<ChatRailTab>
                 className="sc-rail-subnav"
                 density="compact"
@@ -627,6 +633,7 @@ export function ChatSessionList({
                   { value: 'contacts', label: t('chat.social.subNav.contacts'), leading: <Icon iconId="users" size={13} /> },
                 ]}
               />
+              </div>
               <IconButton
                 actionId="chat.rail-search"
                 className="sc-rail-icon"
