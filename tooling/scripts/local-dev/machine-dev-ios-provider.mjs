@@ -7,6 +7,12 @@ import path from 'node:path';
 import { canonicalize, fail } from './machine-dev-primitives.mjs';
 import { canonicalProviderId, resourceDigest } from './machine-dev-resource-contract.mjs';
 
+// Every machine-created simulator is named through prepareIdentity with this
+// fixed brand prefix. It is the only safe signature that distinguishes a
+// tool-owned orphan from a user/Xcode-created device during a sweep; a device
+// lacking it stays protected even when it is otherwise unassigned.
+export const MACHINE_DEVICE_NAME_PREFIX = 'Peers ';
+
 export function appArtifactDigest(root) {
   const hash = createHash('sha256');
   const walk = (directory, prefix = '') => {
@@ -80,7 +86,7 @@ export class IOSResourceProvider {
 
   prepareIdentity(intent) {
     // The nonce is persisted by Machine Dev before this provider call.
-    return `Peers ${intent.displayName} ${intent.nonce}`;
+    return `${MACHINE_DEVICE_NAME_PREFIX}${intent.displayName} ${intent.nonce}`;
   }
 
   recover(intent) {

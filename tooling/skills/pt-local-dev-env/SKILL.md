@@ -96,6 +96,15 @@ Mobile is Station connect-only. Both Make/pnpm entries hold the same slot and
 physical UUID. Conflicting content requires that operation's notice and
 force/decline decision; lease conflicts cannot be forced.
 
+Reclaim interrupted-run simulator orphans only through the owner's
+`resource-sweep`. It defaults to a read-only dry run and deletes solely
+`external` devices that carry the `Peers ` machine naming signature, have no
+OS-held lease and are not booted; managed instances, user/Xcode devices,
+booted devices and lease holders are reported as `protected` and never removed.
+Review the dry run, then use `--selector <readable name>` or `--confirm true`.
+Never run raw `simctl delete` as a substitute, and never treat device age as
+deletion authority.
+
 ## Workflow
 
 1. Confirm the exact canonical worktree, then inspect current authority:

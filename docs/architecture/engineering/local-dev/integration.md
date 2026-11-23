@@ -386,6 +386,14 @@ No cleanup callback may delete a shared device because one Suite or Profile
 has finished. Physical delete reports all affected references and uses the
 explicit resource owner, authorization and provider readback.
 
+Provider-orphaned devices (physical simulators without a machine document
+instance, reported as `external`) are reclaimed exclusively through the
+owner's `resource-sweep`. The sweep is dry-run by default and fail-closed: it
+matches only external, machine-named (`Peers ` prefix), lease-free, shut-down
+simulators, while managed instances and user/Xcode-named devices stay
+protected. It reuses the provider delete/readback path rather than opening a
+second reclaim channel.
+
 ### 9.4 Downstream Documentation
 
 At runtime cutover, update `docs/global/local-dev-environment.md` and canonical

@@ -46,6 +46,7 @@ const OPTION_NAMES = new Map([
   ['selection-keys-json', 'selectionKeysJson'],
   ['count', 'count'],
   ['create', 'create'],
+  ['confirm', 'confirm'],
   ['preparation-id', 'preparationId'],
   ['snapshot', 'snapshot'],
   ['selector', 'selector'],
@@ -278,6 +279,12 @@ export async function runCli(argv) {
       return 0;
     case 'resource-inspect':
       output(new MachineResourceOwner(options).inspectAssignments());
+      return 0;
+    case 'resource-sweep':
+      output(new MachineResourceOwner(options).sweep({
+        selector: options.selector,
+        confirm: options.confirm === 'true',
+      }));
       return 0;
     case 'resource-binding':
       output(new MachineResourceOwner(options).binding(options.selector));

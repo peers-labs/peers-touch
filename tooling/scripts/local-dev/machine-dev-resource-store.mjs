@@ -10,7 +10,7 @@ import {
   RESOURCE_ACTIONS, RESOURCE_KIND, iosRequirement, requireCompatible,
   readResourceState, resourceDigest, resourceDigestEndpoint, resourceText, validateResourceState, validateResourceTarget,
 } from './machine-dev-resource-contract.mjs';
-import { IOSResourceProvider, appArtifactDigest } from './machine-dev-ios-provider.mjs';
+import { IOSResourceProvider, MACHINE_DEVICE_NAME_PREFIX, appArtifactDigest } from './machine-dev-ios-provider.mjs';
 import { inspectGitWorkspace } from './git-workspace.mjs';
 
 export function assignedResource(options, resolved, selector) {
@@ -83,7 +83,11 @@ export class MachineResourceOwner {
       const instance = state.instances.find((item) => item.providerId === observed.providerId);
       return {
         ...(instance ? this.projection(state, instance, observed) : {
-          id: null, name: observed.name, progress: 'external', sharedProfiles: [], holders: [],
+          id: null, name: observed.name, progress: 'external', sharedProfiles: [],
+          // Surface live OS leases even for undocumented devices so a sweep can
+          // refuse a device that another process still physically holds.
+          holders: this.leases().filter((item) =>
+            item.resourceKind === RESOURCE_KIND && item.resourceId === observed.providerId),
           content: null, observation: observed,
         }),
         compatible: observed.available && observed.runtime === requirement.runtime && observed.deviceType === requirement.deviceType,
@@ -514,6 +518,82 @@ export class MachineResourceOwner {
       delete instance.activeOperation;
       return this.projection(state, instance, observation);
     });
+  }
+
+  // Reclaim provider-orphaned simulators: physical devices that no longer have
+  // a machine document instance (discovery marks them `external`) and carry the
+  // tool's naming signature. This is the only deletion path that touches
+  // devices outside the assignment/operation contracts, so it fails closed:
+  // booted devices, active lease holders, non-machine names and every managed
+  // (documented) instance are reported as protected and never deleted.
+  sweep({ selector, confirm = false } = {}) {
+    const discovery = this.discover();
+    const managed = [];
+    const candidates = [];
+    const protectedDevices = [];
+    for (const device of discovery.devices) {
+      if (device.progress !== 'external') {
+        managed.push(this.sweepEntry(device));
+        continue;
+      }
+      const reason = this.sweepBlockReason(device);
+      if (reason) {
+        protectedDevices.push({ ...this.sweepEntry(device), reason });
+      } else {
+        candidates.push(device);
+      }
+    }
+    let scoped = candidates;
+    if (selector !== undefined) {
+      const matches = candidates.filter((item) =>
+        item.name === selector || item.observation.name === selector);
+      if (matches.length !== 1) {
+        fail('RESOURCE_SWEEP_SELECTION', 'selector must match exactly one sweep candidate; run the dry run to see names', {
+          selector,
+          candidates: candidates.map((item) => item.name),
+        });
+      }
+      scoped = matches;
+    }
+    const report = {
+      mode: confirm ? 'confirm' : 'dry-run',
+      signaturePrefix: MACHINE_DEVICE_NAME_PREFIX,
+      managed,
+      protected: protectedDevices,
+      candidates: scoped.map((item) => this.sweepEntry(item)),
+      deleted: [],
+    };
+    if (!confirm) return report;
+    // External devices have no machine document entry, so provider deletion is
+    // the only mutation; the registry stays truthful because discover() simply
+    // stops listing a removed provider device. provider.delete already shuts
+    // down, removes and readbacks, failing the whole sweep on any mismatch.
+    for (const device of scoped) {
+      const providerId = device.observation.providerId;
+      this.provider.delete(providerId);
+      report.deleted.push(this.sweepEntry(device));
+    }
+    return report;
+  }
+
+  sweepBlockReason(device) {
+    if (!device.observation.name.startsWith(MACHINE_DEVICE_NAME_PREFIX)) return 'not-machine-named';
+    if (device.holders.length > 0) return 'active-lease';
+    if (device.observation.state === 'Booted') return 'booted';
+    return null;
+  }
+
+  sweepEntry(device) {
+    return {
+      name: device.observation.name,
+      providerId: device.observation.providerId,
+      model: device.observation.model,
+      runtime: device.observation.runtimeName,
+      state: device.observation.state,
+      progress: device.progress,
+      sharedProfiles: device.sharedProfiles,
+      holders: device.holders,
+    };
   }
 
   recoverOperation(operationId) {
