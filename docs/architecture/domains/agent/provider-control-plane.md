@@ -19,8 +19,8 @@ the same ID; preferences continue to use `(provider_id, model_id)`. No
 credentials, commands or installation details belong in the ordinary
 consumer projection.
 
-Dashboard uses the external CLI workbench executor/profile structure described in
-[the adaptation contract](provider-cli-authentication/cli-adapter-adaptation.md).
+Dashboard uses the AgentBox executor/profile structure described in
+[the adaptation contract](provider-cli-authentication/agentbox-adaptation.md).
 DM (Direct Model / HTTP) selects a model connection. CLI selects an installed
 adapter, then a named Provider profile belonging to it. One searchable dropdown
 selects the adapter; selecting a missing automatically installable CLI starts its installation. That dropdown
