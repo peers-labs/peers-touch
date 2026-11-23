@@ -22,7 +22,7 @@ Dashboard 联动的 drafting 交互线框，授权与调用均为模拟。
 
 文档按职责分开：
 
-- [agentbox-adaptation.md](agentbox-adaptation.md)：用户指定 AgentBox 配置体验的源码核查、复用结构与 Station 适配合同。
+- [cli-adapter-adaptation.md](cli-adapter-adaptation.md)：用户指定外部 CLI 工作台配置体验的源码核查、复用结构与 Station 适配合同。
 - [lifecycle-contract.md](lifecycle-contract.md)：安装到用户调用的完整产品合同候选。
 - [user-journey.md](user-journey.md)：独立使用流程候选。
 - [wireflow.md](wireflow.md)：现有 Prototype Lib 中的可点击线框入口及未证明范围。

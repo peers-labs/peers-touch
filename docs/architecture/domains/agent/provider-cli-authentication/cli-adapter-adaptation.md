@@ -1,7 +1,7 @@
-# AgentBox CLI 配置复用与 Station 适配
+# 外部 CLI 工作台配置复用与 Station CLI adapter 适配
 
-状态：implementation contract。依据 2026-11-01 用户指定的 AgentBox 截图与本地
-`gdpa-agent-box-workspace` 源码。本文记录源码核查与目标实现，不代表真实调用验收。
+状态：implementation contract。依据 2026-11-01 用户指定的外部 CLI 工作台截图与
+其本地参考工作区源码。本文记录源码核查与目标实现，不代表真实调用验收。
 
 ## 复用的产品结构
 
@@ -29,7 +29,7 @@ Desktop 仅列出当前用户获准使用的配置档和模型，设置个人默
 将其写入 JSON 响应。`internal/store/sqlite/kv.go:131-144` 直接将 value 写入 KV。
 前端 `toDraftProfile` 又把 key 放入编辑草稿。
 
-判断：这是单 Box 所有者设置的实现，不能作为共享 Station 凭据合同。
+判断：这是单机所有者设置的实现，不能作为共享 Station 凭据合同。
 迁移使用既有 Owner 绑定 Secret Envelope；管理接口只返回已配置状态。
 新 key 为只写输入；来源引用保存资源身份，不复制凭据到每个 CLI 配置档。
 
@@ -38,7 +38,7 @@ Desktop 仅列出当前用户获准使用的配置档和模型，设置个人默
 源码事实：`codingAgentSettings.hints.systemClaudeCode` 与 `systemCodex`
 明确要求复用本机 `claude /login` / `codex login`。`BuildProviderEnvWithContext`
 对 System 返回空注入；L1 requester 路径另做身份隔离，并拒绝不支持的 Custom/Aiden
-凭据协议。因此不能将 AgentBox 整体描述为没有身份防护。
+凭据协议。因此不能将该工作台整体描述为没有身份防护。
 
 判断：Station 的供应商登录必须仍由资源 Owner 发起。登录、检查、发现、执行使用
 同一批准凭据的私有投影，不能恢复宿主 HOME 继承。未验证的登录方式必须明确不可用；
@@ -68,7 +68,7 @@ Desktop 仅列出当前用户获准使用的配置档和模型，设置个人默
 
 源码事实：`sanitizeArgs` 主要清理空值，`sanitizeEnv` 主要清理键值并规范 PATH。
 `buildCodexProviderConfigArgs` 读取已有 `-c` 覆盖项后生成配置，部分用户参数可以
-先于 UI 配置生效。AgentBox 另有受保护配置键，不能声称它完全没有约束。
+先于 UI 配置生效。该工作台另有受保护配置键，不能声称它完全没有约束。
 
 判断：Station 保留显式 argv 数组及非敏感环境变量编辑，但 adapter 管理的模型、
 认证、HOME 与配置路径不能从高级字段覆盖。界面展示与真正运行必须对应同一配置。
@@ -112,4 +112,4 @@ CLI 参数按一行一个 argv 元素编辑，环境变量按 `KEY=VALUE` 编辑
 源码测试覆盖配置 CAS、失效引用拒绝、凭据只写、实际 argv/env 投影及撤权。
 浏览器验证覆盖选择、下拉项进度、配置档增删/默认、草稿保持、失败恢复及窄屏。
 最终在当前源码 Station 与真实 Desktop 做调用、撤权、恢复和重启验证。
-AgentBox 源码核查没有运行或修改用户 AgentBox 实例。
+本次源码核查没有运行或修改用户的工作台实例。
