@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { IconButton, Tooltip } from '@peers-touch/ui';
-import { Check, CheckCheck } from 'lucide-react';
+import { Check, CheckCheck, Loader2 } from 'lucide-react';
 import { MessageStatus } from '../../../gen/proto/domain/chat/chat_pb';
 
 import {
@@ -90,6 +90,14 @@ function formatNextAttempt(unixMs: number): string {
   });
 }
 
+/**
+ * After the user accepts a retry, treat the message as in-flight (no failure
+ * icon) for this window even if the durable state has not flipped yet — the
+ * outbox re-queues asynchronously, especially while offline. If the state is
+ * still terminal after the window, the failure icon returns honestly.
+ */
+const RETRY_ACCEPTED_WINDOW_MS = 12_000;
+
 interface DeliveryVerdictMetaProps {
   message: ChatMessage;
   isGroup: boolean;
@@ -126,10 +134,24 @@ export function DeliveryVerdictMeta({
   const nowMs = useHorizonTick();
   const [retryExecution, setRetryExecution] = useState<'idle' | 'pending' | 'succeeded' | 'failed'>('idle');
   const retryAttempt = useRef({ generation: 0, pending: false });
+  // Wall-clock deadline of the local "retry accepted" override; null when no
+  // override is active. The retry button stays hidden until this clears or the
+  // durable state leaves the terminal failure.
+  const [retryAcceptedUntil, setRetryAcceptedUntil] = useState<number | null>(null);
+  const retryWindowTimer = useRef<number | null>(null);
+
+  const clearRetryAccepted = () => {
+    if (retryWindowTimer.current !== null) {
+      window.clearTimeout(retryWindowTimer.current);
+      retryWindowTimer.current = null;
+    }
+    setRetryAcceptedUntil(null);
+  };
 
   useEffect(() => () => {
     retryAttempt.current.generation += 1;
     retryAttempt.current.pending = false;
+    if (retryWindowTimer.current !== null) window.clearTimeout(retryWindowTimer.current);
   }, [message.ulid]);
 
   useEffect(() => {
@@ -138,6 +160,14 @@ export function DeliveryVerdictMeta({
     return () => window.clearTimeout(timer);
   }, [retryExecution]);
 
+  // As soon as the durable fact leaves the terminal failure, the override has
+  // done its job: the row now projects the normal queued/sent progression.
+  useEffect(() => {
+    if (retryAcceptedUntil !== null && message.deliveryState !== 'failed') {
+      clearRetryAccepted();
+    }
+  }, [message.deliveryState, retryAcceptedUntil]);
+
   const retry = async () => {
     if (retryAttempt.current.pending) return;
     retryAttempt.current.pending = true;
@@ -145,7 +175,18 @@ export function DeliveryVerdictMeta({
     setRetryExecution('pending');
     try {
       await onRetryMessage(message);
-      if (generation === retryAttempt.current.generation) setRetryExecution('succeeded');
+      if (generation !== retryAttempt.current.generation) return;
+      setRetryExecution('succeeded');
+      // Accept the retry optimistically: hide the failure icon and show an
+      // in-flight indicator. A bounded timer restores the icon if the message
+      // is still terminal after the outbox has had a chance to re-queue.
+      if (retryWindowTimer.current !== null) window.clearTimeout(retryWindowTimer.current);
+      const until = Date.now() + RETRY_ACCEPTED_WINDOW_MS;
+      setRetryAcceptedUntil(until);
+      retryWindowTimer.current = window.setTimeout(() => {
+        retryWindowTimer.current = null;
+        setRetryAcceptedUntil(null);
+      }, RETRY_ACCEPTED_WINDOW_MS);
     } catch {
       // The command owner reports the error. This control projects the same
       // outcome without replacing the message's durable delivery fact.
@@ -154,6 +195,9 @@ export function DeliveryVerdictMeta({
       if (generation === retryAttempt.current.generation) retryAttempt.current.pending = false;
     }
   };
+  const retryOptimisticallyAccepted = retryAcceptedUntil !== null
+    && nowMs < retryAcceptedUntil
+    && message.deliveryState === 'failed';
 
   const verdict = useMemo<DeliveryVerdict | null>(
     () =>
@@ -257,6 +301,22 @@ export function DeliveryVerdictMeta({
         : retryLabel;
 
   if (canRetry) {
+    // A just-accepted retry is treated as an in-flight send, not a failure:
+    // hide the recovery icon and show a lightweight retrying indicator until
+    // the durable state advances or the bounded window expires.
+    if (retryOptimisticallyAccepted) {
+      return (
+        <span
+          className="sc-verdict sc-verdict--retrying"
+          data-message-retry-accepted={message.ulid}
+          role="status"
+          aria-live="polite"
+        >
+          <Loader2 size={12} className="chat-composer-spin" />
+          {t('chat.social.messageArea.stateRetrying')}
+        </span>
+      );
+    }
     return (
       <IconButton
         actionId={`message-retry-${message.ulid}`}

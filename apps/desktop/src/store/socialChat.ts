@@ -41,6 +41,14 @@ import { useCryptoStore } from './cryptoStore';
 import { log } from '../utils/logger';
 import { newSendIntentId } from '../utils/messagingSendIntent';
 import {
+  collectPreviewUrls,
+  optimisticConversationKey,
+  reconcileOptimisticMessages,
+  retryOptimisticMessage,
+  type OptimisticMessagePatch,
+  type OptimisticOutboundMessage,
+} from '../messaging/optimisticOutbound';
+import {
   readDesktopDomainValueSync,
   writeDesktopDomainValueSync,
 } from '../storage/desktopClientStorage';
@@ -407,6 +415,12 @@ interface SocialChatState {
    */
   conversationDisplayOverrides: Record<string, { name?: string; avatarPreview?: string }>;
   sendOutcomes: Record<string, MessagingSendOutcomeRecord>;
+  /**
+   * Ephemeral, sender-only messages rendered instantly from local assets while
+   * staging/send run in the background. Never persisted: entries hold blob:
+   * URLs and are reconciled (removed) once the durable message projects back.
+   */
+  optimisticOutbound: OptimisticOutboundMessage[];
 
   /**
    * In-memory peer public profile cache keyed by peer DID (numeric actor
@@ -708,6 +722,22 @@ interface SocialChatState {
   restoreConversation: (kind: 'friend' | 'group', ulid: string) => void;
   deleteGroupContact: (groupUlid: string) => Promise<void>;
 
+  /** Show a sender message immediately from local assets. */
+  addOptimisticOutbound: (message: OptimisticOutboundMessage) => void;
+  /** Update one optimistic row's transfer status / reconciliation id. */
+  patchOptimisticOutbound: (localId: string, patch: OptimisticMessagePatch) => void;
+  /** Re-queue a failed optimistic row in place, keeping its stable local id. */
+  retryOptimisticOutbound: (localId: string, freshSendIntentId: string) => void;
+  /** Remove a single optimistic row, revoking its owned blob URLs. */
+  removeOptimisticOutbound: (localId: string) => void;
+  /** Drop rows whose admitted messageId now appears in the projected list. */
+  reconcileOptimisticOutbound: (visibleMessageIds: ReadonlySet<string>) => void;
+  /** Read the sender-only rows for one conversation, oldest first. */
+  getOptimisticOutbound: (
+    kind: 'friend' | 'group',
+    conversationUlid: string,
+  ) => OptimisticOutboundMessage[];
+
   getUnifiedConversations: () => UnifiedConversation[];
   getIMConversations: () => DesktopIMConversationProjection[];
   getIMMessages: (kind: 'friend' | 'group', conversationUlid: string) => DesktopIMMessageProjection[];
@@ -975,6 +1005,7 @@ const initialSocialState: Pick<
   | 'reactions'
   | 'pinnedMessages'
   | 'sendOutcomes'
+  | 'optimisticOutbound'
   | 'conversations'
   | 'conversationMembers'
 > = {
@@ -1022,6 +1053,7 @@ const initialSocialState: Pick<
   reactions: {},
   pinnedMessages: {},
   sendOutcomes: {},
+  optimisticOutbound: [],
 
   encryptionEnabled: false,
   ownFingerprint: null,
@@ -1136,6 +1168,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       reactions: {},
       pinnedMessages: {},
       sendOutcomes: {},
+  optimisticOutbound: [],
       encryptionEnabled: false,
       ownFingerprint: null,
       sessionEncrypted: {},
@@ -2864,6 +2897,59 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       if (stickyDelta !== 0) return stickyDelta;
       return b.lastActivityMs - a.lastActivityMs;
     });
+  },
+
+  addOptimisticOutbound: (message) => {
+    set((state) => ({ optimisticOutbound: [...state.optimisticOutbound, message] }));
+  },
+
+  patchOptimisticOutbound: (localId, patch) => {
+    set((state) => ({
+      optimisticOutbound: state.optimisticOutbound.map((row) =>
+        row.localId === localId ? { ...row, ...patch } : row,
+      ),
+    }));
+  },
+
+  retryOptimisticOutbound: (localId, freshSendIntentId) => {
+    set((state) => ({
+      optimisticOutbound: state.optimisticOutbound.map((row) =>
+        row.localId === localId
+          ? retryOptimisticMessage(row, freshSendIntentId)
+          : row,
+      ),
+    }));
+  },
+
+  removeOptimisticOutbound: (localId) => {
+    set((state) => {
+      const target = state.optimisticOutbound.find((row) => row.localId === localId);
+      if (!target) return state;
+      collectPreviewUrls([target]).forEach((url) => URL.revokeObjectURL(url));
+      return {
+        optimisticOutbound: state.optimisticOutbound.filter((row) => row.localId !== localId),
+      };
+    });
+  },
+
+  reconcileOptimisticOutbound: (visibleMessageIds) => {
+    set((state) => {
+      const { keep, reconciled } = reconcileOptimisticMessages(
+        state.optimisticOutbound,
+        visibleMessageIds,
+      );
+      if (reconciled.length === 0) return state;
+      collectPreviewUrls(reconciled).forEach((url) => URL.revokeObjectURL(url));
+      return { optimisticOutbound: keep };
+    });
+  },
+
+  getOptimisticOutbound: (kind, conversationUlid) => {
+    const key = optimisticConversationKey(kind, conversationUlid);
+    return get()
+      .optimisticOutbound
+      .filter((row) => optimisticConversationKey(row.kind, row.conversationUlid) === key)
+      .sort((a, b) => a.createdAtMs - b.createdAtMs);
   },
 
   getIMMessages: (kind, conversationUlid) => {
