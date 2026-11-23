@@ -14,6 +14,7 @@ import { ChatDetailPanel } from '../components/chat/ChatDetailPanel';
 import { ChatContactsDetailPanel } from '../components/chat/ChatContactsDetailPanel';
 import { ChatThreadPanel } from '../components/chat/ChatThreadPanel';
 import { AttachmentDetailHost } from '../components/chat/AttachmentDetailHost';
+import { WindowDragRegion } from '../components/shell/WindowDragRegion';
 import { CallSurface } from '../components/chat/CallSurface';
 import { GroupCallSurface } from '../components/chat/GroupCallSurface';
 import {
@@ -402,10 +403,17 @@ export function SocialChatPage() {
       </div>
       </div>
       {!assembly.open && assembly.navigation === 0 && (
+        // self: the empty work-area background drags the window, while the
+        // centered Empty glyph/hint (a descendant) keeps normal hit behavior.
+        // The layer must receive pointer events; pointer-events:none let hits
+        // fall through to the non-draggable .sc-chat root, so the blank work
+        // area could not move the window before a conversation was opened.
+        <WindowDragRegion mode="self">
         <div className="sc-chat-rest-placeholder" aria-hidden="true">
           <Empty icon={<Icon iconId="inbox" size={40} />}
             description={t('chat.social.messageArea.selectConversation')} />
         </div>
+        </WindowDragRegion>
       )}
 
       {/* Voice / video call surface — page-level so a ringing call

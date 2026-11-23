@@ -555,8 +555,11 @@ describe('native auth/ready window surface', () => {
       'utf8',
     );
     expect(chatStyles).not.toContain('--pt-stage-traffic-inset');
+    // Rail header geometry keeps its original 8px horizontal inset; the
+    // 160px toolsMinWidth token budget is derived from this same inset, so the
+    // header padding and the drawer policy must not drift apart.
     expect(chatStyles).toMatch(
-      /\.sc-rail-header\s*\{[^}]*padding: 6px 16px;/,
+      /\.sc-rail-header\s*\{[^}]*padding: 6px 8px;/,
     );
 
     const trafficLightRs = readFileSync(

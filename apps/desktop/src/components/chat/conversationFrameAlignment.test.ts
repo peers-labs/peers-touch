@@ -62,3 +62,27 @@ describe('conversation stage surface (shared continuous guide)', () => {
     expect(parkedRule).not.toMatch(/\bbox-shadow\s*:/);
   });
 });
+
+describe('resting work-area placeholder window dragging', () => {
+  const pageSource = readFileSync(
+    new URL('../../pages/SocialChatPage.tsx', import.meta.url),
+    'utf8',
+  );
+
+  it('wraps the closed-work placeholder in a self WindowDragRegion', () => {
+    // Regression: the resting placeholder had no drag region and used
+    // pointer-events:none, so hits fell through to the non-draggable .sc-chat
+    // root and the blank work area (incl. the top band) could not move the
+    // window before any conversation was opened.
+    const wrapped = pageSource.match(
+      /<WindowDragRegion mode="self">\s*<div className="sc-chat-rest-placeholder"[\s\S]*?<\/div>\s*<\/WindowDragRegion>/,
+    );
+    expect(wrapped, 'rest placeholder must be wrapped by a self WindowDragRegion').toBeTruthy();
+  });
+
+  it('lets the placeholder receive pointer events so its drag region can hit', () => {
+    const placeholderRule = rule('.sc-chat-rest-placeholder');
+    expect(placeholderRule).toBeTruthy();
+    expect(placeholderRule).not.toContain('pointer-events: none');
+  });
+});

@@ -105,7 +105,10 @@
 .sc-chat-rest-placeholder {
   position: absolute; top: 0; bottom: 0;
   left: var(--pt-chat-rail-width); right: 0;
-  display: grid; place-items: center; pointer-events: none;
+  display: grid; place-items: center;
+  /* Receives hits so its self drag region can move the window. It renders
+     only while the work pane is closed/inert, so it never overlaps an
+     interactive surface; the centered Empty is a non-interactive descendant. */
 }
 
 /* ── Messaging continuity recovery gate ─────────────────────────────────── */
@@ -3997,8 +4000,9 @@ body:has([data-chat-rail-resize][data-dragging='true']) {
   gap: 6px;
   align-self: inherit;
   /* Prototype bubble→meta rhythm: .sk-msg-col gap 3 + .sk-msg-under
-     margin-top 3. */
-  margin-top: 6px;
+     margin-top 3. The anchor column carries no gap of its own, so the
+     under-row margin owns the full 3px separation. */
+  margin-top: 3px;
   padding: 0 4px;
   box-sizing: border-box;
   min-height: 16px;
@@ -4007,6 +4011,44 @@ body:has([data-chat-rail-resize][data-dragging='true']) {
   white-space: nowrap;
 }
 .sc-msg-meta[data-own='true'] { justify-content: flex-end; }
+/* Media-only bubbles are edge-to-edge (padding:0 so the image keeps its own
+   radius and no paper shows around it). Without compensation the time row sat
+   3px under the image while text bubbles leave a 10px padding-bottom — an
+   inconsistent 3px vs 13px visual gap across message types. Restore the same
+   10px breathing room on the meta row so the visual-content→time distance
+   matches a normal bubble (10px + the shared 3px margin). */
+.msg-row[data-media-only='true'] .sc-msg-meta { margin-top: 13px; }
+/* Right-aligned status tool rail. Every delivery/recovery icon lives in one
+   fixed-size cell so ticks and Retry share the same glyph centre and right
+   edge regardless of bubble width; margin-left:auto pins the rail to the
+   meta's right edge and leaves a stable slot for future icons, which inherit
+   the same cell + 4px spacing automatically. */
+.sc-msg-tools {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+.sc-msg-tools .sc-msg-status,
+.sc-msg-tools .pt-button {
+  width: 18px;
+  min-width: 18px;
+  height: 16px;
+  min-height: 16px;
+  padding: 0;
+  justify-content: center;
+}
+/* Text verdicts (queued/retrying/failed detail) are not icon cells: their
+   Tooltip anchor sizes to content and wraps instead of being clamped to
+   18px. The inner .sc-verdict span is never matched by the icon-cell rule
+   above, so it keeps its own typography. */
+.sc-msg-tools .sc-msg-verdict-details {
+  width: auto;
+  min-width: 0;
+  flex: 0 1 auto;
+}
 /* The verdict's Tooltip is a flex item too: constrain that app-owned anchor,
    so its long text wraps before it can push Retry past the message bounds. */
 .sc-msg-verdict-details {

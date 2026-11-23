@@ -129,10 +129,43 @@ describe('message stream rhythm (north-star .sk-msg-stream / .sk-msg parity)', (
     expect(main.composerOuterPadding).toBe('8px');
   });
 
-  it('sets bubble→meta 6px with 6px meta item gap (.sk-msg-under)', () => {
+  it('sets bubble→meta 3px with 6px meta item gap (.sk-msg-under)', () => {
     const meta = rule('.sc-msg-meta');
-    expect(meta).toContain('margin-top: 6px');
+    expect(meta).toContain('margin-top: 3px');
     expect(meta).toContain('gap: 6px');
+  });
+
+  it('aligns every delivery icon on one right-pinned tool rail with fixed cells', () => {
+    // The verdict (ticks / Retry / future icons) must sit inside a dedicated
+    // rail so glyphs share one right edge regardless of bubble width.
+    expect(rowSource).toContain('className="sc-msg-tools"');
+    const tools = rule('.sc-msg-tools');
+    expect(tools).toContain('justify-content: flex-end');
+    expect(tools).toContain('gap: 4px');
+    expect(tools).toContain('margin-left: auto');
+    // Ticks and the Retry button share one fixed cell so their glyph centres
+    // and right edges line up; the bare 11px tick vs 28px padded button drift
+    // is removed by normalising both to the same 18×16 box.
+    expect(chatCss).toMatch(
+      /\.sc-msg-tools \.sc-msg-status,\s*\.sc-msg-tools \.pt-button\s*\{[^}]*width: 18px/,
+    );
+    expect(chatCss).toMatch(
+      /\.sc-msg-tools \.sc-msg-status,\s*\.sc-msg-tools \.pt-button\s*\{[^}]*height: 16px/,
+    );
+    // Text verdicts stay content-sized instead of being clamped to the cell.
+    expect(rule('.sc-msg-tools .sc-msg-verdict-details')).toContain('width: auto');
+  });
+
+  it('gives media-only messages the same visual gap to the time row as text bubbles', () => {
+    // Media-only bubbles are edge-to-edge (padding:0), so without an explicit
+    // meta offset their time row sat 3px under the image vs 13px under text —
+    // the source of "some messages close, others far". The row carries a
+    // data-media-only flag and the meta restores the 10px bubble padding.
+    expect(rowSource).toContain('data-media-only={mediaOnlyMessage || undefined}');
+    const mediaMeta = chatCss.match(
+      /\.msg-row\[data-media-only='true'\]\s+\.sc-msg-meta\s*\{([^}]*)\}/,
+    )?.[1] ?? '';
+    expect(mediaMeta).toContain('margin-top: 13px');
   });
 
   it('renders group sender labels as regular 11px with the 3px col gap', () => {
