@@ -270,7 +270,7 @@
    margin would collapse through the zero top padding and hide the name
    behind the avatar. */
 .sk-self-card-body { position: relative; padding: 44px 16px 14px; }
-/* 64px avatar overlaps the banner ~28px with a card-colored ring. */
+/* 64px avatar overlaps the banner ~28px with a 2px card-colored ring. */
 .sk-self-card-avatar {
   position: absolute; top: -28px; left: 16px;
   width: 64px; height: 64px; border-radius: 16px;
@@ -278,7 +278,7 @@
   font-size: 24px; font-weight: 700;
   color: var(--sk-btn-primary-ink);
   background: #2f6a50;
-  box-shadow: 0 0 0 4px var(--sk-overlay), 0 6px 16px rgba(15,23,42,.18);
+  box-shadow: 0 0 0 2px var(--sk-overlay), 0 6px 16px rgba(15,23,42,.18);
 }
 .sk-self-card-name { font-size: 17px; font-weight: 650; color: var(--sk-text); }
 .sk-self-card-handle { margin-top: 2px; font-size: 12px; color: var(--sk-text-3); }

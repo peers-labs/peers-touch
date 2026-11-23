@@ -4,7 +4,7 @@ import { Button, Empty, Icon, Spin, Tag, Text } from '@peers-touch/ui';
 import { useMobileI18n } from '../../app/mobileI18n';
 import type { MobileChatDetailRoute } from '../../app/navigation';
 import { MobileNotice } from '../../components/MobileNotice';
-import { SocialActorAvatar } from '../../features/social/SocialActorAvatar';
+import { ProfileIdentityHeader } from '../../components/ProfileIdentityHeader';
 import {
   dispatchBlockUser,
   dispatchUnblockUser,
@@ -192,50 +192,32 @@ export function SocialProfilePage({
         ) : null}
       </header>
 
-      <div className="mobile-detail-body">
-        <div className="contact-profile-card">
-          <Spin active={profileLoading}>
-            <SocialActorAvatar
-              actorPtid={actorPtid}
-              avatar={profile?.avatar}
-              displayName={profile?.displayName}
-              size={72}
-              username={profile?.username}
-            />
-          </Spin>
-          <div className="contact-profile-copy">
-            <Text strong className="contact-profile-name">
-              {actorDisplayName(profile?.displayName || profile?.username, actorPtid)
-                || t('mobile.contacts.unknownUser')}
-            </Text>
-            {profile?.federatedHandle || profile?.acct ? (
-              <Text tone="secondary">
-                {profile.federatedHandle || profile.acct}
-              </Text>
-            ) : null}
-            <Text tone="secondary" copyValue={actorPtid}>
-              {actorPtid}
-            </Text>
-            {profile?.note ? (
-              <Text className="contact-profile-note">{profile.note}</Text>
-            ) : null}
-          </div>
+      <ProfileIdentityHeader
+        self={isSelf}
+        actorPtid={actorPtid}
+        displayName={actorDisplayName(profile?.displayName || profile?.username, actorPtid)
+          || t('mobile.contacts.unknownUser')}
+        handle={profile?.federatedHandle || profile?.acct}
+        avatar={profile?.avatar}
+        cover={profile?.header}
+        tags={profile?.tags}
+        stats={profile ? {
+          posts: profile.statusesCount,
+          following: profile.followingCount,
+          followers: profile.followersCount,
+        } : undefined}
+        joined={profile?.createdAt}
+        online={contact?.peerOnline}
+      />
 
-          {profile ? (
-            <div className="contact-profile-stats">
-              <ProfileStat
-                label={t('mobile.contacts.profilePosts')}
-                value={profile.statusesCount}
-              />
-              <ProfileStat
-                label={t('mobile.contacts.profileFollowing')}
-                value={profile.followingCount}
-              />
-              <ProfileStat
-                label={t('mobile.contacts.profileFollowers')}
-                value={profile.followersCount}
-              />
-            </div>
+      <div className="mobile-detail-body">
+        <div className="contact-profile-actions">
+          <Spin active={profileLoading} />
+          <Text tone="secondary" copyValue={actorPtid}>
+            {actorPtid}
+          </Text>
+          {profile?.note ? (
+            <Text className="contact-profile-note">{profile.note}</Text>
           ) : null}
 
           {profileError ? (
@@ -449,15 +431,6 @@ export function SocialProfilePage({
           </section>
         </div>
       ) : null}
-    </div>
-  );
-}
-
-function ProfileStat({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="contact-profile-stat">
-      <Text strong>{value}</Text>
-      <Text tone="secondary">{label}</Text>
     </div>
   );
 }

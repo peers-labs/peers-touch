@@ -1,0 +1,65 @@
+/* Shared full emoji palette used by the composer and the message-reaction
+   sheet. App-layer classes only; colors/spacing come from --pt-* tokens. */
+
+.mobile-emoji-palette {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-sm, 12px);
+  width: 100%;
+  max-height: 46vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mobile-emoji-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mobile-emoji-section-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pt-muted);
+  padding-inline: 2px;
+}
+
+.mobile-emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.mobile-emoji-cell {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.14s ease, transform 0.14s ease;
+}
+
+.mobile-emoji-cell:active {
+  transform: scale(0.92);
+}
+
+.mobile-emoji-cell[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--pt-accent) 12%, transparent);
+}
+
+.mobile-emoji-cell:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.mobile-emoji-cell:focus-visible {
+  outline: 2px solid var(--pt-focus);
+  outline-offset: -2px;
+}

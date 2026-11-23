@@ -351,6 +351,13 @@ button.pt-link:hover:not(:disabled){background:var(--pt-subtle)}
    padding, icon/label gap and 1px border — or the intrinsic width is
    under-counted and cramp never fires (measured 324 vs real ~467). */
 .pt-segmented__measure-item{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;gap:var(--pt-space-xs);padding:0 var(--pt-space-sm);border:1px solid transparent}
+/* Compact density tightens the icon-label rhythm to the xxs token so the
+   measured labelled island still fits the default 300px chat rail in roomy
+   locales. The off-screen probe mirrors the exact same gap, keeping the cramp
+   decision honest; text-only options have no leading glyph, so they are
+   visually unaffected. */
+.pt-segmented[data-density='compact'] .pt-button-content{gap:var(--pt-space-xxs)}
+.pt-segmented[data-density='compact'] .pt-segmented__measure-item{gap:var(--pt-space-xxs)}
 /* Cramp-able groups stay on one line: spatial squeeze swaps labels for icons,
    it never wraps buttons onto a second row. Text-only groups keep the base
    flex-wrap:wrap fallback because they cannot collapse. */
@@ -360,7 +367,7 @@ button.pt-link:hover:not(:disabled){background:var(--pt-subtle)}
    The tiles then keep a FIXED compact footprint and the island slides
    horizontally instead of continuously squashing the icons — squeeze must
    step (labelled → fixed icon tiles → host compact menu), never distort. */
-.pt-segmented[data-icon-only='true']{flex-wrap:nowrap;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none}
+.pt-segmented[data-icon-only='true']{flex:0 0 auto;width:max-content;flex-wrap:nowrap;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none}
 .pt-segmented[data-icon-only='true']::-webkit-scrollbar{display:none}
 .pt-segmented[data-icon-only='true'] .pt-segmented__label{display:none}
 .pt-segmented[data-icon-only='true']>.pt-button{

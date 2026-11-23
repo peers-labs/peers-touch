@@ -992,7 +992,7 @@ try {
       const coverRect = cover.getBoundingClientRect();
       if (Math.abs(ar.height - 68) > 2) out.defects.push(`hero-avatar-size:${Math.round(ar.height)}`);
       if (!(ar.top < coverRect.bottom && ar.bottom > coverRect.bottom)) out.defects.push('hero-avatar-not-overlapping');
-      if (!/0px 0px 0px 3px/.test(getComputedStyle(avatar).boxShadow)) out.defects.push('hero-avatar-ring-missing');
+      if (!/0px 0px 0px 2px/.test(getComputedStyle(avatar).boxShadow)) out.defects.push('hero-avatar-ring-missing');
       // Desktop-symmetric chip nested inside the avatar corner (right:6/bottom:6).
       const input = avatarWrap.querySelector('.ma-hero-avatar-action input[type=file]');
       if (!input) { out.defects.push('avatar-change-action-missing'); return out; }

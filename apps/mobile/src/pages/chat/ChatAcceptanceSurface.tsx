@@ -501,7 +501,6 @@ function ChatFixtureThread({
         keyboardOpen={surfaceId === 'chat.composer-keyboard'}
         title={title} onSend={() => undefined} sending={false} toolsDisabled={false}
         inputDisabled={false} editing={false}
-        initiallyExpanded={surfaceId === 'chat.composer-expanded'}
         emojiOpen={emojiOpen} onEmojiOpenChange={setEmojiOpen} recentEmojis={[]} onEmojiUsed={() => undefined}
         onChooseFile={() => undefined} onTakePhoto={() => undefined} onRecordVoice={() => undefined}
         recording={surfaceId === 'chat.voice-recording' ? { seconds: 8, cancel: () => undefined, finish: () => undefined } : undefined}
@@ -572,8 +571,10 @@ function FixtureMessage({
       {!mine ? (
         <MobileAvatar className="message-avatar" size={38} name="Alice">{FIXTURE_PEER_AVATAR}</MobileAvatar>
       ) : null}
-      <div className="message-bubble">
-        <Text className="message-text">{text}</Text>
+      <div className="message-bubble-col">
+        <div className="message-bubble">
+          <Text className="message-text">{text}</Text>
+        </div>
         <span className="message-meta attachment-only-meta message-meta-row">
           <span>10:42</span>
           {deliveryState ? (

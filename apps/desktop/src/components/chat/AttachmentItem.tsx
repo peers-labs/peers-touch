@@ -33,6 +33,7 @@ import {
 } from '@peers-touch/client-chat-core';
 import { formatMediaDurationSeconds } from '../../utils/mediaDisplay';
 import { useAttachmentAccess } from './useAttachmentAccess';
+import { useChatImagePreview } from './useChatImagePreview';
 import { messagingAttachmentAccess } from '../../messaging/attachmentAccess';
 
 type Attachment = ChatAttachmentLike;
@@ -233,6 +234,7 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
           ? t('chat.social.messageArea.attachmentStateFailed')
           : '';
   const canPreviewImage = Boolean(isImage && src && !previewFailed);
+  const imagePreview = useChatImagePreview(attachmentId, canPreviewImage ? src : null);
 
   useEffect(() => {
     setPreviewFailed(false);
@@ -258,6 +260,7 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
         <button
           type="button"
           className={`sc-attachment__image${hovered ? ' is-hovered' : ''}`}
+          style={{ width: imagePreview.box.width, height: imagePreview.box.height }}
           disabled={!canOpen}
           onClick={openAttachment}
           onMouseEnter={() => setHovered(true)}
@@ -265,9 +268,11 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
         >
           {canPreviewImage && src ? (
             <img
-              src={`${src}?representation=preview`}
+              src={imagePreview.displayUrl ?? undefined}
               alt={filename}
               loading="lazy"
+              className={imagePreview.loaded ? 'is-loaded' : ''}
+              onLoad={imagePreview.handleLoad}
               onError={() => setPreviewFailed(true)}
             />
           ) : (

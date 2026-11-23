@@ -133,6 +133,33 @@ and data. `resource-detach` removes one Profile reference; physical reset/delete
 is a separate exact operation with its own impact/decision and provider readback.
 Current source tests cover the cut; native proof is separately required.
 
+### Reclaiming orphaned simulators (`resource-sweep`)
+
+Interrupted runs can leave physical simulators whose machine document instance
+is gone; discovery lists them as `external`. Sweep is the owner-only reclamation
+path for those orphans, and it fails closed instead of guessing from age or
+name alone:
+
+```bash
+# Read-only report; never deletes anything.
+node tooling/scripts/local-dev/machine-dev.mjs resource-sweep --workspace-root "$PWD"
+# Reclaim one readable candidate after reviewing the dry run.
+node tooling/scripts/local-dev/machine-dev.mjs resource-sweep \
+  --workspace-root "$PWD" --selector 'Peers Touch sim-ios 15658-44bdc3c9'
+# Reclaim every reported candidate; protected devices are still skipped.
+node tooling/scripts/local-dev/machine-dev.mjs resource-sweep \
+  --workspace-root "$PWD" --confirm true
+```
+
+A device is a sweep candidate only when it is simultaneously `external`,
+carries the machine naming signature (`Peers ` prefix from `prepareIdentity`),
+has no OS-held lease and is not booted. Managed (documented) instances never
+enter the sweep; user/Xcode devices without the prefix, booted devices and
+active lease holders are returned under `protected` with an explicit reason and
+can never be deleted by it. The default mode is a dry run, and physical removal
+still goes through the provider's shutdown/delete/readback path, so a failed
+readback fails the command.
+
 ## 2. Profile System
 
 ### 2.1 What Is A Profile

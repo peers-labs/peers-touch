@@ -32,6 +32,16 @@ its interaction owner must consume `mode="none"` or use the appropriate
 native control. Do not attach a positive marker to a control itself; an
 explicit marker overrides Tauri's automatic exclusion.
 
+A `self` region only drags on a direct hit: Tauri requires the event target
+to be the marked element itself (`el === composedPath[0]`). Therefore a
+blank pane that must drag cannot also be `pointer-events: none` — a
+hit-transparent layer lets the event fall through to whatever is beneath,
+which is usually an unmarked root that never satisfies the self test. Give
+the draggable blank layer its own `WindowDragRegion` (`self` for an empty
+pane background, `deep` when descendants must drag too) and let it receive
+pointer events. This is how the closed-work `sc-chat-rest-placeholder`
+recovered window dragging on the empty conversation stage.
+
 The single child must forward DOM attributes to its root. Use the real
 `header`, `div`, `nav`, `aside` or an attribute-forwarding component.
 Fragments and components that discard attributes are invalid boundaries.

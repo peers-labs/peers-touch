@@ -27,7 +27,7 @@ describe('Mobile navigation descriptor lifetimes', () => {
     expect(primaryTabDescriptors.every((descriptor) => (
       descriptor.layout === 'primary' && descriptor.keepAlive === false
     ))).toBe(true);
-    expect(detailDescriptors).toHaveLength(12);
+    expect(detailDescriptors).toHaveLength(14);
     expect(detailDescriptors.every((descriptor) => (
       descriptor.layout === 'detail' && descriptor.keepAlive === false
     ))).toBe(true);
@@ -40,14 +40,19 @@ describe('Mobile navigation descriptor lifetimes', () => {
   });
 
   it('binds Group routes to the registered Messaging runtime owner', () => {
+    // Conversation/mutation group surfaces are Messaging-owned. The contacts
+    // group-chats directory is a Social-owned list entry and is excluded here.
     const groupRoutes = [...detailDescriptors, ...overlayDescriptors].filter(
-      (descriptor) => descriptor.routeId.includes('group'),
+      (descriptor) => descriptor.routeId.includes('group')
+        && descriptor.routeId !== 'detail:group-chats',
     );
 
     expect(groupRoutes).toHaveLength(2);
     expect(groupRoutes.every(
       (descriptor) => descriptor.ownerRuntimeId === 'messaging',
     )).toBe(true);
+    expect(detailDescriptors.find((route) => route.routeId === 'detail:group-chats'))
+      .toMatchObject({ ownerRuntimeId: 'social' });
     expect([...detailDescriptors, ...overlayDescriptors].some(
       (descriptor) => descriptor.ownerRuntimeId === 'group',
     )).toBe(false);

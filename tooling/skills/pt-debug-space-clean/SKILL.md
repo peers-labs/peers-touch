@@ -188,7 +188,10 @@ delete are separate. Never sweep CoreSimulator devices as compiler cache or
 delete a shared device because one Suite ended. Exact reset/delete consumes its
 own impact and force/decline decision through Machine Dev, then requires
 provider and associated-directory readback. Unknown/user-retained devices
-remain protected without that concrete operation.
+remain protected without that concrete operation. Provider-orphaned simulators
+(`external`, no machine instance) are reclaimed only via the owner's
+`resource-sweep` dry-run/confirm flow, which protects booted, leased, managed
+and non-machine-named devices; this Skill never deletes them on its own.
 
 ## Output
 

@@ -49,24 +49,6 @@ describe('friend request cards (north-star .sk-request-card parity)', () => {
     );
   });
 
-  it('reveals icon decisions only on hover/focus with the 0.12s quiet protocol', () => {
-    const decideRule = ruleFor('.sc-request-card__decide');
-    expect(decideRule).toContain('opacity: 0');
-    expect(decideRule).toContain('transition: opacity 0.12s ease');
-    expect(chatCss).toContain(
-      '.sc-request-card:hover .sc-request-card__decide',
-    );
-    expect(chatCss).toContain(
-      '.sc-request-card:focus-within .sc-request-card__decide',
-    );
-    expect(chatCss).toMatch(
-      /\.sc-request-card \.sc-decide\.is-accept:hover\s*\{[^}]*color-mix\(in srgb, var\(--pt-accent\) 12%, transparent\)/,
-    );
-    expect(chatCss).toMatch(
-      /\.sc-request-card \.sc-decide\.is-reject:hover\s*\{[^}]*color-mix\(in srgb, var\(--pt-danger\) 10%, transparent\)/,
-    );
-  });
-
   it('keeps the outgoing wash, history dim and greeting type scale', () => {
     expect(ruleFor('.sc-request-card.is-outgoing')).toContain(
       'background: color-mix(in srgb, var(--pt-primary) 5%, transparent)',
@@ -77,11 +59,38 @@ describe('friend request cards (north-star .sk-request-card parity)', () => {
     expect(greetingRule).toContain('line-height: 1.5');
   });
 
-  it('builds accept/reject from peers IconButton while keeping the acceptance hooks', () => {
-    expect(contactsSource).toMatch(/<IconButton[\s\S]*?data-chat-friend-request-action="accept"/);
-    expect(contactsSource).toMatch(/<IconButton[\s\S]*?data-chat-friend-request-action="reject"/);
-    expect(contactsSource).toContain('className="sc-decide is-accept"');
-    expect(contactsSource).toContain('className="sc-decide is-reject"');
+  it('keeps decision actions off the compact card so the row never inflates', () => {
+    // The card is navigation only: accept/reject live on the profile sheet.
+    expect(contactsSource).not.toContain('data-chat-friend-request-action');
+    expect(contactsSource).not.toContain('sc-request-card__decide');
+    expect(contactsSource).not.toContain('sc-decide is-accept');
+  });
+});
+
+describe('pending-request profile decision surface', () => {
+  const detailSource = readFileSync(
+    new URL('./ChatContactsDetailPanel.tsx', import.meta.url),
+    'utf8',
+  );
+
+  it('hosts accept/reject on the profile sheet with the acceptance action hooks', () => {
+    expect(detailSource).toMatch(/<Button[\s\S]*?data-chat-friend-request-action="accept"/);
+    expect(detailSource).toMatch(/<Button[\s\S]*?data-chat-friend-request-action="reject"/);
+    // Routes station failures through the chat error mapper instead of a
+    // generic toast, so the real rejection reason reaches the user.
+    expect(detailSource).toContain('mapChatError');
+    expect(detailSource).not.toContain('fallbackKey');
+  });
+
+  it('exposes the contact-detail identity contract the native gate selects', () => {
+    expect(detailSource).toContain('data-chat-contact-detail');
+    expect(detailSource).toContain('data-chat-contact-detail-kind={selection.kind}');
+    expect(detailSource).toContain('data-chat-contact-detail-peer-ptid={selection.peerPtid}');
+    expect(detailSource).toContain('data-chat-contact-detail-request-attempt-count');
+    // The sheet reuses the shared PublicProfileCard grammar, including its
+    // copyable technical-identity disclosure.
+    expect(detailSource).toContain('technicalDetailsLabel');
+    expect(detailSource).toContain('<PublicProfileCard variant="sheet"');
   });
 });
 

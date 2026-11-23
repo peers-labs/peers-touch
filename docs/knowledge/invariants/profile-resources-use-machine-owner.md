@@ -49,6 +49,15 @@ MUST NOT become identity keys.
 Both Mobile shell entries and all iOS Simulator Provisioners now consume this
 owner. Source regression results are distinct from native/provider proof.
 
+Orphaned physical simulators left by interrupted runs (discovery progress
+`external`, no machine document instance) are reclaimed only by the owner's
+`resource-sweep`, never by an independent cleanup callback. Sweep is fail-closed:
+its candidates must be `external`, carry the `Peers ` machine naming signature,
+hold no OS lease and be shut down; managed instances, user/Xcode-named devices,
+booted devices and lease holders are protected. It defaults to a dry run and
+reuses the provider shutdown/delete/readback path, so it introduces no second
+simctl allocation/reclaim channel.
+
 ## How to verify
 
 - `node --test --test-timeout=1200000 tooling/scripts/local-dev/machine-dev*.test.mjs`

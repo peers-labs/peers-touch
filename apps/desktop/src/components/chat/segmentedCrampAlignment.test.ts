@@ -21,6 +21,18 @@ const northstarStyles = readFileSync(
   new URL('../../ui/northstar.css', import.meta.url),
   'utf8',
 );
+const chatStyles = readFileSync(
+  new URL('../../ui/chat.css', import.meta.url),
+  'utf8',
+);
+const prototypeRailSource = readFileSync(
+  new URL('../../../../../packages/prototypes/shared/ui-system/chat/ChatRail.tsx', import.meta.url),
+  'utf8',
+);
+const prototypeChatStyles = readFileSync(
+  new URL('../../../../../packages/prototypes/shared/ui-system/chat/chat.css', import.meta.url),
+  'utf8',
+);
 
 describe('Segmented icon-only cramp behavior (shared base component)', () => {
   it('exposes autoIconOnly enabled by default and gated on leading icons', () => {
@@ -69,6 +81,48 @@ describe('Segmented icon-only cramp behavior (shared base component)', () => {
     // Icon-only buttons keep an accessible name and a hover tooltip.
     expect(selectionSource).toMatch(/aria-label=\{collapsed \? textLabel/);
     expect(selectionSource).toMatch(/title=\{collapsed \? textLabel/);
+  });
+
+  it('hugs its icon tiles when collapsed instead of stretching a full-width empty pill', () => {
+    // Regression: fullWidth kept width:100% on the collapsed host, so the gray
+    // island filled the whole flex budget while two 28px tiles sat on the left
+    // behind a large dead area. The host must drop the stretch while cramp is
+    // active and the primitive rule pins it to a content-hugging icon island.
+    expect(selectionSource).toContain("width: fullWidth && !collapsed ? '100%' : undefined");
+    const iconOnlyHostRule = uiStyles.match(
+      /\.pt-segmented\[data-icon-only='true'\]\s*\{([^}]*)\}/,
+    )?.[1] ?? '';
+    expect(iconOnlyHostRule).toContain('flex:0 0 auto');
+    expect(iconOnlyHostRule).toContain('width:max-content');
+  });
+
+  it('keeps the flex spring on a wrapper div, not on the Segmented host (prototype parity)', () => {
+    // Root-cause contract: the north-star ChatRail splits two roles into two
+    // nodes — .sk-rail-tabs is the flex spring that anchors search/new to the
+    // right, and the Segmented inside is a pure tile control. Promoting both
+    // onto one host made icon-only either stretch a dead pill or drag the
+    // action tiles left. Production must keep the same split.
+    expect(prototypeRailSource).toMatch(/<div className="sk-rail-tabs">/);
+    expect(prototypeChatStyles).toMatch(/\.sk-rail-tabs\s*\{\s*flex: 1 1 auto; min-width: 0;\s*\}/);
+    expect(railSource).toMatch(/<div className="sc-rail-tabs">/);
+    expect(chatStyles).toMatch(/\.sc-rail-tabs\s*\{\s*flex: 1 1 auto; min-width: 0;\s*\}/);
+    // The control itself must not carry the spring: only the wrapper absorbs
+    // the free space, so the icon island can hug content without moving the
+    // right-side actions.
+    expect(chatStyles).not.toMatch(/\.sc-rail-subnav\s*\{[^}]*flex:\s*1 1 auto/);
+  });
+
+  it('mirrors the compact icon-label gap on the off-screen probe so measurement stays honest', () => {
+    // The host exposes its density; compact tightens the icon-label rhythm to
+    // the xxs token on BOTH the real buttons and the measure items, otherwise
+    // the probe would over-report the labelled width and cramp one step early.
+    expect(selectionSource).toContain('data-density={density}');
+    expect(uiStyles).toMatch(
+      /\.pt-segmented\[data-density='compact'\] \.pt-button-content\{[^}]*gap:var\(--pt-space-xxs\)/,
+    );
+    expect(uiStyles).toMatch(
+      /\.pt-segmented\[data-density='compact'\] \.pt-segmented__measure-item\{[^}]*gap:var\(--pt-space-xxs\)/,
+    );
   });
 
   it('keeps the probe off-screen and non-shrinking, and hides only labels via CSS', () => {

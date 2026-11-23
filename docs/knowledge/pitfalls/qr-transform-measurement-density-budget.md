@@ -67,6 +67,43 @@ Two independent properties were misread:
 - `apps/desktop/src/components/settings/DeviceLinkPanel.stage.test.ts` pins
   the shared stage geometry so all phases stay one size.
 
+## Recurrence (2026-11-18): zero-margin density budget on a slightly narrow host
+
+### Symptom
+
+The sign-in modal again showed `qrFailed` on cold start even though the
+transform-immune `clientWidth` measurement and the 340px stage were both
+intact. Frame-by-frame sampling through the real `pt-surface-in` scale
+animation showed `clientWidth` holding a steady 340 with zero sub-threshold
+frames, so the 2026-10-28 measurement fix was not the culprit.
+
+### Root cause
+
+The v15 compact reference is 85 columns (77 modules + 2×4 quiet zone), so
+`floor(340 / 85) = 4.0` — the 4px decodability floor had **zero margin**. Any
+real host that measured even 4px narrower (336px) dropped to
+`floor(336 / 85) = 3` and failed loudly with `PAYLOAD_TOO_DENSE`, while the
+UI discarded the `SchemaError` code, making the failure indistinguishable
+from a measurement or render fault.
+
+### Mitigation
+
+- `prepareQr` now adapts the quiet zone (4 → 3 → 2) before failing whenever
+  the caller has not pinned `quietZoneModules`. Data modules never shrink
+  below `minModulePixels`; only the surrounding margin trades away, and the
+  white modal surface still supplies a visual quiet zone. Explicit quiet
+  pins opt out, and boxes below the smallest recoverable size (the 280px
+  case) still fail loudly.
+- `DeviceLinkPanel` forwards the `SchemaError.code` and offer id to
+  `console.error` instead of swallowing it, so a future cold-start failure
+  is diagnosable from the webview console.
+
+### Guards added
+
+- `prepare.test.ts`: 336px must recover at quiet=3 and 324px at quiet=2 with
+  jsQR still decoding the original payload; an explicit `quietZoneModules:4`
+  at 336px and the 280px box must still reject.
+
 ## How to detect a recurrence
 
 ```bash

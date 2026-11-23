@@ -32,6 +32,7 @@ import type {
 } from '../app/navigation';
 import { MobileAvatar } from '../components/MobileAvatar';
 import { MobileNotice } from '../components/MobileNotice';
+import { ProfileIdentityHeader } from '../components/ProfileIdentityHeader';
 import { BoundedList } from '../components/BoundedList';
 import { useContactsSurfaceFixture } from '../acceptance/contactsSurfaceFixture';
 import { formatSocialError, useSocialStore } from '../features/social/socialStore';
@@ -434,34 +435,31 @@ function ContactsPageInner({
             {selectedContact?.peerName || t('mobile.contacts.profile')}
           </h1>
         </header>
+        {selectedContact ? (
+          <ProfileIdentityHeader
+            self={false}
+            actorPtid={selectedContact.peerPtid}
+            displayName={selectedProfile?.displayName || selectedContact.peerName}
+            handle={selectedProfile?.federatedHandle || selectedProfile?.acct || selectedProfile?.username}
+            avatar={selectedProfile?.avatar || selectedContact.peerAvatar}
+            cover={selectedProfile?.header}
+            tags={selectedProfile?.tags}
+            stats={selectedProfile ? {
+              posts: selectedProfile.statusesCount,
+              following: selectedProfile.followingCount,
+              followers: selectedProfile.followersCount,
+            } : undefined}
+            joined={selectedProfile?.createdAt}
+            online={selectedContact.peerOnline}
+          />
+        ) : null}
         <div className="mobile-detail-body">
           {selectedContact ? (
-            <div className="contact-profile-card">
-              <Spin active={selectedProfileLoading}>
-                <MobileAvatar src={selectedProfile?.avatar || selectedContact.peerAvatar} size={64}>
-                  {(selectedProfile?.displayName || selectedContact.peerName).slice(0, 1)}
-                </MobileAvatar>
-              </Spin>
-              <div className="contact-profile-copy">
-                <Text strong className="contact-profile-name">{selectedContact.peerName}</Text>
-                {preferences.contacts[selectedContact.peerPtid]?.nickname && selectedProfile?.displayName
-                  ? <Text tone="secondary">{selectedProfile.displayName}</Text> : null}
-                {selectedProfile?.acct || selectedProfile?.username ? <Text tone="secondary">{selectedProfile.acct || selectedProfile.username}</Text> : null}
-                {selectedProfile?.note ? <Text className="contact-profile-note">{selectedProfile.note}</Text> : null}
-                <Tag tone={selectedContact.peerOnline ? 'success' : 'neutral'}>
-                  {selectedContact.peerOnline ? t('mobile.social.online') : t('mobile.social.offline')}
-                </Tag>
-              </div>
-              {selectedProfile ? (
-                <div className="contact-profile-stats">
-                  <ProfileStat label={t('mobile.contacts.profilePosts')} value={selectedProfile.statusesCount} />
-                  <ProfileStat label={t('mobile.contacts.profileFollowing')} value={selectedProfile.followingCount} />
-                  <ProfileStat label={t('mobile.contacts.profileFollowers')} value={selectedProfile.followersCount} />
-                </div>
-              ) : null}
-              {selectedProfile?.tags.length ? (
-                <div className="contact-profile-tags">{selectedProfile.tags.map((tag) => <Tag key={tag}>{tag}</Tag>)}</div>
-              ) : null}
+            <div className="contact-profile-actions">
+              <Spin active={selectedProfileLoading} />
+              {preferences.contacts[selectedContact.peerPtid]?.nickname && selectedProfile?.displayName
+                ? <Text tone="secondary">{selectedProfile.displayName}</Text> : null}
+              {selectedProfile?.note ? <Text className="contact-profile-note">{selectedProfile.note}</Text> : null}
               {selectedProfileError ? <Text tone="danger">{formatSocialError(selectedProfileError)}</Text> : null}
               {selectedBlocked ? <Tag tone="danger">{t('mobile.contacts.blocked')}</Tag> : null}
               {localActionError ? <MobileNotice tone="error">{localActionError}</MobileNotice> : null}
@@ -603,7 +601,9 @@ function ContactsPageInner({
                     className="contact-item friend-request-item"
                   >
                     <div className="contact-item-meta">
-                      <MobileAvatar src={request.senderAvatar}>{displayPeerName(request.senderDisplayName, request.senderPtid, t).slice(0, 1)}</MobileAvatar>
+                      <MobileAvatar src={request.senderAvatar}
+                        name={displayPeerName(request.senderDisplayName, request.senderPtid, t)}
+                        identityKey={request.senderPtid}>{displayPeerName(request.senderDisplayName, request.senderPtid, t).slice(0, 1)}</MobileAvatar>
                       <span className="contact-item-copy">
                         <Text strong>{displayPeerName(request.senderDisplayName, request.senderPtid, t)}</Text>
                         <span className="contact-item-description">
@@ -663,10 +663,12 @@ function ContactsPageInner({
                       : null}
                       <div className="contact-item-row">
                         <Button actionId={`contacts.open.${contact.peerPtid}`} data-focus-id={contact.peerPtid}
-                          fullWidth emphasis="quiet" density="comfortable"
+                          fullWidth emphasis="quiet" density="comfortable" className="contact-row-button"
                           onActivate={() => onOpenContact(contact.peerPtid)}>
                         <span className="conversation-avatar-frame">
-                          <MobileAvatar src={contact.peerAvatar} size={44}>{displayPeerName(contact.peerName, contact.peerPtid, t).slice(0, 1)}</MobileAvatar>
+                          <MobileAvatar src={contact.peerAvatar} size={44}
+                            name={displayPeerName(contact.peerName, contact.peerPtid, t)}
+                            identityKey={contact.peerPtid}>{displayPeerName(contact.peerName, contact.peerPtid, t).slice(0, 1)}</MobileAvatar>
                           {contact.peerOnline ? <span className="conversation-online-dot" aria-hidden="true" /> : null}
                         </span>
                         <div className="contact-info">
@@ -706,7 +708,9 @@ function ContactsPageInner({
               {(rows) => rows.map((request) => (
                 <div key={request.requestId} data-scroll-anchor-id={request.requestId} className="contact-item">
                   <div className="contact-item-meta">
-                    <MobileAvatar src={request.receiverAvatar}>{displayPeerName(request.receiverDisplayName, request.receiverPtid, t).slice(0, 1)}</MobileAvatar>
+                    <MobileAvatar src={request.receiverAvatar}
+                      name={displayPeerName(request.receiverDisplayName, request.receiverPtid, t)}
+                      identityKey={request.receiverPtid}>{displayPeerName(request.receiverDisplayName, request.receiverPtid, t).slice(0, 1)}</MobileAvatar>
                     <span className="contact-item-copy">
                       <Text strong>{displayPeerName(request.receiverDisplayName, request.receiverPtid, t)}</Text>
                       <span className="contact-item-description">{t('mobile.contacts.waitingForAccept')}</span>
@@ -817,10 +821,6 @@ function ContactsPageInner({
 // ---------------------------------------------------------------------------
 // Sub-components — pure renderers
 // ---------------------------------------------------------------------------
-
-function ProfileStat({ label, value }: { label: string; value: number }) {
-  return <div className="contact-profile-stat"><Text strong>{value}</Text><Text tone="secondary">{label}</Text></div>;
-}
 
 function displayPeerName(
   name: string | undefined,

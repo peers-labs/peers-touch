@@ -286,7 +286,12 @@ export function Segmented<T extends string | number>({ options, value, onValueCh
     data-full-width={fullWidth || undefined} data-scrollable={scrollable || undefined}
     data-crampable={collapseEligible || undefined}
     data-icon-only={collapsed || undefined}
-    style={{ width: fullWidth ? '100%' : undefined, ...style }}>
+    data-density={density}
+    // A full-width island stretches only while labelled. Once cramp fires it
+    // must hug its fixed icon tiles (drawer-assembly.md "28px icon island"),
+    // otherwise the host keeps filling the flex budget and paints a wide
+    // empty pill next to two tiny icons.
+    style={{ width: fullWidth && !collapsed ? '100%' : undefined, ...style }}>
     {collapseEligible && (
       <div ref={measureRef} className="pt-segmented__measure" aria-hidden="true">
         {normalized.map(option => (

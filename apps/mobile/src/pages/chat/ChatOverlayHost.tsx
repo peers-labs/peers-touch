@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   Button,
   BottomSheet,
@@ -50,9 +50,19 @@ import {
   messageProjectionMetadata,
 } from '../../features/chat/messageProjection';
 import { isOwnChatMessage } from '../../features/chat/chatSelectors';
+import {
+  buildQuickReactions,
+  readRecentReactions,
+  recordRecentReaction,
+} from '../../features/chat/recentReactions';
+import { EmojiPalettePanel } from '../../components/emoji/EmojiPalettePanel';
+import { MOBILE_REACTION_EMOJIS } from '../../components/emoji/emojiData';
 import type { ConversationSettingsFeedback } from './conversationSettingsState';
 
-const MOBILE_MESSAGE_REACTIONS = ['\u{1F44D}', '\u{2764}\u{FE0F}', '\u{1F602}', '\u{1F62E}', '\u{1F389}'] as const;
+// Collapsed quick row shows this many emojis (recents + defaults) before the
+// "all reactions" more button, matching the single-row mobile message-actions
+// pattern instead of spreading the whole 24-emoji grid on first open.
+const COLLAPSED_REACTION_SLOTS = 6;
 
 export function ChatOverlayHost({ children }: { readonly children: ReactNode }) {
   return <>{children}</>;
@@ -104,41 +114,101 @@ export function MessageActionSheet({
   readonly onCopyError?: (error: unknown) => void;
 }) {
   const { t } = useMobileI18n();
+  // Tapping "..." opens a dedicated emoji drawer (a second BottomSheet stacked
+  // above the action sheet), instead of expanding the palette inline.
+  const [emojiDrawerOpen, setEmojiDrawerOpen] = useState(false);
+  const [recentReactions, setRecentReactions] = useState<string[]>(() =>
+    readRecentReactions(MOBILE_REACTION_EMOJIS as readonly string[]),
+  );
+  // The sheet stays mounted and hides via the null return below, so without this
+  // reset the drawer would still be open the next time the action sheet opens.
+  const actionMessageUlid = message?.ulid;
+  useEffect(() => {
+    setEmojiDrawerOpen(false);
+  }, [actionMessageUlid]);
   if (!message) return null;
   const metadata = messageProjectionMetadata(message);
   const mine = isOwnChatMessage(message, currentUserPtid);
   const recalled = isRecalledChatMessage(message);
   const unavailable = recalled || metadata.moderated;
+  const quickReactions = buildQuickReactions(
+    recentReactions,
+    MOBILE_REACTION_EMOJIS as readonly string[],
+    COLLAPSED_REACTION_SLOTS,
+  );
+
+  const handleToggleReaction = (reaction: string) => {
+    const alreadyActive = metadata.reactions.some(
+      (item) => item.actorPtid === currentUserPtid && item.reaction === reaction,
+    );
+    // Only adds feed the MRU list; removing a reaction must not make it "recent".
+    if (!alreadyActive) {
+      setRecentReactions(
+        recordRecentReaction(reaction, MOBILE_REACTION_EMOJIS as readonly string[]),
+      );
+    }
+    onToggleReaction(reaction);
+  };
+
+  const renderReactionButton = (reaction: string) => {
+    const active = metadata.reactions.some(
+      (item) => item.actorPtid === currentUserPtid && item.reaction === reaction,
+    );
+    return (
+      <Button
+        key={reaction}
+        actionId={`chat.message.react.${reaction}`}
+        emphasis="quiet" density="comfortable"
+        aria-label={t('mobile.chat.reactWith', { reaction })}
+        aria-pressed={active}
+        availability={commandBusy || unavailable ? { kind: 'disabled', reason: t('mobile.chat.commandPending') } : undefined}
+        onActivate={() => handleToggleReaction(reaction)}
+      >
+        <span>{reaction}</span>
+      </Button>
+    );
+  };
 
   return (
-    <BottomSheet open title={t('mobile.chat.messageActions')} onDismiss={onClose}
-      className="message-action-sheet" data-product-surface="chat.message-actions">
-        <div className="chat-action-sheet-header">
-          <IconButton actionId="chat.message-actions.close" iconId="close" density="comfortable" emphasis="quiet"
-            label={t('common.action.close')} onActivate={onClose} />
-        </div>
-        <div className="chat-action-list">
-          <div className="chat-background-section message-action-reactions">
-            <Text tone="secondary" className="chat-background-title">{t('mobile.chat.addReaction')}</Text>
-            <div className="chat-background-grid">
-              {MOBILE_MESSAGE_REACTIONS.map((reaction) => {
-                const active = metadata.reactions.some(
-                  (item) => item.actorPtid === currentUserPtid && item.reaction === reaction,
-                );
-                return (
-                  <Button
-                    key={reaction}
-                    actionId={`chat.message.react.${reaction}`}
-                    emphasis="quiet" density="comfortable"
-                    aria-label={t('mobile.chat.reactWith', { reaction })}
-                    aria-pressed={active}
-                    availability={commandBusy || unavailable ? { kind: 'disabled', reason: t('mobile.chat.commandPending') } : undefined}
-                    onActivate={() => onToggleReaction(reaction)}
-                  >
-                    <span>{reaction}</span>
-                  </Button>
-                );
-              })}
+    <>
+    <BottomSheet
+      open
+      onDismiss={onClose}
+      className="message-action-sheet"
+      data-product-surface="chat.message-actions"
+      title={(
+        <span className="message-action-title-row">
+          <Text strong>{t('mobile.chat.messageActions')}</Text>
+          <IconButton
+            actionId="chat.message-actions.close"
+            iconId="close"
+            density="compact"
+            emphasis="quiet"
+            label={t('common.action.close')}
+            onActivate={onClose}
+          />
+        </span>
+      )}
+    >
+      <div className="chat-action-list">
+          <div className="message-action-reactions">
+            <div className="reaction-quick-row" data-reaction-picker="collapsed">
+              {quickReactions.map(renderReactionButton)}
+              <Button
+                actionId="chat.message.reactions.more"
+                className="reaction-quick-more"
+                emphasis="quiet"
+                density="comfortable"
+                aria-label={t('mobile.chat.allReactions')}
+                aria-haspopup="dialog"
+                aria-expanded={emojiDrawerOpen}
+                availability={commandBusy || unavailable
+                  ? { kind: 'disabled', reason: t('mobile.chat.commandPending') }
+                  : undefined}
+                onActivate={() => setEmojiDrawerOpen(true)}
+              >
+                <Icon iconId="more-horizontal" size={20} />
+              </Button>
             </div>
           </div>
           <div className="chat-action-group">
@@ -183,8 +253,30 @@ export function MessageActionSheet({
               <ChatActionButton icon={<Icon iconId="eye-off" size={18} />} title={t('mobile.chat.deleteForMe')} disabled={commandBusy} onClick={onHideForMe} danger />
             </div>
           ) : null}
-        </div>
+      </div>
     </BottomSheet>
+    <BottomSheet
+      open={emojiDrawerOpen}
+      onDismiss={() => setEmojiDrawerOpen(false)}
+      className="message-emoji-drawer"
+      data-product-surface="chat.message-reaction-drawer"
+      title={<Text strong>{t('mobile.chat.allReactions')}</Text>}
+    >
+      <EmojiPalettePanel
+        recent={recentReactions}
+        allowedEmojis={MOBILE_REACTION_EMOJIS}
+        isActive={(reaction) => metadata.reactions.some(
+          (item) => item.actorPtid === currentUserPtid && item.reaction === reaction,
+        )}
+        disabled={commandBusy || unavailable}
+        onSelect={(reaction) => {
+          handleToggleReaction(reaction);
+          setEmojiDrawerOpen(false);
+          onClose();
+        }}
+      />
+    </BottomSheet>
+    </>
   );
 }
 

@@ -2437,7 +2437,6 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         senderPtid: request.senderPtid,
         senderHomeStationPeerId: request.senderHomeStationPeerId,
         federationId: request.federationId,
-        message: request.message,
       });
       const acceptedRequest = normalizeFriendRequestData(data?.request);
       set((state) => ({
@@ -2470,7 +2469,6 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         senderPtid: request.senderPtid,
         senderHomeStationPeerId: request.senderHomeStationPeerId,
         federationId: request.federationId,
-        message: request.message,
       });
       const rejectedRequest = normalizeFriendRequestData(data?.request);
       set((state) => ({

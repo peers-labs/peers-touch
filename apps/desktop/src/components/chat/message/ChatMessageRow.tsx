@@ -502,7 +502,8 @@ export const ChatMessageRow = memo(function ChatMessageRow({
       data-message-read-by={readByPtids.join(',')}
       data-message-authority-sequence={message.eventSequence}
       data-message-attachment-count={attachments.length}
-      className={`msg-row ${highlighted ? 'highlighted' : ''}`}
+      data-media-only={mediaOnlyMessage || undefined}
+      className={`msg-row${isOwn ? ' is-own' : ''}${highlighted ? ' highlighted' : ''}`}
       tabIndex={0}
       onMouseEnter={() => {
         if (messageActionsAvailable && messageActionAnchorRef.current) {
@@ -691,12 +692,14 @@ export const ChatMessageRow = memo(function ChatMessageRow({
               </span>
             )}
             {showDeliveryVerdict && (
-              <DeliveryVerdictMeta
-                message={message}
-                isGroup={isGroup}
-                compact={compact}
-                onRetryMessage={onRetryMessage}
-              />
+              <span className="sc-msg-tools" data-message-tools={message.ulid}>
+                <DeliveryVerdictMeta
+                  message={message}
+                  isGroup={isGroup}
+                  compact={compact}
+                  onRetryMessage={onRetryMessage}
+                />
+              </span>
             )}
           </div>
         )}

@@ -94,3 +94,78 @@ test('provider alias records fail closed and actual holders block detach', (t) =
   writeFileSync(file, JSON.stringify(state));
   assert.throws(() => readResourceState({ home: f.home }), { code: 'RESOURCE_PROVIDER_COLLISION' });
 });
+
+// Devices injected straight into the provider without a machine document are
+// exactly the orphans sweep targets: discovery reports them as `external`.
+function addExternalDevice(f, { id, name, state = 'Shutdown' }) {
+  f.devices.set(id, {
+    providerId: id, name, model: 'iPhone Fixture', runtimeName: 'iOS Fixture',
+    deviceType: 'iphone.fixture', runtime: 'ios.fixture', available: true,
+    state, installed: null, sessions: [],
+  });
+  return id;
+}
+
+test('sweep dry-run reports only machine-named external orphans and deletes nothing', (t) => {
+  const f = resourceFixture(t);
+  const managed = f.create(1)[0];
+  const orphan = addExternalDevice(f, { id: 'ORPHAN-1', name: 'Peers Touch sim-ios 111-aaaa' });
+  addExternalDevice(f, { id: 'USER-1', name: 'camprobe-tmp' });
+  addExternalDevice(f, { id: 'XCODE-1', name: 'iPhone 17' });
+
+  const report = f.owner.sweep();
+  assert.equal(report.mode, 'dry-run');
+  assert.deepEqual(report.candidates.map((item) => item.providerId), [orphan]);
+  assert.deepEqual(report.protected.map((item) => item.reason).sort(), ['not-machine-named', 'not-machine-named']);
+  assert.deepEqual(report.managed.map((item) => item.providerId), [managed.providerId]);
+  // Dry run must not touch the provider.
+  assert.ok(f.devices.has(orphan));
+  assert.ok(f.devices.has('USER-1'));
+  assert.deepEqual(report.deleted, []);
+});
+
+test('sweep protects booted devices and active lease holders', (t) => {
+  const f = resourceFixture(t);
+  const booted = addExternalDevice(f, { id: 'BOOT-1', name: 'Peers Touch sim-ios 222-bbbb', state: 'Booted' });
+  const leased = addExternalDevice(f, { id: 'LEASE-1', name: 'Peers Touch sim-ios 333-cccc' });
+  f.holders.push({ resourceKind: 'simulator.ios', resourceId: leased, leaseId: 'held' });
+
+  const report = f.owner.sweep();
+  assert.deepEqual(report.candidates, []);
+  const reasons = Object.fromEntries(report.protected.map((item) => [item.providerId, item.reason]));
+  assert.equal(reasons[booted], 'booted');
+  assert.equal(reasons[leased], 'active-lease');
+});
+
+test('sweep confirm deletes every candidate through the provider and keeps protected devices', (t) => {
+  const f = resourceFixture(t);
+  const orphanA = addExternalDevice(f, { id: 'ORPHAN-A', name: 'Peers Touch sim-ios 444-dddd' });
+  const orphanB = addExternalDevice(f, { id: 'ORPHAN-B', name: 'Peers Touch sim-ios 555-eeee' });
+  const userDevice = addExternalDevice(f, { id: 'USER-2', name: 'iPad Air (5th generation)' });
+
+  const report = f.owner.sweep({ confirm: true });
+  assert.equal(report.mode, 'confirm');
+  assert.deepEqual(report.deleted.map((item) => item.providerId).sort(), [orphanA, orphanB]);
+  assert.equal(f.devices.has(orphanA), false);
+  assert.equal(f.devices.has(orphanB), false);
+  // Non-machine devices survive even a confirmed sweep.
+  assert.ok(f.devices.has(userDevice));
+  // Removed devices disappear from the next discovery instead of lingering as external.
+  assert.deepEqual(
+    f.owner.discover().devices.map((item) => item.observation.providerId).filter((id) => id.startsWith('ORPHAN')),
+    [],
+  );
+});
+
+test('sweep selector must resolve exactly one candidate', (t) => {
+  const f = resourceFixture(t);
+  const orphan = addExternalDevice(f, { id: 'ORPHAN-S', name: 'Peers Touch sim-ios 666-ffff' });
+  const bootedName = 'Peers Touch sim-ios 777-gggg';
+  addExternalDevice(f, { id: 'BOOT-S', name: bootedName, state: 'Booted' });
+
+  const scoped = f.owner.sweep({ selector: 'Peers Touch sim-ios 666-ffff' });
+  assert.deepEqual(scoped.candidates.map((item) => item.providerId), [orphan]);
+  assert.throws(() => f.owner.sweep({ selector: 'nonexistent' }), { code: 'RESOURCE_SWEEP_SELECTION' });
+  // A protected (booted) machine device is not a candidate, so selecting it fails closed.
+  assert.throws(() => f.owner.sweep({ selector: bootedName }), { code: 'RESOURCE_SWEEP_SELECTION' });
+});

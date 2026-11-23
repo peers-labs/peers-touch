@@ -6,6 +6,7 @@ import path from 'node:path';
 import { MachineResourceOwner } from '../machine-dev-resource-store.mjs';
 import { appArtifactDigest } from '../machine-dev-ios-provider.mjs';
 import { resourceDigest } from '../machine-dev-resource-contract.mjs';
+import { fail } from '../machine-dev-primitives.mjs';
 
 export function resourceFixture(t) {
   const home = mkdtempSync(path.join(tmpdir(), 'pt-resource-owner-'));
@@ -42,6 +43,9 @@ export function resourceFixture(t) {
         devices.set(device.providerId, device);
       }
       return structuredClone(device);
+    },
+    delete(id) {
+      if (!devices.delete(id)) fail('RESOURCE_PROVIDER_MISSING', 'fixture device missing on delete');
     },
   };
   const holders = [];

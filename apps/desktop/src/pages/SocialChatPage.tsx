@@ -11,8 +11,10 @@ import {
   readStoredChatRailWidth,
 } from '../components/chat/chatRailWidth';
 import { ChatDetailPanel } from '../components/chat/ChatDetailPanel';
+import { ChatContactsDetailPanel } from '../components/chat/ChatContactsDetailPanel';
 import { ChatThreadPanel } from '../components/chat/ChatThreadPanel';
 import { AttachmentDetailHost } from '../components/chat/AttachmentDetailHost';
+import { WindowDragRegion } from '../components/shell/WindowDragRegion';
 import { CallSurface } from '../components/chat/CallSurface';
 import { GroupCallSurface } from '../components/chat/GroupCallSurface';
 import {
@@ -356,6 +358,10 @@ export function SocialChatPage() {
             selectedContact={selectedContact}
             onSelectContact={(contact) => {
               setOwnedContactSelection({ actorPtid: contactOwnerPtid, contact });
+              // A pending request opens the profile decision surface in the
+              // work area (no conversation exists yet), so reveal the stage
+              // exactly like selecting an established contact.
+              if (contact.kind === 'person') assembly.reveal();
             }}
             onStartChat={(contact) => {
               setOwnedContactSelection({ actorPtid: contactOwnerPtid, contact });
@@ -377,12 +383,16 @@ export function SocialChatPage() {
       <div className="sc-chat-work__body"
         inert={!!assembly.leaf || assembly.leafProgress > 0}
         aria-hidden={!!assembly.leaf || assembly.leafProgress > 0}>
-      <ChatMessageArea
-        directOpenIntent={directOpenIntent}
-        compressed={pose.compressed}
-        compactTools={pose.workToolsCompact}
-        onBack={backToCatalog}
-      />
+      {selectedContact?.kind === 'person' ? (
+        <ChatContactsDetailPanel selection={selectedContact} />
+      ) : (
+        <ChatMessageArea
+          directOpenIntent={directOpenIntent}
+          compressed={pose.compressed}
+          compactTools={pose.workToolsCompact}
+          onBack={backToCatalog}
+        />
+      )}
       </div>
       <div className="sc-chat-leaf" data-visible={!!assembly.leaf || assembly.leafProgress > 0}
         inert={!assembly.leaf || assembly.leafProgress < 1}
@@ -393,10 +403,17 @@ export function SocialChatPage() {
       </div>
       </div>
       {!assembly.open && assembly.navigation === 0 && (
+        // self: the empty work-area background drags the window, while the
+        // centered Empty glyph/hint (a descendant) keeps normal hit behavior.
+        // The layer must receive pointer events; pointer-events:none let hits
+        // fall through to the non-draggable .sc-chat root, so the blank work
+        // area could not move the window before a conversation was opened.
+        <WindowDragRegion mode="self">
         <div className="sc-chat-rest-placeholder" aria-hidden="true">
           <Empty icon={<Icon iconId="inbox" size={40} />}
             description={t('chat.social.messageArea.selectConversation')} />
         </div>
+        </WindowDragRegion>
       )}
 
       {/* Voice / video call surface — page-level so a ringing call

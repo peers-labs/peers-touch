@@ -1,12 +1,23 @@
 import {
+  useEffect,
+  useState,
+  type SyntheticEvent,
+} from 'react';
+import {
   Check,
   CheckCheck,
   Clock,
+  Image as ImageIcon,
   Paperclip,
   Mic,
 } from 'lucide-react';
 
-import { chatMediaKindForAttachment } from '@peers-touch/client-chat-core';
+import {
+  chatImageObjectUrlCache,
+  chatMediaKindForAttachment,
+  recordChatImageGeometry,
+  reserveChatImageBox,
+} from '@peers-touch/client-chat-core';
 import { Button, Icon, IconButton, Text } from '@peers-touch/ui';
 
 import { useMobileI18n } from '../../app/mobileI18n';
@@ -204,6 +215,100 @@ export function EncryptedAttachmentReferenceChip({
   );
 }
 
+// Caps mirror .mobile-attachment-image (max-width: min(220px, 100%)) and its
+// img max-height in styles.css, so the reserved box matches the decoded image.
+const MOBILE_IMAGE_CONSTRAINTS = { maxWidth: 220, maxHeight: 260 };
+// Before the first decode the wire carries no dimensions; hold a stable tile
+// instead of collapsing to zero height while the grant URL resolves.
+const MOBILE_IMAGE_FALLBACK = { width: 160, height: 96 };
+
+function MobileImageAttachment({
+  attachmentId,
+  filename,
+  sourceUrl,
+  onOpen,
+}: {
+  readonly attachmentId: string;
+  readonly filename: string;
+  readonly sourceUrl: string;
+  readonly onOpen: () => void;
+}) {
+  const [box, setBox] = useState(() =>
+    reserveChatImageBox(attachmentId, MOBILE_IMAGE_CONSTRAINTS, MOBILE_IMAGE_FALLBACK),
+  );
+  // A stable in-WebView object URL survives grant/asset-URL churn, so
+  // re-opening a conversation re-displays the image instantly without
+  // re-fetching or re-decoding. Null until the first successful prime.
+  const [objectUrl, setObjectUrl] = useState<string | null>(
+    () => chatImageObjectUrlCache.get(attachmentId),
+  );
+  const [loaded, setLoaded] = useState(() => chatImageObjectUrlCache.has(attachmentId));
+
+  // Geometry is keyed to the attachment, not the ephemeral grant URL, so it
+  // must not reset when sourceUrl changes.
+  useEffect(() => {
+    setBox(reserveChatImageBox(attachmentId, MOBILE_IMAGE_CONSTRAINTS, MOBILE_IMAGE_FALLBACK));
+  }, [attachmentId]);
+
+  // Resolve a stable object URL: serve the cache immediately on re-open,
+  // otherwise prime it from the freshly granted asset URL in the background.
+  useEffect(() => {
+    const cached = chatImageObjectUrlCache.get(attachmentId);
+    if (cached) {
+      setObjectUrl(cached);
+      setLoaded(true);
+      return;
+    }
+    setObjectUrl(null);
+    if (!sourceUrl) return;
+    let active = true;
+    void chatImageObjectUrlCache.prime(attachmentId, sourceUrl).then((url) => {
+      if (active && url) {
+        setObjectUrl(url);
+        setLoaded(true);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [attachmentId, sourceUrl]);
+
+  const displayUrl = objectUrl ?? sourceUrl;
+
+  const handleLoad = (event: SyntheticEvent<HTMLImageElement>) => {
+    const image = event.currentTarget;
+    if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+      recordChatImageGeometry(attachmentId, image.naturalWidth, image.naturalHeight);
+      setBox(reserveChatImageBox(attachmentId, MOBILE_IMAGE_CONSTRAINTS, MOBILE_IMAGE_FALLBACK));
+    }
+    setLoaded(true);
+  };
+
+  return (
+    <button
+      type="button"
+      className="mobile-attachment-image"
+      data-attachment-id={attachmentId}
+      style={{ width: box.width, height: box.height }}
+      aria-label={filename}
+      onClick={onOpen}
+    >
+      {displayUrl ? (
+        <img
+          src={displayUrl}
+          alt={filename}
+          className={loaded ? 'is-loaded' : ''}
+          onLoad={handleLoad}
+        />
+      ) : (
+        <span className="mobile-attachment-image__placeholder">
+          <ImageIcon size={24} />
+        </span>
+      )}
+    </button>
+  );
+}
+
 export function MessageAttachmentPresentation({
   attachmentId,
   kind,
@@ -223,19 +328,17 @@ export function MessageAttachmentPresentation({
   readonly disabled: boolean;
   readonly onOpen: () => void;
 }) {
-  if (kind === 'image' && sourceUrl) {
+  // Images always render as an image tile (with a reserved placeholder while
+  // the grant URL resolves), never as a filename file card — so a cold start
+  // or conversation switch does not swap the picture for a paperclip row.
+  if (kind === 'image') {
     return (
-      <button
-        type="button"
-        className="mobile-attachment-image"
-        data-attachment-id={attachmentId}
-        onClick={onOpen}
-      >
-        <img src={sourceUrl} alt={filename} />
-        <span className="mobile-attachment-info">
-          <span>{filename}</span><small>{stateLabel}</small>
-        </span>
-      </button>
+      <MobileImageAttachment
+        attachmentId={attachmentId}
+        filename={filename}
+        sourceUrl={sourceUrl}
+        onOpen={onOpen}
+      />
     );
   }
   if (kind === 'audio' && sourceUrl && voiceDurationLabel) {

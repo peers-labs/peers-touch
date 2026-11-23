@@ -73,6 +73,40 @@ describe('independent QR decode', () => {
     await expect(prepareQr(content, {
       size: 280, style: 'peers', maxVersion: 17, minModulePixels: 4,
     })).rejects.toMatchObject({ code: 'PAYLOAD_TOO_DENSE' });
+
+    // A stage measured a few px under the nominal 340 budget must not fail:
+    // the encoder trades quiet-zone depth (4 -> 3 -> 2) while keeping every
+    // data module at the 4px decodability floor. This is the cold-start
+    // modal regression where a slightly narrower host stranded sign-in.
+    const narrow = await prepareQr(content, {
+      size: 336, style: 'peers', maxVersion: 17, minModulePixels: 4,
+    });
+    try {
+      expect(narrow.diagnostics.modulePixels).toBe(4);
+      expect(narrow.diagnostics.quietZoneModules).toBe(3);
+      const svg = await narrow.export('svg');
+      const { data, info } = await sharp(Buffer.from(await svg.arrayBuffer())).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+      const decoded = jsQR(new Uint8ClampedArray(data), info.width, info.height);
+      expect(decoded?.binaryData).toEqual([...new TextEncoder().encode(payload)]);
+    } finally { narrow.dispose(); }
+
+    const narrower = await prepareQr(content, {
+      size: 324, style: 'peers', maxVersion: 17, minModulePixels: 4,
+    });
+    try {
+      expect(narrower.diagnostics.modulePixels).toBe(4);
+      expect(narrower.diagnostics.quietZoneModules).toBe(2);
+    } finally { narrower.dispose(); }
+
+    // Below the smallest recoverable box the loud failure still fires.
+    await expect(prepareQr(content, {
+      size: 280, style: 'peers', maxVersion: 17, minModulePixels: 4,
+    })).rejects.toMatchObject({ code: 'PAYLOAD_TOO_DENSE' });
+
+    // A caller that pins the quiet zone opts out of adaptation entirely.
+    await expect(prepareQr(content, {
+      size: 336, style: 'peers', maxVersion: 17, minModulePixels: 4, quietZoneModules: 4,
+    })).rejects.toMatchObject({ code: 'PAYLOAD_TOO_DENSE' });
   });
   it('retains safety-number and provider payload bytes as presentation only', async () => {
     for (const [owner, value] of [
