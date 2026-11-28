@@ -33,13 +33,18 @@ code, or formatting unless they alter visible product behavior.
 
 ## Core Rule
 
-For every UI feedback or visible adjustment, follow prototype ledger §4.2
-before product edits: mark the surface drafting, inspect and show the prototype,
+For every UI feedback or visible adjustment, return to the existing
+`pt-dev-workflow` Intake and use `dev-work.mjs intake --kind ui-feedback`.
+Follow prototype ledger §4.2 before product edits: registration marks that
+same ledger drafting; inspect and show the prototype,
 adjust it when needed, and obtain user confirmation of this repair target.
 If the existing prototype is correct, ask the user to confirm using it unchanged.
 An implementation-bug classification, a small fix, or prior confirmed status
 cannot bypass this step. After confirmation, restore the target at its actual
 owner; do not redesign the prototype to excuse an implementation defect.
+Use dev's `ui-review`, `ui-confirm`, and `before-implement` for the same feedback
+round. This specialist reviews alignment; it does not own another lifecycle,
+Task or confirmation store.
 
 Never silently let product code and prototype describe different products.
 

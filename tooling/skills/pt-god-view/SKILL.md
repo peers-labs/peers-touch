@@ -44,6 +44,11 @@ host-neutral `pt-goal-orchestrator` after the owning workflow has supplied
 verified sources and binding. Host-specific syntax or tools are selected later
 by a detected `pt-*-host-adapter`.
 
+UI feedback also routes to `pt-dev-workflow`, including small fixes and
+standalone prototype work. Its Intake registers the feedback in the existing
+prototype ledger before Design; God View neither owns UI state nor creates a
+UI task system. Follow ledger §4.2, including confirmation of unchanged targets.
+
 ## Invoke When
 
 - The user says `continue`, `resume`, `status`, `handoff`, `new task`, or the

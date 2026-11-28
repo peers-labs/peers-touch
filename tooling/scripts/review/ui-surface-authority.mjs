@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { verifySurfaceAdapters } from './ui-surface-adapters.mjs';
-import { containedFile, filesUnder, reject } from './ui-surface-source.mjs';
+import { containedFile, reject, surfaceSourceFiles } from './ui-surface-source.mjs';
+import { verifySurfaceStyles } from './ui-surface-styles.mjs';
 
 export const SURFACE_LEDGER = 'docs/architecture/engineering/prototypes/README.md';
 export const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -18,10 +19,10 @@ function exactKeys(value, keys, label) {
   }
 }
 
-export function readSurfaceLedger(root = sourceRoot, { optional = false } = {}) {
+export function readSurfaceLedger(root = sourceRoot, { optional = false, text } = {}) {
   const full = path.join(root, SURFACE_LEDGER);
   if (!fs.existsSync(full) && optional) return [];
-  const blocks = [...fs.readFileSync(full, 'utf8').matchAll(marker)];
+  const blocks = [...(text ?? fs.readFileSync(containedFile(root, SURFACE_LEDGER), 'utf8')).matchAll(marker)];
   if (blocks.length !== 1) reject('UI_SURFACE_LEDGER_INVALID', 'expected one authority block');
   let ledger;
   try { ledger = JSON.parse(blocks[0][1]); }
@@ -36,6 +37,7 @@ export function readSurfaceLedger(root = sourceRoot, { optional = false } = {}) 
       'id', 'prototypeId', 'contract', 'component', 'package', 'exportFile',
       'presentationRoots', 'prototype', 'production', 'status', 'confirmation',
       'protectedClasses',
+      'feedback',
     ], 'surface keys');
     if (!/^[a-z][a-z0-9-]+$/.test(surface.id) || ids.has(surface.id)) {
       reject('UI_SURFACE_LEDGER_INVALID', 'duplicate / invalid surface id');
@@ -65,7 +67,7 @@ export function readSurfaceLedger(root = sourceRoot, { optional = false } = {}) 
       reject('UI_SURFACE_OWNER_INVALID', surface.id);
     }
     if (surface.confirmation !== null) {
-      exactKeys(surface.confirmation, ['by', 'request', 'sourceDigest', 'evidence'], 'confirmation');
+      exactKeys(surface.confirmation, ['by', 'request', 'sourceDigest', 'evidence', 'feedbackId', 'prototypeId'], 'confirmation');
       if (!/^user:[a-zA-Z0-9_-]+$/.test(surface.confirmation.by)
         || !surface.confirmation.request?.trim()
         || !/^[a-f0-9]{64}$/.test(surface.confirmation.sourceDigest)
@@ -73,15 +75,36 @@ export function readSurfaceLedger(root = sourceRoot, { optional = false } = {}) 
         reject('UI_SURFACE_CONFIRMATION_INVALID', surface.id);
       }
     }
+    if (surface.feedback !== null) {
+      const feedback = surface.feedback;
+      exactKeys(feedback, ['id', 'revision', 'request', 'requestRef', 'review'], 'feedback');
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(feedback.id)
+        || !Number.isSafeInteger(feedback.revision) || feedback.revision < 1
+        || typeof feedback.request !== 'string' || !feedback.request.trim()
+        || typeof feedback.requestRef !== 'string' || !feedback.requestRef.trim()) {
+        reject('UI_SURFACE_FEEDBACK_INVALID', surface.id);
+      }
+      if (feedback.review !== null) {
+        exactKeys(feedback.review, ['sourceDigest', 'evidence', 'target'], 'review');
+        if (!/^[a-f0-9]{64}$/.test(feedback.review.sourceDigest)
+          || typeof feedback.review.evidence !== 'string' || !feedback.review.evidence.trim()
+          || typeof feedback.review.target !== 'string' || !feedback.review.target.trim()) {
+          reject('UI_SURFACE_REVIEW_INVALID', surface.id);
+        }
+      }
+    }
+    if (surface.confirmation && (surface.confirmation.feedbackId !== surface.feedback?.id
+      || surface.confirmation.prototypeId !== surface.prototypeId
+      || surface.confirmation.sourceDigest !== surface.feedback?.review?.sourceDigest)) {
+      reject('UI_SURFACE_CONFIRMATION_INVALID', `${surface.id}: confirmation is not bound to the reviewed feedback`);
+    }
   }
   return ledger.surfaces;
 }
 
 export function surfaceSourceDigest(root, surface) {
-  const files = [...new Set(surface.presentationRoots.flatMap(relative => filesUnder(root, relative))
-    .filter(relative => !/\.(test|spec)\.[^.]+$/.test(relative))
-    .concat(surface.prototype.adapter, surface.exportFile, surface.contract))].sort();
-  const { status, confirmation, ...contract } = surface;
+  const files = surfaceSourceFiles(root, surface);
+  const { status, confirmation, feedback, ...contract } = surface;
   return digest({
     contract,
     sources: files.map(relative => [relative, createHash('sha256')
@@ -92,7 +115,7 @@ export function surfaceSourceDigest(root, surface) {
 export function surfaceContext(root, targets, { optional = false } = {}) {
   return readSurfaceLedger(root, { optional }).flatMap(surface => {
     const roles = [
-      ['shared-presentation', surface.presentationRoots],
+      ['shared-presentation', surfaceSourceFiles(root, surface)],
       ['prototype-adapter', [surface.prototype.adapter]],
       ['production-adapter', [surface.production.adapter]],
       ['prototype-entry', surface.prototype.entryChain.slice(0, -1)],
@@ -107,6 +130,7 @@ export function surfaceContext(root, targets, { optional = false } = {}) {
       contract: surface.contract, roles: roles.map(([role]) => role),
       prototypeAdapter: surface.prototype.adapter, productionAdapter: surface.production.adapter,
       presentationRoots: surface.presentationRoots, status: surface.status, currentDigest,
+      feedback: surface.feedback,
       confirmedDigest: surface.confirmation?.sourceDigest ?? null,
       productionAdmitted: ['confirmed', 'landed'].includes(surface.status)
         && surface.confirmation?.sourceDigest === currentDigest,
@@ -115,28 +139,11 @@ export function surfaceContext(root, targets, { optional = false } = {}) {
   });
 }
 
-function verifyOverrides(root, surfaces) {
-  const prefixes = [...new Set(surfaces.flatMap(surface => surface.protectedClasses))];
-  const roots = ['apps/desktop/src', 'apps/mobile/src', 'packages/prototypes'];
-  for (const scanRoot of roots) {
-    if (!fs.existsSync(path.join(root, scanRoot))) continue;
-    for (const relative of filesUnder(root, scanRoot).filter(file => file.endsWith('.css'))) {
-      const css = fs.readFileSync(containedFile(root, relative), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
-      for (const rule of css.split('{').slice(0, -1)) {
-        const selector = rule.slice(rule.lastIndexOf('}') + 1);
-        if (prefixes.some(prefix => selector.includes(`.${prefix}`))
-          || /\[[^\]]*class[^\]]*ptc-/.test(selector)) {
-          reject('UI_SURFACE_LOCAL_STYLE', `${relative}: ${selector.trim()}`);
-        }
-      }
-    }
-  }
-}
-
-export function verifySurfaceAuthority(root = sourceRoot) {
-  const surfaces = readSurfaceLedger(root);
+export function verifySurfaceAuthority(root = sourceRoot, { surfaceIds } = {}) {
+  const surfaces = readSurfaceLedger(root).filter(surface => !surfaceIds || surfaceIds.includes(surface.id));
+  if (surfaceIds && surfaces.length !== new Set(surfaceIds).size) reject('UI_SURFACE_UNKNOWN', surfaceIds.join(','));
   verifySurfaceAdapters(root, surfaces);
-  verifyOverrides(root, surfaces);
+  verifySurfaceStyles(root, surfaces);
   const results = surfaces.map(surface => {
     const currentDigest = surfaceSourceDigest(root, surface);
     if (!['confirmed', 'landed'].includes(surface.status) || !surface.confirmation) {
@@ -148,6 +155,84 @@ export function verifySurfaceAuthority(root = sourceRoot) {
     return { id: surface.id, sourceDigest: currentDigest };
   });
   return results;
+}
+
+/**
+ * Dev's UI subflow mutates only the prototype owner's existing Markdown ledger.
+ * The short file lock protects that write, not worktree occupancy or task authority.
+ */
+export function updateSurfaceFeedback(root, action, input) {
+  root = fs.realpathSync(root);
+  const file = containedFile(root, SURFACE_LEDGER);
+  const lock = `${file}.lock`;
+  let descriptor;
+  try { descriptor = fs.openSync(lock, 'wx', 0o600); }
+  catch (error) {
+    if (error.code === 'EEXIST') reject('UI_SURFACE_LEDGER_BUSY', 'retry this ledger write after its owner finishes');
+    throw error;
+  }
+  const temporary = `${file}.${randomUUID()}.tmp`;
+  try {
+    const original = fs.readFileSync(file, 'utf8');
+    const surfaces = readSurfaceLedger(root, { text: original });
+    const surface = surfaces.find(value => value.id === input.surfaceId);
+    if (!surface) reject('UI_SURFACE_UNKNOWN', input.surfaceId);
+    const revision = surface.feedback?.revision ?? 0;
+    const required = (value, field) => {
+      if (typeof value !== 'string' || !value.trim()) reject('UI_SURFACE_ARGUMENT_INVALID', field);
+      return value;
+    };
+    if (action === 'feedback' && surface.feedback?.id === input.feedbackId) {
+      if (surface.feedback.request !== input.request || surface.feedback.requestRef !== input.requestRef) {
+        reject('UI_SURFACE_FEEDBACK_CONFLICT', input.feedbackId);
+      }
+      return surface; // Retry never reopens an already reviewed/confirmed round.
+    }
+    if (Number(input.expectedRevision) !== revision) reject('UI_SURFACE_REVISION_CONFLICT', surface.id);
+    if (action === 'feedback') {
+      surface.feedback = {
+        id: required(input.feedbackId, 'feedbackId'), revision: revision + 1,
+        request: required(input.request, 'request'), requestRef: required(input.requestRef, 'requestRef'), review: null,
+      };
+      surface.status = 'drafting';
+      surface.confirmation = null;
+    } else {
+      if (!surface.feedback || surface.feedback.id !== input.feedbackId) reject('UI_SURFACE_FEEDBACK_CONFLICT', surface.id);
+      const currentDigest = surfaceSourceDigest(root, surface);
+      if (action === 'review') {
+        surface.feedback.review = {
+          sourceDigest: currentDigest, evidence: required(input.evidence, 'evidence'),
+          target: required(input.target, 'target'),
+        };
+        surface.status = 'pending-review';
+        surface.confirmation = null;
+      } else if (action === 'confirm') {
+        if (surface.status !== 'pending-review' || !surface.feedback.review) reject('UI_SURFACE_REVIEW_REQUIRED', surface.id);
+        if (input.sourceDigest !== surface.feedback.review.sourceDigest || input.sourceDigest !== currentDigest) {
+          reject('UI_SURFACE_CONFIRMATION_STALE', surface.id);
+        }
+        surface.confirmation = {
+          by: required(input.by, 'by'), request: required(input.request, 'request'),
+          evidence: required(input.evidence, 'evidence'), sourceDigest: currentDigest,
+          feedbackId: surface.feedback.id, prototypeId: surface.prototypeId,
+        };
+        surface.status = 'confirmed';
+      } else reject('UI_SURFACE_ARGUMENT_INVALID', action);
+      surface.feedback.revision++;
+    }
+    const next = original.replace(marker, `\`\`\`json ui-surface-authority\n${JSON.stringify({ schemaVersion: 1, surfaces }, null, 2)}\n\`\`\``);
+    readSurfaceLedger(root, { text: next }); // Validate before publishing any change.
+    fs.writeFileSync(temporary, next, { flag: 'wx', mode: fs.statSync(file).mode });
+    const fd = fs.openSync(temporary, 'r');
+    try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    if (fs.readFileSync(file, 'utf8') !== original) reject('UI_SURFACE_REVISION_CONFLICT', 'ledger changed outside this writer');
+    fs.renameSync(temporary, file);
+    return surface;
+  } finally {
+    fs.rmSync(temporary, { force: true });
+    fs.closeSync(descriptor);
+    fs.unlinkSync(lock);
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

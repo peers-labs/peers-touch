@@ -37,7 +37,10 @@ For UI paths, read the existing `module-governance.mjs context --changed-file
 <path>` projection's `uiSurfaces`. Follow the complete-surface ledger's prototype,
 source roles and current confirmation. Any UI feedback, including an apparent
 implementation defect, requires prototype review and user confirmation of this
-repair target before production edits. Follow ledger §4.2; a correct prototype
+repair target before production edits. Return to the existing dev Intake and
+register through `dev-work.mjs intake --kind ui-feedback` before edits, then
+use dev's `before-implement` check after current-round confirmation.
+Follow ledger §4.2; a correct prototype
 may remain unchanged. Missing mapping is a coverage gap, not a waiver.
 
 ### 2. Scan `docs/knowledge/**/*.md` for matching `owns:` entries

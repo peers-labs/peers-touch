@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import {
   readSurfaceLedger, verifySurfaceAuthority,
 } from './ui-surface-authority.mjs';
-import { reject } from './ui-surface-source.mjs';
+import { reject, surfaceSourceFiles } from './ui-surface-source.mjs';
 import { verifySurfaceAdapters } from './ui-surface-adapters.mjs';
 
 /** Production-only admission. The Prototype Portal deliberately renders drafts. */
@@ -17,8 +17,8 @@ export function uiSurfaceAuthorityPlugin(repoRoot) {
     buildStart() { starting = verify(); },
     configureServer(server) {
       const surfaces = readSurfaceLedger(root);
-      server.watcher.add(surfaces.flatMap(surface => surface.presentationRoots
-        .concat(surface.prototype.adapter)).map(relative => path.join(root, relative)));
+      server.watcher.add(surfaces.flatMap(surface => surfaceSourceFiles(root, surface))
+        .map(relative => path.join(root, relative)));
       server.watcher.add(path.join(root, 'docs/architecture/engineering/prototypes/README.md'));
       server.middlewares.use((request, response, next) => {
         if (!request.url?.includes('/src/') && !request.url?.includes('/@fs/')) return next();

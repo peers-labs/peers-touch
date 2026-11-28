@@ -78,6 +78,13 @@ Confirm north star, contribution, completion obligations, scope, worktree, and
 separately governed operations. Ask only when a missing fact changes behavior
 or authorization.
 
+For UI feedback or visible adjustments, resolve one surface through pre-edit
+`uiSurfaces` and immediately call this workflow's
+`dev-work.mjs intake --kind ui-feedback`. Follow prototype ledger §4.2 for exact
+arguments. Registration atomically marks the existing ledger drafting and
+clears prior confirmation. It needs no Plan or Task. Missing coverage must be
+resolved before product edits; do not silently downgrade UI feedback.
+
 ### 2. Research
 
 Read governing sources and operational knowledge. Follow actual call paths.
@@ -92,7 +99,10 @@ pre-edit `uiSurfaces`, review/show the prototype, adjust it when needed, and
 obtain user confirmation of this repair target before production integration.
 Follow ledger §4.2 even for implementation defects or small fixes. A correct
 existing prototype can be confirmed unchanged; prior status cannot waive this
-feedback's review and confirmation.
+feedback's review and confirmation. Use this workflow's `ui-review` to bind the
+rendered target and source digest, then `ui-confirm` only after the user actually
+confirms that round. These actions delegate to the prototype ledger owner;
+they do not create another workflow or store.
 
 Choose the owning layer, behavior, data/contracts, failure semantics, and
 verification. Use existing SDKs and components. Obtain user confirmation before
@@ -106,6 +116,10 @@ Preserve unrelated changes. Prepare only runtime resources needed for the next
 verification slice.
 
 ### 5. Implement
+
+For registered UI work, run `dev-work.mjs before-implement --surface <id>`
+before production edits. A stale digest or another feedback round returns to
+Design. Continue verification and delivery through this same lifecycle.
 
 Invoke `pt-read-before-edit` and applicable coding/domain Skills. Keep changes
 inside scope and at the owning layer. Structural replacement must remove the

@@ -32,6 +32,13 @@ integration contracts. Skills define one owner's executable behavior and
 consume machine decisions. Neither may publish a competing end-to-end
 procedure.
 
+UI feedback is a subflow of the existing dev Intake/Design/Implement/Verify/
+Deliver owners. Its feedback round, review and confirmation live only in the
+prototype ledger. Dev delegates mutations there; optional Task progress may
+reference the ledger but cannot copy its status. A correct unchanged prototype
+still requires confirmation of the current feedback round. No UI task engine,
+mandatory Plan/Task, second status store or workspace-wide occupancy is created.
+
 ## Why this is non-negotiable
 
 Duplicating the flow across global docs, architecture docs, and Skills makes
@@ -49,6 +56,12 @@ readable without creating another source of truth.
   than another human procedure.
 - No current workflow document or Skill introduces a versioned workflow name
   or compatibility path.
+- `node --test tooling/scripts/review/ui-surface-authority.test.mjs
+  tooling/scripts/local-dev/dev-work.test.mjs` exercises real dev Intake,
+  current-round confirmation, unchanged targets, concurrent writes and actual
+  Vite rejection of unconfirmed source.
+- Plain-language feedback recognition and arbitrary Shell writes are not
+  described as machine-enforced; enforcement starts with registered feedback.
 
 ## Crosswalks
 

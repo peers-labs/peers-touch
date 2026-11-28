@@ -47,8 +47,10 @@ Before anything else, classify the bug. This determines which path to follow.
 
 ## Phase 1: Debug & Fix
 
-0. **Declare before mutation** — publish and confirm the work item's source and
-   runtime intent through `make dev-start`; use `make dev-update` if scope grows.
+0. **Intake before mutation** — use the existing `pt-dev-workflow` to verify
+   the request, worktree and scope. UI feedback registers through
+   `dev-work.mjs intake --kind ui-feedback`; it needs no Plan or Task. Runtime
+   intent remains with its existing runtime owner.
 1. **Locate governing spec** — `pt-small-fix-discipline` §1: which layer owns this?
 2. **Layer-ownership audit** — `pt-god-view` §3.3.1: is the fix at the correct layer?
 3. **Debug** — use the host-neutral evidence loop: hypothesize → instrument →

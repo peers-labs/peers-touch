@@ -424,11 +424,14 @@ Prototype Portal 支持 worktree / branch 切换：
 
 ## 7. 落地路径
 
-研发人员要求调整界面或反馈“UI 不对”时，先通过既有 pre-edit context 的 `uiSurfaces`
-定位原型和共享呈现源码，按
+研发人员要求调整界面或反馈“UI 不对”时，先交回 `pt-dev-workflow` 的 Intake，
+通过既有 pre-edit context 的 `uiSurfaces` 定位原型和共享呈现源码。调用
+`dev-work.mjs intake --kind ui-feedback` 登记本次反馈后，按
 [`原型总账 §4.2`](../../../docs/architecture/engineering/prototypes/README.md#42-完整界面的确认与生产准入)
 完成 drafting → 原型调校与证据 → 用户明确确认 → 摘要核验 → 生产接线 →
-原始 Journey。原型已正确时仍须展示并确认以它为本次修复目标，
+原始 Journey。送审和已发生的用户确认分别通过同一 dev 入口的 `ui-review`
+与 `ui-confirm` 记录，实现前运行 `before-implement`；不手写另一份状态。
+原型已正确时仍须展示并确认以它为本次修复目标，
 不能因判断为实现缺陷而先改生产。不得替用户确认本次目标。
 
 同为 React Web 时只保留 `packages/ui/` 的一套完整 UI，原型和产品各自

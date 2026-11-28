@@ -31,7 +31,9 @@ layer owns this change and read it before editing:
 
 ## 2. Fix the layer, not the symptom
 
-For UI feedback, invoke `pt-prototype-sync-guardian` and complete prototype
+For UI feedback, return to `pt-dev-workflow` Intake and register through
+`dev-work.mjs intake --kind ui-feedback`; no Plan or Task is required.
+Invoke `pt-prototype-sync-guardian` and complete prototype
 ledger §4.2 before any production fix. Show the prototype, adjust it if needed,
 and obtain confirmation of the repair target. "Implementation bug", "small
 fix", and existing confirmed status do not permit skipping this order.

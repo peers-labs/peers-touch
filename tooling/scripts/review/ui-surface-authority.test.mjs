@@ -5,6 +5,9 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { runCli } from '../local-dev/dev-work.mjs';
 import {
   SURFACE_LEDGER, readSurfaceLedger, surfaceSourceDigest, surfaceContext, verifySurfaceAuthority,
 } from './ui-surface-authority.mjs';
@@ -36,6 +39,10 @@ function fixture(t) {
       allowedSlotTags: [],
     },
     protectedClasses: ['ptc-', 'legacy-example-'], status: 'confirmed', confirmation: null,
+    feedback: {
+      id: 'initial', revision: 1, request: 'Synthetic initial feedback',
+      requestRef: 'fixture://initial', review: null,
+    },
   };
   write('docs/example.md', '# Example');
   write('packages/ui/example/index.ts', "export { Surface } from './surface/Surface';");
@@ -49,9 +56,14 @@ function fixture(t) {
   const save = () => write(SURFACE_LEDGER, `# Ledger\n\n\`\`\`json ui-surface-authority\n${JSON.stringify({ schemaVersion: 1, surfaces: [surface] })}\n\`\`\`\n`);
   const approveSynthetic = () => {
     surface.status = 'confirmed';
+    surface.feedback.review = {
+      sourceDigest: surfaceSourceDigest(root, surface),
+      target: 'Synthetic test target', evidence: 'Synthetic review',
+    };
     surface.confirmation = {
       by: 'user:synthetic', request: 'Synthetic test approval; never a real user confirmation.',
       evidence: 'Synthetic test fixture', sourceDigest: surfaceSourceDigest(root, surface),
+      feedbackId: surface.feedback.id, prototypeId: surface.prototypeId,
     };
     save();
   };
@@ -217,4 +229,225 @@ test('ledger rejects duplicate authorities, unsafe paths and agent-generated con
   f.surface.presentationRoots = ['../outside'];
   f.save();
   assert.throws(() => readSurfaceLedger(f.root), /UI_SURFACE_OWNER_INVALID/);
+});
+
+test('P1 same-name function parameters cannot replace the imported shared component', async t => {
+  const f = fixture(t);
+  f.write(f.surface.production.adapter, f.adapter.replace('Adapter()', 'Adapter(Surface: any)'));
+  await assert.rejects(build(f.vite()), /UI_SURFACE_ADAPTER_REIMPLEMENTED/);
+});
+
+test('P1 external dedicated presentation imports enter the digest and pre-edit mapping', async t => {
+  const f = fixture(t);
+  const dependency = 'packages/ui/example/dedicated.ts';
+  f.write(dependency, "export const label = 'approved';");
+  f.write('packages/ui/example/surface/Surface.tsx',
+    "import { label } from '../dedicated'; const React = { createElement: (...args) => args }; export function Surface() { return <span>{label}</span>; }");
+  f.approveSynthetic();
+  await build(f.vite());
+  assert.equal(surfaceContext(f.root, [dependency])[0].id, f.surface.id);
+  f.write(dependency, "export const label = 'unreviewed';");
+  await assert.rejects(build(f.vite()), /UI_SURFACE_CONFIRMATION_STALE/);
+});
+
+test('P1 intermediate host cannot inject a style tag while retaining a real import', async t => {
+  const f = fixture(t);
+  const host = 'apps/desktop/src/Host.tsx';
+  f.surface.production.entryChain.splice(1, 0, host);
+  f.write(f.surface.production.entryChain[0], "import { Host } from './Host'; console.log(Host());");
+  f.write(host, "import { Adapter } from './Adapter'; const React = { createElement: (...args) => args }; export function Host() { return <><style>{'.ptc-example {color:red}'}</style><Adapter /></>; }");
+  f.approveSynthetic();
+  await assert.rejects(build(f.vite()), /UI_SURFACE_LOCAL_STYLE/);
+});
+
+test('P1 hook classes cannot create an unprotected production-only style namespace', async t => {
+  const f = fixture(t);
+  f.write(f.surface.production.adapter, f.adapter.replace('<Surface />',
+    '<Surface hooks={{classNames:{panel:"private-panel"}}} />'));
+  f.write('apps/desktop/src/override.css', '.private-panel { color: red; }');
+  await assert.rejects(build(f.vite()), /UI_SURFACE_HOOKS_INVALID/);
+});
+
+test('P1 escaped classes and legacy class attribute selectors cannot override shared UI', async t => {
+  const f = fixture(t);
+  for (const selector of ['[class~="legacy-example-panel"]', '[class*="legacy-example-"]',
+    '.legacy-example-\\70 anel', ':is(.ptc-example)', '[CLASS~="ptc-example" i]',
+    ':is(.ptc-example, [title!="invalid-branch"])']) {
+    f.write('apps/desktop/src/override.css', `${selector} { color: red; }`);
+    await assert.rejects(build(f.vite()), /UI_SURFACE_LOCAL_STYLE/);
+  }
+});
+
+test('hook props fail closed on spreads, dynamic classes and shadowed memo factories', t => {
+  const f = fixture(t);
+  for (const expression of ['<Surface {...props} />',
+    '<Surface hooks={{classNames:{panel:namespace}}} />',
+    '<Surface hooks={{...props}} />', '<Surface hooks={props} />']) {
+    f.write(f.surface.production.adapter, f.adapter.replace('<Surface />', expression));
+    assert.throws(() => verifySurfaceAuthority(f.root), /UI_SURFACE_HOOKS_INVALID/);
+  }
+  f.write(f.surface.production.adapter, f.adapter.replace('<Surface />',
+    '<Surface hooks={{classNames:{panel:"legacy-example-panel"}}} />'));
+  assert.equal(verifySurfaceAuthority(f.root).length, 1);
+});
+
+test('protected hook objects cannot escape to mutation through aliases or helper calls', t => {
+  const f = fixture(t);
+  const source = "import { Surface } from '@example/ui'; const React = { createElement: (...args) => args }; export function Adapter() { const hooks = {classNames:{panel:'legacy-example-panel'}}; MUTATION return <Surface hooks={hooks} />; }";
+  for (const mutation of [
+    "hooks.classNames.panel = 'private-panel';",
+    "const classes = hooks.classNames; classes.panel = 'private-panel';",
+    "Object.assign(hooks, {classNames:{panel:'private-panel'}});",
+  ]) {
+    f.write(f.surface.production.adapter, source.replace('MUTATION', mutation));
+    assert.throws(() => verifySurfaceAuthority(f.root), /UI_SURFACE_HOOKS_INVALID/);
+  }
+});
+
+test('dedicated CSS imports without dot prefixes are hashed and invalidate confirmation', async t => {
+  const f = fixture(t);
+  f.write('packages/ui/example/surface/surface.css', "@import 'external.css';");
+  f.write('packages/ui/example/surface/external.css', '.ptc-example { color: green; }');
+  f.approveSynthetic();
+  await build(f.vite());
+  f.write('packages/ui/example/surface/external.css', '.ptc-example { color: red; }');
+  await assert.rejects(build(f.vite()), /UI_SURFACE_CONFIRMATION_STALE/);
+});
+
+test('unquoted CSS import URLs outside the declared directory invalidate confirmation', async t => {
+  const f = fixture(t);
+  f.write('packages/ui/example/surface/surface.css', '@import url(../dedicated.css) screen;');
+  f.write('packages/ui/example/dedicated.css', '.ptc-example { color: green; }');
+  f.approveSynthetic();
+  await build(f.vite());
+  assert.equal(surfaceContext(f.root, ['packages/ui/example/dedicated.css'])[0].id, f.surface.id);
+  f.write('packages/ui/example/dedicated.css', '.ptc-example { color: red; }');
+  await assert.rejects(build(f.vite()), /UI_SURFACE_CONFIRMATION_STALE/);
+});
+
+test('an export cannot impersonate a declared presentation file using a filename prefix', t => {
+  const f = fixture(t);
+  f.surface.presentationRoots = ['packages/ui/example/surface/Surface.tsx'];
+  f.write('packages/ui/example/surface/Surface.tsx-private.tsx',
+    'export function Surface() { return null; }');
+  f.write(f.surface.exportFile, "export { Surface } from './surface/Surface.tsx-private';");
+  f.approveSynthetic();
+  assert.throws(() => verifySurfaceAuthority(f.root), /UI_SURFACE_EXPORT_DISCONNECTED/);
+});
+
+function dev(f, action, options = {}) {
+  return runCli([action, '--workspace-root', f.root, ...Object.entries(options).flatMap(([key, value]) =>
+    [`--${key}`, String(value)])], { output() {} });
+}
+
+function intake(f, options = {}) {
+  return dev(f, 'intake', {
+    kind: 'ui-feedback', surface: f.surface.id, feedback: 'round-2',
+    'expected-revision': 1, request: 'Panel needs review', 'request-ref': 'fixture://feedback/2',
+    ...options,
+  });
+}
+
+test('dev intake registers new UI feedback before edits, with no Plan or Task store', async t => {
+  const f = fixture(t);
+  const before = surfaceSourceDigest(f.root, f.surface);
+  assert.deepEqual(dev(f, 'intake').uiSurfaces, []);
+  const result = intake(f);
+  assert.equal(result.status, 'drafting');
+  assert.equal(result.confirmation, null);
+  assert.equal(surfaceSourceDigest(f.root, result), before);
+  assert.equal(fs.existsSync(path.join(f.root, '.dev-workflow')), false);
+  await assert.rejects(build(f.vite()), /UI_SURFACE_CONFIRMATION_REQUIRED/);
+});
+
+test('dev feedback retries are idempotent; conflicting reuse and stale writers cannot overwrite', t => {
+  const f = fixture(t);
+  const first = intake(f);
+  assert.deepEqual(intake(f), first);
+  assert.throws(() => intake(f, { request: 'different request' }), /UI_SURFACE_FEEDBACK_CONFLICT/);
+  assert.throws(() => intake(f, { feedback: 'round-3', 'request-ref': 'fixture://3' }), /UI_SURFACE_REVISION_CONFLICT/);
+  assert.equal(readSurfaceLedger(f.root)[0].feedback.id, 'round-2');
+});
+
+test('dev unchanged prototype requires review and current-round user confirmation', async t => {
+  const f = fixture(t);
+  const draft = intake(f);
+  const base = { surface: draft.id, feedback: draft.feedback.id };
+  assert.throws(() => dev(f, 'ui-confirm', {
+    ...base, 'expected-revision': 2,
+  }), /UI_SURFACE_REVIEW_REQUIRED/);
+  const reviewed = dev(f, 'ui-review', {
+    ...base, 'expected-revision': 2, target: 'Use the existing prototype unchanged', evidence: 'fixture://rendered-target',
+  });
+  assert.throws(() => dev(f, 'before-implement', { surface: draft.id }), /UI_SURFACE_CONFIRMATION_REQUIRED/);
+  const confirmed = dev(f, 'ui-confirm', {
+    ...base, 'expected-revision': reviewed.feedback.revision,
+    'source-digest': reviewed.feedback.review.sourceDigest,
+    by: 'user:synthetic', request: 'Synthetic approval of this unchanged target', evidence: 'fixture://user/2',
+  });
+  assert.equal(confirmed.status, 'confirmed');
+  assert.deepEqual(intake(f), confirmed); // A delivery retry cannot revoke this approval.
+  assert.equal(dev(f, 'before-implement', { surface: draft.id }).length, 1);
+  await build(f.vite());
+});
+
+test('dev refuses stale review, old feedback approval, invalid selection and agent confirmation', t => {
+  const f = fixture(t);
+  const draft = intake(f);
+  const base = { surface: draft.id, feedback: draft.feedback.id };
+  const reviewed = dev(f, 'ui-review', {
+    ...base, 'expected-revision': 2, target: 'Review target', evidence: 'fixture://render',
+  });
+  const approval = {
+    ...base, 'expected-revision': reviewed.feedback.revision, 'source-digest': reviewed.feedback.review.sourceDigest,
+    by: 'user:synthetic', request: 'Synthetic approval', evidence: 'fixture://approval',
+  };
+  assert.throws(() => dev(f, 'ui-confirm', { ...approval, by: 'agent:synthetic' }), /UI_SURFACE_CONFIRMATION_INVALID/);
+  assert.throws(() => dev(f, 'ui-confirm', { ...approval, feedback: 'initial' }), /UI_SURFACE_FEEDBACK_CONFLICT/);
+  f.write('packages/ui/example/surface/surface.css', '.ptc-example { border-radius: 30px; }');
+  assert.throws(() => dev(f, 'ui-confirm', approval), /UI_SURFACE_CONFIRMATION_STALE/);
+  assert.throws(() => intake(f, { surface: 'unknown' }), error => error.code === 'UI_SURFACE_SELECTION_REQUIRED');
+  assert.equal(fs.existsSync(path.join(f.root, `${SURFACE_LEDGER}.lock`)), false);
+});
+
+test('dev path-based intake resolves a surface and derives stable feedback identity from the request', t => {
+  const f = fixture(t);
+  const options = {
+    kind: 'ui-feedback', 'scope-paths': f.surface.production.adapter, 'expected-revision': 1,
+    request: 'Path-selected feedback', 'request-ref': 'fixture://path-request',
+  };
+  const first = dev(f, 'intake', options);
+  assert.match(first.feedback.id, /^feedback-[a-f0-9]{24}$/);
+  assert.deepEqual(dev(f, 'intake', options), first);
+});
+
+test('a drafting surface does not block another selected surface or ordinary dev intake', t => {
+  const f = fixture(t);
+  const other = structuredClone(f.surface);
+  other.id = 'another-surface';
+  other.feedback.id = 'another-initial';
+  other.confirmation.feedbackId = other.feedback.id;
+  other.feedback.review.sourceDigest = surfaceSourceDigest(f.root, other);
+  other.confirmation.sourceDigest = other.feedback.review.sourceDigest;
+  f.write(SURFACE_LEDGER, `\`\`\`json ui-surface-authority\n${JSON.stringify({ schemaVersion: 1, surfaces: [f.surface, other] })}\n\`\`\``);
+  intake(f);
+  assert.equal(dev(f, 'before-implement', { surface: other.id }).length, 1);
+  assert.deepEqual(dev(f, 'intake', { 'scope-paths': 'apps/station' }).uiSurfaces, []);
+});
+
+test('concurrent dev intake writers preserve one winner and leave no lock or task store', async t => {
+  const f = fixture(t);
+  const execute = promisify(execFile);
+  const cli = new URL('../local-dev/dev-work.mjs', import.meta.url);
+  const results = await Promise.allSettled(['left', 'right'].map(feedback =>
+    execute(process.execPath, [cli.pathname, 'intake', '--workspace-root', f.root,
+      '--kind', 'ui-feedback', '--surface', f.surface.id, '--feedback', feedback,
+      '--expected-revision', '1', '--request', 'Concurrent feedback', '--request-ref', `fixture://${feedback}`],
+    { cwd: f.root })));
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+  const loser = results.find(result => result.status === 'rejected');
+  assert.match(loser.reason.stderr, /UI_SURFACE_(?:REVISION_CONFLICT|LEDGER_BUSY)/);
+  assert.equal(readSurfaceLedger(f.root)[0].feedback.revision, 2);
+  assert.equal(fs.existsSync(path.join(f.root, `${SURFACE_LEDGER}.lock`)), false);
+  assert.equal(fs.existsSync(path.join(f.root, '.dev-workflow')), false);
 });

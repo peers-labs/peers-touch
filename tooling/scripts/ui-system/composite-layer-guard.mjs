@@ -21,6 +21,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { verifySurfaceStyles } from '../review/ui-surface-styles.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../..');
@@ -35,13 +36,6 @@ const FORBIDDEN_IMPORT_PATTERNS = [
   /^lucide-react/,
   /^zustand/,
   /^@peers-touch\/(?!ui$)/, // only @peers-touch/ui is allowed among workspace pkgs
-];
-
-/** Layers that consume the composite but must not own `.ptc-*` styles. */
-const APP_STYLE_ROOTS = [
-  'apps/desktop/src',
-  'apps/mobile/src',
-  'packages/prototypes',
 ];
 
 const CODE_EXT = new Set(['.ts', '.tsx', '.js', '.jsx']);
@@ -86,26 +80,14 @@ function checkDependencyClosure() {
   return failures;
 }
 
-const PTC_SELECTOR_RE = /\.ptc-[a-zA-Z][a-zA-Z0-9-]*/g;
-
 function checkStyleOwnership() {
-  const failures = [];
-  for (const root of APP_STYLE_ROOTS) {
-    const abs = path.join(repoRoot, root);
-    if (!fs.existsSync(abs)) continue;
-    for (const file of walk(abs)) {
-      if (path.extname(file) !== '.css') continue;
-      const lines = fs.readFileSync(file, 'utf8').split('\n');
-      lines.forEach((line, i) => {
-        if (line.trim().startsWith('/*') || line.trim().startsWith('*') || line.trim().startsWith('//')) return;
-        if (PTC_SELECTOR_RE.test(line)) {
-          failures.push(`${rel(file)}:${i + 1}: app layer defines composite-only .ptc-* selector`);
-        }
-        PTC_SELECTOR_RE.lastIndex = 0;
-      });
-    }
+  try {
+    verifySurfaceStyles(repoRoot, [{ protectedClasses: ['ptc-'] }]);
+    return [];
+  } catch (error) {
+    if (!error.code?.startsWith('UI_SURFACE_')) throw error;
+    return [error.message];
   }
-  return failures;
 }
 
 function main() {
@@ -118,7 +100,7 @@ function main() {
     for (const failure of failures) console.error(`  - ${failure}`);
     process.exit(1);
   }
-  console.log('composite-layer-guard: PASS (dependency closure + .ptc-* style ownership)');
+  process.stdout.write('composite-layer-guard: PASS (dependency closure + .ptc-* style ownership)\n');
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) main();
