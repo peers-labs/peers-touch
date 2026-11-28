@@ -1,6 +1,6 @@
 # Composite Promotion Pilot — Integration
 
-> **Status**: draft · **Owner**: Client Platform / UI System
+> **Status**: 搜索实施合同；P2/P3 为候选 · **Owner**: Client Platform / UI System
 > 描述双宿主如何接入复合层、测试如何改造、门禁如何联动、如何回滚。
 
 ## 1. 宿主适配模式（统一形态）
@@ -40,14 +40,19 @@ Prototype host adapter                 Desktop host adapter
 - `SearchOverlay.tsx` 瘦身为适配层：`useSearchStore`/`searchPresentation`/
   `searchFrames`/`searchActions` 保留，把 frame 收敛为 `SearchSurfaceModel`；
   roving、IME、copy 的**DOM 行为**进复合件，store 动作仍由 intents 回调触发。
-- `SearchHost.tsx`（lazy 挂载、⌘K）不改。
-- `functions.ts`、`SearchResultMeta.tsx`、coverage Popover 留宿主，经插槽接入。
-- `SearchOverlay.css` 中与复合件重复的规则删除；保留宿主专属（Popover 等）。
+- `SearchHost.tsx` 保留 lazy 加载和 ⌘K 入口；首次访问后保留适配器，让共享组件完成退出帧。
+- `functions.ts`、`SearchResultMeta.tsx` 和来源说明的数据装配留宿主。
+  说明内容通过 `model.info` 进入共享 Popover，刷新通过 `onRefresh` 调用强制查询。
+- `SearchOverlay.css` 已删除；浮层及说明内容的样式全部由共享 `search.css` 管理。
+  既有命令菜单通过共享包的 `search.css` 导出继续使用同一套样式，清除旧路径引用。
+  命令执行仍由命令菜单负责，不计入本次搜索业务验收。
+- `SearchHost` 首次打开后保留适配器，传递真实 `open`，由共享组件完成退出帧和焦点恢复。
+  宿主只保留访问寿命；显示状态、选中与滚位继续来自原 Search store。
 
 阻断判据：若 progressive frame 的 `isProgressive/pendingSources/stalled`
 无法用 model 字段表达而必须把 store 传入组件，按 design §8.1 停为阻塞。
 
-### 2.2 IdentityProfileCard（组件二）
+### 2.2 IdentityProfileCard（后续候选，本轮不实施）
 
 原型侧：
 
@@ -66,7 +71,7 @@ Prototype host adapter                 Desktop host adapter
   `ChatDetailPanel` sheet）只改 import 与装配，变体语义不变。
 - `profileCard.css` 随组件搬迁；`northstar.css` 中 popover 外壳规则留宿主。
 
-### 2.3 ConversationRail（组件三）
+### 2.3 ConversationRail（后续候选，本轮不实施）
 
 原型侧：
 
@@ -90,7 +95,7 @@ Prototype host adapter                 Desktop host adapter
 
 | 现有测试 | 改造后 |
 |---|---|
-| `searchOverlayAlignment.test.ts`（源码字符串） | 删除字符串断言；复合包内 `GlobalSearchSurface.test.tsx` 覆盖 roving/IME/Esc/分组/空态/双 hooks；Desktop 新接线测试断言 hooks 常量与 intents 映射 |
+| `searchOverlayAlignment.test.ts` | 6 项现有结构检查读取唯一共享 CSS，继续检查输入焦点、固定轨道、覆盖与动效；共享行为测试及真实入口补充行为证据，结构检查不作端到端证明 |
 | `profileCardAlignment.test.ts` | 复合包 `IdentityProfileCard.test.tsx` 覆盖三态渲染、插槽、技术详情回调、双 hooks；像素级 CSS 断言转为对复合包 CSS 的单一测试 |
 | `chatRailAlignment.test.ts`、`chatContactsAlignment.test.ts` | rail 部分进复合包 `ConversationRail.test.tsx`；contacts 相关断言保留在 Desktop（该面未晋升），删掉其中指向行 DOM 的字符串断言 |
 | north-star.suite.json | 选择器不改；实现引用路径（implementationRefs）更新到复合包；evaluate-specimens  digest 重新绑定 |
@@ -104,13 +109,26 @@ Prototype host adapter                 Desktop host adapter
 5. 插槽缺省与传入两种路径；
 6. 快照式 DOM 结构断言（锁定 ARIA role 与层级）。
 
-## 4. 门禁与登记联动（每组件交付时勾选）
+## 4. 门禁与登记联动
+
+完整 Search 的生命周期由
+[原型总账 §4.2](../../../../engineering/prototypes/README.md#42-完整界面的确认与生产准入)
+负责。总账绑定呈现源码摘要、双 adapter 和实际入口；pre-edit context
+返回该映射。Desktop Vite 在启动、热更新及构建时检查确认，review/CI
+检查 adapter 结构、全宿主共享 CSS 边界及生命周期反例。
+
+后续可见调整须先改原型使用的共享 UI，再取得用户对该版本的确认；
+不能先改 Desktop DOM/CSS 后把原型同步成结果。原型可展示草稿，
+生产拒绝摘要不匹配的草稿。确认记录不等于原 Native Journey 或正式
+Acceptance 的通过证据。
 
 - [ ] `registry.ts`：对应 GAP 转 implemented；双宿主切换完成后转 vetted 并登记 consumedBy。
 - [ ] `catalogue.ts`：新增复合能力 id（建议 `ui.comp.search-surface`、
       `ui.comp.identity-profile-card`、`ui.comp.conversation-rail`）与槽位 anatomy。
 - [ ] `prototype-import-baseline.json`：私写件删除后重算，只减不增。
-- [ ] `primitive-layer-guard.mjs`：扩展或新增 composite 守卫，禁 app 层 `.ptc-*`。
+- [x] `primitive-layer-guard.mjs` 覆盖 `.ptc-*`；完整界面守卫默认扫描所有
+      app/prototype CSS，禁止覆盖共享类与旧宿主钩子，不把全量历史原语债务
+      纳入本次迁移。
 - [ ] `architecture-modules.json`：本模块投影（文档评审通过即登记，实现状态随组件更新）。
 - [ ] locale：新 key 同步 en/zh-CN 与原型 STRINGS，过 `check:locales`。
 - [ ] `north-star.suite.json` implementationRefs 与证据 digest 重跑。
@@ -126,8 +144,22 @@ Prototype host adapter                 Desktop host adapter
   → primitive-layer-guard / prototype-import-guard
 ```
 
-Native acceptance gate 不在试点内执行，但通过 data-model.md 选择器清单做
-静态断裂检查（grep 全部门禁选择器在新 DOM 中仍可命中）。
+上述源码检查只排除局部接线错误。搜索还须完成
+[UI-AC01/02/03](./acceptance-contract.md)：原型实际入口、同一份原生展示数据和
+主题的回放对照、可还原的一处共享可见修改，以及原 Native Desktop Journey。
+
+`chat-device-search-native-e2e` 在 Catalog 显式要求 `desktop-macos-native` 和
+`acceptance-binary`。环境负责 Station/Actor fixture，Cell 负责当前源码二进制
+与原生输入资格；Runner 将二者都交给原 Gate。此 Journey 不操作文件选择器，
+其附件由既有 Messaging 上传动作创建，因此不要求额外 chooser capability。
+不在命令字符串里手工设置 cell 来代替 Runner 的清单与资源生命周期。
+
+原 Gate 的 `presentationCaptures` 记录完整 `SearchSurfaceData`、已解析文字及
+pt 主题。把其中一次 capture 保存为 JSON，原型启动后使用
+`/?site=frontend-eles&eles=directions&searchCapture=/@fs/<capture绝对路径>`，
+从原左轨搜索按钮打开；本地同源文件回放只存在于原型，不进入发布版本。
+对照时取 capture 的实际 viewport，比较内容、顺序、所有轨道和焦点；截图用于
+视觉复核。业务通过状态仍以原 Gate 为准，回放不能授权资源或模拟业务通过。
 
 ## 6. 回滚策略
 

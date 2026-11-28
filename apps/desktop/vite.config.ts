@@ -9,6 +9,7 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 
 import { projectedBuildSourceCommit } from './buildSourceIdentity'
+import { uiSurfaceAuthorityPlugin } from '../../tooling/scripts/review/ui-surface-vite.mjs'
 
 const configDir = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
@@ -63,7 +64,7 @@ function appletDistPlugin() {
 const worktreeInfo = getWorktreeInfo()
 
 export default defineConfig(({ command }) => ({
-  plugins: [react(), wasm(), appletDistPlugin()],
+  plugins: [uiSurfaceAuthorityPlugin(path.resolve(configDir, '../..')), react(), wasm(), appletDistPlugin()],
   base: './',
   define: {
     __PT_DEV_WORKTREE__: JSON.stringify(worktreeInfo.worktreeName),

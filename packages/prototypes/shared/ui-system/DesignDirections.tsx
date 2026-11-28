@@ -29,6 +29,7 @@ import { AgentFeature } from './agent/AgentFeature';
 import { MomentsFeature, type MomentsNavigationRequest } from './moments/MomentsFeature';
 import { MOMENT_SEEDS } from './moments/moments-data';
 import { GlobalSearchOverlay } from './search/GlobalSearchOverlay';
+import type { SearchSurfaceCapture } from '@peers-touch/ui-composite';
 import type { GlobalSearchTarget } from './search/GlobalSearchOverlay';
 import { NotificationBell } from './notifications/NotificationBell';
 import { SelfCardPopover } from './SelfCardPopover';
@@ -112,6 +113,25 @@ export function DesignDirections({ assemblyStudy = false }: { assemblyStudy?: bo
   const [railTab, setRailTab] = useState<RailTab>(() =>
     assemblyStudy || new URLSearchParams(window.location.search).get('drawer') === 'assembly' ? 'chat' : 'moments');
   const [searchOpen, setSearchOpen] = useState(false);
+  const [searchCapture, setSearchCapture] = useState<SearchSurfaceCapture | null>(null);
+  useEffect(() => {
+    const capturePath = new URLSearchParams(window.location.search).get('searchCapture');
+    if (!capturePath) return;
+    const url = new URL(capturePath, window.location.origin);
+    if (url.origin !== window.location.origin || !url.pathname.startsWith('/@fs/')) return;
+    const abort = new AbortController();
+    void fetch(url, { signal: abort.signal }).then(response => {
+      if (!response.ok) throw new Error('Search capture unavailable');
+      return response.json();
+    }).then((capture: SearchSurfaceCapture) => {
+      if (!capture.model || !Array.isArray(capture.model.groups)
+        || typeof capture.model.query !== 'string' || !capture.labels || !capture.theme) {
+        throw new Error('Invalid Search presentation capture');
+      }
+      setSearchCapture(capture);
+    }).catch(error => { if (!abort.signal.aborted) console.error(error); });
+    return () => abort.abort();
+  }, []);
   const [chatNav, setChatNav] = useState<ChatNavigationRequest | null>(null);
   const [newChatSignal, setNewChatSignal] = useState(0);
   const [chatUnread, setChatUnread] = useState(0);
@@ -257,7 +277,7 @@ export function DesignDirections({ assemblyStudy = false }: { assemblyStudy?: bo
       </div>
 
       <UIProvider theme={assemblyStudy ? assemblyMode : 'light'} className={`sk-theme sk-skin-${skinId}`}
-        style={assemblyStudy ? assemblyTheme(assemblyMode) : PT_BRIDGE}>
+        style={searchCapture ? searchCapture.theme : assemblyStudy ? assemblyTheme(assemblyMode) : PT_BRIDGE}>
       <div className="sk-shell"
         data-wallpaper={noWallpaper ? 'none' : 'image'} style={shellStyle}>
         <div className="sk-shell-bg" aria-hidden="true">
@@ -342,9 +362,12 @@ export function DesignDirections({ assemblyStudy = false }: { assemblyStudy?: bo
       </div>
 
       <GlobalSearchOverlay
+        key={searchCapture ? JSON.stringify(searchCapture.model) : 'seed'}
         open={searchOpen}
         grammar={cmdGrammar}
         onClose={() => setSearchOpen(false)}
+        sample={searchCapture?.model}
+        sampleLabels={searchCapture?.labels}
         onNavigate={handleSearchNavigate} />
       </UIProvider>
     </div>

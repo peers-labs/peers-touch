@@ -1,6 +1,6 @@
 # Composite Promotion Pilot — Module Layout
 
-> **Status**: draft · **Owner**: Client Platform / UI System
+> **Status**: 搜索已实接，P2/P3 仍为候选 · **Owner**: Client Platform / UI System
 > 本文件修订父模块 [../module-layout.md](../module-layout.md) 的分层口径；
 > 评审通过后父文件加反向链接，原「业务 Pattern 留宿主」表述保留并增加复合层例外。
 

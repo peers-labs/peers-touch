@@ -4,6 +4,12 @@ Search is one Shell overlay. It inherits shared UI Identity; no separate
 Search module skin is defined. Its main subject is the readable result list,
 with the input as the action rail and the field as the loading-feedback owner.
 
+The complete UI is shared with the confirmed prototype through
+`GlobalSearchSurface` and its `search.css`. Desktop adapts the existing
+presentation/actions and supplies retained selection/scroll; it does not own
+a competing Search layout. The shared panel uses the confirmed 660px width,
+18px radius and 200ms entrance, with the fixed viewport-bounded tracks below.
+
 The opacity-only entrance runs once when the overlay mounts in a visible
 document, unless reduced motion is requested. Its component-local marker
 retires on animation completion or when the document becomes hidden. Mounting
@@ -18,6 +24,9 @@ a suspended WebView animation must not retain an invisible Search surface.
   immediately.
 - Until the newest response arrives, keep the previous readable results,
   order, highlight query, group title, selection and scroll position.
+- Per-source progressive events do not replace a committed frame, including
+  an empty result. They present first loading or resume after the authority
+  owner has concealed that frame; the fused response commits new input.
 - Commit the result, its query and its mode together. A new result query/mode
   resets list selection and scroll once; refreshing or appending the same
   query preserves position.
@@ -47,10 +56,22 @@ the Zustand store exposes semantic presentation state only.
 Native Search/Messaging remains the authority for read scope, source revision,
 expiry, permission, cancellation and opening. Check native read state before
 cache admission and after a read. Placeholder data never extends its native
-lease. Clear private projections and query partitions on scope, session,
-Station or matching Messaging invalidation. Hide a displayed response at the
-earliest expiry/lease deadline even without input. Reconcile on focus and at
-the existing two-second interval; unreadable/unknown data fails closed.
+lease. Clear private projections and query partitions on scope, session or
+Station replacement. A matching source invalidation immediately conceals that
+source and leaves Search idle until a fresh original-owner read completes.
+It releases the prior epoch's shared read-state check so that check cannot
+consume the new invalidation wake. Equivalent checks within the current epoch
+still share completion; late checks cannot clear or publish over their replacement.
+
+Reconcile on focus/visibility, source invalidations and stored-response lease
+expiry. Same-scope expiry reacquisition retains the qualified display while
+checking the original owner; unreadable/unknown state fails closed.
+Owner-checked no-store frames have no periodic or expiry replay timer.
+Focus or visibility reconciliation keeps an active query or continuation
+running under its original read-state checks and deadline. A check that began
+before that request also yields after its read-state await. Source invalidation,
+new user intent and identity changes still cancel at their existing owners;
+a loading state without an active request may start the required read.
 
 Query storage is bounded to 32 frames/640 items, with at most 200 displayed
 items. Partial results do not become reusable complete cache entries.

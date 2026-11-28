@@ -10,7 +10,11 @@ const returnBarSource = readFileSync(
   'utf8',
 );
 const stylesheet = readFileSync(
-  new URL('./SearchOverlay.css', import.meta.url),
+  new URL('../../../../../packages/ui/composite/src/search/search.css', import.meta.url),
+  'utf8',
+);
+const surfaceSource = readFileSync(
+  new URL('../../../../../packages/ui/composite/src/search/GlobalSearchSurface.tsx', import.meta.url),
   'utf8',
 );
 
@@ -36,32 +40,32 @@ describe('search command palette alignment (composite-promotion adapter)', () =>
     expect(overlaySource).toContain("'pt-search-scrim'");
     expect(overlaySource).toContain("'pt-search-panel'");
     // ARIA hooks are delivered through composite; adapter confirms its slot.
-    expect(overlaySource).toContain('infoPopoverSlot');
+    expect(overlaySource).toContain('info:');
     expect(overlaySource).toContain('SearchResultMeta');
   });
 
   it('uses the peers Popover for the coverage info affordance', () => {
-    expect(overlaySource).toContain('Popover as PeersPopover');
-    expect(overlaySource).toContain('<PeersPopover');
+    expect(surfaceSource).toContain('Popover as PeersPopover');
+    expect(surfaceSource).toContain('<PeersPopover');
   });
 
   it('maps the palette surface onto pt tokens in CSS instead of JS antd tokens', () => {
-    expect(stylesheet).toContain('--pt-search-surface: var(--pt-raised)');
-    expect(stylesheet).toContain('--pt-search-wash: var(--pt-primarySubtle)');
+    expect(stylesheet).toContain('background: var(--pt-overlay)');
+    expect(stylesheet).toContain('background: var(--pt-primarySubtle)');
     expect(stylesheet).not.toMatch(/ant-modal/);
-    expect(stylesheet).toContain('.pt-search-scrim');
-    expect(stylesheet).toContain('.pt-search-panel');
+    expect(stylesheet).toContain('.ptc-search-scrim');
+    expect(stylesheet).toContain('.ptc-search-panel');
+    expect(overlaySource).not.toContain("import './SearchOverlay.css'");
   });
 
-  it('expresses focus as a hairline + soft ring, never an offset square outline', () => {
+  it('expresses focus at the input rail hairline, never an offset square outline', () => {
     // north-star global-search spec §6: the embedded input's square outline
     // is suppressed; focus is a hairline color change plus a subtle ring so
     // the field does not paint a heavy double frame.
-    expect(stylesheet).toContain('.pt-search-field:focus-within');
-    expect(stylesheet).toContain('border-color: var(--pt-focus)');
-    expect(stylesheet).toContain('box-shadow: 0 0 0 2px var(--pt-primarySubtle)');
-    expect(stylesheet).not.toMatch(/\.pt-search-field:focus-within\s*\{[^}]*outline-offset/);
-    expect(stylesheet).toContain('.pt-search-field input:focus-visible { outline: none; }');
+    expect(stylesheet).toContain('.ptc-search-field:focus-within');
+    expect(stylesheet).toContain('border-bottom-color: color-mix(in srgb, var(--pt-primary) 38%, var(--pt-border))');
+    expect(stylesheet).not.toMatch(/\.ptc-search-field:focus-within\s*\{[^}]*outline-offset/);
+    expect(stylesheet).toContain('.ptc-search-panel .ptc-search-input:focus-visible { outline: none; }');
   });
 
   it('renders the return bar actions as peers Buttons', () => {

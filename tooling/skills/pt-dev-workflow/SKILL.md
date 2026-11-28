@@ -86,6 +86,14 @@ collect equivalent evidence before fixing.
 
 ### 3. Design
 
+For any UI feedback or visible adjustment, including "UI 不对", invoke
+`pt-prototype-sync-guardian` before production edits. Resolve the surface from
+pre-edit `uiSurfaces`, review/show the prototype, adjust it when needed, and
+obtain user confirmation of this repair target before production integration.
+Follow ledger §4.2 even for implementation defects or small fixes. A correct
+existing prototype can be confirmed unchanged; prior status cannot waive this
+feedback's review and confirmation.
+
 Choose the owning layer, behavior, data/contracts, failure semantics, and
 verification. Use existing SDKs and components. Obtain user confirmation before
 implementing a new product/architecture/accepted execution design when

@@ -106,14 +106,16 @@ jobs:
       - name: Install review framework dependencies
         run: python3 -m pip install -r tooling/acceptance/requirements.txt
 
-      - name: Install plan validation fixture
+      - name: Install review Node fixtures
         run: |
-          # planctl.mjs -> module-governance.mjs imports the yaml package.
-          # Keep this version in sync with the yaml devDependency in
-          # package.json and pnpm-lock.yaml. --no-save/--no-package-lock
-          # provisions node_modules only; the manifest and lockfile stay
-          # unchanged because yaml is already a repo devDependency.
-          npm install --no-save --no-package-lock yaml@2.9.1
+          # Plan context and surface admission use yaml and the TSX parser.
+          # Surface lifecycle tests exercise actual Vite serve/build.
+          # Install fixtures together so later no-save installs cannot prune
+          # dependencies required by an earlier validation step.
+          # Versions follow the repository lockfile; no manifests are changed.
+          npm install --no-save --no-package-lock \
+            yaml@2.9.1 typescript@5.9.3 vite@7.3.6 \
+            shell-quote@1.10.0 knip@5.43.6
 
       - name: Validate explicit execution plans
         run: |
@@ -130,20 +132,6 @@ jobs:
           python3 -m unittest tooling.acceptance.tests.test_execution_plan
           python3 tooling/scripts/acceptance-plan-test.py
           python3 tooling/scripts/acceptance-run-test.py
-
-      - name: Install shell-quote audit fixture
-        run: |
-          # Keep this version in sync with the shell-quote entry in pnpm-lock.yaml.
-          # --no-save/--no-package-lock provision node_modules only; the manifest
-          # and lockfile stay unchanged because shell-quote is a transitive dep.
-          npm install --no-save --no-package-lock shell-quote@1.10.0
-
-      - name: Install dead-code advisory fixture
-        run: |
-          # Keep this version in sync with the knip devDependency in package.json
-          # and pnpm-lock.yaml. --no-save/--no-package-lock provisions node_modules
-          # only; the advisory is non-blocking and SKIPs when knip cannot resolve.
-          npm install --no-save --no-package-lock knip@5.43.6
 
       - name: Run review framework gates
         run: |

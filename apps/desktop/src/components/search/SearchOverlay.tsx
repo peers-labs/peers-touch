@@ -6,24 +6,23 @@
  *   - ResultItem / SearchFunction → CompositeRow conversion (toCompositeRow)
  *   - SearchSurfaceModel + SearchSurfaceIntents construction
  *   - Legacy pt-search-* class injection via SurfaceHooks (CMP-D03)
- *   - Coverage popover content (infoPopoverSlot)
- *   - Focus restore on close (via useLayoutEffect + opener ref)
+ *   - Authority explanation text (model.info)
+ *   - Suppress opener restoration when navigation transfers focus
  *   - openRow / copyRow business logic (resolve → navigate → close)
  *
  * This file does NOT own:
- *   - Overlay/panel/input/row/groups DOM rendering — GlobalSearchSurface renders ptc-* tree
+ *   - Overlay/panel/input/row/groups/info DOM rendering — GlobalSearchSurface renders ptc-* tree
  *   - Keyboard navigation — GlobalSearchSurface handles ArrowUp/Down/Enter/Escape/IME
  *   - Focus management — GlobalSearchSurface handles input focus + roving row focus
  *   - Highlight mark rendering — GlobalSearchSurface renders <mark> against displayedQuery
  *
- * See docs/architecture/platform/client/ui-system/composite-promotion/P1-5-desktop-adapter.md
+ * See docs/architecture/platform/client/ui-system/composite-promotion/integration.md
  */
 import { useLayoutEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/react/shallow';
-import { Popover as PeersPopover } from '@peers-touch/ui';
 import {
-  ArrowUpRight, Copy, Hash, HelpCircle, Lock, MessageCircle, Newspaper, Search, Wrench, X,
+  Hash, MessageCircle, Newspaper, Wrench,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useSearchStore } from '../../store/search';
@@ -45,7 +44,6 @@ import type {
   SurfaceHooks, SearchResultRow as CompositeRow,
 } from '@peers-touch/ui-composite';
 
-import './SearchOverlay.css';
 
 const KIND_ICON: Record<string, LucideIcon> = {
   conversation: Hash,
@@ -112,6 +110,7 @@ function toCompositeRow(
     kind,
     title,
     snippet: item.snippet,
+    copyable: !!authorizedRowCopyText(item),
     // SearchResultMeta is a rich host-owned component (needs social store subscriptions)
     meta: <SearchResultMeta item={item} />,
     zoneKey: zoneKeyFromProto(item),
@@ -128,10 +127,10 @@ function toCompositeRow(
 
 export function SearchOverlay({ navigation }: { navigation: Navigation }) {
   const { t } = useTranslation('search');
-  const opener = useRef(document.activeElement);
   const navigating = useRef(false);
 
   const view = useSearchStore(useShallow(state => ({
+    open: state.open,
     query: state.query, mode: state.mode, status: state.status, response: state.response,
     displayedQuery: state.displayedQuery, displayedMode: state.displayedMode, stalled: state.stalled,
     errorKey: state.errorKey, opening: state.opening, selectedKey: state.selectedKey,
@@ -139,6 +138,7 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
     progressive: state.progressive, progressiveRequestId: state.progressiveRequestId,
     progressiveSources: state.progressiveSources, scrollTop: state.scrollTop,
   })));
+  useLayoutEffect(() => { if (view.open) navigating.current = false; }, [view.open]);
 
   // ── Presentation + host rows ──────────────────────────────────────────────
 
@@ -168,13 +168,17 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
   const compositeRows = useMemo(() =>
     hostRows.map(row => toCompositeRow(row, t)),
   [hostRows, t]);
+  const quickRows = useMemo<HostRow[]>(() => presentation.showQuickFunctions
+    ? SEARCH_FUNCTIONS.slice(0, 4).map(item => ({ type: 'function', item })) : [],
+  [presentation.showQuickFunctions]);
+  const actionableRows = useMemo(() => [...hostRows, ...quickRows], [hostRows, quickRows]);
 
   // ── Open / copy handlers ─────────────────────────────────────────────────
 
   async function openRow(rowKey: string): Promise<void> {
     if (view.opening) return;
     useSearchStore.setState({ selectedKey: rowKey });
-    const row = hostRows.find(r => rowKeyOf(r) === rowKey);
+    const row = actionableRows.find(r => rowKeyOf(r) === rowKey);
     if (!row) return;
     if (row.type === 'function') {
       navigating.current = true;
@@ -187,7 +191,7 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
   }
 
   async function copyRow(rowKey: string): Promise<void> {
-    const row = hostRows.find(r => rowKeyOf(r) === rowKey);
+    const row = actionableRows.find(r => rowKeyOf(r) === rowKey);
     if (row?.type !== 'content') return;
     const text = authorizedRowCopyText(row.item);
     if (!text || !navigator.clipboard) return;
@@ -206,13 +210,17 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
       : (compositeRows.length > 0 ? [{ key: 'results', labelKey: presentation.groupTitle, rows: compositeRows }] : []);
 
     // quick functions shown on empty-Device suggestion surface
-    const quickFunctions = presentation.showQuickFunctions
-      ? SEARCH_FUNCTIONS.slice(0, 4).map(item => toCompositeRow({ type: 'function', item }, t))
-      : undefined;
+    const quickFunctions = quickRows.map(row => toCompositeRow(row, t));
 
     return {
       query: view.query,
       displayedQuery: view.mode === 'functions' ? view.query : view.displayedQuery,
+      draftMatches: view.mode === 'functions' || (view.query.trim() === view.displayedQuery
+        && view.contentFilter === view.displayedFilter),
+      functionsMode: view.mode === 'functions',
+      loadingVisible: view.stalled,
+      selectedKey: view.selectedKey,
+      scrollTop: view.scrollTop,
       status: view.status,
       isProgressive: presentation.isProgressive,
       groups,
@@ -239,8 +247,26 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
       hasMore: view.displayedMode === 'submit' && view.mode !== 'functions' && !!view.response?.hasMore,
       opening: view.opening,
       groupTitleKey: presentation.groupTitle,
+      info: {
+        title: t('search.popover.title'),
+        sections: [
+          { title: t('search.popover.scopeTitle'), paragraphs: [
+            t('search.scope'), t('search.boundary'), t('search.popover.realtime'),
+            t('search.popover.privateCheck'), t('search.coverage.historyBoundary'),
+          ] },
+          { title: t('search.popover.coverageTitle'),
+            paragraphs: [
+              ...(!claimedCoverage.length && !presentation.isProgressive ? [t('search.coverage.device')] : []),
+              ...(presentation.pendingSources.length ? [t('search.coverage.pending')] : []),
+            ],
+            items: claimedCoverage.map(source => t(source.detailKey || 'search.coverage.device')),
+          },
+          { title: t('search.popover.keyboardTitle'),
+            paragraphs: [t('search.popover.keyboard'), t('search.popover.copy')] },
+        ],
+      },
     };
-  }, [presentation, view, compositeRows, t]);
+  }, [presentation, view, compositeRows, quickRows, t]);
 
   // ── Build composite SearchSurfaceIntents ──────────────────────────────────
 
@@ -254,12 +280,15 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
     },
     onSubmit() { searchActions.submit(); },
     onRetry() { if (view.errorKey) searchActions.submit(true); },
+    onRefresh() { searchActions.submit(true); },
     onMore() { searchActions.more(); },
     onOpenRow(rowKey) { void openRow(rowKey); },
     onCopyRow(rowKey) { void copyRow(rowKey); },
     onClose() { searchActions.close(); },
+    onSelectionChange(selectedKey) { useSearchStore.setState({ selectedKey }); },
+    onScrollChange(scrollTop) { searchActions.scroll(scrollTop); },
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [hostRows, view.opening, view.errorKey, navigation, view.mode]);
+  }), [actionableRows, view.opening, view.errorKey, navigation, view.mode]);
 
   // ── SurfaceHooks: inject legacy pt-search-* classes + data attrs ──────────
 
@@ -286,7 +315,8 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
       error: 'pt-search-error',
       more: 'pt-search-more',
       footer: 'pt-search-footer',
-      statusline: 'pt-search-statusline',
+      statusline: 'pt-search-statusline pt-search-coverage',
+      loading: 'pt-search-status',
       statusChip: 'pt-search-status-chip',
       statusPending: 'pt-search-status-pending',
       footerActions: 'pt-search-footer-actions',
@@ -295,72 +325,14 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
     dataAttributes: {},
   }), []);
 
-  // ── infoPopoverSlot: Desktop coverage popover + info button ───────────────
-
-  const pending = presentation.pendingSources;
-  const claimedCoverage = deliveredCoverage(presentation, view.progressiveSources);
-
-  const popoverContent = (
-    <div className="pt-search-popover">
-      <h5 className="pt-search-popover-title">{t('search.popover.title')}</h5>
-      <section>
-        <h6>{t('search.popover.scopeTitle')}</h6>
-        <p>{t('search.scope')}</p>
-        <p>{t('search.boundary')}</p>
-        <p>{t('search.popover.realtime')}</p>
-        <p>{t('search.popover.privateCheck')}</p>
-        <p>{t('search.coverage.historyBoundary')}</p>
-      </section>
-      <section>
-        <h6>{t('search.popover.coverageTitle')}</h6>
-        {claimedCoverage.length
-          ? <ul>{claimedCoverage.map(source => <li key={source.sourceId}>{t(source.detailKey
-            || 'search.coverage.device')}</li>)}</ul>
-          : !presentation.isProgressive && <p>{t('search.coverage.device')}</p>}
-        {pending.length > 0
-          && <p className="pt-search-popover-pending">{t('search.coverage.pending')}</p>}
-      </section>
-      <section>
-        <h6>{t('search.popover.keyboardTitle')}</h6>
-        <p>{t('search.popover.keyboard')}</p>
-        <p>{t('search.popover.copy')}</p>
-      </section>
-    </div>
-  );
-
-  const infoPopoverSlot = (
-    <PeersPopover placement="bottom" label={t('search.moreInfo')} content={popoverContent}>
-      <button type="button" className="pt-search-info" aria-label={t('search.moreInfo')}>
-        <HelpCircle size={14} aria-hidden="true" />
-      </button>
-    </PeersPopover>
-  );
-
-  // ── Focus restore on unmount ────────────────────────────────────────────
-
-  useLayoutEffect(() => {
-    opener.current = document.activeElement;
-    return () => {
-      if (!navigating.current && opener.current instanceof HTMLElement && opener.current.isConnected) {
-        opener.current.focus();
-      }
-    };
-  }, []);
-
   return (
     <GlobalSearchSurface
-      open
+      open={view.open}
       model={model}
       intents={intents}
       t={t}
       hooks={hooks}
-      infoPopoverSlot={infoPopoverSlot}
+      shouldRestoreFocus={() => !navigating.current}
     />
   );
 }
-
-// Legacy copy helper — kept for potential future use by non-composite consumers
-export { authorizedRowCopyText };
-
-// Re-export the Lucide icons that were previously used inline
-export { ArrowUpRight, Copy, Hash, HelpCircle, Lock, MessageCircle, Newspaper, Search, Wrench, X };

@@ -5,7 +5,7 @@ import { useCommandMenuStore } from '../store/commandMenu';
 import { useCommandMenuItems } from '../hooks/useCommandMenuItems';
 import type { CommandItem, CommandItemType } from '../store/commandMenu';
 import type { Page } from '../types/navigation';
-import './search/SearchOverlay.css';
+import '@peers-touch/ui-composite/search.css';
 import './CommandMenu.css';
 
 // Command items carry PascalCase lucide names from useCommandMenuItems; map
@@ -116,31 +116,31 @@ export function CommandMenu({ navigateTo, navigateToAgentSurface, navigateToSett
   const renderGroup = (items: CommandItem[], type: CommandItemType, startIdx: number) => {
     if (items.length === 0) return null;
     return (
-      <div key={type} className="pt-search-group">
-        <div className="pt-search-group-title">{groupLabel(type)}</div>
-        <div className="pt-search-list">
+      <div key={type} className="ptc-search-group pt-search-group">
+        <div className="ptc-search-group-title pt-search-group-title">{groupLabel(type)}</div>
+        <div className="ptc-search-list pt-search-list">
           {items.map((item, idx) => {
             const globalIdx = startIdx + idx;
             const isSelected = globalIdx === selectedIndex;
             return (
               <div
                 key={item.id}
-                className={isSelected ? 'pt-search-row active' : 'pt-search-row'}
+                className={isSelected ? 'ptc-search-item is-active pt-search-row active' : 'ptc-search-item pt-search-row'}
                 data-selected={isSelected}
               >
                 <button
                   type="button"
-                  className="pt-search-row-target"
+                  className={`ptc-search-row pt-search-row-target${isSelected ? ' is-active' : ''}`}
                   onClick={() => executeCommand(item)}
                   onMouseEnter={() => setSelectedIndex(globalIdx)}
                 >
-                  <span className="pt-search-row-icon">
+                  <span className="ptc-search-row-icon pt-search-row-icon">
                     <Icon iconId={GLYPH_MAP[item.icon ?? ''] ?? 'file-text'} size={15} />
                   </span>
-                  <span className="pt-search-main">
-                    <span className="pt-search-title">{item.title}</span>
+                  <span className="ptc-search-main pt-search-main">
+                    <span className="ptc-search-row-title pt-search-title">{item.title}</span>
                     {item.subtitle && (
-                      <span className="pt-search-snippet">{item.subtitle}</span>
+                      <span className="ptc-search-row-snippet pt-search-snippet">{item.subtitle}</span>
                     )}
                   </span>
                   {type === 'page' && getShortcutHint(item.id) && (
@@ -169,18 +169,20 @@ export function CommandMenu({ navigateTo, navigateToAgentSurface, navigateToSett
 
   return (
     <div
-      className="pt-search-overlay"
+      className="ptc-search-overlay pt-search-overlay"
+      data-command-menu
       role="dialog"
       aria-modal="true"
       aria-label={t('agent.commandMenu.placeholder')}
     >
-      <div className="pt-search-scrim" onClick={closeMenu} />
-      <div className="pt-search-panel pt-command-panel">
-        <div className="pt-search-field-area">
-          <div className="pt-search-field">
+      <div className="ptc-search-scrim pt-search-scrim" onClick={closeMenu} />
+      <div className="ptc-search-panel pt-search-panel pt-command-panel">
+        <div className="ptc-search-field-area pt-search-field-area">
+          <div className="ptc-search-field pt-search-field">
             <Icon iconId="search" size={16} />
             <input
               ref={inputRef}
+              className="ptc-search-input"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -194,9 +196,9 @@ export function CommandMenu({ navigateTo, navigateToAgentSurface, navigateToSett
           </div>
         </div>
 
-        <div ref={listRef} className="pt-search-body">
+        <div ref={listRef} className="ptc-search-body pt-search-body">
           {totalCount === 0 ? (
-            <div className="pt-search-empty">{t('agent.commandMenu.noResults')}</div>
+            <div className="ptc-search-empty pt-search-empty">{t('agent.commandMenu.noResults')}</div>
           ) : (
             <>
               {renderGroup(grouped.pages, 'page', pagesStart)}
@@ -207,7 +209,7 @@ export function CommandMenu({ navigateTo, navigateToAgentSurface, navigateToSett
           )}
         </div>
 
-        <div className="pt-search-footer">
+        <div className="ptc-search-footer pt-search-footer">
           <span className="pt-command-foot">
             <kbd>↑↓</kbd>
             {t('agent.commandMenu.navigate')}

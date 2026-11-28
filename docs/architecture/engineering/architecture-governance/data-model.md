@@ -237,12 +237,20 @@ spec 是架构文档的视觉投影，不复制 module registry、capability own
       "digest": "<sha256>"
     }
   ],
+  "uiSurfaces": [],
   "receiptDigest": "<sha256>"
 }
 ```
 
 回执采用排序后的 canonical JSON 计算 SHA-256。它只描述本次输入和已读取真源，
 不持久化，不授予写权限。
+
+`uiSurfaces` 从原型总账 §4.2 的完整界面记录和当前源码派生。每项包含
+`id/ledger/prototypeId/contract/roles/prototypeAdapter/productionAdapter/
+presentationRoots/status/currentDigest/confirmedDigest/productionAdmitted/
+nextAction`。该列表参与 `receiptDigest`，源码变化使旧上下文失效。
+`productionAdmitted` 是当前读取结果；生产入口必须重新核验，不能消费
+此布尔值作为永久准入。
 
 ## 6. Validation Result
 

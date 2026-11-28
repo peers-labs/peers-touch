@@ -26,6 +26,7 @@ export type {
   SearchSurfaceData,
   SearchGroupData,
   SearchResultRowData,
+  SearchSurfaceCapture,
 } from './search/search-data.types';
 export { searchFixtures } from './search/search.fixtures';
 

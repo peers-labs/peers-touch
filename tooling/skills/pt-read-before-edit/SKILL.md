@@ -1,13 +1,6 @@
 ---
 name: pt-read-before-edit
-description: >
-  Use BEFORE editing any file in this repository. Scans the operational
-  knowledge layer (docs/knowledge/) for invariants, pitfalls, and playbooks
-  whose `owns:` frontmatter covers the file path being edited, and loads
-  the relevant entries into the agent's context as a reviewer's voice.
-  Activates automatically on any Edit / Write / StrReplace / EditNotebook
-  tool invocation; humans can also run the procedure manually before a
-  large refactor.
+description: Read matching operational knowledge and UI prototype context before repository edits. Use before changing files, including UI feedback and defect fixes.
 ---
 
 # pt-read-before-edit
@@ -39,6 +32,13 @@ You do NOT need to run this skill for documentation-only files (`*.md` not under
 ### 1. Identify the target paths
 
 Collect the absolute (or repo-relative) paths of every file you intend to edit in the immediate next step. Include directories if you plan to add new files there.
+
+For UI paths, read the existing `module-governance.mjs context --changed-file
+<path>` projection's `uiSurfaces`. Follow the complete-surface ledger's prototype,
+source roles and current confirmation. Any UI feedback, including an apparent
+implementation defect, requires prototype review and user confirmation of this
+repair target before production edits. Follow ledger §4.2; a correct prototype
+may remain unchanged. Missing mapping is a coverage gap, not a waiver.
 
 ### 2. Scan `docs/knowledge/**/*.md` for matching `owns:` entries
 

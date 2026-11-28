@@ -1,9 +1,8 @@
 # Composite Promotion Pilot — Data Model（端口契约）
 
-> **Status**: draft · **Owner**: Client Platform / UI System
-> 本文件定义三个复合组件的 props 合同草图与 DOM 钩子保全清单。
-> 类型名与字段在实现时可细化，但语义边界（纯数据、无 runtime 类型、无副作用）
-> 不得突破。所有字段为合同草案，评审通过后在 `packages/ui/composite/src` 固化。
+> **Status**: 搜索使用当前源码合同；P2/P3 仍为候选 · **Owner**: Client Platform / UI System
+> 搜索类型的唯一声明在 `packages/ui/composite/src/search/search.types.ts`。
+> 本文解释字段用途与 DOM 钩子，不维护第二份平行类型。
 
 ## 1. 通用端口类型
 
@@ -36,90 +35,58 @@ export interface SurfaceHooks<K extends RegionKey> {
 
 ### 2.1 视图模型
 
-```ts
-export type SearchStatus = 'idle' | 'loading' | 'ready' | 'error';
+`SearchSurfaceModel` 是完整浮层的展示投影，没有业务请求或原生资源对象。
 
-export interface SearchResultRow {
-  /** 宿主内唯一行键（生产=searchRowKey；原型=person-xxx/conv-xxx）。 */
-  rowKey: string;
-  kind: 'person' | 'conversation' | 'message' | 'moment' | 'function' | 'content';
-  title: string;
-  snippet?: string;
-  meta?: string;
-  /** 命中高亮由组件按 query 切片，宿主只给纯文本。 */
-  iconId?: string;            // ui 资产 iconId；无则按 kind 回退语义图标
-  disabled?: boolean;
-  /** 生产侧 gate 需要的资源标识，原样透传到行 dataAttributes 之外的固定字段。 */
-  resource?: { id?: string; sourceId?: string; kind?: string };
-}
+| 字段 | 用途与归属 |
+|---|---|
+| `query`、`displayedQuery`、`draftMatches` | 输入草稿与已展示查询分开；宿主同时核对 filter/mode。共享 UI 按展示查询高亮，防止旧结果误开。 |
+| `status`、`isProgressive`、`loadingVisible` | 展示状态、逐批等待与固定输入槽内的延迟加载提示；宿主决定等待是否达到阈值。 |
+| `groups`、`recentItems`、`quickFunctions` | 稳定行键、标题、摘要、meta/icon 节点及分组；最近仅空查询显示，快捷项按宿主给值显示。 |
+| `filters`、`coverage`、`pendingSources` | 已解析的筛选和来源投影；组件不推断搜索权限或来源是否有效。 |
+| `showEmpty`、`emptyTitleKey`、`errorKey`、`hasMore`、`opening` | 空态、失败、分页和打开反馈。布局轨道不因状态变化移动。 |
+| `selectedKey`、`scrollTop` | 可选受控上下文。Desktop 使用原 store；不传时组件保存局部选中。稳定键用于返回和重排，不能改用数组下标持久化。 |
+| `functionsMode`、`activateFirstOnSubmit` | 功能直接提交和原型默认首项操作；内容模式仍检查草稿与展示是否匹配。 |
+| `groupTitleKey` | 宿主提供的组标题语义；每个实际分组以自身 `labelKey` 渲染。 |
 
-export interface SearchGroup {
-  key: string;               // person|conversation|message|moment|function|recent|quick
-  labelKey: string;          // i18n key
-  rows: SearchResultRow[];
-  showCount?: boolean;
-}
+`SearchResultRow.meta/icon` 可以接收宿主节点，`copyable` 明确是否显示复制。
+资源 ID/source/kind 只用于原 Gate 观测和动作查找；组件不解析或授权资源。
 
-export interface SearchCoverage {
-  zoneKey: 'device' | 'station' | 'federation';
-  status?: 'delivered' | 'pending' | string;
-  detailKey?: string;
-}
-
-export interface SearchSurfaceModel {
-  query: string;
-  status: SearchStatus;
-  /** 空查询时的 recent/quick 分组；有查询时的结果分组。 */
-  groups: SearchGroup[];
-  empty: boolean;
-  emptyTitleKey?: string;
-  errorKey?: string | null;
-  /** 生产 filter tabs（all/messages/social/attachments/functions）；原型传只读单值。 */
-  filters: { id: string; labelKey: string; active: boolean }[];
-  coverage: SearchCoverage[];
-  pendingCoverage: SearchCoverage[];
-  hasMore: boolean;
-  opening: boolean;
-  /** 受控 roving 光标；-1 = 输入框持有焦点。 */
-  cursor: number;
-  infoPopoverSlot?: ReactNode;   // 生产 coverage Popover 内容；原型不传
-}
-```
+`SearchSurfaceData` 在 `search-data.types.ts` 用 `Omit` 从上述类型派生，
+仅将行的 React 节点换成 `metaText/iconId`；回放中的 `copyText` 来自当前原生
+读取授权提供的标题和摘要，并用真实复制动作核对。`search.fixtures.ts` 是原型状态和
+组件检查的同一份样本；生产源码不消费样本。原生 Gate 记录的
+`SearchSurfaceCapture` 携带该数据、已解析文案和 pt 主题，供实际原型入口回放。
+这些都是内存展示与诊断数据，不是新持久化模型。
 
 ### 2.2 意图回调
 
-```ts
-export interface SearchSurfaceIntents {
-  onQueryChange(query: string): void;
-  onFilterChange(filterId: string): void;
-  onSubmit(): void;
-  onRetry(): void;
-  onMore(): void;
-  onOpenRow(rowKey: string): void;
-  onCopyRow?(rowKey: string): void;
-  onClose(): void;
-  /** 光标变化上抛，宿主持久化 selectedKey；组件内部也保留瞬时键盘状态。 */
-  onCursorChange(index: number): void;
-}
-```
+回调的完整签名同样以 `search.types.ts` 为准。`onQueryChange` 带输入法是否
+完成的 admission 标记；filter/submit/retry/more 交给原查询 owner，
+open/copy 只给稳定 `rowKey`。`onSelectionChange/onScrollChange` 回写已有
+上下文。组件负责手势、键盘和焦点，宿主执行真实业务动作。
+
+`model.info` 是宿主提供的来源说明文本，由共享组件渲染完整 Popover；`shouldRestoreFocus` 让导航将焦点
+交给目标，普通关闭仍由共享 UI 恢复触发器。`model.info` 可序列化；
+`shouldRestoreFocus` 是宿主回调，不属于可序列化数据。
 
 ### 2.3 区域键与钩子映射
 
-`RegionKey`: `'overlay' | 'scrim' | 'panel' | 'field' | 'input' | 'close' |
-'intents' | 'body' | 'group' | 'row' | 'empty' | 'error' | 'footer' | 'popover'`。
+`SearchRegionKey` 定义于源码，覆盖外壳、输入、组/行、命中、状态、coverage、
+动作和关联插槽。hooks 只注入观测标识；它们不提供另一套样式。
 
 ### 2.4 必须保全的选择器（verified_fact）
 
 | 宿主 | 选择器/钩子 | 来源 |
 |---|---|---|
 | 生产 | `.pt-search-overlay` `.pt-search-scrim` `.pt-search-panel` `.pt-search-field` `.pt-search-body` `.pt-search-row` `.pt-search-footer` `.pt-search-empty` `.pt-search-error` `.pt-search-more` `.pt-search-intents` `.pt-search-info` `.pt-search-coverage` `.pt-search-popover` | gates：device_search_runner、device_search_e2e、content_search_desktop、native_interactions_static 等 |
-| 生产 | `data-focus-boundary`、`data-search-filter`、`data-resource-id`、`data-source-id`、`data-resource-kind`、`id=pt-search-row-N`、`data-displayed-query` | 同上 + searchOverlayAlignment.test |
+| 生产 | `data-focus-boundary`、`data-search-filter`、`data-resource-id`、`data-source-id`、`data-resource-kind`、`data-search-row-key`、`data-displayed-query`、`button.pt-search-row` 内的 `.pt-search-row-target` | 同上 + searchOverlayAlignment.test |
 | 原型 | `[data-search-open]`、`[data-global-search]`、`[data-search-group=...]`、`[data-search-result]`、`[data-search-empty]`、`.sk-search-row`、`.sk-search-hit`、`.sk-search-boundary(-inline)` | north-star.suite `global-search-*` 7 场景 |
 
-生产 `SearchResultMeta`、coverage Popover 内容、`SEARCH_FUNCTIONS` 留宿主，
-经 `infoPopoverSlot`/行 meta 插槽进入；组件不内置任何搜索域知识。
+生产 `SearchResultMeta`、来源说明的数据装配、`SEARCH_FUNCTIONS` 留宿主。
+行 meta 接收宿主渲染节点；来源说明接收纯文本段落和列表，共享组件负责按钮、
+Popover 与内容布局。刷新通过 `onRefresh` 调用宿主强制查询；组件不内置搜索域知识。
 
-## 3. IdentityProfileCard
+## 3. IdentityProfileCard（后续候选）
 
 ### 3.1 视图模型（三态判别联合）
 
@@ -282,5 +249,5 @@ export interface ConversationRailSlots {
 - 复合包测试用 jsdom 挂载，断言 `surfaceHooks` 映射后每个清单内选择器可查询。
 - Desktop 接线测试断言宿主传入的 hooks 常量与 gate 清单一致（常量集中在
   宿主适配文件，单一登记处）。
-- native gate 不在试点内运行，但其选择器清单以本文件为合同；任何清单变更
-  必须同时改本文件并在评审中说明，禁止在实现期静默增删。
+- 原生搜索 Gate 和原型原场景从真实入口执行；选择器保持原语义，不能通过
+  删除动作、绕过入口或放宽断言获得通过。

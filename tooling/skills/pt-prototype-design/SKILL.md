@@ -13,7 +13,7 @@ description: 创建、修改和审查 Peers-Touch UI/交互原型。用户要求
 
 原型 = 设计的**可执行表达**——一个「能跑能点」的网页 demo，展示**终态产品长什么样、怎么交互**，替代口头对齐。
 
-- **不是**产品代码
+- 原型宿主使用样例数据和动作；完整 UI 可由原型与产品共用
 - **不是**最终运行时（不碰 Lynx / applet 容器 / SDK）
 - **不替代落地与验收**
 - **可以用 mock 数据**（重在形态与交互，不要求接通真实后端）
@@ -416,15 +416,25 @@ Prototype Portal 支持 worktree / branch 切换：
 
 1. **从设计推导，不脱节**：原型界面区域要能对回 `design.md` / `functional-modules` 的模块编号；设计变更时原型同步或在 README 标注差异
 2. **原型不绑定最终运行时**：即使终态是 applet(Lynx) / Desktop 页面，原型也只用 web 栈（React+Vite+LobeUI）。不要为了"贴近运行时"把原型做成 ReactLynx 工程
-3. **禁止用原型当验收证据**：落地须由对应工程按其运行时重新实现
-4. **原型经确认后才落地**：总账中状态为 `confirmed` 才可以作为落地参照
+3. **原型不替代产品验证**：同为 React Web 的原型与产品共用完整 UI；真实数据、动作与目标运行时仍须独立验证
+4. **先调整原型、用户确认后才落地**：读取总账 §4.2 的完整界面记录；确认必须绑定当前源码摘要，不能沿用整个 Gallery 的 `confirmed` 或旧版本确认
 5. **Desktop 禁止新增独立模块卡片**：Portal desktop 区只允许**一张**可见原型入口（`packages/prototypes/desktop/shell/`）。所有 desktop 功能（Chat、Agent、Atelier、Orchestration、Call、Notes、Settings、Applets）必须在该唯一 Shell 内部通过路由接入，禁止在 `packages/prototypes/desktop/features/` 下新建独立可见卡片。已有的 feature 原型源码保留但必须设 `hidden: true`，其内容组件由 Shell 引用复用。违反此规则会导致 Portal 平铺多张卡 → 用户体验分裂（split-brain），历史上已多次发生。
 
 ---
 
 ## 7. 落地路径
 
-原型经 confirmed 后的落地方式：由对应落地工程（如 Applet → `packages/applets/<id>/`，Desktop → `apps/desktop/`）**参照原型重新实现**，按其运行时技术栈。原型本身不要求能直接搬成产物。
+研发人员要求调整界面或反馈“UI 不对”时，先通过既有 pre-edit context 的 `uiSurfaces`
+定位原型和共享呈现源码，按
+[`原型总账 §4.2`](../../../docs/architecture/engineering/prototypes/README.md#42-完整界面的确认与生产准入)
+完成 drafting → 原型调校与证据 → 用户明确确认 → 摘要核验 → 生产接线 →
+原始 Journey。原型已正确时仍须展示并确认以它为本次修复目标，
+不能因判断为实现缺陷而先改生产。不得替用户确认本次目标。
+
+同为 React Web 时只保留 `packages/ui/` 的一套完整 UI，原型和产品各自
+接数据、文字和动作；禁止在产品 adapter 再写布局或覆盖共享 CSS。
+生产构建拒绝未确认草稿，Prototype Portal 可预览。跨运行时（如 Lynx）
+按已确认行为合同适配并复验。不能用更新原型来掩盖产品接线缺陷。
 
 ---
 

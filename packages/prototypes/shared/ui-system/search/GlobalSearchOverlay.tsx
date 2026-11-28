@@ -15,26 +15,24 @@
  *   - Overlay/panel/input/row DOM rendering — GlobalSearchSurface renders ptc-* tree
  *   - Highlight mark rendering — GlobalSearchSurface renders <mark> against displayedQuery
  *
- * Visual grammar follows the pine-glass frame; prototype sk-search-* classes are
- * injected alongside component ptc-* classes through SurfaceHooks so both CSS
- * namespaces apply to the same DOM nodes. See global-search.css for sk-search-*
- * tokens.
+ * Layout, states and motion come from the shared search.css. The sk-search-*
+ * classes retain prototype observation hooks; they do not own presentation.
  */
 import { useMemo, useState } from 'react';
 import {
   ArrowUpRight, Bell, Bot as BotIcon, Brain, ChevronRight, Clock3, Command as CommandIcon,
-  Database, Globe, Hash, Lock, MessageCircle, MonitorSmartphone, Network, Plug,
+  Database, Globe, Hash, Lock, MessageCircle, MonitorSmartphone, Network, Newspaper, Plug,
   Radio, Server, SlidersHorizontal, Sparkles, User, Users, Wrench,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { useT } from '../prefs';
+import { makeTranslate, useT } from '../prefs';
 import type { StringKey } from '../prefs';
 import { CONVERSATIONS, PEOPLE, SEED_MESSAGES } from '../chat/chat-data';
 import { MOMENT_SEEDS } from '../moments/moments-data';
 import type { SettingsGroup, SettingsSectionKey } from '../settings/SettingsFeature';
 
 // Composite package imports — thin adapter boundary (CMP-D01 / CMP-D06)
-import { GlobalSearchSurface } from '@peers-touch/ui-composite';
+import { GlobalSearchSurface, searchFixtures } from '@peers-touch/ui-composite';
 import type {
   CompositeTranslate, SearchSurfaceModel, SearchSurfaceIntents, SearchRegionKey,
   SurfaceHooks, SearchResultRow as CompositeRow,
@@ -169,7 +167,7 @@ function toRowData(row: HostRow): SearchResultRowData {
     kind: row.kind,
     title: row.title,
     snippet: row.snippet,
-    metaText: row.meta,
+    zoneKey: row.meta,
   };
 }
 
@@ -186,19 +184,33 @@ function kindLabelKey(kind: RowKind): string {
 
 // ── Component ────────────────────────────────────────────────────────────
 
-export function GlobalSearchOverlay({ open, grammar = 'glass', onClose, onNavigate }: {
+export function GlobalSearchOverlay({ open, grammar = 'glass', onClose, onNavigate, sample, sampleLabels }: {
   open: boolean;
   /** Prototype-only line-grammar experiment; 'glass' keeps the shipped look. */
   grammar?: CommandGrammar;
   onClose: () => void;
   onNavigate: (target: GlobalSearchTarget) => void;
+  /** Prototype-only replay of the exact native captured presentation. */
+  sample?: SearchSurfaceData;
+  sampleLabels?: Record<string, string>;
 }) {
-  const { t: protoT } = useT();
+  const { locale } = useT();
   // Adapter boundary: CompositeTranslate accepts string keys; prototype's
   // Translate narrows to STRINGS['zh-CN'] literals. The cast is safe because
   // all composite hardcoded keys (search.*) are mirrored in STRINGS.
-  const t: CompositeTranslate = protoT as CompositeTranslate;
-  const [query, setQuery] = useState('');
+  const t = useMemo<CompositeTranslate>(() => {
+    const protoT = makeTranslate(locale);
+    return (key, options) => sampleLabels?.[key]
+      ?? protoT(key as StringKey, options as Record<string, string | number> | undefined);
+  }, [locale, sampleLabels]);
+  const scenario = new URLSearchParams(window.location.search).get('searchScenario');
+  const initialSample: SearchSurfaceData | undefined = sample
+    ?? (scenario && Object.hasOwn(searchFixtures, scenario) ? searchFixtures[scenario as keyof typeof searchFixtures] : undefined);
+  const [query, setQuery] = useState(initialSample?.query ?? '');
+  const [sampleStatus, setSampleStatus] = useState(initialSample?.status);
+  const [filter, setFilter] = useState(initialSample?.filters.find(item => item.active)?.id ?? 'all');
+  const [sampleSelection, setSampleSelection] = useState(initialSample?.selectedKey ?? null);
+  const [sampleScroll, setSampleScroll] = useState(initialSample?.scrollTop ?? 0);
 
   // Host owns the seed index; t is consumed during construction only.
   const index = useMemo(() => buildIndex(t), [t]);
@@ -209,11 +221,13 @@ export function GlobalSearchOverlay({ open, grammar = 'glass', onClose, onNaviga
     const q = query.trim().toLowerCase();
     if (!q) return [];
     const matched = index.filter(row =>
-      `${row.title} ${row.snippet ?? ''} ${row.meta}`.toLowerCase().includes(q));
+      `${row.title} ${row.snippet ?? ''} ${row.meta}`.toLowerCase().includes(q)
+      && (filter === 'all' || (filter === 'messages' ? row.kind === 'message'
+        : filter === 'social' ? row.kind === 'moment' : row.kind === 'function')));
     return KIND_ORDER
       .map(kind => ({ kind, items: matched.filter(r => r.kind === kind) }))
       .filter(g => g.items.length > 0);
-  }, [query, index]);
+  }, [query, index, filter]);
 
   const recents = useMemo<HostRow[]>(() => {
     const picks: HostRow[] = [];
@@ -243,6 +257,7 @@ export function GlobalSearchOverlay({ open, grammar = 'glass', onClose, onNaviga
     const hasQuery = !!query.trim();
     return {
       query,
+      activateFirstOnSubmit: true,
       status: 'ready',
       isProgressive: false,
       groups: filteredGroups.map(g => ({
@@ -250,10 +265,14 @@ export function GlobalSearchOverlay({ open, grammar = 'glass', onClose, onNaviga
         labelKey: kindLabelKey(g.kind),
         rows: g.items.map(toRowData),
       })),
-      quickFunctions: !hasQuery ? quickFunctions.map(toRowData) : undefined,
-      recentItems: !hasQuery ? recents.map(toRowData) : undefined,
+      quickFunctions: !hasQuery ? quickFunctions.map(row => ({
+        ...toRowData(row), zoneKey: undefined, metaText: row.meta,
+      })) : undefined,
+      recentItems: !hasQuery ? recents.map(row => ({
+        ...toRowData(row), zoneKey: undefined, snippet: undefined,
+        metaText: row.snippet ?? row.meta, iconId: 'clock-3',
+      })) : undefined,
       showEmpty: hasQuery && filteredGroups.length === 0,
-      // emptyTitleKey intentionally omitted → composite falls back to its key.
       filters: [],
       pendingSources: [],
       coverage: [],
@@ -267,33 +286,58 @@ export function GlobalSearchOverlay({ open, grammar = 'glass', onClose, onNaviga
 
   const model: SearchSurfaceModel = useMemo(() => {
     const resolveRow = (data: SearchResultRowData): CompositeRow => {
-      const host = index.find(r => r.id === data.rowKey);
-      const Icon = host?.icon ?? KIND_ICON[data.kind];
+      const host = [...index, ...quickFunctions].find(r => r.id === data.rowKey);
+      const recordedIcons: Record<string, LucideIcon> = {
+        hash: Hash, 'message-circle': MessageCircle, newspaper: Newspaper, wrench: Wrench,
+        'clock-3': Clock3,
+      };
+      const Icon = (data.iconId ? recordedIcons[data.iconId] : undefined) ?? host?.icon ?? KIND_ICON[data.kind];
       return {
-        rowKey: data.rowKey,
-        kind: data.kind,
-        title: data.title,
-        snippet: data.snippet,
+        ...data,
         meta: data.metaText,
-        icon: Icon ? <Icon size={14} /> : undefined,
+        icon: Icon ? <Icon size={sample ? 15 : 14} /> : undefined,
       };
     };
+    const data = sample ? {
+      ...sample, query, selectedKey: sampleSelection, scrollTop: sampleScroll,
+      filters: sample.filters.map(item => ({ ...item, active: item.id === filter })),
+    } : initialSample ? {
+      ...initialSample,
+      query,
+      status: sampleStatus ?? initialSample.status,
+      isProgressive: sampleStatus === 'loading',
+      loadingVisible: sampleStatus === 'loading',
+      errorKey: sampleStatus === 'error' ? initialSample.errorKey : null,
+      filters: [
+        { id: 'all', labelKey: 'search.tab.all', active: filter === 'all' },
+        { id: 'messages', labelKey: 'search.tab.messages', active: filter === 'messages' },
+        { id: 'social', labelKey: 'search.tab.social', active: filter === 'social' },
+        { id: 'functions', labelKey: 'search.tab.functions', active: filter === 'functions' },
+      ],
+    } : surfaceData;
     return {
-      ...surfaceData,
-      groups: surfaceData.groups.map(g => ({ ...g, rows: g.rows.map(resolveRow) })),
-      quickFunctions: surfaceData.quickFunctions?.map(resolveRow),
-      recentItems: surfaceData.recentItems?.map(resolveRow),
+      ...data,
+      groups: data.groups.map(g => ({ ...g, rows: g.rows.map(resolveRow) })),
+      quickFunctions: data.quickFunctions?.map(resolveRow),
+      recentItems: data.recentItems?.map(resolveRow),
     };
-  }, [surfaceData, index]);
+   }, [surfaceData, index, quickFunctions, initialSample, sample, query, sampleStatus, filter, sampleSelection, sampleScroll]);
 
   // ── Build composite SearchSurfaceIntents ────────────────────────────────
 
   const intents: SearchSurfaceIntents = {
     onQueryChange(next) { setQuery(next); },
-    onFilterChange() { /* prototype has no filter tabs */ },
-    onSubmit() { /* prototype has no explicit submit */ },
-    onRetry() { /* prototype has no error state */ },
+    onSelectionChange: sample ? setSampleSelection : undefined,
+    onScrollChange: sample ? setSampleScroll : undefined,
+    onFilterChange(next) { setFilter(next); },
+    onSubmit() { setSampleStatus('ready'); },
+    onRetry() { setSampleStatus('ready'); },
+    onRefresh: sample ? () => setSampleStatus('ready') : undefined,
     onMore() { /* prototype has no pagination */ },
+    onCopyRow: sample ? rowKey => {
+      const row = sample.groups.flatMap(group => group.rows).find(row => row.rowKey === rowKey);
+      if (row?.copyable && row.copyText) void navigator.clipboard?.writeText(row.copyText);
+    } : undefined,
     onOpenRow(rowKey) {
       // Resolve host-level GlobalSearchTarget from composite rowKey.
       const row = index.find(r => r.id === rowKey)
@@ -312,9 +356,11 @@ export function GlobalSearchOverlay({ open, grammar = 'glass', onClose, onNaviga
   const hooks = useMemo<SurfaceHooks<SearchRegionKey>>(() => ({
     classNames: {
       overlay: 'sk-search-overlay',
+      scrim: 'sk-search-scrim',
       panel: 'sk-search-panel',
       field: 'sk-search-input-row',
       input: 'sk-search-input',
+      body: 'sk-search-body',
       close: 'sk-search-close',
       group: 'sk-search-group',
       row: 'sk-search-row',
@@ -326,23 +372,15 @@ export function GlobalSearchOverlay({ open, grammar = 'glass', onClose, onNaviga
       empty: 'sk-search-empty',
       footer: 'sk-search-footer',
       infoButton: 'sk-search-info',
+      hit: 'sk-search-hit',
+      boundary: 'sk-search-boundary',
+      emptyBoundary: 'sk-search-boundary-inline',
     },
     dataAttributes: {
       overlay: { 'data-grammar': grammar, 'data-search-open': 'true' },
-      field: { 'data-global-search': 'true' },
+      input: { 'data-global-search': 'true' },
     },
   }), [grammar]);
-
-  // ── infoPopoverSlot: prototype footer boundary + keyboard hints ─────────
-
-  const infoPopoverSlot = (
-    <>
-      <span className="sk-search-boundary"><Lock size={11} /> {t('search.boundary')}</span>
-      <span className="sk-search-keys">
-        <kbd>↑</kbd><kbd>↓</kbd> {t('search.navigate')} · <kbd>↵</kbd> {t('common.confirm')}
-      </span>
-    </>
-  );
 
   return (
     <GlobalSearchSurface
@@ -351,7 +389,6 @@ export function GlobalSearchOverlay({ open, grammar = 'glass', onClose, onNaviga
       intents={intents}
       t={t}
       hooks={hooks}
-      infoPopoverSlot={infoPopoverSlot}
     />
   );
 }

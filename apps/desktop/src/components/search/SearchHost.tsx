@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchStore } from '../../store/search';
 import { searchActions } from '../../runtimes/searchRuntime';
@@ -8,7 +8,9 @@ const SearchOverlay = lazy(() => import('./SearchOverlay').then(module => ({ def
 
 export function SearchHost({ page, navigation }: { page: Page; navigation: Navigation }) {
   const open = useSearchStore(state => state.open);
+  const [visited, setVisited] = useState(open);
   const { t, i18n } = useTranslation('search');
+  useEffect(() => { if (open) setVisited(true); }, [open]);
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
       if (event.isComposing || event.keyCode === 229) return;
@@ -22,7 +24,8 @@ export function SearchHost({ page, navigation }: { page: Page; navigation: Navig
     return () => window.removeEventListener('keydown', handleKey, { capture: true });
   }, [page, i18n.language]);
   return <>
-    {open && <Suspense fallback={<div role="status" aria-live="polite">{t('search.loading')}</div>}>
+    {(open || visited) && <Suspense fallback={open
+      ? <div role="status" aria-live="polite">{t('search.loading')}</div> : null}>
       <SearchOverlay navigation={navigation} />
     </Suspense>}
   </>;

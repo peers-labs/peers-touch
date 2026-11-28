@@ -1,9 +1,31 @@
 # Composite Promotion Pilot — Design
 
-> **Status**: draft · **Owner**: Client Platform / UI System
+> **Status**: 搜索实施合同；P2/P3 为候选 · **Owner**: Client Platform / UI System
 > 证据分类遵循架构设计方法论：`verified_fact` / `inference` / `hypothesis` / `proposal` / `accepted_decision`。
 
-## 1. 问题陈述（verified_fact）
+## 当前搜索实现
+
+本轮按 [已确认验收合同](./acceptance-contract.md)执行。完整浮层的 DOM、布局、
+状态呈现、键盘、输入法、复制手势、焦点及进出相位只在
+`packages/ui/composite/src/search/GlobalSearchSurface.tsx` 与 `search.css` 实现。
+原型 `GlobalSearchOverlay` 装配 seed/场景，Desktop `SearchOverlay` 装配
+`searchPresentation` 和 `searchActions`；两边不保留竞争外壳。
+
+面板沿确认原型宽 660px、圆角 18px、距顶 12vh、入场 200ms。
+为保持已接受的 Desktop 连续性，面板高度为 viewport 内固定的 600px 上限，
+coverage 保留 44px、动作行 36px，入场只变 opacity；窗口隐藏时结束相位，
+减少动态效果时不播放动画。宽窄屏和主题是对照条件，父组件只提供角色 token。
+
+选中项使用稳定 `rowKey`。Desktop 从原 store 提供 `selectedKey/scrollTop`，
+组件上报变化；仅显式方向键滚动到行。当前 draft 与展示 query/filter 的匹配
+由宿主提供，改变输入后 Enter 仍提交新查询；打开目标前声明焦点交接。
+快捷项与显示项进入同一动作查找表，避免显示可点却查不到目标。
+
+原型场景使用共享的可序列化样本；原生 Gate 记录实际展示的同一数据形状，
+原型实际入口可回放这些数据及主题。回放只负责呈现对照，真实业务与资源权限
+仍由原生 Journey 证明。没有源码或测试导入替代 `UI-AC01/02/03`。
+
+## 1. 问题陈述（原试点调研记录）
 
 ### 1.1 原语已同源，复合层仍双写
 
@@ -74,21 +96,21 @@
 
 - 新复合层 `packages/ui/composite`（包名 `@peers-touch/ui-composite`）及其
   依赖边界、导出边界、样式与 i18n 合同。
-- 三个复合组件的端口契约、双宿主适配、原型 seed 下沉、生产 store 装配外置。
+- 本轮完整搜索的端口、双宿主适配、同样本呈现对照与原生真实 Journey。
+  身份卡和会话轨的以下设计保留为候选，不计本轮完成。
 - 对齐测试从字符串断言改为复合包内 render 行为/契约测试 + 宿主接线测试。
 - `registry.ts`、`catalogue.ts`、import-guard baseline、架构模块登记、
   north-star specimen 场景的联动更新。
 
 ### 3.2 Non-goals
 
-- 窄屏/响应式（另一工作流负责；`tauri.conf.json`、`SocialChatPage.tsx`、
-  chat 布局 CSS 的响应式改动不在本任务）。
+- 全局窗框、聊天布局及 Mobile 的响应式改造；搜索自身的现有宽窄条件必须验证。
 - 视觉重设计；视觉以北星规格文档为唯一基准，差异只做收敛不做创新。
 - agent/moments 复合面、mobile app 代码（仅评估未来可行性）。
 - store/runtime/search-core/proto 的任何改造。
 - 联系人轨 `ChatContactsPanel`/`ContactsPane`、`ChatSearchDropdown`、
   `CreateGroupModal`/`FindPeopleModal`：留在宿主，经插槽接入。
-- 原生 acceptance gate 的修改或跳过。
+- 删除或跳过原生断言、另建模拟生产页面；可在原 Gate 补采集和正确资源声明。
 
 ## 4. 目标架构
 
@@ -133,7 +155,8 @@ Desktop host (SearchHost / SocialChatPage / UserProfilePopover …)
   `desktop_api`、Tauri API、fetch/WebSocket。
 - composite → antd、@lobehub、react-i18next、lucide-react（图标一律走 ui
   `Icon`/`IconButton` 的 `iconId`）。
-- 复合包内出现自然语言字符串、十六进制色值、`.pt-*`/`.ptc-*` 的 app 层重绘。
+- 复合包内内置自然语言词典，或在 app 层重新定义 `.pt-*`/`.ptc-*` 呈现。
+  角色颜色使用 pt token；确认原型的遮罩与动效值保留在唯一共享 CSS。
 - 共享 UI 反向 import 原型（父模块 module-layout 既有禁令）。
 
 ## 5. 端口契约总览（完整定义见 data-model.md）
@@ -157,11 +180,9 @@ i18n 端口：`type CompositeTranslate = (key: string, options?: Record<string, 
 
 - 单一样式真源随组件迁入复合包，选择器统一 `ptc-*`，值只引用 `--pt-*`；
   原型经既有 PT_BRIDGE 自动获得 pine-glass，生产经默认主题获得冷墨/松绿。
-- 已核实的原型-生产视觉差异（搜索浮层：面板宽 660 vs 720、圆角 18 vs 12、
-  入场 200ms vs 160ms、scrim 模糊 6px vs 无）：北星规格
-  `global-search-overlay.md` §3 记载的是 660/18/200。**proposal**：晋升时
-  以规格为准收敛，生产侧随之微调；该项改变生产现有像素，列为评审门
-  显式确认项（CMP-D04 的 reversal trigger），未确认前组件一不得合并。
+- 搜索以本文件“当前搜索实现”和原型合同为准；旧的 720/r12/160ms 延后方案
+  已由完整原型接入要求替代。固定轨道与 opacity-only 来自既有 Desktop 连续性
+  合同，不把内容量变化或后台动画悬停带进生产。
 - 其余两个组件以生产 PR#182 北星对齐后的几何为基线（对齐测试已锁定像素），
   迁移只搬样式不改值；如发现原型规格与生产像素冲突，逐项登记评审。
 
@@ -178,7 +199,7 @@ i18n 端口：`type CompositeTranslate = (key: string, options?: Record<string, 
 | 原型/库构建 | `pnpm --filter @peers-touch/prototype-ui-system run check`、ui 全链 check | 成功 |
 | 原语边界 | `node tooling/scripts/review/primitive-layer-guard.mjs` | 无 NEW；composite 包内零 app 类选择器 |
 | 原型私写债 | `node tooling/scripts/ui-system/prototype-import-guard.mjs` | baseline 只减不增 |
-| Native gates | 既有 `tooling/acceptance/gates`（本任务不改） | 选择器不断裂；正式 native 证明按既有排期，不在试点内伪造 |
+| Native Journey | 原 `chat-device-search-native-e2e` | 当前源码真实分页、中文/附件搜索、打开/返回、失效与恢复、账号隔离；原断言全部保留 |
 
 ## 8. 风险与失败语义
 

@@ -143,18 +143,11 @@ async function attachFrameListener(current: () => boolean): Promise<void> {
       if (!activeFlight || decoded.requestId !== activeFlight.id || !current()) return;
       const view = useSearchStore.getState();
       if (view.progressiveRequestId && view.progressiveRequestId !== activeFlight.id) return;
-      // Background refresh of the SAME intent must keep the qualified frame
-      // until the final fused frame arrives. A per-source progressive frame
-      // (public rows while private is still in flight or transiently failed)
-      // would otherwise temporarily erase qualified rows and move the anchor.
-      // Progressive delivery stays live for first-load intents with no
-      // committed frame.
-      const committed = view.response;
-      if (committed && committed.items.length > 0
-        && view.displayedQuery === activeFlight.query
-        && view.displayedMode === 'submit' && view.displayedFilter === activeFlight.filter) {
-        return;
-      }
+      // Keep the qualified displayed frame, including an empty result, until
+      // the newest fused response commits its rows and query together.
+      // Per-source delivery is for first loading or authority concealment,
+      // when the original owner has removed the committed frame.
+      if (view.response) return;
       const previous = view.progressiveRequestId === activeFlight.id ? view.progressive : null;
       const merged = mergeProgressiveFrame(
         previous, decoded.response, decoded.sourceId, view.progressiveSources,
@@ -236,6 +229,9 @@ export function invalidateSearchSources(sourceIds: readonly string[]): boolean {
   observer?.destroy(); observer = null;
   ownerState = null;
   stateFlight = null;
+  // The prior epoch's shared check cannot satisfy this invalidation wake.
+  // Its finalizer is identity-fenced and cannot clear the replacement flight.
+  reconcileInFlight = null;
   if (response) conceal({
     ...response, items: response.items.filter(item => !affected.has(item.sourceId)),
     nextCursor: '', hasMore: false,
@@ -608,7 +604,9 @@ async function reconcileSearchQueryOnce(locale: string): Promise<void> {
   const view = useSearchStore.getState();
   if (!view.open || view.opening || view.mode === 'functions') return;
   if (view.status === 'loading') {
-    await runSearchQuery(locale);
+    // The current request owns its read-state checks and deadline. A focus
+    // wake cannot cancel a continuation and replace it with the first page.
+    if (!active) await runSearchQuery(locale);
     return;
   }
   const capturedEpoch = epoch;
@@ -616,6 +614,7 @@ async function reconcileSearchQueryOnce(locale: string): Promise<void> {
     await readState();
     let latest = useSearchStore.getState();
     if (capturedEpoch !== epoch || !latest.open || latest.opening) return;
+    if (latest.status === 'loading' && active) return;
     if (latest.response && !valid(latest.response)) {
       conceal(concealChangedSearchSources(latest.response, ownerState!));
       latest = useSearchStore.getState();

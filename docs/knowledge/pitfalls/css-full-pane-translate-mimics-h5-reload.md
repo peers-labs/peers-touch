@@ -5,8 +5,9 @@ status: active
 owns:
   - apps/desktop/src/ui/chat.css
   - apps/desktop/src/components/chat/ChatMessageArea.tsx
+  - apps/desktop/src/components/chat/ChatThreadPanel.tsx
   - packages/prototypes/shared/ui-system/chat/chat.css
-  - apps/desktop/src/components/search/SearchOverlay.css
+  - packages/ui/composite/src/search/search.css
   - apps/desktop/src/components/chat/narrowLayoutAlignment.test.ts
   - apps/desktop/src/pages/SocialChatPage.tsx
   - packages/ui/web/src/drawer-assembly.ts
@@ -57,6 +58,22 @@ and reports `native-drawer-pointer-input` as blocked when the requested
 pointer event is absent. Independent window, keyboard and draft checks run
 before this capability boundary. Never add mouse fallbacks to the production
 resizer or spoof pointer capture to turn that Driver gap into product proof.
+
+## Thread anchor consumed during inert travel
+
+The original Native search Journey found a loaded, visible thread reply with
+`tabIndex=-1`, but actual focus remained on `BODY`. The thread effect had tried
+to focus during the inner leaf's inert travel and then cleared the anchor
+request. Arrival did not rerun it.
+
+`SocialChatPage` now passes the combined main/leaf input readiness to
+`ChatThreadPanel`. The anchor effect waits for that state and consumes the
+request only after `document.activeElement` is the target reply. Keep both
+inert boundaries, persistent roots and viewport-only scrolling intact.
+
+Verify through the original `chat-device-search-native-e2e` thread-open step:
+the actual target reply must receive focus after search closes. A loaded
+thread, a visible reply or a synthetic focus call cannot replace that assertion.
 
 ## Historical decision (2026-11-14, superseded layout)
 

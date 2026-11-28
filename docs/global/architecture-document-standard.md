@@ -76,7 +76,7 @@ architecture/<taxonomy>/<optional-group>/<module>/
 │   ├── phase-1-xxx.md
 │   └── ...
 └── prototype/                 # [可选] 用落地目标对应的自有前端框架做的可运行原型（代码工程）
-    └── README.md              # 仅放入口/跑法说明，原型源码落在落地目标工程（如 packages/applets/<id>/）
+    └── README.md              # 入口/跑法说明；原型宿主在 packages/prototypes，共享 UI 在 packages/ui
 ```
 
 `<taxonomy>` 只能是 `domains`、`platform`、`shared` 或 `engineering`。
@@ -96,7 +96,7 @@ architecture/<taxonomy>/<optional-group>/<module>/
 | `data-model.md` | 条件必选 | 协议结构、状态机、持久化 schema、类型映射 | 声明协议、状态机或持久化 |
 | `integration.md` | 条件必选 | 与现有模块的映射关系、影响面分析、切换策略 | 声明跨运行时或集成关系 |
 | `execution-plans/` | 可选 | 分阶段实施计划，每 Phase 一个文件 | 需要分阶段交付的模块 |
-| `prototype/` | 可选 | 用**落地目标对应的自有前端栈**做的**可运行原型**入口与跑法；UI/交互密集的模块用「能跑能点」替代纯文字/线框对齐。须登记进统一原型总账，过「原型确认门」后方可落地 | UI/交互形态需要确认、靠文字描述容易跑偏的模块；纯存储/协议/后端域不扩 |
+| `prototype/` | 可选 | 独立 Web 原型的入口与跑法；同运行时复用完整共享 UI。UI/交互密集的模块用可交互界面对齐，登记总账并确认具体源码版本后落地 | UI/交互形态需要确认、靠文字描述容易跑偏的模块；纯存储/协议/后端域不扩 |
 
 ### 3.3 命名规则
 
@@ -522,17 +522,20 @@ lifecycle 状态。
 - **禁止重复造基础件**：原型复用项目已有的桌面组件体系（LobeUI / antd 组件），不得每个需求各搭一套基础库。
 - **源码集中在统一原型工作区**：所有界面原型工程集中放在
   `packages/prototypes/<site>/<area-or-id>/`（纳入 pnpm workspace），其中一级
-  `<site>` 只允许 `desktop`、`mobile`、`dashboard`、`control`；`control`
+  `<site>` 只允许 `desktop`、`mobile`、`dashboard`、`control`、`shared`；`shared`
+  承载 Frontend Eles，`control`
   用于独立部署、被多端消费的云控产品，Station/Relay 运维仍归
   `dashboard`。统一一处便于追踪、统一工具链、基础件可跨原型复用。
   `architecture/<taxonomy>/<module>/prototype/README.md` 只写「原型在哪、
-  怎么跑、对应哪版设计、做到什么程度」，不复制源码。原型经确认门置
-  `confirmed`、进入落地时，由对应落地工程（如 Applet 落到
-  `packages/applets/<id>/` 并按其运行时实现、Desktop 页面落到桌面工程）
-  **参照原型重新实现**，总账状态推进到 `landed`——原型本身不要求能直接搬成产物。
+  怎么跑、对应哪版设计、做到什么程度」，不复制源码。同为 React Web 时，
+  原型与产品共用 `packages/ui/` 的完整 UI，宿主只接数据和动作；
+  跨运行时按已确认合同适配并复验。可见调整先在原型完成并经用户确认，
+  再进入生产。完整界面记录、源码摘要和生产准入见原型总账 §4.2；
+  不把 Gallery 状态当作界面的确认，不另写一套生产 DOM/CSS。
 - **从设计推导，不脱节**：原型界面区域要能对回 `design.md` / `functional-modules` 的模块编号；设计变更时原型同步或在 README 标注差异。
 - **可以用 mock 数据**：原型重在形态与交互，可用假数据驱动，不要求接通真实后端。
-- **不替代落地与验收**：原型是设计对齐工具，不是产品代码，不能当作任何运行时的验收证据（如 Desktop L3 须 Lynx bundle 经 Host Gateway，见 applet-runtime 验收门槛）。
+- **不替代产品验证**：原型宿主用于设计对齐；共享 UI 可以进入产品，但样例数据、
+  原型动作和浏览器回放不能替代目标运行时的业务验证。
 
 #### 5.8.3 统一原型总账与「原型确认门」
 
@@ -540,7 +543,9 @@ lifecycle 状态。
 
 - **统一总账**：`docs/architecture/engineering/prototypes/README.md` 维护一张登记表，每个原型登记 `模块 / 原型路径 / 落地目标 / 对应设计版本 / 状态`。状态取值：`drafting`（搭建中）、`pending-review`（待确认）、`confirmed`（已确认）、`landed`（已落地）、`superseded`（已废弃）。
 - **版本快照随开发分支**：原型本质是一个前端工程，其"当时版本快照"由 git 仓库本身承载——**与当前开发分支保持一致即可**，不另堆一堆 tag、也不在目录里复制 `v1/ v2/` 副本。需要回看历史形态时用 git 历史；总账只记当前对应的设计版本与状态，不维护版本副本。
-- **原型确认门**：原型登记在册并经 Owner 确认（状态置 `confirmed`）后，才允许进入对应功能的实现落地。未确认的原型不得作为落地依据。
+- **原型确认门**：研发人员要求调整界面或反馈“UI 不对”时，先在原型中核对，
+  需要修改时先改共享 UI，用户确认本次修复目标后才改生产；原型已正确时
+  可确认沿用。实现缺陷和小修不能跳过，总账 §4.2 绑定当前源码摘要。
 - 模块自身的 `architecture/<taxonomy>/<module>/prototype/README.md` 仍是该原型的入口文档，与总账互相引用。
 
 `prototype/README.md` 结构：
@@ -558,7 +563,8 @@ lifecycle 状态。
 
 ## 落地目标
 
-（这个原型最终要落到哪：Desktop 页面 / Applet(Lynx) / …。注意：原型本身只是 web 展示，落地时由对应工程按其运行时重新实现）
+（这个原型最终落到哪：Desktop 页面 / Applet(Lynx) / …。同运行时共用完整 UI；
+跨运行时按已确认合同适配并复验，宿主接线不改变已确认呈现。）
 
 ## 怎么跑
 

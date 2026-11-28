@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseDocument } from 'yaml';
+import { surfaceContext } from '../review/ui-surface-authority.mjs';
 
 export const REGISTRY_KIND = 'peers-touch-architecture-module-registry';
 export const REGISTRY_SCHEMA_VERSION = 5;
@@ -1746,6 +1747,7 @@ export function buildPreEditContext({
     schemaVersion: PRE_EDIT_CONTEXT_SCHEMA_VERSION,
     targets: normalizedTargets,
     knowledge: matchingKnowledge(canonicalRoot, normalizedTargets),
+    uiSurfaces: surfaceContext(canonicalRoot, normalizedTargets, { optional: true }),
     architecture: modulesForPaths(registryResult, normalizedTargets)
       .map((module) => architectureContext(canonicalRoot, module))
       .sort((left, right) => compareStrings(left.moduleId, right.moduleId)),

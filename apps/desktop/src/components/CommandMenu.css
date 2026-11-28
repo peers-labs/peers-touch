@@ -1,5 +1,5 @@
 /* Command directory (Cmd+Shift+K) reuses the prototype search-palette shell
-   (.pt-search-* in SearchOverlay.css). These rules only narrow the panel for
+   (@peers-touch/ui-composite/search.css). These rules only narrow the panel for
    the command directory and style its keyboard hints. */
 .pt-command-panel {
   width: 560px;

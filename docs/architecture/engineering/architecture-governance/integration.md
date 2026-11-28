@@ -50,6 +50,10 @@ Station Access Lifecycle 作为首个回填模块：
 - 在匹配成功时附加 compact context；
 - 在 registry 或必读真源不可用时拒绝写入。
 
+UI 目标还从原型总账 §4.2 派生 `uiSurfaces`：完整界面 ID、源码角色、
+原型/生产 adapter、当前摘要、确认摘要和下一步动作。该读取投影不存储
+第二份确认，也不授予写权限；产品 Vite 和 review 在使用时重新核验。
+
 ### 2.5 Review And CI
 
 `knowledge-match.sh` 保留 knowledge frontmatter 新鲜度检查，并将 changed paths

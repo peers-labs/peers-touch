@@ -4,7 +4,7 @@
  * These are the SINGLE source of sample data shared by:
  *   1. composite behavior tests (this package),
  *   2. the prototype specimen board (mock rendering),
- *   3. Desktop adapter tests (assert the real mapper yields the same shape).
+ * Native presentation comparison uses captured real rows in this same shape.
  *
  * Every fixture is checked against SearchSurfaceData with `satisfies`, so a
  * renamed field, bad enum or missing required property fails tsc at authoring
@@ -59,7 +59,7 @@ export const readySurface = {
   pendingSources: [],
   coverage: [
     { zoneKey: 'search.zone.device', detailKey: 'search.coverage.device' },
-    { zoneKey: 'search.zone.station', detailKey: 'search.coverage.station' },
+    { zoneKey: 'search.zone.station', detailKey: 'search.coverage.social_public' },
   ],
   hasMore: true,
   opening: false,
@@ -129,7 +129,7 @@ export const errorSurface = {
   isProgressive: false,
   groups: [],
   showEmpty: false,
-  errorKey: 'search.retry',
+  errorKey: 'search.error.unavailable',
   filters: [],
   pendingSources: [],
   coverage: [],

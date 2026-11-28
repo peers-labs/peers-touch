@@ -9,7 +9,7 @@
  * Design references:
  *   design.md CMP-D02 (pure display + UI transients)
  *   design.md CMP-D03 (SurfaceHooks for legacy DOM-契约保全)
- *   data-model.md §2 (port contract draft, verified against searchFrames.ts)
+ *   data-model.md §2 (current port semantics)
  */
 
 import type { ReactNode } from 'react';
@@ -37,6 +37,7 @@ export interface SearchResultRow {
   icon?: ReactNode;
   /** Optional resource identity gate hooks (passed through to data attributes). */
   resource?: { id?: string; sourceId?: string; kind?: string };
+  copyable?: boolean;
 }
 
 export interface SearchGroup {
@@ -68,6 +69,19 @@ export interface SearchSurfaceModel {
   /** Group title key the host chose for this mode (e.g. search.results). */
   groupTitleKey: string;
   displayedQuery?: string;
+  /** Host-qualified draft equality, including filters/mode. */
+  draftMatches?: boolean;
+  loadingVisible?: boolean;
+  functionsMode?: boolean;
+  activateFirstOnSubmit?: boolean;
+  /** Optional controlled context; native authority retains it across remounts. */
+  selectedKey?: string | null;
+  scrollTop?: number;
+  /** Authority explanation as host-qualified text; shared UI owns its renderer. */
+  info?: {
+    title: string;
+    sections: { title: string; paragraphs: string[]; items?: string[] }[];
+  };
 }
 
 // ── Intents (all side-effects flow out through these callbacks) ───────────
@@ -77,10 +91,13 @@ export interface SearchSurfaceIntents {
   onFilterChange(filterId: string): void;
   onSubmit(): void;
   onRetry(): void;
+  onRefresh?(): void;
   onMore(): void;
   onOpenRow(rowKey: string): void;
   onCopyRow?(rowKey: string): void;
   onClose(): void;
+  onSelectionChange?(rowKey: string | null): void;
+  onScrollChange?(scrollTop: number): void;
 }
 
 // ── Surface hooks region keys (see CMP-D03 / data-model.md §2.3) ──────────
@@ -90,7 +107,8 @@ export type SearchRegionKey =
   | 'intents' | 'body' | 'group' | 'row' | 'rowTarget' | 'rowIcon'
   | 'rowTitle' | 'rowSnippet' | 'rowZone' | 'rowOpen' | 'copyButton'
   | 'empty' | 'error' | 'more' | 'footer' | 'statusline' | 'statusChip'
-  | 'statusPending' | 'footerActions' | 'infoButton' | 'popoverSlot';
+  | 'statusPending' | 'footerActions' | 'infoButton' | 'popoverSlot' | 'hit'
+  | 'boundary' | 'emptyBoundary' | 'loading';
 
 // ── Component props ────────────────────────────────────────────────────────
 
@@ -101,8 +119,8 @@ export interface GlobalSearchSurfaceProps {
   t: CompositeTranslate;
   /** Host-injected legacy class names and data hooks (see CMP-D03). */
   hooks?: SurfaceHooks<SearchRegionKey>;
-  /** Host-rendered coverage popover content; composite does NOT render popover body. */
-  infoPopoverSlot?: ReactNode;
+  /** Navigation can transfer focus to the destination instead of the opener. */
+  shouldRestoreFocus?(): boolean;
 }
 
 export type { ReactNode };

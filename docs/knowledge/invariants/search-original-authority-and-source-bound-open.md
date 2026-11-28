@@ -27,7 +27,7 @@ owns:
   - apps/desktop/src/store/search.ts
   - apps/desktop/src/services/search.ts
   - apps/desktop/src/components/search/SearchOverlay.tsx
-  - apps/desktop/src/components/search/SearchOverlay.css
+  - packages/ui/composite/src/search/search.css
   - apps/desktop/src/test/moments-store.test.ts
   - apps/desktop/src/services/socialOpenResource.ts
   - apps/mobile/src-tauri/src/runtime/search.rs
@@ -142,6 +142,9 @@ and Native owner have removed it.
 An invalidation leaves Search `idle`; that state itself requires one original
 reacquisition even if the pinned remote owner reports unchanged empty revision
 metadata. Immediate concealment cannot qualify a completed empty query.
+Desktop's shared read-state check follows the epoch boundary in
+`docs/client/desktop/search-experience-contract.md`: an invalidation must release
+the superseded check, or its late exit consumes the wake and strands Search idle.
 The empty presentation requires `ready`, and Native tombstone proof must
 observe the original completed response as well as absent painted rows.
 The original Harness serializes that response with protobuf `toJson`; coverage
@@ -170,6 +173,11 @@ Only explicit Next consumes a currently unused continuation. Selected resource
 identity and stable scroll must survive an unchanged page; failure cannot
 silently substitute the first page. Request-owned timers must not be cleared
 or allowed to mutate a newer request by a superseded finalizer.
+Desktop focus/visibility reconciliation must retain an active query, including
+a continuation. A read-state check begun earlier must yield if a new request
+is active after its await. Restarting a loading request as a first-page read
+cancels pagination and may publish the cached first page. Original-owner
+invalidation, changed input and identity reset keep their cancellation rules.
 Failed no-store reacquisition hides the response while retaining traversal,
 selection and scroll metadata, following Search design §4.1. It is not a
 completed empty-page observation; an authorized reply that actually loses the
@@ -181,6 +189,11 @@ clamping may replace the last qualified traversal or erase selection.
 Desktop Search continuity owns selection-driven scrolling: only an explicit
 arrow-key action scrolls to a row. Restoration or a changed derived index
 cannot override the retained viewport.
+Native progressive source events cannot replace an existing qualified frame,
+including an empty result, while the newest draft is pending. The fused reply
+commits rows and displayed query together; first loading and original-authority
+concealment still admit progressive delivery. This follows Desktop Search
+continuity's input/display boundary.
 Continuation publication MUST release its issuance metadata guard before
 leaving the original authority guard, as defined by Search design §4.1.
 A successful reply must not lead to an immediate Open observing a locked
@@ -255,6 +268,13 @@ Cleanup completion requires every mandatory release flag, no cleanup errors,
 and a successful resources-released assertion. Preserve an existing Journey
 failure while recording cleanup diagnostics; never publish cleanup-complete
 or native PASS for failed release.
+Prototype replay must bind its payload, geometry and style metadata to the same
+stable native screenshot and DOM transaction. Opening an explanation can allow
+an asynchronous source to publish rows; earlier row metadata cannot describe
+the later payload. Keep the original Journey captures and assertions separately.
+Every captured destination reports the actual remaining Search row count, even
+when Search is closed. The native UI obligation set includes the invalid-query
+error frame as well as recovery; an error frame is not a nonempty matching result.
 Account-cursor isolation probes retain exactly the issuing query selectors.
 A same-account continuation must succeed first; use a separate unconsumed
 cursor after account handoff. A kind/scope/locale/limit mismatch cannot prove
@@ -482,6 +502,15 @@ Search publication order and can deadlock the native UI during reconciliation.
   Default `outline-width: 3px` with `outline-style: none`, transparent outlines
   and transparent outlined interiors must remain admitted; actual overlapping
   outline bands and unresolved offsets must fail qualification in both consumers.
+- `moments-store.test.ts` sends the original runtime an empty progressive source
+  frame while a same or changed input waits for the fused reply. The previously
+  qualified rows, empty result, displayed query, selection and scroll must remain.
+  Native `input_continuity` must still independently verify every rendered frame.
+- Hold a shared Search read-state check, advance the original source and deliver
+  its invalidation. The original late check must remain fenced; the new wake
+  must reach a completed ready response with the received resource. Ordinary
+  concurrent checks must still share one read. The Native attachment and edit
+  invalidation assertions remain required.
 - `chat-device-search-contract` executes the source-only capture race replays
   in `device_search_capture_checks.py`: both platform Settings/concealment
   paint delays, Messaging/Social mutation-and-repaint, original pending/focus,
@@ -521,6 +550,10 @@ Search publication order and can deadlock the native UI during reconciliation.
   then complete the page. Both clients must retain the current request and cursor
   and publish the final page without another source read. A relevant notification,
   changed intent and identity fence must still cancel or conceal as specified.
+- Desktop `moments-store.test.ts` pauses the third stored/no-store page while
+  focus reconciliation runs. It must preserve that request, publish its final
+  ordinal and issue no replacement query. The original Native pagination still
+  requires all 55 messages and stable painted evidence.
 - Mobile Messaging forged, edited and retracted reference checks must preserve
   each original result's `sourceId`; a missing source must not satisfy that proof.
 - Desktop and Mobile account fixtures must qualify the exact SELF post as

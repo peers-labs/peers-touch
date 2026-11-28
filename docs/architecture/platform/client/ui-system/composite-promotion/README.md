@@ -1,10 +1,16 @@
 # UI Composite Promotion Pilot（原型-生产同源复合组件试点）
 
-> **Status**: draft（等待架构评审；评审通过前不授权任何实现代码）
+> **Status**: 搜索方案已确认，正在实施与验证；身份卡和会话轨仍为候选
 > **Created**: 2026-11-10
 > **Owner**: Client Platform / UI System
-> **Branch**: `feat/ui-composite-promotion-pilot`（基于 `origin/master` 88fee1eec）
+> **Branch**: `feat/ui-composite-promotion-pilot`
 > **Parent module**: [../README.md](../README.md)（ui-system）
+
+> **2026-11-27 目标确认**：用户已明确，验收重点是「证明确认后的原型 UI 可以原样
+> 接进生产，而不是只证明共用零件」。[目标与验收](./acceptance-contract.md)记录
+> 此目标及验收方案。用户随后同意先执行完整搜索浮层试点：实际原型入口、
+> Native Desktop 入口、同样本对照、一处修改同时生效和真实业务闭环都要验证。
+> 资料卡与会话轨不在本轮实施范围；只有必需证据齐备才能判断搜索接入完成。
 
 ## 1. 这是什么
 
@@ -19,18 +25,20 @@
 「新 Pattern 留在原业务 Owner」的口径修订为「原语留 web 层、同源复合件留
 composite 层、业务 Pattern 仍留宿主层」。
 
-## 2. 试点范围（三个组件，不可扩张）
+## 2. 本轮范围与后续候选
 
 | # | 复合组件 | 原型源 | 生产源 |
 |---|---|---|---|
-| 1 | `GlobalSearchSurface` | `packages/prototypes/shared/ui-system/search/GlobalSearchOverlay.tsx` | `apps/desktop/src/components/search/SearchOverlay.tsx` |
-| 2 | `IdentityProfileCard`（self/author/sheet 三态） | `packages/prototypes/shared/ui-system/identity/IdentityCard.tsx` | `apps/desktop/src/components/profile/PublicProfileCard.tsx` |
-| 3 | `ConversationRail`（轨壳 + 会话行单元） | `packages/prototypes/shared/ui-system/chat/ChatRail.tsx`（ChatFeature rail 段） | `apps/desktop/src/components/chat/ChatSessionList.tsx` |
+| 本轮 | `GlobalSearchSurface` 完整搜索浮层 | `packages/prototypes/shared/ui-system/search/GlobalSearchOverlay.tsx` | `apps/desktop/src/components/search/SearchOverlay.tsx` |
+| 后续候选 | `IdentityProfileCard` | `packages/prototypes/shared/ui-system/identity/IdentityCard.tsx` | `apps/desktop/src/components/profile/PublicProfileCard.tsx` |
+| 后续候选 | `ConversationRail` | `packages/prototypes/shared/ui-system/chat/ChatRail.tsx` | `apps/desktop/src/components/chat/ChatSessionList.tsx` |
 
 每个组件独立交付、独立可回滚；一个组件跑通全链路后才开始下一个。
 
 ## 3. 文档导航
 
+- [acceptance-contract.md](./acceptance-contract.md) — 已确认目标、完整 UI 的验收范围、样本对照和真实业务验证
+- [design-reassessment.md](./design-reassessment.md) — 新版源码重评与完整 UI 接入的设计提案
 - [design.md](./design.md) — 证据台账、范围/非范围、运行单元与边界、端口契约总览、视觉对账、质量门禁
 - [decisions.md](./decisions.md) — CMP-D01…D08 决策记录（含备选方案与负面后果）
 - [module-layout.md](./module-layout.md) — `packages/ui/composite` 目录树、导出边界、与 web/desktop 分层关系
@@ -47,7 +55,9 @@ composite 层、业务 Pattern 仍留宿主层」。
    与副作用经端口注入。
 3. 被 `tooling/acceptance/gates` 与 `north-star.suite.json` 锁定的 DOM 选择器
    一个不丢；不靠修改/跳过 gate 变绿。
-4. 样式只允许 `--pt-*` token；暗色经 token 自动成立；禁止硬编码色值。
+4. 共享 `search.css` 是完整搜索呈现的唯一来源；角色色消费 `--pt-*`，
+   遮罩与动效值沿用确认基线。宿主不得用 CSS 重新绘制搜索外壳。
 5. 文案全部走 i18n key，组件接收 `t` 函数，包内不存在自然语言字符串与词典。
-6. 不做窄屏响应式、不做视觉重设计、不碰 mobile、不改 store/runtime；
-   端口不适配即记录阻塞，不顺手改架构。
+6. 检查现有宽窄屏及主题，不改全局窗框、Mobile 或业务 store/runtime。
+   加载、分页、失败、恢复和焦点须保持原搜索合同；原 Gate 可补证据或正确资源
+   声明，不能减少动作、跳过断言或放宽通过条件。

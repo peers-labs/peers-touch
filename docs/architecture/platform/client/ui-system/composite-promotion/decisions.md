@@ -1,6 +1,6 @@
 # Composite Promotion Pilot — Decisions
 
-> **Status**: draft（CMP-D01…D08 均为 proposal，评审通过后转 accepted_decision）
+> **Status**: 搜索所需方案已确认；P2/P3 候选仍待评审
 > 父模块已接受决策 UI-D01…D04 继续生效；本文件不重复定义，只引用。
 
 ## CMP-D01: 复合层独立成包 `packages/ui/composite`
@@ -101,13 +101,11 @@ PT_BRIDGE 换肤；生产宿主用默认主题。搬迁以「不改已接受像�
 **Consequences**：生产搜索浮层可能出现一次规格级像素微调（需用户确认）；
 原型侧删除对应 sk CSS 后 import-guard baseline 与 craft 断言需同步更新。
 
-**Resolution（2026-11-10 试点实现期，P1-7 评审门落档）**：组件一落地采用
-**保持生产现规格**方案——复合包 `search.css` 的 panel 宽 720px、圆角 12px、
-入场 160ms 与生产 `SearchOverlay.css` 逐值对齐，保证生产侧零像素回归。
-北星规格（660px / r18 / 200ms）属本计划 §nonGoals 明确排除的「视觉重设计与
-新像素创新」，**不在试点内收敛**，登记为后续独立视觉决策项，需用户显式
-签署后另开变更。状态：**resolved-deferred（延后决议）**，验收门以「生产
-DOM 视觉与改造前一致」为通过口径，而非北星 660 规格。
+**Resolution（2026-11-27）**：用户确认完整原型直接接入生产，并同意执行搜索
+试点。采用原型 660px/r18/200ms，同一份 `search.css` 同时供两端消费。
+旧 720px/r12/160ms 的延后方案停止生效。固定面板、coverage/action 轨道和
+opacity-only 入场沿 Desktop 连续性合同保留；范围与依据见 design.md。
+角色色使用 pt token，确认原型中的遮罩与动效值留在共享 CSS，宿主不覆盖。
 
 ## CMP-D05: i18n 注入 `CompositeTranslate`，包内无词典
 
@@ -162,7 +160,8 @@ invariant 的真源保留原则。
 （仓库已锁定版本，不引入新依赖族），用 `react-dom/client` + `act` 直接挂载，
 断言：渲染后的 DOM 钩子/ARIA、键盘 roving、IME 让渡、回调触发、插槽渲染、
 双 hook 映射。Desktop 侧 alignment 测试收缩为「宿主把正确 hooks/t/插槽
-传给复合件」的接线测试，不再断言组件源码字符串。
+传给复合件」的接线检查。当前 6 项搜索 alignment 保留为源码/结构证据，
+读取共享 CSS；实际行为由共享渲染测试、原型原场景和原 Native Journey 验证。
 
 **Rationale**：行为测试跟随组件同源，才能在任一侧消费变更时拦截回归；
 不引 @testing-library 避免新依赖族，先用官方 react-dom 原语。

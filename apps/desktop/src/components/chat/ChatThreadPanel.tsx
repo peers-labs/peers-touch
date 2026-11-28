@@ -207,7 +207,7 @@ function ThreadMessageItem({
   );
 }
 
-export function ChatThreadPanel({ rootUlid }: { rootUlid?: string } = {}) {
+export function ChatThreadPanel({ rootUlid, inputReady }: { rootUlid?: string; inputReady: boolean }) {
   const { t } = useTranslation('chat');
   const {
     activeTab,
@@ -328,7 +328,7 @@ export function ChatThreadPanel({ rootUlid }: { rootUlid?: string } = {}) {
   const { rootMessage, replies, displayMessages } = threadSurface;
 
   useEffect(() => {
-    if (!scrollToMessageUlid || !displayMessages.some(item => item.ulid === scrollToMessageUlid)) return;
+    if (!inputReady || !scrollToMessageUlid || !displayMessages.some(item => item.ulid === scrollToMessageUlid)) return;
     const element = Array.from(panelRef.current?.querySelectorAll<HTMLElement>('[data-thread-message-id]') ?? [])
       .find(node => node.dataset.threadMessageId === scrollToMessageUlid);
     if (!element) return;
@@ -339,12 +339,13 @@ export function ChatThreadPanel({ rootUlid }: { rootUlid?: string } = {}) {
     viewport.scrollTop += target.top - bounds.top - (viewport.clientHeight - target.height) / 2;
     element.tabIndex = -1;
     element.focus({ preventScroll: true });
+    if (document.activeElement !== element) return;
     setHighlightedAnchor(scrollToMessageUlid);
     // An explicit anchor navigation takes over from tail pinning until the
     // user scrolls back to the tail.
     tailPinnedRef.current = false;
     setScrollToMessageUlid(null);
-  }, [scrollToMessageUlid, displayMessages, setScrollToMessageUlid]);
+  }, [inputReady, scrollToMessageUlid, displayMessages, setScrollToMessageUlid]);
 
   const scrollToThreadTail = useCallback(() => {
     const viewport = scrollRef.current;

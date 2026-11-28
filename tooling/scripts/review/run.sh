@@ -81,6 +81,11 @@ echo "== Primitive layer boundary =="
 node tooling/scripts/review/primitive-layer-guard.mjs
 
 echo
+echo "== Complete UI surface authority =="
+node tooling/scripts/review/ui-surface-authority.mjs verify
+node --test tooling/scripts/review/ui-surface-authority.test.mjs
+
+echo
 echo "== peers token reference guard =="
 # Every var(--pt-*) the desktop renderer consumes must be emitted by the
 # token package or defined as a local alias/extension point.
