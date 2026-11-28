@@ -398,7 +398,8 @@ export function SocialChatPage() {
         inert={!assembly.leaf || assembly.leafProgress < 1}
         aria-hidden={!assembly.leaf || assembly.leafProgress < 1}>
         {assembly.leafContent?.kind === 'thread'
-          ? <ChatThreadPanel rootUlid={assembly.leafContent.messageId} />
+          ? <ChatThreadPanel rootUlid={assembly.leafContent.messageId}
+              inputReady={assembly.open && assembly.navigation >= 1 && !!assembly.leaf && assembly.leafProgress >= 1} />
           : assembly.leafContent?.kind === 'detail' && <ChatDetailPanel />}
       </div>
       </div>

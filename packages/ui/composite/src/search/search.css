@@ -1,0 +1,502 @@
+/* Complete search grammar, promoted from the confirmed north-star surface.
+   Both hosts consume this file; host CSS owns no search layout or states. */
+/* GlobalSearchOverlay — north-star frame (inc 24).
+   Top-anchored command surface in the pine-glass grammar: one quiet panel,
+   hairline separators, ink wash on hover/keyboard focus. Never a SaaS card
+   stack: no purple, no elevation zoo, no per-row shadows. */
+
+.ptc-search-overlay {
+  position: fixed; inset: 0; z-index: var(--pt-z-overlay, 1000);
+  display: flex; justify-content: center; align-items: flex-start;
+  padding: 12vh 16px 24px;
+  font-family: var(--pt-font);
+  font-size: 14px;
+  line-height: 21px;
+}
+
+.ptc-search-scrim {
+  position: absolute; inset: 0;
+  background: color-mix(in srgb, #16181a 30%, transparent);
+  backdrop-filter: blur(6px) saturate(1.05);
+  -webkit-backdrop-filter: blur(6px) saturate(1.05);
+
+}
+@keyframes ptc-search-scrim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.ptc-search-panel {
+  position: relative;
+  width: min(660px, 100%);
+  height: min(600px, calc(100dvh - 12vh - 24px));
+  display: flex; flex-direction: column;
+  background: var(--pt-overlay);
+  border: 1px solid var(--pt-border);
+  border-radius: 18px;
+  box-shadow: 0 24px 64px -24px rgba(20, 24, 22, .35),
+    inset 0 1px 0 color-mix(in srgb, #ffffff 55%, transparent);
+  overflow: hidden;
+  /* Opacity-only entrance preserves native geometry across hidden windows. */
+
+}
+
+@keyframes ptc-search-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+/* Exit keyframes live here; the closing-phase selectors sit at the end of
+   the file so they win over each grammar's entrance declaration. */
+@keyframes ptc-search-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(2px) scale(.995); }
+}
+@keyframes ptc-search-scrim-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.ptc-search-field {
+  display: flex; align-items: center; gap: 10px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--pt-border);
+}
+.ptc-search-field:focus-within {
+  border-bottom-color: color-mix(in srgb, var(--pt-primary) 38%, var(--pt-border));
+}
+
+.ptc-search-leading { color: var(--pt-muted); flex-shrink: 0; }
+
+.ptc-search-input {
+  flex: 1; min-width: 0;
+  border: 0; outline: 0; background: transparent;
+  font: inherit; font-size: 15.5px; color: var(--pt-text);
+  padding: 0;
+}
+.ptc-search-input::placeholder { color: var(--pt-muted); }
+.ptc-search-input::-webkit-search-cancel-button { display: none; }
+/* Focus is expressed by the rounded input-row hairline, never the global
+   square :focus-visible outline on the embedded radius-0 control. */
+.ptc-search-panel .ptc-search-input:focus-visible { outline: none; }
+
+.ptc-search-kbd {
+  flex-shrink: 0;
+  font: inherit; font-size: 10.5px; font-weight: 600;
+  letter-spacing: .02em; text-transform: uppercase;
+  color: var(--pt-muted);
+  padding: 3px 7px; border-radius: 6px;
+  background: var(--pt-subtle);
+  border: 1px solid var(--pt-border);
+}
+
+.ptc-search-close {
+  flex-shrink: 0;
+  display: grid; place-items: center;
+  width: 26px; height: 26px;
+  border: 0; border-radius: 8px;
+  background: transparent; color: var(--pt-muted);
+  cursor: pointer;
+}
+.ptc-search-close:hover { background: var(--pt-subtle); color: var(--pt-text); }
+
+.ptc-search-body {
+  flex: 1; overflow-y: auto;
+  padding: 8px;
+}
+
+.ptc-search-group { padding: 4px 2px 8px; }
+.ptc-search-group + .ptc-search-group {
+  border-top: 1px solid var(--pt-border);
+  padding-top: 8px;
+}
+
+.ptc-search-group-title {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 10px 4px;
+  font-size: 10.5px; font-weight: 700;
+  letter-spacing: .09em; text-transform: uppercase;
+  color: var(--pt-muted);
+}
+.ptc-search-group-title em {
+  font-style: normal; font-weight: 600;
+  font-size: 10px; color: var(--pt-muted);
+}
+
+.ptc-search-row {
+  display: flex; align-items: center; gap: 11px;
+  width: 100%;
+  border: 0; border-radius: 11px;
+  background: transparent;
+  padding: 8px 10px;
+  text-align: left; cursor: pointer;
+  color: var(--pt-text);
+  font-family: inherit;
+  /* The wash must glide between rows under hover and keyboard navigation;
+     an instant swap is what makes cursor movement feel abrupt. */
+  transition: background-color 150ms cubic-bezier(.22, 1, .36, 1),
+    box-shadow 150ms cubic-bezier(.22, 1, .36, 1);
+}
+.ptc-search-row:hover,
+.ptc-search-row.is-active {
+  background: color-mix(in srgb, var(--pt-primary) 8%, transparent);
+}
+.ptc-search-row.is-active { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pt-primary) 16%, transparent); }
+
+.ptc-search-row-icon {
+  flex-shrink: 0;
+  width: 28px; height: 28px;
+  display: grid; place-items: center;
+  border-radius: 9px;
+  background: var(--pt-subtle);
+  color: var(--pt-secondary);
+  transition: background-color 150ms cubic-bezier(.22, 1, .36, 1),
+    color 150ms cubic-bezier(.22, 1, .36, 1);
+}
+.ptc-search-row.is-active .ptc-search-row-icon {
+  background: color-mix(in srgb, var(--pt-primary) 14%, var(--pt-subtle));
+  color: var(--pt-primary);
+}
+
+.ptc-search-main {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; gap: 1px;
+}
+.ptc-search-row-title {
+  font-size: 13.5px; font-weight: 550; color: var(--pt-text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ptc-search-row-meta {
+  font-size: 11.5px; color: var(--pt-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.ptc-search-row-zone {
+  flex-shrink: 0;
+  font-size: 10.5px; color: var(--pt-muted);
+  padding: 2px 8px; border-radius: 999px;
+  background: var(--pt-subtle);
+  max-width: 150px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.ptc-search-row-open {
+  flex-shrink: 0;
+  color: var(--pt-muted);
+  opacity: 0; transition: opacity 120ms ease;
+}
+.ptc-search-row:hover .ptc-search-row-open,
+.ptc-search-row.is-active .ptc-search-row-open { opacity: 1; }
+
+.ptc-search-hit {
+  background: color-mix(in srgb, var(--pt-accent) 32%, transparent);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+.ptc-search-empty {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 38px 24px 32px;
+  text-align: center;
+}
+.ptc-search-empty strong { font-size: 14px; font-weight: 600; color: var(--pt-text); }
+.ptc-search-empty > span { margin: 0; font-size: 12.5px; color: var(--pt-muted); }
+
+.ptc-search-boundary-inline {
+  display: inline-flex; align-items: center; gap: 5px;
+  margin-top: 8px;
+  font-size: 11px; color: var(--pt-muted);
+}
+
+.ptc-search-footer {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 9px 16px;
+  border-top: 1px solid var(--pt-border);
+  font-size: 11px; color: var(--pt-muted);
+}
+.ptc-search-boundary {
+  display: inline-flex; align-items: center; gap: 5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ptc-search-keys { white-space: nowrap; }
+.ptc-search-keys kbd,
+.ptc-search-footer kbd {
+  font: inherit; font-size: 10.5px;
+  padding: 1px 5px; margin: 0 1px;
+  border-radius: 5px;
+  background: var(--pt-subtle);
+  border: 1px solid var(--pt-border);
+  color: var(--pt-secondary);
+}
+
+@media (max-width: 560px) {
+  .ptc-search-overlay { padding: 10px 10px 16px; }
+  .ptc-search-panel {
+    max-height: calc(100vh - 26px);
+    border-radius: 16px;
+  }
+  .ptc-search-row-zone { display: none; }
+  .ptc-search-footer { font-size: 10.5px; }
+  .ptc-search-boundary { max-width: 46%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ptc-search-panel { animation: none; }
+}
+
+/* =====================================================================
+   Linear command grammar — prototype experiment (?cmdgrammar=...).
+   The line budget, not color, is the grammar: icons are naked strokes
+   (never boxed), the input row has no rule, groups divide by whitespace,
+   and the panel keeps exactly ONE hairline (the footer) at ~6-7%. The
+   shipped glass grammar above is untouched when data-grammar is absent.
+   ===================================================================== */
+.ptc-search-overlay[data-grammar='linear-light'],
+.ptc-search-overlay[data-grammar='linear-dark'] {
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+}
+.ptc-search-overlay[data-grammar='linear-light'] {
+  --cmd-panel: #ffffff;
+  --cmd-ink: #0f1011;
+  --cmd-ink-2: #5a5f69;
+  --cmd-ink-3: #8a8f98;
+  --cmd-hairline: rgba(15, 16, 17, .06);
+  --cmd-chip-border: rgba(15, 16, 17, .10);
+  --cmd-wash: rgba(15, 16, 17, .045);
+}
+.ptc-search-overlay[data-grammar='linear-dark'] {
+  --cmd-panel: #1a1b1e;
+  --cmd-ink: #e6e8eb;
+  --cmd-ink-2: #9ca1a8;
+  --cmd-ink-3: #62666d;
+  --cmd-hairline: rgba(255, 255, 255, .07);
+  --cmd-chip-border: rgba(255, 255, 255, .12);
+  --cmd-wash: rgba(255, 255, 255, .06);
+}
+
+/* scrim + panel: one hairline around, quiet elevation, no inset highlight */
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-scrim {
+  background: rgba(15, 16, 17, .30);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-scrim {
+  background: rgba(0, 0, 0, .55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-panel,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-panel {
+  width: min(640px, 100%);
+  background: var(--cmd-panel);
+  border: 1px solid var(--cmd-hairline);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px -16px rgba(0, 0, 0, .28), 0 2px 8px -2px rgba(0, 0, 0, .08);
+
+}
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-panel {
+  box-shadow: 0 16px 48px -16px rgba(0, 0, 0, .72), 0 2px 8px -2px rgba(0, 0, 0, .4);
+}
+@keyframes ptc-search-in-linear {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+/* input row: no rule, no focus border — the caret and glyph own the row */
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-field,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-field {
+  padding: 12px 14px;
+  border-bottom: 0;
+}
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-field:focus-within,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-field:focus-within {
+  border-bottom-color: transparent;
+}
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-input,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-input { font-size: 14px; color: var(--cmd-ink); }
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-input::placeholder,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-input::placeholder { color: var(--cmd-ink-3); }
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-leading,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-leading { color: var(--cmd-ink-3); width: 16px; height: 16px; }
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-close,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-close { color: var(--cmd-ink-3); }
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-close:hover,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-close:hover {
+  background: var(--cmd-wash); color: var(--cmd-ink);
+}
+
+/* kbd: flat stroke chip, never a filled key */
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-kbd,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-kbd,
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-footer kbd,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-footer kbd {
+  background: transparent;
+  border: 1px solid var(--cmd-chip-border);
+  color: var(--cmd-ink-3);
+  border-radius: 5px;
+}
+
+/* body tightens; groups divide by whitespace + label, never rules */
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-body,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-body { padding: 4px 8px 8px; }
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-group,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-group { padding: 6px 2px; }
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-group + .ptc-search-group,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-group + .ptc-search-group {
+  border-top: 0; padding-top: 10px;
+}
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-group-title,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-group-title {
+  text-transform: none; letter-spacing: 0;
+  font-size: 11px; font-weight: 500;
+  color: var(--cmd-ink-3);
+  padding: 4px 8px 6px;
+}
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-group-title em,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-group-title em { color: var(--cmd-ink-3); }
+
+/* rows: neutral wash, 6px corner, no inset ring, no accent anywhere */
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-row,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-row {
+  gap: 10px; padding: 7px 8px; border-radius: 6px; color: var(--cmd-ink);
+}
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-row:hover,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-row:hover,
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-row.is-active,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-row.is-active {
+  background: var(--cmd-wash);
+  box-shadow: none;
+}
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-row-title,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-row-title {
+  font-size: 13px; font-weight: 450; color: var(--cmd-ink);
+}
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-row.is-active .ptc-search-row-title,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-row.is-active .ptc-search-row-title { font-weight: 550; }
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-row-meta,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-row-meta { font-size: 12px; color: var(--cmd-ink-3); }
+
+/* icons unbox: a fixed glyph column, bare 16px stroke, tertiary ink */
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-row-icon,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-row-icon {
+  width: 20px; height: 20px;
+  background: transparent; border-radius: 0;
+  color: var(--cmd-ink-3);
+}
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-row-icon svg,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-row-icon svg { width: 16px; height: 16px; stroke-width: 1.75; }
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-row.is-active .ptc-search-row-icon,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-row.is-active .ptc-search-row-icon {
+  background: transparent; color: var(--cmd-ink);
+}
+
+/* meta tag becomes plain tertiary text; the open glyph stays quiet */
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-row-zone,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-row-zone {
+  background: transparent; border-radius: 0; padding: 0;
+  font-size: 11.5px; color: var(--cmd-ink-3);
+}
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-row-open,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-row-open { width: 14px; height: 14px; }
+
+/* query hits gain weight, never a color block */
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-hit,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-hit {
+  background: transparent; padding: 0; border-radius: 0;
+  color: var(--cmd-ink); font-weight: 600;
+}
+
+/* empty state follows the same ink ladder */
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-empty strong,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-empty strong { color: var(--cmd-ink); font-weight: 550; }
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-empty > span,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-empty > span,
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-boundary-inline,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-boundary-inline { color: var(--cmd-ink-3); }
+
+/* the single hairline in the panel */
+.ptc-search-overlay[data-grammar='linear-light'] .ptc-search-footer,
+.ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-footer {
+  border-top: 1px solid var(--cmd-hairline);
+  color: var(--cmd-ink-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ptc-search-overlay[data-grammar='linear-light'] .ptc-search-panel,
+  .ptc-search-overlay[data-grammar='linear-dark'] .ptc-search-panel { animation: none; }
+}
+
+/* Closing phase — last in source order so it overrides both grammars'
+   entrance animation. Exit is shorter than entrance: leave promptly, land
+   softly. */
+.ptc-search-overlay[data-closing='true'] .ptc-search-panel {
+  animation: ptc-search-out 90ms cubic-bezier(.4, 0, .7, 1) forwards;
+}
+.ptc-search-overlay[data-closing='true'] .ptc-search-scrim {
+  animation: ptc-search-scrim-out 90ms cubic-bezier(.4, 0, .7, 1) forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ptc-search-overlay[data-closing='true'] .ptc-search-panel,
+  .ptc-search-overlay[data-closing='true'] .ptc-search-scrim { animation: none; }
+}
+
+
+/* Business states use the same fixed rails in every grammar. */
+.ptc-search-overlay *, .ptc-search-overlay *::before, .ptc-search-overlay *::after { box-sizing: border-box; }
+.ptc-search-overlay[data-closing='true'] { pointer-events: none; }
+.ptc-search-panel[data-search-entering='true'] { animation: ptc-search-in 200ms cubic-bezier(.22, 1, .36, 1); }
+.ptc-search-overlay:has([data-search-entering='true']) .ptc-search-scrim { animation: ptc-search-scrim-in 200ms cubic-bezier(.22, 1, .36, 1); }
+.ptc-search-field-area { flex: none; }
+.ptc-search-field { min-height: 53px; }
+.ptc-search-loading-slot { display: grid; place-items: center; width: 16px; height: 16px; flex: none; }
+.ptc-search-status { width: 14px; height: 14px; border: 2px solid var(--pt-border); border-top-color: var(--pt-primary); border-radius: 50%; animation: ptc-search-spin 800ms linear infinite; }
+@keyframes ptc-search-spin { to { transform: rotate(360deg); } }
+.ptc-search-intents { flex: none; display: flex; gap: 4px; padding: 6px 16px; border-bottom: 1px solid var(--pt-border); overflow-x: auto; }
+.ptc-search-intents button { flex: none; border: 0; border-radius: 8px; background: transparent; padding: 6px 12px; font: inherit; font-size: 12px; color: var(--pt-secondary); cursor: pointer; }
+.ptc-search-intents button.active { background: var(--pt-primarySubtle); color: var(--pt-primary); font-weight: 600; }
+.ptc-search-intents button:hover { background: var(--pt-subtle); }
+.ptc-search-body { min-height: 0; scrollbar-width: thin; }
+.ptc-search-list { list-style: none; margin: 0; padding: 0; }
+.ptc-search-item { position: relative; display: flex; align-items: center; }
+.ptc-search-item:has(.ptc-search-copy) .ptc-search-row { padding-right: 44px; }
+.ptc-search-row-target { display: flex; flex: 1; align-items: center; gap: 11px; min-width: 0; }
+.ptc-search-row[aria-disabled='true'] { cursor: progress; opacity: .7; }
+.ptc-search-row-snippet { font-size: 11.5px; color: var(--pt-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; -webkit-user-select: text; }
+.ptc-search-row-title, .ptc-search-row-meta { user-select: text; -webkit-user-select: text; }
+.ptc-search-copy { position: absolute; right: 8px; width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--pt-muted); display: grid; place-items: center; cursor: pointer; opacity: 0; }
+.ptc-search-item:hover .ptc-search-copy, .ptc-search-item.is-active .ptc-search-copy, .ptc-search-copy:focus-visible { opacity: 1; }
+.ptc-search-copy:hover { background: var(--pt-subtle); color: var(--pt-primary); }
+.ptc-search-visuallyhidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.ptc-search-error { display: flex; align-items: center; gap: 12px; padding: 18px; color: var(--pt-secondary); font-size: 12px; }
+.ptc-search-error button, .ptc-search-more { border: 1px solid var(--pt-border); border-radius: 8px; background: var(--pt-overlay); color: var(--pt-primary); padding: 6px 12px; font: inherit; font-size: 12px; cursor: pointer; }
+.ptc-search-more { display: block; margin: 8px auto; }
+.ptc-search-more:disabled { opacity: .6; cursor: progress; }
+.ptc-search-panel button:focus-visible, .ptc-search-statusline:focus-visible { outline: 2px solid var(--pt-focus); outline-offset: -2px; }
+.ptc-search-footer { flex: none; flex-direction: column; align-items: stretch; gap: 0; padding: 0 16px; }
+.ptc-search-statusline { height: 44px; flex: none; overflow-y: auto; padding: 6px 0; display: flex; flex-wrap: wrap; align-content: flex-start; column-gap: 12px; row-gap: 4px; scrollbar-width: thin; }
+.ptc-search-status-chip { display: inline-flex; align-items: center; gap: 4px; line-height: 16px; }
+.ptc-search-status-pending { color: var(--pt-primary); }
+.ptc-search-footer-actions { height: 36px; flex: none; display: flex; align-items: center; gap: 12px; border-top: 1px solid var(--pt-border); }
+.ptc-search-popover-slot { display: flex; align-items: center; gap: 8px; margin-left: auto; min-width: 0; }
+.ptc-search-info { display: grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: 6px; background: transparent; color: var(--pt-muted); cursor: pointer; }
+.ptc-search-info:hover { background: var(--pt-subtle); }
+.ptc-search-refresh { display: grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: 6px; background: transparent; color: var(--pt-muted); cursor: pointer; }
+.ptc-search-refresh:hover { background: var(--pt-subtle); }
+.ptc-search-refresh:disabled { opacity: .6; cursor: progress; }
+/* Keep the confirmed explanation radius when the primitive portals into a
+   host with a different local control-radius token. */
+.ptc-search-explanation { --pt-radius-md: 10px; }
+.ptc-search-popover { max-width: 320px; display: flex; flex-direction: column; gap: 10px; max-height: 320px; overflow-y: auto; scrollbar-width: thin; }
+.ptc-search-popover-title { margin: 0; font-size: 13px; font-weight: 600; color: var(--pt-text); }
+.ptc-search-popover h6 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--pt-muted); }
+.ptc-search-popover p, .ptc-search-popover ul { margin: 0; font-size: 12px; line-height: 17px; color: var(--pt-secondary); }
+.ptc-search-popover ul { padding-left: 14px; }
+.ptc-search-popover li + li { margin-top: 2px; }
+/* Existing command directory consumes the same palette grammar. Its app
+   continues to own command resolution; these rails preserve its composition. */
+.ptc-search-overlay[data-command-menu] { padding: 0 16px 24px; }
+.ptc-search-overlay[data-command-menu] .ptc-search-footer { flex-direction: row; padding: 9px 16px; gap: 12px; }
+.ptc-search-opening { color: var(--pt-primary); }
+@media (max-width: 560px) { .ptc-search-panel { height: calc(100dvh - 26px); } }
+@media (prefers-reduced-motion: reduce) {
+  .ptc-search-overlay *, .ptc-search-panel[data-search-entering='true'] { animation: none !important; transition: none !important; }
+}

@@ -1,6 +1,6 @@
 ---
-name: "pt-defect-closure"
-description: "Closes the defect loop: debug → fix → acceptance injection. Invoke for bug fixes that need regression coverage added to the affected module."
+name: pt-defect-closure
+description: Close defects with functional checks and regression coverage. Use for bugs; UI feedback requires prototype confirmation before product fixes.
 stage: "cross-stage"
 requires: ["identified bug", "affected module path"]
 produces: ["root cause analysis", "fix", "acceptance gap analysis", "acceptance Gate + evidence", "growth decision"]
@@ -29,6 +29,10 @@ Every bug fix that touches product behavior MUST first pass its exact-source
 functional Journey, then leave behind an Acceptance Gate that prevents
 regression. This includes UI and interaction defects.
 
+User-reported UI problems must use the UI/Interaction ordering through
+prototype confirmation. Discovering a data, API, or runtime root cause does not
+permit reclassifying the feedback as Behavior to skip Phase 1b.
+
 ## Step 0: Classify the Defect
 
 Before anything else, classify the bug. This determines which path to follow.
@@ -36,15 +40,17 @@ Before anything else, classify the bug. This determines which path to follow.
 | Defect type | Examples | Dispatch |
 |-------------|----------|----------|
 | **Behavior** | Wrong data, broken API, logic error, race condition | Phase 1 → Phase 2 → Phase 3 → Phase 4 |
-| **UI / Interaction** | Misaligned layout, wrong state color, missing loading state, interaction not matching prototype, broken responsive behavior | Phase 1 → Phase 1b (UI contract) → Phase 2 → Phase 3 → Phase 4 |
+| **UI / Interaction** | Misaligned layout, wrong state color, missing loading state, interaction not matching prototype, broken responsive behavior | Phase 1 diagnosis only → Phase 1b prototype review/confirmation → Phase 1 fix → Phase 1c → Phase 2 → Phase 3 → Phase 4 |
 | **Typo / Comment** | Spelling, comment accuracy, internal rename with zero product impact | `pt-small-fix-discipline` only — no acceptance needed |
 
 ---
 
 ## Phase 1: Debug & Fix
 
-0. **Declare before mutation** — publish and confirm the work item's source and
-   runtime intent through `make dev-start`; use `make dev-update` if scope grows.
+0. **Intake before mutation** — use the existing `pt-dev-workflow` to verify
+   the request, worktree and scope. UI feedback registers through
+   `dev-work.mjs intake --kind ui-feedback`; it needs no Plan or Task. Runtime
+   intent remains with its existing runtime owner.
 1. **Locate governing spec** — `pt-small-fix-discipline` §1: which layer owns this?
 2. **Layer-ownership audit** — `pt-god-view` §3.3.1: is the fix at the correct layer?
 3. **Debug** — use the host-neutral evidence loop: hypothesize → instrument →
@@ -53,14 +59,19 @@ Before anything else, classify the bug. This determines which path to follow.
    reports the missing capability, `pt-goal-orchestrator` projects the Host
    Capability Request, and Dev Workflow invokes the detected
    `pt-*-host-adapter` only after Guardian admission.
-4. **Fix** — surgical, at the correct layer, no patches
+4. **Fix** — surgical, at the correct layer. For UI feedback, complete Phase 1b
+   and obtain user confirmation of the prototype repair target before this step.
 
 ---
 
 ## Phase 1b: UI Interaction Contract (UI defects only)
 
-For UI / interaction defects, before acceptance injection, define what "correct"
-means so the agent and acceptance Gate share a common baseline.
+For UI / interaction feedback, before any production fix, invoke
+`pt-prototype-sync-guardian` and follow prototype ledger §4.2. Show the relevant
+prototype state, adjust incorrect presentation, and obtain user confirmation
+of this repair target. A correct prototype may be confirmed unchanged.
+Neither implementation-bug classification nor previous confirmation bypasses
+this step. Then define "correct" in the interaction contract.
 
 ### Priority of truth
 
@@ -115,7 +126,8 @@ evidence:
 After writing the contract, invoke `pt-prototype-sync-guardian` to classify
 drift:
 
-- `Implementation bug` → fix product, do not change prototype
+- `Implementation bug` → after this feedback's prototype confirmation, restore
+  the confirmed target in product; keep correct prototype source unchanged
 - `Prototype bug` → fix prototype and contract first, then product
 - `Product decision` → update prototype, contract, and acceptance first, then product
 - `Runtime-only detail` → no prototype change needed
@@ -274,6 +286,8 @@ Never:
 - Fix a bug without checking which layer owns the state
 - Fix a UI defect without writing an interaction contract
 - Skip prototype sync for UI changes
+- Move from a UI defect report to production edits before prototype target
+  confirmation, even when the prototype already appears correct
 - Skip Phase 4 growth assessment
 - Add a Gate that only checks the happy path (it must verify the bug scenario)
 - Inject or run broad Acceptance before `FUNCTIONAL_PASS`

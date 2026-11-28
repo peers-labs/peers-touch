@@ -1,0 +1,276 @@
+/**
+ * IdentityProfileCard styles — three grammars (self / author / sheet).
+ *
+ * All values reference `--pt-*` tokens only; dark mode inherits through the
+ * token layer. No hardcoded hex. Host legacy classes (pp-* / sk-author-*) are
+ * injected alongside these ptc-* classes through SurfaceHooks, so both
+ * namespaces can skin the same nodes while the composite owns structure.
+ */
+
+.ptc-profile-card { font-family: inherit; }
+
+/* ── self popover ─────────────────────────────────────────────────────── */
+.ptc-profile-card--self { width: 300px; background: var(--pt-surface); }
+.ptc-profile-self-banner {
+  height: 92px;
+  background: linear-gradient(120deg,
+    color-mix(in srgb, var(--pt-primary) 42%, transparent),
+    color-mix(in srgb, var(--pt-primary) 10%, transparent));
+  background-position: center;
+  background-size: cover;
+}
+.ptc-profile-self-body {
+  position: relative;
+  padding: 44px 16px 14px;
+  display: flex;
+  flex-direction: column;
+}
+.ptc-profile-self-avatar {
+  position: absolute;
+  top: -28px;
+  left: 16px;
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  overflow: hidden;
+  line-height: 0;
+  box-shadow: 0 0 0 4px var(--pt-surface), 0 6px 16px var(--pt-shadow-soft, rgba(15, 23, 42, 0.18));
+}
+.ptc-profile-self-name {
+  font-size: 17px;
+  font-weight: 650;
+  color: var(--pt-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ptc-profile-self-handle { margin-top: 2px; font-size: 12px; min-width: 0; }
+.ptc-profile-self-identity { margin-top: 2px; display: flex; flex-direction: column; gap: 2px; }
+
+/* ── author quick popover ─────────────────────────────────────────────── */
+.ptc-profile-card--author {
+  box-sizing: border-box;
+  width: 264px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ptc-profile-author-head { display: flex; align-items: center; gap: 10px; }
+.ptc-profile-author-idcol { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ptc-profile-author-name {
+  font-size: 14.5px;
+  font-weight: 650;
+  color: var(--pt-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ptc-profile-station {
+  font-size: 11.5px;
+  color: var(--pt-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── sheet hero ───────────────────────────────────────────────────────── */
+.ptc-profile-card--sheet { display: flex; flex-direction: column; }
+.ptc-profile-sheet-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px 12px;
+}
+.ptc-profile-sheet-avatar {
+  line-height: 0;
+  border-radius: 18px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pt-text) 8%, transparent);
+}
+.ptc-profile-sheet-name {
+  margin-top: 2px;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--pt-text);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.ptc-profile-sheet-sub {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 11.5px;
+  color: var(--pt-muted);
+  text-align: center;
+}
+.ptc-profile-sheet-body { display: flex; flex-direction: column; gap: 10px; padding: 0 16px 8px; }
+.ptc-profile-card--sheet .ptc-profile-pills,
+.ptc-profile-card--sheet .ptc-profile-stats { justify-content: center; }
+
+/* ── shared identity sections ─────────────────────────────────────────── */
+.ptc-profile-bio {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--pt-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ptc-profile-handle {
+  font-size: 12px;
+  line-height: 1.2;
+  color: var(--pt-secondary);
+}
+.ptc-profile-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.ptc-profile-pill {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: var(--pt-radius-md, 8px);
+  background: var(--pt-subtle);
+  color: var(--pt-secondary);
+  font-weight: 500;
+}
+.ptc-profile-pill[data-tone='success'] {
+  color: var(--pt-success);
+  background: color-mix(in srgb, var(--pt-success) 12%, transparent);
+}
+.ptc-profile-pill[data-tone='warning'] {
+  color: var(--pt-warning);
+  background: color-mix(in srgb, var(--pt-warning) 12%, transparent);
+}
+.ptc-profile-pill[data-tone='processing'] {
+  color: var(--pt-primary);
+  background: color-mix(in srgb, var(--pt-primary) 12%, transparent);
+}
+.ptc-profile-stats { display: flex; flex-wrap: wrap; align-items: center; }
+.ptc-profile-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 11.5px;
+  color: var(--pt-muted);
+}
+.ptc-profile-stat strong { font-size: 13px; font-weight: 650; color: var(--pt-text); }
+.ptc-profile-stats--author { gap: 12px; font-size: 12px; }
+.ptc-profile-stats--author .ptc-profile-stat { flex-direction: row; align-items: baseline; gap: 3px; font-size: 12px; }
+.ptc-profile-stats--self { gap: 20px; margin-top: 12px; }
+.ptc-profile-stats--sheet { gap: 20px; }
+.ptc-profile-stats--self .ptc-profile-stat strong,
+.ptc-profile-stats--sheet .ptc-profile-stat strong { font-size: 16px; }
+.ptc-profile-meta-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--pt-muted);
+}
+.ptc-profile-self-joined { margin-top: 9px; }
+.ptc-profile-links { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ptc-profile-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--pt-primary);
+  max-width: 100%;
+}
+.ptc-profile-link span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ptc-profile-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ptc-profile-self-body .ptc-profile-actions { margin-top: 13px; }
+
+/* ── moments strip (author variant) ───────────────────────────────────── */
+.ptc-profile-moments { display: flex; flex-direction: column; gap: 7px; }
+.ptc-profile-moments-title {
+  font-size: 11.5px;
+  color: var(--pt-muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.ptc-profile-moment-strip { display: flex; gap: 6px; }
+.ptc-profile-moment-tile {
+  flex: 0 0 auto;
+  width: 72px;
+  height: 72px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--pt-subtle);
+  position: relative;
+}
+.ptc-profile-moment-thumb {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+}
+.ptc-profile-moment-text {
+  position: absolute;
+  inset: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  padding: 7px 8px;
+  text-align: left;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--pt-secondary);
+  background: color-mix(in srgb, var(--pt-text) 5%, transparent);
+}
+
+/* ── technical details disclosure ─────────────────────────────────────── */
+.ptc-profile-details { color: var(--pt-secondary); border: 0; padding: 0; }
+.ptc-profile-details > summary {
+  cursor: pointer;
+  font-size: 12px;
+  user-select: none;
+  color: var(--pt-secondary);
+}
+.ptc-profile-details__rows { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; }
+.ptc-profile-details__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: var(--pt-radius-md, 8px);
+  background: var(--pt-subtle);
+}
+.ptc-profile-details__label { flex-shrink: 0; font-size: 11px; color: var(--pt-muted); }
+.ptc-profile-details__value {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--pt-mono);
+  font-size: 11px;
+  color: var(--pt-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ptc-profile-copy {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--pt-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--pt-radius-sm, 4px);
+}
+.ptc-profile-copy:hover { color: var(--pt-primary); background: var(--pt-subtle); }
+.ptc-profile-visuallyhidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

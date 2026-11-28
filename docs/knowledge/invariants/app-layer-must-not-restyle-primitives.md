@@ -46,6 +46,12 @@ The boundary is between **composition** (allowed at the app layer) and
    component. Missing capability is added to the primitive as a public
    variant/prop, not patched locally.
 
+Complete shared surfaces follow the same boundary. Their `.ptc-*` classes and
+declared legacy host hooks are owned by `packages/ui/composite`; all app and
+prototype CSS are checked by `ui-surface-authority.mjs`. For a visible adjustment,
+edit the shared presentation through the prototype and obtain user confirmation
+of its current source before production integration (prototype ledger §4.2).
+
 ### Allowed at the app layer
 
 - Page/region **layout only**: grid/flex placement, page-owned container
@@ -80,6 +86,7 @@ never compounded. Primitive-level fixes are N→1; app-layer overrides are
 
 ```sh
 node tooling/scripts/review/primitive-layer-guard.mjs
+node tooling/scripts/review/ui-surface-authority.mjs verify
 ```
 
 - Fails on any `.pt-*` selector in app-layer CSS outside `packages/ui`.

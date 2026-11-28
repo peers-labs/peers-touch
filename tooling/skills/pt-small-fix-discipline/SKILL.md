@@ -1,11 +1,6 @@
 ---
 name: pt-small-fix-discipline
-description: >
-  Behavioral discipline for handling "small" problems (bug fixes, small tweaks,
-  "just quickly change X") without patching symptoms. Use whenever a request
-  feels small enough to fix inline. Forces you to locate the governing spec,
-  fix at the correct architectural layer instead of the symptom site, keep the
-  change surgical, and self-grade the result before claiming done.
+description: Fix small defects at their governing owner. Use for small bugs or tweaks, including UI feedback requiring prototype confirmation before production edits.
 ---
 
 # pt-small-fix-discipline
@@ -35,6 +30,13 @@ layer owns this change and read it before editing:
   path (this is what `pt-read-before-edit` automates — run it, don't skip it).
 
 ## 2. Fix the layer, not the symptom
+
+For UI feedback, return to `pt-dev-workflow` Intake and register through
+`dev-work.mjs intake --kind ui-feedback`; no Plan or Task is required.
+Invoke `pt-prototype-sync-guardian` and complete prototype
+ledger §4.2 before any production fix. Show the prototype, adjust it if needed,
+and obtain confirmation of the repair target. "Implementation bug", "small
+fix", and existing confirmed status do not permit skipping this order.
 
 **Find where the defect actually lives in the architecture. Do not patch where it surfaces.**
 

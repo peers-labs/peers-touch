@@ -1,4 +1,7 @@
 {
+  "packages/prototypes/shared/ui-system/chat/ActivityCard.tsx": {
+    "button": 1
+  },
   "packages/prototypes/shared/ui-system/chat/CallOverlay.tsx": {
     "button": 9,
     "select": 2
@@ -38,7 +41,7 @@
     "button": 5
   },
   "packages/prototypes/shared/ui-system/settings/SettingsFeature.tsx": {
-    "button": 2
+    "button": 1
   },
   "packages/prototypes/shared/ui-system/settings/sections/AccountSection.tsx": {
     "button": 1
@@ -52,10 +55,6 @@
   },
   "packages/prototypes/shared/ui-system/settings/sections/NetworkSections.tsx": {
     "button": 3
-  },
-  "packages/prototypes/shared/ui-system/search/GlobalSearchOverlay.tsx": {
-    "button": 4,
-    "input": 1
   },
   "packages/prototypes/desktop/applets/atelier/src/Page.tsx": {
     "button": 2

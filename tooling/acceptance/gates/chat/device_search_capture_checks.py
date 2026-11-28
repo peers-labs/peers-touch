@@ -493,7 +493,8 @@ def verify_continuity() -> list[str]:
                 gate.settled = Mock()
                 run = lambda: gate.reconcile_continuity(name)
             else:
-                gate = shared.MobileDeviceSearchGate()
+                gate = object.__new__(shared.MobileDeviceSearchGate)
+                shared.MobileDeviceSearchGate.__init__(gate)
                 gate.wait = Mock()
                 gate.capture = Mock()
                 run = lambda: gate.reconcile_continuity(Mock(), session, name)
@@ -702,7 +703,8 @@ def verify_cleanup() -> list[str]:
 
 
 def verify_selectors() -> list[str]:
-    gate = shared.MobileDeviceSearchGate()
+    gate = object.__new__(shared.MobileDeviceSearchGate)
+    shared.MobileDeviceSearchGate.__init__(gate)
     session = Mock(client_id="sim-ios")
     requests = []
 
@@ -758,7 +760,10 @@ def verify_capture() -> list[str]:
     checks = []
 
     def fixture(gate_type, platform="ios", state=""):
-        gate = gate_type()
+        # This controlled capture fixture never launches a runtime. Scenario
+        # admission belongs to the real Gate entry, not this Mock session.
+        gate = object.__new__(gate_type)
+        gate_type.__init__(gate)
         session = Mock(platform=platform, client_id=f"sim-{platform}")
         sampling = {"watching": False, "revision": 0, "pixels": b"preceding private row"}
 

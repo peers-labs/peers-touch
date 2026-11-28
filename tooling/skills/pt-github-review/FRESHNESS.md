@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-11-15
-covered_docs_hash: cbdd4174e8425dab4957ebf25944c82cf423d76a27eaaf7c1290a1dbe086b0f5
+last_verified_at: 2026-11-28
+covered_docs_hash: 30559110162d651cc843819075237f64d6abe77180713ec6ddd00b57439f1575
 
 covered_docs:
   - AGENTS.md
@@ -27,6 +27,20 @@ covered_docs:
   - docs/knowledge/README.md
 
 ## Freshness Contract
+
+Reviewed UI feedback as a subflow of the existing Development Workflow.
+The prototype Markdown ledger alone owns the feedback round, review and
+source-bound confirmation; Dev and review delegate to that owner without
+mandatory Plan/Task records or another lifecycle. The review Skill now checks
+current-round approval and its presentation dependency digest. New regressions
+exercise real Dev CLI registration, unchanged targets, stale/replayed approval,
+concurrent writes and the five reproduced Vite bypasses. Operational knowledge
+records the single-owner boundary and the limits of chat recognition and
+arbitrary Shell writes. Current-source Native and formal Acceptance proof
+remain unproven. The earlier covered-doc drift adds only the existing runtime
+owner's orphan-simulator sweep contract; default dry run, lease protection and
+provider readback remain covered by the existing review requirements. This
+freshness review does not claim that a physical sweep was executed.
 
 Reviewed integration admission across submit, divergent merge commit,
 reverse-sync and GitHub merge. The shared owner binds both HEADs/base/tree,

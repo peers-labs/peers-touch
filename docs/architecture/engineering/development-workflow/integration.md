@@ -12,6 +12,13 @@
 
 普通修改不调用 `dev-start` 来获得写权限。小改动直接使用编码与小修 Skill，验证范围按实际变化决定。
 
+UI 反馈经同一 `dev-work.mjs intake --kind ui-feedback` 进入 Design，登记直接
+更新原型总账，随后通过 `ui-review`、`ui-confirm` 和 `before-implement` 完成
+[总账 §4.2](../prototypes/README.md#42-完整界面的确认与生产准入)。
+God View、原型设计、小修和缺陷处理 Skill 都转交这个 Intake；它们不写第二份
+状态，也不通过 `dev-start` 创建必需 Task。生产 Vite 和 review 读取同一总账，
+原型 Portal 可展示草稿；原始 Native Journey 与正式 Acceptance 继续各司其职。
+
 复杂任务需要恢复时才初始化任务记录，计划引用显式提供。现有 `dev-start` 可转为创建这类记录的入口，但不能把裸跑默认变成独占整个 worktree 的声明，也不能用模糊“quick fix”目的代替真实需求。
 
 需要运行环境时，调用既有 Profile 和运行入口。计划与任务记录可以说明要用什么，但实际资源请求必须由 Runtime/Suite 检查，不能以 task 存在或 Hook 放行取得权限。

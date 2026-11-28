@@ -293,10 +293,13 @@
           {"ref": "tooling/acceptance/drivers/tauri.py#TauriSession.semantic_key_sequence", "purpose": "Reuse embedded WebDriver keyboard actions", "lifetime": "implementation", "dependsOn": [], "invalidatedBy": ["source", "toolchain"]}
         ]
       },
-      "command": "RUST_LOG=info,search=debug PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.device_search_runner && PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.device_search_e2e",
+      "command": "RUST_LOG=info,search=debug python3 -m tooling.acceptance.gates.chat.device_search_runner && python3 -m tooling.acceptance.gates.chat.device_search_e2e",
       "timeout_seconds": 2400,
       "environment": "chat-storage-native",
       "provisioner": "chat-storage-native",
+      "requiredRuntimeCells": ["desktop-macos-native"],
+      "runtimeCellArtifact": "acceptance-binary",
+      "runtimeCellCapabilities": [],
       "tier": "env-evidence",
       "description": "Reuse one same-Station native Alice/Bob runtime for Chinese and attachment search, historical/thread open, cache return, real edit/hide invalidation, typed errors, functions and same-window account isolation; require exact-source UI and immutable evidence."
     },

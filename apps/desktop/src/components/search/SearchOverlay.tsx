@@ -1,61 +1,147 @@
-import {
-  useEffect, useLayoutEffect, useMemo, useRef, useState,
-  type CSSProperties, type KeyboardEvent, type MouseEvent,
-} from 'react';
+/**
+ * SearchOverlay — Desktop production adapter for @peers-touch/ui-composite.
+ *
+ * This file OWNS:
+ *   - Store subscription (useSearchStore) + searchPresentation derivation
+ *   - ResultItem / SearchFunction → CompositeRow conversion (toCompositeRow)
+ *   - SearchSurfaceModel + SearchSurfaceIntents construction
+ *   - Legacy pt-search-* class injection via SurfaceHooks (CMP-D03)
+ *   - Authority explanation text (model.info)
+ *   - Suppress opener restoration when navigation transfers focus
+ *   - openRow / copyRow business logic (resolve → navigate → close)
+ *
+ * This file does NOT own:
+ *   - Overlay/panel/input/row/groups/info DOM rendering — GlobalSearchSurface renders ptc-* tree
+ *   - Keyboard navigation — GlobalSearchSurface handles ArrowUp/Down/Enter/Escape/IME
+ *   - Focus management — GlobalSearchSurface handles input focus + roving row focus
+ *   - Highlight mark rendering — GlobalSearchSurface renders <mark> against displayedQuery
+ *
+ * See docs/architecture/platform/client/ui-system/composite-promotion/integration.md
+ */
+import { useLayoutEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/react/shallow';
-import { Popover as PeersPopover } from '@peers-touch/ui';
 import {
-  ArrowUpRight, CircleSlash, Copy, Hash, HelpCircle, Loader2, Lock, MessageCircle,
-  Newspaper, Search, Wrench, X,
+  Hash, MessageCircle, Newspaper, Wrench,
 } from 'lucide-react';
-import { SearchKind, SearchZone, type ResultItem } from '../../gen/proto/domain/search/search_pb';
+import type { LucideIcon } from 'lucide-react';
 import { useSearchStore } from '../../store/search';
 import { searchActions } from '../../runtimes/searchRuntime';
 import { searchRowKey } from '../../services/search';
 import type { Navigation } from '../../types/navigation';
 import { SEARCH_FUNCTIONS, openSearchFunction, type SearchFunction } from './functions';
 import { SearchResultMeta } from './SearchResultMeta';
+import { SearchKind, SearchZone, type ResultItem } from '../../gen/proto/domain/search/search_pb';
 import {
-  authorizedRowCopyText, clampQuery, coverageStatus, deliveredCoverage, isPrintableCharacterKey,
-  nextRovingIndex, searchPresentation,
+  authorizedRowCopyText, coverageStatus, deliveredCoverage,
+  searchPresentation,
 } from '../../runtimes/searchFrames';
-import './SearchOverlay.css';
 
-type Row = { type: 'content'; item: ResultItem } | { type: 'function'; item: SearchFunction };
+// Composite package imports — thin adapter boundary (CMP-D01 / CMP-D06)
+import { GlobalSearchSurface } from '@peers-touch/ui-composite';
+import type {
+  SearchSurfaceModel, SearchSurfaceIntents, SearchRegionKey,
+  SurfaceHooks, SearchResultRow as CompositeRow,
+} from '@peers-touch/ui-composite';
 
-function rowKey(row: Row): string {
+
+const KIND_ICON: Record<string, LucideIcon> = {
+  conversation: Hash,
+  message: MessageCircle,
+  content: Newspaper,
+  function: Wrench,
+};
+
+// ── Helper: proto SearchKind → CompositeRow.kind ────────────────────────
+
+function kindFromProto(kind: SearchKind): CompositeRow['kind'] {
+  switch (kind) {
+    case SearchKind.PERSON: return 'person';
+    case SearchKind.CONVERSATION: return 'conversation';
+    case SearchKind.MESSAGE: return 'message';
+    case SearchKind.SOCIAL_POST:
+    case SearchKind.SOCIAL_COMMENT: return 'content';
+    default: return 'content';
+  }
+}
+
+// ── Helper: proto SearchZone → zone label key ────────────────────────────
+
+function zoneKeyFromProto(item: ResultItem): string {
+  if (item.zone === SearchZone.STATION) return 'search.zone.station';
+  if (item.zone === SearchZone.FEDERATION) return 'search.zone.federation';
+  return 'search.zone.device';
+}
+
+// ── Host row shapes ──────────────────────────────────────────────────────
+
+type HostRow =
+  | { type: 'content'; item: ResultItem }
+  | { type: 'function'; item: SearchFunction };
+
+function rowKeyOf(row: HostRow): string {
   return row.type === 'function' ? `function:${row.item.id}` : searchRowKey(row.item.resource);
 }
 
-const CLICK_DRAG_PX = 4;
+// ── Host row → composite row ────────────────────────────────────────────
+
+function toCompositeRow(
+  row: HostRow,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): CompositeRow {
+  if (row.type === 'function') {
+    const Icon = Wrench;
+    return {
+      rowKey: rowKeyOf(row),
+      kind: 'function',
+      title: t(row.item.titleKey),
+      snippet: t(row.item.detailKey),
+      meta: undefined,
+      icon: <Icon size={15} />,
+    };
+  }
+  // content row
+  const item = row.item;
+  const kind = kindFromProto(item.kind);
+  const Icon = KIND_ICON[kind] ?? MessageCircle;
+  const title = item.title || t('search.kind.message');
+  return {
+    rowKey: rowKeyOf(row),
+    kind,
+    title,
+    snippet: item.snippet,
+    copyable: !!authorizedRowCopyText(item),
+    // SearchResultMeta is a rich host-owned component (needs social store subscriptions)
+    meta: <SearchResultMeta item={item} />,
+    zoneKey: zoneKeyFromProto(item),
+    icon: <Icon size={15} />,
+    resource: item.resource ? {
+      id: item.resource.id,
+      sourceId: item.sourceId,
+      kind: item.resource.kind,
+    } : undefined,
+  };
+}
+
+// ── Component ────────────────────────────────────────────────────────────
 
 export function SearchOverlay({ navigation }: { navigation: Navigation }) {
   const { t } = useTranslation('search');
+  const navigating = useRef(false);
+
   const view = useSearchStore(useShallow(state => ({
+    open: state.open,
     query: state.query, mode: state.mode, status: state.status, response: state.response,
     displayedQuery: state.displayedQuery, displayedMode: state.displayedMode, stalled: state.stalled,
     errorKey: state.errorKey, opening: state.opening, selectedKey: state.selectedKey,
     contentFilter: state.contentFilter, displayedFilter: state.displayedFilter,
     progressive: state.progressive, progressiveRequestId: state.progressiveRequestId,
-    progressiveSources: state.progressiveSources,
+    progressiveSources: state.progressiveSources, scrollTop: state.scrollTop,
   })));
-  const inputRef = useRef<HTMLInputElement>(null);
-  const bodyRef = useRef<HTMLDivElement>(null);
-  const opener = useRef(document.activeElement);
-  const navigating = useRef(false);
-  const composing = useRef(false);
-  const press = useRef<{ x: number; y: number } | null>(null);
-  const [entering, setEntering] = useState(() => document.visibilityState === 'visible'
-    && !window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-  const entranceStyle: CSSProperties & { '--pt-search-entrance': string } = {
-    '--pt-search-entrance': entering ? 'pt-search-in 0.16s ease-out' : 'none',
-  };
-  const functions = useMemo(() => {
-    const query = view.query.normalize('NFKC').trim().toLowerCase();
-    return SEARCH_FUNCTIONS.filter(item => !query
-      || `${t(item.titleKey)} ${t(item.detailKey)} ${item.keywords}`.toLowerCase().includes(query));
-  }, [view.query, t]);
+  useLayoutEffect(() => { if (view.open) navigating.current = false; }, [view.open]);
+
+  // ── Presentation + host rows ──────────────────────────────────────────────
+
   const presentation = useMemo(() => searchPresentation({
     mode: view.mode, draft: view.query, displayedQuery: view.displayedQuery,
     contentFilter: view.contentFilter, displayedFilter: view.displayedFilter,
@@ -65,386 +151,188 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
   }), [view.mode, view.query, view.displayedQuery, view.contentFilter, view.displayedFilter,
     view.status, view.errorKey, view.response, view.progressive,
     view.progressiveRequestId, view.progressiveSources]);
-  const observation = presentation.observation;
-  const rows: Row[] = useMemo(() => view.mode === 'functions'
-    ? functions.map(item => ({ type: 'function', item }))
-    : (observation?.items ?? []).map(item => ({ type: 'content', item })),
-  [view.mode, functions, observation]);
-  const selectedIndex = rows.findIndex(row => rowKey(row) === view.selectedKey);
-  const displayedQuery = view.mode === 'functions' ? view.query : view.displayedQuery;
-  const draftMatches = view.query.trim() === view.displayedQuery && view.contentFilter === view.displayedFilter;
-  // Enter waits only while the FIND for this exact draft is in flight.
-  const awaitingFinal = presentation.isProgressive;
 
-  useLayoutEffect(() => {
-    // WKWebView may suspend an opacity animation when the window goes into
-    // the background. Retire it rather than retain an invisible panel layer.
-    const settleHiddenEntrance = () => {
-      if (document.visibilityState !== 'visible') setEntering(false);
-    };
-    settleHiddenEntrance();
-    document.addEventListener('visibilitychange', settleHiddenEntrance);
-    return () => document.removeEventListener('visibilitychange', settleHiddenEntrance);
-  }, []);
-  useEffect(() => {
-    inputRef.current?.focus();
-    return () => {
-      if (!navigating.current && opener.current instanceof HTMLElement && opener.current.isConnected) {
-        opener.current.focus();
-      }
-    };
-  }, []);
-  useLayoutEffect(() => {
-    if (bodyRef.current) bodyRef.current.scrollTop = useSearchStore.getState().scrollTop;
-  }, [observation]);
+  // Host-side SEARCH_FUNCTIONS filter (before conversion)
+  const functions = useMemo(() => {
+    const query = view.query.normalize('NFKC').trim().toLowerCase();
+    return SEARCH_FUNCTIONS.filter(item => !query
+      || `${t(item.titleKey)} ${t(item.detailKey)} ${item.keywords}`.toLowerCase().includes(query));
+  }, [view.query, t]);
 
-  async function openRow(row: Row): Promise<void> {
+  const hostRows: HostRow[] = useMemo(() => view.mode === 'functions'
+    ? functions.map(item => ({ type: 'function' as const, item }))
+    : (presentation.observation?.items ?? []).map(item => ({ type: 'content' as const, item })),
+  [view.mode, functions, presentation]);
+
+  // Flat composite rows (single group — Desktop does NOT multi-group results)
+  const compositeRows = useMemo(() =>
+    hostRows.map(row => toCompositeRow(row, t)),
+  [hostRows, t]);
+  const quickRows = useMemo<HostRow[]>(() => presentation.showQuickFunctions
+    ? SEARCH_FUNCTIONS.slice(0, 4).map(item => ({ type: 'function', item })) : [],
+  [presentation.showQuickFunctions]);
+  const actionableRows = useMemo(() => [...hostRows, ...quickRows], [hostRows, quickRows]);
+
+  // ── Open / copy handlers ─────────────────────────────────────────────────
+
+  async function openRow(rowKey: string): Promise<void> {
     if (view.opening) return;
-    useSearchStore.setState({ selectedKey: rowKey(row) });
+    useSearchStore.setState({ selectedKey: rowKey });
+    const row = actionableRows.find(r => rowKeyOf(r) === rowKey);
+    if (!row) return;
     if (row.type === 'function') {
       navigating.current = true;
       searchActions.close();
       openSearchFunction(row.item, navigation);
       return;
     }
-    // Closing the overlay occurs inside the runtime before its Promise settles.
-    // Focus restoration must already know that the original page owns focus.
     navigating.current = true;
     if (!await searchActions.openResult(row.item, navigation)) navigating.current = false;
   }
 
-  async function copyContentRow(item: ResultItem): Promise<void> {
-    const text = authorizedRowCopyText(item);
+  async function copyRow(rowKey: string): Promise<void> {
+    const row = actionableRows.find(r => rowKeyOf(r) === rowKey);
+    if (row?.type !== 'content') return;
+    const text = authorizedRowCopyText(row.item);
     if (!text || !navigator.clipboard) return;
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      // Clipboard denial is non-modal; the row text remains selectable.
-    }
+    try { await navigator.clipboard.writeText(text); } catch { /* clipboard denial is non-modal */ }
   }
 
-  function focusRow(index: number): void {
-    requestAnimationFrame(() => {
-      document.getElementById(`pt-search-row-${index}`)?.focus();
-      document.getElementById(`pt-search-row-${index}`)?.scrollIntoView({ block: 'nearest' });
-    });
-  }
+  // ── Build composite SearchSurfaceModel ────────────────────────────────────
 
-  function moveRoving(delta: 1 | -1): void {
-    const next = nextRovingIndex(selectedIndex >= 0 ? selectedIndex : null, delta, rows.length);
-    if (next === null) {
-      useSearchStore.setState({ selectedKey: null });
-      inputRef.current?.focus();
-      return;
-    }
-    useSearchStore.setState({ selectedKey: rowKey(rows[next]) });
-    focusRow(next);
-  }
+  const model: SearchSurfaceModel = useMemo(() => {
+    const observation = presentation.observation;
+    const claimedCoverage = deliveredCoverage(presentation, view.progressiveSources);
+    const hasStation = (observation?.sources ?? []).some(source => source.sourceId === 'station.social.public');
+    // Function-mode → single function-only group
+    const groups = view.mode === 'functions' && compositeRows.length > 0
+      ? [{ key: 'functions', labelKey: 'search.tab.functions', rows: compositeRows }]
+      : (compositeRows.length > 0 ? [{ key: 'results', labelKey: presentation.groupTitle, rows: compositeRows }] : []);
 
-  function returnToInput(): void {
-    useSearchStore.setState({ selectedKey: null });
-    inputRef.current?.focus();
-  }
+    // quick functions shown on empty-Device suggestion surface
+    const quickFunctions = quickRows.map(row => toCompositeRow(row, t));
 
-  /**
-   * Move a printable character typed while a row owns focus back into the
-   * input. Focus switching alone loses the character: the browser finishes
-   * the key sequence on the originally focused row, so insert it at the
-   * caret and admit the new draft through the normal stable-input path.
-   */
-  function returnCharacterToInput(event: KeyboardEvent<HTMLDivElement>): void {
-    const input = inputRef.current;
-    returnToInput();
-    if (!input) return;
-    const value = input.value;
-    const start = input.selectionStart ?? value.length;
-    const end = input.selectionEnd ?? value.length;
-    const next = clampQuery(value.slice(0, start) + event.key + value.slice(end));
-    if (next === value) return; // at the 256 scalar boundary: drop the character
-    searchActions.query(next, true);
-    requestAnimationFrame(() => {
-      const caret = Math.min(start + 1, Array.from(next).length);
-      input.setSelectionRange(caret, caret);
-    });
-  }
+    return {
+      query: view.query,
+      displayedQuery: view.mode === 'functions' ? view.query : view.displayedQuery,
+      draftMatches: view.mode === 'functions' || (view.query.trim() === view.displayedQuery
+        && view.contentFilter === view.displayedFilter),
+      functionsMode: view.mode === 'functions',
+      loadingVisible: view.stalled,
+      selectedKey: view.selectedKey,
+      scrollTop: view.scrollTop,
+      status: view.status,
+      isProgressive: presentation.isProgressive,
+      groups,
+      quickFunctions,
+      recentItems: undefined, // Desktop prototype-parity does not render recent
+      showEmpty: presentation.showEmpty,
+      errorKey: view.errorKey,
+      filters: [
+        { id: 'all', labelKey: 'search.tab.all', active: view.mode !== 'functions' && view.contentFilter === 'all' },
+        { id: 'messages', labelKey: 'search.tab.messages', active: view.mode !== 'functions' && view.contentFilter === 'messages' },
+        { id: 'social', labelKey: 'search.tab.social', active: view.mode !== 'functions' && view.contentFilter === 'social' },
+        { id: 'attachments', labelKey: 'search.tab.attachments', active: view.mode !== 'functions' && view.contentFilter === 'attachments' },
+        { id: 'functions', labelKey: 'search.tab.functions', active: view.mode === 'functions' },
+      ],
+      pendingSources: presentation.pendingSources,
+      coverage: [
+        ...(hasStation ? [{ zoneKey: 'station', detailKey: 'search.zone.station', status: undefined }] : []),
+        ...claimedCoverage.map(source => ({
+          zoneKey: source.sourceId,
+          detailKey: source.detailKey ?? 'search.zone.device',
+          status: coverageStatus(source) ?? undefined,
+        })),
+      ],
+      hasMore: view.displayedMode === 'submit' && view.mode !== 'functions' && !!view.response?.hasMore,
+      opening: view.opening,
+      groupTitleKey: presentation.groupTitle,
+      info: {
+        title: t('search.popover.title'),
+        sections: [
+          { title: t('search.popover.scopeTitle'), paragraphs: [
+            t('search.scope'), t('search.boundary'), t('search.popover.realtime'),
+            t('search.popover.privateCheck'), t('search.coverage.historyBoundary'),
+          ] },
+          { title: t('search.popover.coverageTitle'),
+            paragraphs: [
+              ...(!claimedCoverage.length && !presentation.isProgressive ? [t('search.coverage.device')] : []),
+              ...(presentation.pendingSources.length ? [t('search.coverage.pending')] : []),
+            ],
+            items: claimedCoverage.map(source => t(source.detailKey || 'search.coverage.device')),
+          },
+          { title: t('search.popover.keyboardTitle'),
+            paragraphs: [t('search.popover.keyboard'), t('search.popover.copy')] },
+        ],
+      },
+    };
+  }, [presentation, view, compositeRows, quickRows, t]);
 
-  function onInputKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
-    if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
-    if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      moveRoving(1);
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      moveRoving(-1);
-    } else if (event.key === 'Enter') {
-      event.preventDefault();
-      const row = view.mode === 'functions' ? rows[Math.max(0, selectedIndex)]
-        : draftMatches ? rows[selectedIndex] : undefined;
-      if (row) void openRow(row);
-      else if (view.mode !== 'functions' && view.query.trim() && !awaitingFinal) searchActions.submit();
-      // During a progressive wait Enter is intentionally a no-op: the same
-      // request's final frame settles automatically.
-    } else if (event.key === 'Escape') {
-      event.preventDefault();
-      searchActions.close();
-    } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'c' && !event.shiftKey) {
-      if (hasTextSelection()) return;
-      const row = selectedIndex >= 0 ? rows[selectedIndex] : undefined;
-      if (row?.type === 'content') {
-        event.preventDefault();
-        void copyContentRow(row.item);
-      }
-    }
-  }
+  // ── Build composite SearchSurfaceIntents ──────────────────────────────────
 
-  function onRowKeyDown(event: KeyboardEvent<HTMLDivElement>, row: Row): void {
-    // A composition key while a row has focus returns composition to the
-    // input rather than being dropped on the non-editable target.
-    if (event.nativeEvent.keyCode === 229) {
-      event.preventDefault();
-      returnToInput();
-      return;
-    }
-    if (event.nativeEvent.isComposing) return;
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault();
-      moveRoving(event.key === 'ArrowDown' ? 1 : -1);
-      return;
-    }
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      void openRow(row);
-      return;
-    }
-    if (event.key === 'Escape') {
-      event.stopPropagation();
-      returnToInput();
-      return;
-    }
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'c' && !event.shiftKey) {
-      if (hasTextSelection()) return;
-      if (row.type === 'content') {
-        event.preventDefault();
-        void copyContentRow(row.item);
-      }
-      return;
-    }
-    if (isPrintableCharacterKey(event.key) && !event.metaKey && !event.ctrlKey && !event.altKey) {
-      event.preventDefault();
-      returnCharacterToInput(event);
-    }
-  }
+  const intents: SearchSurfaceIntents = useMemo(() => ({
+    onQueryChange(next, admissionSettled) {
+      searchActions.query(next, admissionSettled ?? true);
+    },
+    onFilterChange(filterId) {
+      if (filterId === 'functions') searchActions.mode('functions');
+      else searchActions.filter(filterId as Parameters<typeof searchActions.filter>[0]);
+    },
+    onSubmit() { searchActions.submit(); },
+    onRetry() { if (view.errorKey) searchActions.submit(true); },
+    onRefresh() { searchActions.submit(true); },
+    onMore() { searchActions.more(); },
+    onOpenRow(rowKey) { void openRow(rowKey); },
+    onCopyRow(rowKey) { void copyRow(rowKey); },
+    onClose() { searchActions.close(); },
+    onSelectionChange(selectedKey) { useSearchStore.setState({ selectedKey }); },
+    onScrollChange(scrollTop) { searchActions.scroll(scrollTop); },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [actionableRows, view.opening, view.errorKey, navigation, view.mode]);
 
-  function onRowMouseDown(event: MouseEvent): void {
-    // Only the primary button can press or begin a drag threshold on a row.
-    if (event.button !== 0) return;
-    press.current = { x: event.clientX, y: event.clientY };
-  }
+  // ── SurfaceHooks: inject legacy pt-search-* classes + data attrs ──────────
 
-  function onRowClick(row: Row, event: MouseEvent): void {
-    if (event.button !== 0) return;
-    // Drag-selecting title/snippet text must not activate the row.
-    if (hasTextSelection()) return;
-    const start = press.current;
-    if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > CLICK_DRAG_PX) return;
-    void openRow(row);
-  }
+  const hooks: SurfaceHooks<SearchRegionKey> = useMemo(() => ({
+    classNames: {
+      overlay: 'pt-search-overlay',
+      scrim: 'pt-search-scrim',
+      panel: 'pt-search-panel',
+      field: 'pt-search-field',
+      input: 'pt-search-input',
+      close: 'pt-search-close',
+      intents: 'pt-search-intents',
+      body: 'pt-search-body',
+      group: 'pt-search-group',
+      row: 'pt-search-row',
+      rowTarget: 'pt-search-row-target',
+      rowIcon: 'pt-search-row-icon',
+      rowTitle: 'pt-search-title',
+      rowSnippet: 'pt-search-snippet',
+      rowZone: 'pt-search-zone',
+      rowOpen: 'pt-search-row-open',
+      copyButton: 'pt-search-copy',
+      empty: 'pt-search-empty',
+      error: 'pt-search-error',
+      more: 'pt-search-more',
+      footer: 'pt-search-footer',
+      statusline: 'pt-search-statusline pt-search-coverage',
+      loading: 'pt-search-status',
+      statusChip: 'pt-search-status-chip',
+      statusPending: 'pt-search-status-pending',
+      footerActions: 'pt-search-footer-actions',
+      infoButton: 'pt-search-info',
+    },
+    dataAttributes: {},
+  }), []);
 
-  function renderRow(row: Row, index: number) {
-    const isFunction = row.type === 'function';
-    const content = row.type === 'content' ? row.item : null;
-    const title = row.type === 'function' ? t(row.item.titleKey) : row.item.title || t('search.kind.message');
-    const detail = row.type === 'function' ? t(row.item.detailKey) : row.item.snippet;
-    const Icon = isFunction ? Wrench : content?.kind === SearchKind.CONVERSATION ? Hash
-      : content?.kind === SearchKind.SOCIAL_POST || content?.kind === SearchKind.SOCIAL_COMMENT ? Newspaper : MessageCircle;
-    const selected = index === selectedIndex;
-    const zoneKey = content?.zone === SearchZone.STATION ? 'search.zone.station'
-      : content?.zone === SearchZone.FEDERATION ? 'search.zone.federation' : 'search.zone.device';
-    const titleId = `pt-search-title-${index}`;
-    const copyLabelId = `pt-search-copy-label-${index}`;
-    return (
-      <li key={rowKey(row)} role="listitem" className={`pt-search-row${selected ? ' active' : ''}`}
-        aria-selected={selected}
-        data-resource-id={content?.resource?.id} data-source-id={content?.sourceId}
-        data-resource-kind={content?.resource?.kind}>
-        <div role="button" tabIndex={selected ? 0 : -1}
-          className="pt-search-row-target" aria-disabled={view.opening}
-          id={`pt-search-row-${index}`}
-          onKeyDown={event => onRowKeyDown(event, row)}
-          onMouseDown={onRowMouseDown}
-          onClick={event => onRowClick(row, event)}>
-          <span className="pt-search-row-icon"><Icon size={15} /></span>
-          <span className="pt-search-main">
-            <span className="pt-search-title" id={titleId}>{highlight(title, displayedQuery)}</span>
-            {detail && <span className="pt-search-snippet">{highlight(detail, displayedQuery)}</span>}
-            {content && <SearchResultMeta item={content} />}
-          </span>
-          {!isFunction && <span className="pt-search-zone"><Lock size={11} />{t(zoneKey)}</span>}
-          <ArrowUpRight size={14} className="pt-search-row-open" />
-        </div>
-        {!isFunction && content && <button type="button" className="pt-search-copy"
-          aria-labelledby={`${titleId} ${copyLabelId}`}
-          onClick={() => { void copyContentRow(content); }}>
-          <Copy size={13} aria-hidden="true" />
-          <span id={copyLabelId} className="pt-search-visuallyhidden">{t('search.copy.label')}</span>
-        </button>}
-      </li>
-    );
-  }
-
-  const pending = presentation.pendingSources;
-  // Coverage the Popover may claim. During a progressive FIND only sources
-  // that actually delivered are shown as coverage; outstanding sources are
-  // listed as pending rather than implied complete.
-  const claimedCoverage = deliveredCoverage(presentation, view.progressiveSources);
-  const hasStation = (observation?.sources ?? []).some(source => source.sourceId === 'station.social.public');
-  const coveragePopover = (
-    <div className="pt-search-popover">
-      <h5 className="pt-search-popover-title">{t('search.popover.title')}</h5>
-      <section>
-        <h6>{t('search.popover.scopeTitle')}</h6>
-        <p>{t('search.scope')}</p>
-        <p>{t('search.boundary')}</p>
-        <p>{t('search.popover.realtime')}</p>
-        <p>{t('search.popover.privateCheck')}</p>
-        <p>{t('search.coverage.historyBoundary')}</p>
-      </section>
-      <section>
-        <h6>{t('search.popover.coverageTitle')}</h6>
-        {claimedCoverage.length
-          ? <ul>{claimedCoverage.map(source => <li key={source.sourceId}>{t(source.detailKey
-            || 'search.coverage.device')}</li>)}</ul>
-          : !presentation.isProgressive && <p>{t('search.coverage.device')}</p>}
-        {pending.length > 0
-          && <p className="pt-search-popover-pending">{t('search.coverage.pending')}</p>}
-      </section>
-      <section>
-        <h6>{t('search.popover.keyboardTitle')}</h6>
-        <p>{t('search.popover.keyboard')}</p>
-        <p>{t('search.popover.copy')}</p>
-      </section>
-    </div>
-  );
-
-  // Bespoke command-palette shell: the prototype builds its own scrim + panel
-  // (no generic dialog/modal primitive — roving-focus listbox semantics are
-  // specialized), so Peers keeps the same structure over @peers-touch/ui
-  // tokens instead of an antd Modal. It renders inline (position:fixed), NOT
-  // via a body portal, so the @peers-touch/ui CSS variables on .pt-ui apply.
-  // All interior ARIA/data hooks are intact.
   return (
-    <div className="pt-search-overlay" role="dialog" aria-modal="true" aria-label={t('search.label')}>
-      <div className="pt-search-scrim" onClick={searchActions.close} />
-      <div className="pt-search-panel" style={entranceStyle}
-        onAnimationEnd={event => {
-          if (event.target === event.currentTarget && event.animationName === 'pt-search-in') {
-            setEntering(false);
-          }
-        }}>
-      <div className="pt-search-field-area">
-        <div className="pt-search-field" data-focus-boundary>
-          <Search size={17} aria-hidden="true" />
-          <input ref={inputRef} value={view.query} maxLength={256} placeholder={t('search.input.placeholder')}
-            aria-label={t('search.label')} role="searchbox" aria-autocomplete="list"
-            aria-controls="pt-search-results" aria-expanded
-            onKeyDown={onInputKeyDown}
-            onCompositionStart={() => { composing.current = true; }}
-            onCompositionEnd={event => { composing.current = false; searchActions.query(event.currentTarget.value); }}
-            onChange={event => {
-              const nativeEvent = event.nativeEvent as InputEvent;
-              if (composing.current && !nativeEvent.isComposing) {
-                composing.current = false;
-              }
-              searchActions.query(event.target.value, !composing.current);
-            }} />
-          <span className="pt-search-progress">
-            {view.stalled && <span className="pt-search-status" role="status" aria-label={t('search.loading')}>
-              <Loader2 size={16} className="pt-search-spin" aria-hidden="true" />
-            </span>}
-          </span>
-          <button type="button" className="pt-search-close" onClick={searchActions.close} aria-label={t('search.close')}><X size={15} /></button>
-        </div>
-      </div>
-      <div className="pt-search-intents" role="tablist" aria-label={t('search.range')}>
-        {(['all', 'messages', 'social', 'attachments'] as const).map(filter => <button key={filter}
-          data-search-filter={filter}
-          role="tab" aria-selected={view.mode !== 'functions' && view.contentFilter === filter}
-          className={view.mode !== 'functions' && view.contentFilter === filter ? 'active' : ''}
-          onClick={() => searchActions.filter(filter)}>{t(`search.tab.${filter}`)}</button>)}
-        <button role="tab" data-search-filter="functions" aria-selected={view.mode === 'functions'} className={view.mode === 'functions' ? 'active' : ''}
-          onClick={() => searchActions.mode('functions')}>{t('search.tab.functions')}</button>
-      </div>
-      <div ref={bodyRef} className="pt-search-body" data-displayed-query={displayedQuery}
-        aria-busy={presentation.isProgressive || view.status === 'loading'}
-        onScroll={event => {
-          searchActions.scroll(event.currentTarget.scrollTop);
-        }}>
-        {rows.length > 0 && <div className="pt-search-group">
-          <div className="pt-search-group-title">{t(presentation.groupTitle)} · {rows.length}</div>
-          <ul id="pt-search-results" role="list" className="pt-search-list"
-            aria-label={t('search.results')} aria-busy={presentation.isProgressive || view.status === 'loading'}>
-            {rows.map(renderRow)}
-          </ul>
-        </div>}
-        {presentation.showQuickFunctions && <div className="pt-search-group">
-          <div className="pt-search-group-title">{t('search.quickFunctions')}</div>
-          <ul role="list" className="pt-search-list">
-            {SEARCH_FUNCTIONS.slice(0, 4).map(item => <li role="listitem" key={item.id}>
-              <button type="button" className="pt-search-quick"
-                onClick={() => { navigating.current = true; searchActions.close(); openSearchFunction(item, navigation); }}>
-                <span className="pt-search-row-icon"><Wrench size={15} /></span>
-                <span className="pt-search-main"><span className="pt-search-title">{t(item.titleKey)}</span><span className="pt-search-meta">{t(item.detailKey)}</span></span>
-                <ArrowUpRight size={14} />
-              </button>
-            </li>)}
-          </ul>
-        </div>}
-        {view.mode === 'suggest' && !!view.query.trim() && <p className="pt-search-hint">{t('search.enterHint')}</p>}
-        {presentation.showEmpty && rows.length === 0 && <div className="pt-search-empty">
-          <CircleSlash size={28} /><strong>{t('search.empty.title', { query: displayedQuery })}</strong><span>{t('search.empty.detail')}</span>
-        </div>}
-        {view.errorKey && <div className="pt-search-error" role="alert">
-          <span>{t(view.errorKey)}</span>
-          <button onClick={() => searchActions.submit(true)}>{t('search.retry')}</button>
-        </div>}
-        {view.displayedMode === 'submit' && view.mode !== 'functions' && view.response?.hasMore && <button className="pt-search-more"
-          disabled={view.status === 'loading' || !draftMatches} onClick={searchActions.more}>{t('search.more')}</button>}
-      </div>
-      <div className="pt-search-footer">
-        <div className="pt-search-statusline pt-search-coverage" aria-live="polite">
-          <span className="pt-search-zone-chip"><Lock size={10} aria-hidden="true" />{t('search.status.device')}</span>
-          {hasStation && <span className="pt-search-zone-chip"><Lock size={10} aria-hidden="true" />{t('search.status.station')}</span>}
-          {pending.length > 0 && <span className="pt-search-status-pending">{t('search.coverage.pending')}</span>}
-          {claimedCoverage.map(source => {
-            const kind = coverageStatus(source);
-            return kind ? <span key={source.sourceId} className={`pt-search-status-${kind}`}>
-              {t(`search.status.${kind}`)}
-            </span> : null;
-          })}
-        </div>
-        <div className="pt-search-footer-actions">
-          {view.mode === 'submit' && <button type="button" disabled={view.status === 'loading' || view.opening}
-            onClick={() => searchActions.submit(true)}>{t('search.refresh')}</button>}
-          {view.opening && <span className="pt-search-opening"><Loader2 size={12} className="pt-search-spin" /> {t('search.opening')}</span>}
-          <PeersPopover placement="bottom" label={t('search.moreInfo')} content={coveragePopover}>
-            <button type="button" className="pt-search-info" aria-label={t('search.moreInfo')}>
-              <HelpCircle size={14} aria-hidden="true" />
-            </button>
-          </PeersPopover>
-        </div>
-      </div>
-      </div>
-    </div>
+    <GlobalSearchSurface
+      open={view.open}
+      model={model}
+      intents={intents}
+      t={t}
+      hooks={hooks}
+      shouldRestoreFocus={() => !navigating.current}
+    />
   );
-}
-
-function hasTextSelection(): boolean {
-  return (window.getSelection()?.toString().length ?? 0) > 0;
-}
-
-function highlight(text: string, query: string) {
-  const needle = query.trim().toLowerCase();
-  const index = needle ? text.toLowerCase().indexOf(needle) : -1;
-  if (index < 0) return text;
-  return <>{text.slice(0, index)}<mark>{text.slice(index, index + needle.length)}</mark>{text.slice(index + needle.length)}</>;
 }

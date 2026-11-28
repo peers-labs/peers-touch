@@ -21,6 +21,13 @@ and the confirmed prototype own that decision.
 Prototype and production share one **experience contract**, not necessarily one
 DOM tree or one set of literal pixel values.
 
+When both hosts use React Web, reuse the complete shared surface implementation.
+For UI feedback or a visible adjustment, review/show the prototype first,
+adjust it if needed, and obtain user confirmation of this repair target before
+production edits. Follow ledger §4.2 even for implementation defects; a correct
+prototype can remain unchanged. Cross-platform adaptation does not authorize a
+second same-runtime UI.
+
 Preserve:
 
 - Product Journey and visible state transitions.
@@ -177,12 +184,13 @@ difference, then classify it as:
 - production defect;
 - evidence gap.
 
-### Step 6. Sync Both Directions
+### Step 6. Keep The Accepted Version Current
 
-When production intentionally changes a prototype-covered experience:
+When a runtime constraint requires a change to the accepted experience:
 
 - update the accepted product/module contract when semantics changed;
-- update or supersede the prototype;
+- adjust the prototype/shared presentation first and obtain user confirmation
+  of that revision before production integration;
 - refresh the parity map and evidence;
 - keep the prototype ledger status honest.
 

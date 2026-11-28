@@ -1,33 +1,50 @@
 /**
- * GlobalSearchOverlay — closed-domain Peers search (desktop SearchOverlay
- * parity), north-star frame edition.
+ * GlobalSearchOverlay — prototype-side adapter for @peers-touch/ui-composite.
  *
- * Product semantics:
- * - Invoked from the rail search button or ⌘K/⌘F; an overlay, never a page.
- * - Indexes only Peers domain objects backed by real prototype seeds:
- *   people / conversations / messages / moments / settings functions.
- *   No web results, no OS files, no external connectors.
- * - Opening a result navigates back to the object (chat conversation/person,
- *   moment, or a settings group/section); the opener owns the routing.
+ * This file OWNS:
+ *   - Seed index construction (buildIndex from PEOPLE / CONVERSATIONS / MOMENT_SEEDS)
+ *   - Query → filtered groups / recents / quickFunctions
+ *   - Prototype STRINGS (useT) → composite t() translation bridge
+ *   - Legacy sk-search-* class injection via SurfaceHooks (CMP-D03 / data-model.md §2.3)
+ *   - data-grammar / data-search-open prototype DOM-契约
  *
- * Visual grammar follows the frame (松绿 glass + hairlines), not SaaS purple
- * cards: one quiet top-anchored panel, tertiary group labels, row wash on
- * hover/keyboard focus.
+ * This file does NOT own:
+ *   - Presence lifecycle (mounted/closing) — GlobalSearchSurface handles open/close phase
+ *   - Keyboard navigation (ArrowUp/Down/Enter/Escape/IME) — GlobalSearchSurface handles
+ *   - Focus management — GlobalSearchSurface handles input focus + roving row focus
+ *   - Overlay/panel/input/row DOM rendering — GlobalSearchSurface renders ptc-* tree
+ *   - Highlight mark rendering — GlobalSearchSurface renders <mark> against displayedQuery
+ *
+ * Layout, states and motion come from the shared search.css. The sk-search-*
+ * classes retain prototype observation hooks; they do not own presentation.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ArrowUpRight, Bell, Bot as BotIcon, Brain, ChevronRight, Clock3, Command as CommandIcon,
-  Database, Globe, Hash, Info, Lock, MessageCircle, MonitorSmartphone, Network, Plug,
-  Radio, Search as SearchIcon, Server, SlidersHorizontal,
-  Sparkles, User, Users, Wrench, X,
+  Database, Globe, Hash, Lock, MessageCircle, MonitorSmartphone, Network, Newspaper, Plug,
+  Radio, Server, SlidersHorizontal, Sparkles, User, Users, Wrench,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { useT } from '../prefs';
+import { makeTranslate, useT } from '../prefs';
 import type { StringKey } from '../prefs';
 import { CONVERSATIONS, PEOPLE, SEED_MESSAGES } from '../chat/chat-data';
 import { MOMENT_SEEDS } from '../moments/moments-data';
 import type { SettingsGroup, SettingsSectionKey } from '../settings/SettingsFeature';
+
+// Composite package imports — thin adapter boundary (CMP-D01 / CMP-D06)
+import { GlobalSearchSurface, searchFixtures } from '@peers-touch/ui-composite';
+import type {
+  CompositeTranslate, SearchSurfaceModel, SearchSurfaceIntents, SearchRegionKey,
+  SurfaceHooks, SearchResultRow as CompositeRow,
+} from '@peers-touch/ui-composite';
+// Serializable props contract: the prototype mock and the Desktop response data
+// both project into this same type, so field/enum/shape drift is caught at compile
+// time. Type-only import — erased at build, adds no runtime dependency.
+import type { SearchSurfaceData, SearchResultRowData } from '@peers-touch/ui-composite';
+
 import './global-search.css';
+
+// ── Public exports ───────────────────────────────────────────────────────
 
 export type GlobalSearchTarget =
   | { kind: 'conversation'; conversationId: string; messageId?: string }
@@ -36,11 +53,26 @@ export type GlobalSearchTarget =
   | { kind: 'settings'; group: SettingsGroup; section: SettingsSectionKey }
   | { kind: 'action'; action: 'new-chat' | 'new-moment' };
 
-type ResultKind = 'person' | 'conversation' | 'message' | 'moment' | 'function';
+export type CommandGrammar = 'glass' | 'linear-light' | 'linear-dark';
 
-interface ResultRow {
+// ── Host-owned seed index (never leaks into composite) ────────────────────
+
+type RowKind = CompositeRow['kind'];
+
+const KIND_ORDER: RowKind[] = ['person', 'conversation', 'message', 'moment', 'function'];
+
+const KIND_ICON: Record<RowKind, LucideIcon> = {
+  person: Users,
+  conversation: Hash,
+  message: MessageCircle,
+  moment: Sparkles,
+  function: Wrench,
+  content: Hash, // prototype has no content kind; fallback for type completeness
+};
+
+interface HostRow {
   id: string;
-  kind: ResultKind;
+  kind: RowKind;
   title: string;
   snippet?: string;
   meta: string;
@@ -48,17 +80,7 @@ interface ResultRow {
   icon?: LucideIcon;
 }
 
-const KIND_ORDER: ResultKind[] = ['person', 'conversation', 'message', 'moment', 'function'];
-
-const KIND_ICON: Record<ResultKind, LucideIcon> = {
-  person: Users,
-  conversation: Hash,
-  message: MessageCircle,
-  moment: Sparkles,
-  function: Wrench,
-};
-
-/* Settings function index (keyed by the real IA destinations). */
+/* Settings function index — owned by host; composite receives already-shaped rows. */
 const SETTINGS_FUNCTIONS: { titleKey: StringKey; group: SettingsGroup; section: SettingsSectionKey; icon: LucideIcon; keywords: string }[] = [
   { titleKey: 'sec.account', group: 'general', section: 'account', icon: User, keywords: '账号 身份 头像 资料 PTID account profile' },
   { titleKey: 'sec.notifications', group: 'general', section: 'notifications', icon: Bell, keywords: '消息通知 铃声 提醒 免打扰 notifications sound' },
@@ -80,13 +102,13 @@ const SETTINGS_FUNCTIONS: { titleKey: StringKey; group: SettingsGroup; section: 
   { titleKey: 'sec.logs', group: 'advanced', section: 'logs', icon: Clock3, keywords: '日志 logs 诊断' },
   { titleKey: 'sec.cron', group: 'ai', section: 'cron', icon: Clock3, keywords: '定时任务 scheduled tasks agent 调度' },
   { titleKey: 'sec.commandMenu', group: 'advanced', section: 'command-menu', icon: CommandIcon, keywords: '命令面板 command palette' },
-  { titleKey: 'sec.about', group: 'advanced', section: 'about', icon: Info, keywords: '关于 about 版本' },
+  { titleKey: 'sec.about', group: 'advanced', section: 'about', icon: CommandIcon, keywords: '关于 about 版本' },
 ];
 
 const RECENT_IDS = ['recent-1', 'recent-2', 'recent-3', 'recent-5'];
 
-function buildIndex(t: (k: StringKey) => string): ResultRow[] {
-  const rows: ResultRow[] = [];
+function buildIndex(t: (k: StringKey) => string): HostRow[] {
+  const rows: HostRow[] = [];
   for (const person of PEOPLE) {
     rows.push({
       id: `person-${person.id}`, kind: 'person',
@@ -132,65 +154,83 @@ function buildIndex(t: (k: StringKey) => string): ResultRow[] {
   return rows;
 }
 
-function highlight(text: string, query: string) {
-  const q = query.trim();
-  if (!q) return text;
-  const idx = text.toLowerCase().indexOf(q.toLowerCase());
-  if (idx === -1) return text;
-  return (
-    <>
-      {text.slice(0, idx)}
-      <mark className="sk-search-hit">{text.slice(idx, idx + q.length)}</mark>
-      {text.slice(idx + q.length)}
-    </>
-  );
+// ── Container: host HostRow → serializable props / full presentational row ──
+
+/**
+ * Pure-data projection: no React nodes, no host navigation target. The result
+ * satisfies the composite serializable contract, which is the same type the
+ * Desktop adapter projects its store state into — the two hosts share shape.
+ */
+function toRowData(row: HostRow): SearchResultRowData {
+  return {
+    rowKey: row.id,
+    kind: row.kind,
+    title: row.title,
+    snippet: row.snippet,
+    zoneKey: row.meta,
+  };
 }
 
-export type CommandGrammar = 'glass' | 'linear-light' | 'linear-dark';
+function kindLabelKey(kind: RowKind): string {
+  switch (kind) {
+    case 'person': return 'search.kind.people';
+    case 'conversation': return 'search.kind.conversations';
+    case 'message': return 'search.kind.messages';
+    case 'moment': return 'search.kind.moments';
+    case 'function': return 'search.kind.functions';
+    default: return 'search.results';
+  }
+}
 
-export function GlobalSearchOverlay({ open, grammar = 'glass', onClose, onNavigate }: {
+// ── Component ────────────────────────────────────────────────────────────
+
+export function GlobalSearchOverlay({ open, grammar = 'glass', onClose, onNavigate, sample, sampleLabels }: {
   open: boolean;
   /** Prototype-only line-grammar experiment; 'glass' keeps the shipped look. */
   grammar?: CommandGrammar;
   onClose: () => void;
   onNavigate: (target: GlobalSearchTarget) => void;
+  /** Prototype-only replay of the exact native captured presentation. */
+  sample?: SearchSurfaceData;
+  sampleLabels?: Record<string, string>;
 }) {
-  const { t } = useT();
-  const [query, setQuery] = useState('');
-  const [cursor, setCursor] = useState(0);
-  // The panel stays mounted through its exit animation instead of vanishing
-  // the moment open flips false; mounted tracks presence, closing the phase.
-  const [mounted, setMounted] = useState(false);
-  const [closing, setClosing] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const openerRef = useRef<Element | null>(null);
+  const { locale } = useT();
+  // Adapter boundary: CompositeTranslate accepts string keys; prototype's
+  // Translate narrows to STRINGS['zh-CN'] literals. The cast is safe because
+  // all composite hardcoded keys (search.*) are mirrored in STRINGS.
+  const t = useMemo<CompositeTranslate>(() => {
+    const protoT = makeTranslate(locale);
+    return (key, options) => sampleLabels?.[key]
+      ?? protoT(key as StringKey, options as Record<string, string | number> | undefined);
+  }, [locale, sampleLabels]);
+  const scenario = new URLSearchParams(window.location.search).get('searchScenario');
+  const initialSample: SearchSurfaceData | undefined = sample
+    ?? (scenario && Object.hasOwn(searchFixtures, scenario) ? searchFixtures[scenario as keyof typeof searchFixtures] : undefined);
+  const [query, setQuery] = useState(initialSample?.query ?? '');
+  const [sampleStatus, setSampleStatus] = useState(initialSample?.status);
+  const [filter, setFilter] = useState(initialSample?.filters.find(item => item.active)?.id ?? 'all');
+  const [sampleSelection, setSampleSelection] = useState(initialSample?.selectedKey ?? null);
+  const [sampleScroll, setSampleScroll] = useState(initialSample?.scrollTop ?? 0);
 
+  // Host owns the seed index; t is consumed during construction only.
   const index = useMemo(() => buildIndex(t), [t]);
 
-  useEffect(() => {
-    if (!open) return;
-    openerRef.current = document.activeElement;
-    setQuery('');
-    setCursor(0);
-    const timer = window.setTimeout(() => inputRef.current?.focus(), 30);
-    return () => {
-      window.clearTimeout(timer);
-      if (openerRef.current instanceof HTMLElement && openerRef.current.isConnected) {
-        openerRef.current.focus();
-      }
-    };
-  }, [open]);
+  // ── Query → filtered grouped results ─────────────────────────────────────
 
-  const results = useMemo(() => {
+  const filteredGroups = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
     const matched = index.filter(row =>
-      `${row.title} ${row.snippet ?? ''} ${row.meta}`.toLowerCase().includes(q));
-    return KIND_ORDER.flatMap(kind => matched.filter(r => r.kind === kind));
-  }, [query, index]);
+      `${row.title} ${row.snippet ?? ''} ${row.meta}`.toLowerCase().includes(q)
+      && (filter === 'all' || (filter === 'messages' ? row.kind === 'message'
+        : filter === 'social' ? row.kind === 'moment' : row.kind === 'function')));
+    return KIND_ORDER
+      .map(kind => ({ kind, items: matched.filter(r => r.kind === kind) }))
+      .filter(g => g.items.length > 0);
+  }, [query, index, filter]);
 
-  const recents = useMemo(() => {
-    const picks: ResultRow[] = [];
+  const recents = useMemo<HostRow[]>(() => {
+    const picks: HostRow[] = [];
     for (const id of RECENT_IDS) {
       const row = index.find(r =>
         id === 'recent-1' ? r.id === 'conv-cv-chenyu'
@@ -203,186 +243,152 @@ export function GlobalSearchOverlay({ open, grammar = 'glass', onClose, onNaviga
     return picks;
   }, [index]);
 
-  const quickFunctions = useMemo<ResultRow[]>(() => [
+  const quickFunctions = useMemo<HostRow[]>(() => [
     { id: 'qf-chat', kind: 'function', title: t('search.qf.newChat'), meta: t('search.actionHint'),
-      target: { kind: 'action', action: 'new-chat' } },
+      target: { kind: 'action', action: 'new-chat' }, icon: MessageCircle },
     { id: 'qf-moment', kind: 'function', title: t('search.qf.newMoment'), meta: t('search.actionHint'),
-      target: { kind: 'action', action: 'new-moment' } },
+      target: { kind: 'action', action: 'new-moment' }, icon: Sparkles },
     ...index.filter(r => r.kind === 'function').slice(0, 2),
   ], [index, t]);
 
-  useEffect(() => { setCursor(0); }, [query]);
+  // ── Step 1: serializable props (same SearchSurfaceData type as Desktop) ──
 
-  // Presence: enter mounts immediately, exit lingers one soft fade-out.
-  useEffect(() => {
-    if (open) {
-      setMounted(true);
-      setClosing(false);
-      return;
-    }
-    if (!mounted) { setClosing(false); return; }
-    setClosing(true);
-    // Must unmount within the gate's 120ms post-Esc budget; exit stays soft
-    // but shorter than the entrance.
-    const timer = window.setTimeout(() => { setMounted(false); setClosing(false); }, 110);
-    return () => window.clearTimeout(timer);
-    // mounted is intentionally read but not a dep: only open drives phases.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  const surfaceData: SearchSurfaceData = useMemo(() => {
+    const hasQuery = !!query.trim();
+    return {
+      query,
+      activateFirstOnSubmit: true,
+      status: 'ready',
+      isProgressive: false,
+      groups: filteredGroups.map(g => ({
+        key: g.kind,
+        labelKey: kindLabelKey(g.kind),
+        rows: g.items.map(toRowData),
+      })),
+      quickFunctions: !hasQuery ? quickFunctions.map(row => ({
+        ...toRowData(row), zoneKey: undefined, metaText: row.meta,
+      })) : undefined,
+      recentItems: !hasQuery ? recents.map(row => ({
+        ...toRowData(row), zoneKey: undefined, snippet: undefined,
+        metaText: row.snippet ?? row.meta, iconId: 'clock-3',
+      })) : undefined,
+      showEmpty: hasQuery && filteredGroups.length === 0,
+      filters: [],
+      pendingSources: [],
+      coverage: [],
+      hasMore: false,
+      opening: false,
+      groupTitleKey: 'search.results',
+    } satisfies SearchSurfaceData;
+  }, [query, filteredGroups, quickFunctions, recents]);
 
-  if (!mounted) return null;
+  // ── Step 2: assemble the full model by attaching host-only icon nodes ──
 
-  const flat = results;
-  const openTarget = (target: GlobalSearchTarget) => {
-    onNavigate(target);
-    onClose();
+  const model: SearchSurfaceModel = useMemo(() => {
+    const resolveRow = (data: SearchResultRowData): CompositeRow => {
+      const host = [...index, ...quickFunctions].find(r => r.id === data.rowKey);
+      const recordedIcons: Record<string, LucideIcon> = {
+        hash: Hash, 'message-circle': MessageCircle, newspaper: Newspaper, wrench: Wrench,
+        'clock-3': Clock3,
+      };
+      const Icon = (data.iconId ? recordedIcons[data.iconId] : undefined) ?? host?.icon ?? KIND_ICON[data.kind];
+      return {
+        ...data,
+        meta: data.metaText,
+        icon: Icon ? <Icon size={sample ? 15 : 14} /> : undefined,
+      };
+    };
+    const data = sample ? {
+      ...sample, query, selectedKey: sampleSelection, scrollTop: sampleScroll,
+      filters: sample.filters.map(item => ({ ...item, active: item.id === filter })),
+    } : initialSample ? {
+      ...initialSample,
+      query,
+      status: sampleStatus ?? initialSample.status,
+      isProgressive: sampleStatus === 'loading',
+      loadingVisible: sampleStatus === 'loading',
+      errorKey: sampleStatus === 'error' ? initialSample.errorKey : null,
+      filters: [
+        { id: 'all', labelKey: 'search.tab.all', active: filter === 'all' },
+        { id: 'messages', labelKey: 'search.tab.messages', active: filter === 'messages' },
+        { id: 'social', labelKey: 'search.tab.social', active: filter === 'social' },
+        { id: 'functions', labelKey: 'search.tab.functions', active: filter === 'functions' },
+      ],
+    } : surfaceData;
+    return {
+      ...data,
+      groups: data.groups.map(g => ({ ...g, rows: g.rows.map(resolveRow) })),
+      quickFunctions: data.quickFunctions?.map(resolveRow),
+      recentItems: data.recentItems?.map(resolveRow),
+    };
+   }, [surfaceData, index, quickFunctions, initialSample, sample, query, sampleStatus, filter, sampleSelection, sampleScroll]);
+
+  // ── Build composite SearchSurfaceIntents ────────────────────────────────
+
+  const intents: SearchSurfaceIntents = {
+    onQueryChange(next) { setQuery(next); },
+    onSelectionChange: sample ? setSampleSelection : undefined,
+    onScrollChange: sample ? setSampleScroll : undefined,
+    onFilterChange(next) { setFilter(next); },
+    onSubmit() { setSampleStatus('ready'); },
+    onRetry() { setSampleStatus('ready'); },
+    onRefresh: sample ? () => setSampleStatus('ready') : undefined,
+    onMore() { /* prototype has no pagination */ },
+    onCopyRow: sample ? rowKey => {
+      const row = sample.groups.flatMap(group => group.rows).find(row => row.rowKey === rowKey);
+      if (row?.copyable && row.copyText) void navigator.clipboard?.writeText(row.copyText);
+    } : undefined,
+    onOpenRow(rowKey) {
+      // Resolve host-level GlobalSearchTarget from composite rowKey.
+      const row = index.find(r => r.id === rowKey)
+        ?? recents.find(r => r.id === rowKey)
+        ?? quickFunctions.find(r => r.id === rowKey);
+      if (row) {
+        onNavigate(row.target);
+        onClose();
+      }
+    },
+    onClose() { onClose(); },
   };
 
-  const onKeyDown = (event: React.KeyboardEvent) => {
-    if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
-    if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      setCursor(i => Math.min(i + 1, Math.max(flat.length - 1, 0)));
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      setCursor(i => Math.max(i - 1, 0));
-    } else if (event.key === 'Enter') {
-      event.preventDefault();
-      const row = flat[cursor] ?? flat[0];
-      if (row) openTarget(row.target);
-    } else if (event.key === 'Escape') {
-      event.preventDefault();
-      onClose();
-    }
-  };
+  // ── SurfaceHooks: inject prototype sk-search-* classes + data attrs ────
 
-  const grouped = KIND_ORDER.map(kind => ({ kind, items: results.filter(r => r.kind === kind) }))
-    .filter(g => g.items.length > 0);
-  let flatIndex = -1;
-
-  const kindLabel = (kind: ResultKind): string =>
-    t(kind === 'person' ? 'search.kind.people'
-      : kind === 'conversation' ? 'search.kind.conversations'
-      : kind === 'message' ? 'search.kind.messages'
-      : kind === 'moment' ? 'search.kind.moments' : 'search.kind.functions');
+  const hooks = useMemo<SurfaceHooks<SearchRegionKey>>(() => ({
+    classNames: {
+      overlay: 'sk-search-overlay',
+      scrim: 'sk-search-scrim',
+      panel: 'sk-search-panel',
+      field: 'sk-search-input-row',
+      input: 'sk-search-input',
+      body: 'sk-search-body',
+      close: 'sk-search-close',
+      group: 'sk-search-group',
+      row: 'sk-search-row',
+      rowIcon: 'sk-search-row-icon',
+      rowTitle: 'sk-search-row-title',
+      rowSnippet: 'sk-search-row-meta',
+      rowOpen: 'sk-search-row-open',
+      rowZone: 'sk-search-row-tag',
+      empty: 'sk-search-empty',
+      footer: 'sk-search-footer',
+      infoButton: 'sk-search-info',
+      hit: 'sk-search-hit',
+      boundary: 'sk-search-boundary',
+      emptyBoundary: 'sk-search-boundary-inline',
+    },
+    dataAttributes: {
+      overlay: { 'data-grammar': grammar, 'data-search-open': 'true' },
+      input: { 'data-global-search': 'true' },
+    },
+  }), [grammar]);
 
   return (
-    <div className="sk-search-overlay" data-grammar={grammar}
-      data-closing={closing ? 'true' : undefined}
-      role="dialog" aria-modal="true" aria-label={t('search.title')}>
-      <div className="sk-search-scrim" onClick={onClose} />
-      <div className="sk-search-panel" data-search-open>
-        <div className="sk-search-input-row">
-          <SearchIcon size={17} className="sk-search-leading" />
-          <input
-            ref={inputRef}
-            className="sk-search-input"
-            data-global-search
-            type="search"
-            placeholder={t('search.placeholder')}
-            aria-label={t('search.title')}
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            onKeyDown={onKeyDown}
-            role="combobox"
-            aria-expanded
-            aria-autocomplete="list"
-            aria-controls="sk-search-results"
-          />
-          <kbd className="sk-search-kbd">esc</kbd>
-          <button type="button" className="sk-search-close" aria-label={t('common.close')} onClick={onClose}>
-            <X size={15} />
-          </button>
-        </div>
-
-        <div className="sk-search-body" id="sk-search-results" role="listbox">
-          {!query.trim() && (
-            <>
-              <div className="sk-search-group" data-search-group="recent">
-                <div className="sk-search-group-title">{t('search.recent')}</div>
-                {recents.map(row => (
-                  <button type="button" key={row.id} className="sk-search-row"
-                    role="option" aria-selected="false"
-                    onClick={() => openTarget(row.target)}>
-                    <span className="sk-search-row-icon"><Clock3 size={14} /></span>
-                    <span className="sk-search-row-main">
-                      <span className="sk-search-row-title">{row.title}</span>
-                      <span className="sk-search-row-meta">{row.snippet ?? row.meta}</span>
-                    </span>
-                    <ArrowUpRight size={14} className="sk-search-row-open" />
-                  </button>
-                ))}
-              </div>
-              <div className="sk-search-group" data-search-group="quick">
-                <div className="sk-search-group-title">{t('search.quickFunctions')}</div>
-                {quickFunctions.map(row => (
-                  <button type="button" key={row.id} className="sk-search-row"
-                    role="option" aria-selected="false"
-                    onClick={() => openTarget(row.target)}>
-                    <span className="sk-search-row-icon">
-                      {row.id === 'qf-chat' ? <MessageCircle size={14} />
-                        : row.id === 'qf-moment' ? <Sparkles size={14} />
-                        : (() => { const fn = SETTINGS_FUNCTIONS.find(f => `fn-${f.group}-${f.section}` === row.id); const Icon = fn?.icon ?? Wrench; return <Icon size={14} />; })()}
-                    </span>
-                    <span className="sk-search-row-main">
-                      <span className="sk-search-row-title">{row.title}</span>
-                      <span className="sk-search-row-meta">{row.kind === 'function' ? row.meta : t('search.actionHint')}</span>
-                    </span>
-                    <ChevronRight size={14} className="sk-search-row-open" />
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-
-          {query.trim() && grouped.map(group => (
-            <div className="sk-search-group" key={group.kind} data-search-group={group.kind}>
-              <div className="sk-search-group-title">
-                {kindLabel(group.kind)}
-                <em>{group.items.length}</em>
-              </div>
-              {group.items.map(row => {
-                flatIndex += 1;
-                const idx = flatIndex;
-                const active = idx === cursor;
-                const Icon = row.icon ?? KIND_ICON[row.kind];
-                return (
-                  <button type="button" key={row.id}
-                    className={`sk-search-row${active ? ' is-active' : ''}`}
-                    id={`sk-search-opt-${idx}`}
-                    role="option" aria-selected={active}
-                    data-search-result={row.kind}
-                    onMouseEnter={() => setCursor(idx)}
-                    onClick={() => openTarget(row.target)}>
-                    <span className="sk-search-row-icon"><Icon size={14} /></span>
-                    <span className="sk-search-row-main">
-                      <span className="sk-search-row-title">{highlight(row.title, query)}</span>
-                      {row.snippet && <span className="sk-search-row-meta">{highlight(row.snippet, query)}</span>}
-                    </span>
-                    <span className="sk-search-row-tag">{row.meta}</span>
-                    <ArrowUpRight size={14} className="sk-search-row-open" />
-                  </button>
-                );
-              })}
-            </div>
-          ))}
-
-          {query.trim() && results.length === 0 && (
-            <div className="sk-search-empty" data-search-empty>
-              <strong>{t('search.emptyTitle', { q: query.trim() })}</strong>
-              <p>{t('search.emptyBody')}</p>
-              <span className="sk-search-boundary-inline"><Lock size={11} /> {t('search.boundary')}</span>
-            </div>
-          )}
-        </div>
-
-        <div className="sk-search-footer">
-          <span className="sk-search-boundary"><Lock size={11} /> {t('search.boundary')}</span>
-          <span className="sk-search-keys">
-            <kbd>↑</kbd><kbd>↓</kbd> {t('search.navigate')} · <kbd>↵</kbd> {t('common.confirm')}
-          </span>
-        </div>
-      </div>
-    </div>
+    <GlobalSearchSurface
+      open={open}
+      model={model}
+      intents={intents}
+      t={t}
+      hooks={hooks}
+    />
   );
 }

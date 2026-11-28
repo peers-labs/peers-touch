@@ -50,7 +50,10 @@
 - 重复造基础件——每个需求各搭一套脚手架/基础组件，AI 实施时没有可直接复用的基准。
 - 落地无门槛——原型未经确认就被当作落地依据，跑偏后返工。
 
-总账解决：**统一追踪 + 复用基准 + 先确认后落地**。配套约定：所有界面原型工程集中放在 `packages/prototypes/<site>/<area>/<id>/`（统一原型工作区，纳入 pnpm workspace、统一工具链、基础件跨原型复用）；经确认门 `confirmed` 后再搬迁/演进到落地目标工程。
+总账负责统一追踪、复用基准和先确认后落地。原型宿主集中在
+`packages/prototypes/<site>/<area>/<id>/`；同为 React Web 的原型和产品
+共用 `packages/ui/` 中的完整界面实现，宿主只接数据和动作。跨运行时的
+适配须遵守已确认的行为合同，并在目标运行时重新验证。
 
 ---
 
@@ -122,6 +125,150 @@ L2 截图要求：
 
 ---
 
+### 4.2 完整界面的确认与生产准入
+
+研发人员要求调整界面，或反馈“UI 不对”“这里样式有问题”等可见缺陷时，
+先按目标文件定位本节的完整界面记录，读取产品合同并在原型中核对。
+即使判断为实现缺陷，也须先展示原型并取得用户对本次修复目标的确认。
+原型已经正确时，确认沿用现有原型；原型不正确时，先调整共享 UI 再确认。
+共享源码只有一份；草稿
+由 Prototype Portal 展示，Desktop 的 Vite 启动、热更新和构建拒绝使用
+未确认或摘要不匹配的版本。既有已运行客户端仍展示其已加载版本；
+新草稿不能通过生产模块加载进入客户端。历史形态留在 Git 中，
+不复制 `v1/v2`，不保留另一套生产 DOM/CSS。
+
+执行顺序：
+
+1. 在修改前运行既有 `module-governance.mjs context`，读取 `uiSurfaces` 中的
+   界面 ID、原型入口、源码角色、当前摘要与确认摘要。未覆盖的界面须先
+   补映射和合同；不能把“无匹配”解释成允许直接改产品 UI。
+2. 通过现有 dev Intake 登记本次 UI 反馈。登记直接将本总账置为 `drafting`
+   并清除此前确认；在原型入口核对布局、状态、
+   文字和动效。需要调整时先改共享 UI；原型已正确时保留其源码并展示
+   对应场景。不得以“实现缺陷”“小修”或“数据/动作接线”为由先改生产。
+3. 完成该原型的渲染和交互证据后运行 dev 的 `ui-review`，保存送审目标、
+   证据和源码摘要，置 `pending-review`，请用户确认具体版本。
+   用户须确认本次调整版本，或明确确认以现有原型为修复目标。
+   此前的 `confirmed` 状态不能自动代替这次 UI 反馈的确认。
+4. 用户明确确认后运行 dev 的 `ui-confirm`，提供送审摘要、确认者、原话和
+   证据。写入者核对当前轮次、原型 ID 和源码仍与送审一致后置 `confirmed`。
+   该命令记录已经发生的用户确认，不自动代替用户决定。记录由协作过程保证其真实性；
+   本地脚本不能鉴别人类是否真的说过确认原话。
+5. 运行 dev 的 `before-implement --surface <id>`，再修生产数据/动作接线或接入已确认
+   的共享呈现。实现缺陷应恢复该目标，不改变原型来迁就错误。通过原始
+   Native Journey 后才报告产品行为已验证。正式 Acceptance 单独记录。
+
+机器真源只有下面的 Markdown 代码块。Portal manifest 的 `status` 是入口
+导航信息，不授予完整界面的落地资格；能力目录的 `vetted` 也不替代确认。
+每条记录的 `presentationRoots` 包含完整呈现源码与公共类型；摘要沿共享呈现
+和原型 adapter 的实际本地运行时 import 追踪专属依赖，包含 CSS import，
+并绑定产品合同、公开导出和映射。外部 package 的共享原语仍由自己的合同负责；
+纯类型 import 不将另一个界面的实现纳入本界面。声明或这些源码变化都会使旧确认失效。
+共享原语、主题和宿主数据的可见效果仍受其 UI 合同及原始 Journey 检查；
+此摘要不是整个产品的视觉或业务证明。
+
+`entryChain` 从实际宿主入口到 adapter。结构守卫解析 TSX，要求 adapter
+直接返回公开共享组件，通过 TypeScript 符号识别实际 import，拒绝同名参数
+冒充、私写 DOM、样式和断开的导出/入口。中间宿主不能注入样式；生产构建
+还检查这些入口真的进入输出。所有 app/prototype CSS 都禁止重绘记录中的
+共享类及其旧宿主钩子，包括转义类和 class 属性选择器。宿主钩子类必须是
+受保护前缀下的显式字符串，不能注入新样式命名空间。修改路径提示属于读取上下文，不是写权限。
+
+命令由现有 dev 入口提供，全部操作本页同一代码块，不建立 UI Task 或状态库：
+
+```bash
+node tooling/scripts/local-dev/dev-work.mjs intake --kind ui-feedback \
+  --surface <surface-id> --expected-revision <current-feedback-revision> \
+  --request '<本次反馈摘要>' --request-ref '<本次反馈证据引用>'
+node tooling/scripts/local-dev/dev-work.mjs ui-review \
+  --surface <surface-id> --feedback <intake返回的feedback.id> \
+  --expected-revision <intake返回的feedback.revision> \
+  --target '<本次修复目标>' --evidence '<原型渲染和交互证据>'
+node tooling/scripts/local-dev/dev-work.mjs ui-confirm \
+  --surface <surface-id> --feedback <feedback.id> \
+  --expected-revision <review返回的feedback.revision> \
+  --source-digest <review返回的feedback.review.sourceDigest> \
+  --by user:<确认者> --request '<用户确认原话>' --evidence '<用户确认引用>'
+node tooling/scripts/local-dev/dev-work.mjs before-implement --surface <surface-id>
+```
+
+Intake 也可用 `--scope-paths <目标路径>` 定位唯一界面。缺失或多匹配时明确
+返回选择缺口。`feedback.id` 默认从界面 ID 和请求引用派生，重复当前请求
+不会撤销已完成确认；同一 ID 内容不同、旧 revision 或旧轮次确认均被拒绝。
+没有历史反馈时 revision 为 0。总账更新使用短写锁和原子替换，其他界面状态
+保持不变；冲突重读后再提交，不能盲目覆盖。异常退出遗留锁时，先核对持有者
+已结束及总账结果，再清理该锁，不按时间自动删除活跃锁。
+
+普通需求不进入这些状态。自然语言反馈的识别、调用者是否如实记录用户确认、
+任意 Shell 是否直接改文件仍由协作规则约束；机器保证从已登记的反馈开始。
+旧确认迁移保留原摘要，扩大源码覆盖后旧摘要会失效，不能自动补写用户确认。
+
+```json ui-surface-authority
+{
+  "schemaVersion": 1,
+  "surfaces": [
+    {
+      "id": "desktop-global-search",
+      "prototypeId": "ui-system",
+      "contract": "docs/client/desktop/search-experience-contract.md",
+      "component": "GlobalSearchSurface",
+      "package": "@peers-touch/ui-composite",
+      "exportFile": "packages/ui/composite/src/index.ts",
+      "presentationRoots": [
+        "packages/ui/composite/src/search/",
+        "packages/ui/composite/src/hooks.ts",
+        "packages/ui/composite/src/i18n.ts"
+      ],
+      "prototype": {
+        "adapter": "packages/prototypes/shared/ui-system/search/GlobalSearchOverlay.tsx",
+        "symbol": "GlobalSearchOverlay",
+        "entryChain": [
+          "packages/prototypes/shared/ui-system/DesignDirections.tsx",
+          "packages/prototypes/shared/ui-system/search/GlobalSearchOverlay.tsx"
+        ],
+        "allowedSlotTags": ["Icon"]
+      },
+      "production": {
+        "adapter": "apps/desktop/src/components/search/SearchOverlay.tsx",
+        "symbol": "SearchOverlay",
+        "entryChain": [
+          "apps/desktop/src/views/ReadyView.tsx",
+          "apps/desktop/src/components/search/SearchHost.tsx",
+          "apps/desktop/src/components/search/SearchOverlay.tsx"
+        ],
+        "allowedSlotTags": ["Icon", "SearchResultMeta"]
+      },
+      "protectedClasses": ["ptc-", "pt-search-", "sk-search-"],
+      "feedback": {
+        "id": "search-existing-target-20261128",
+        "revision": 1,
+        "request": "确认现有完整 Search",
+        "requestRef": "本次 Search 原型确认对话",
+        "review": {
+          "sourceDigest": "f70074f81b0310ae5f18e117b6229f61fb710b69806125efda6641f8a5d50a03",
+          "target": "既有完整 Search 的 18px 版本",
+          "evidence": ".local/ui-search-promotion/REPORT.md 和 experiment.json"
+        }
+      },
+      "status": "confirmed",
+      "confirmation": {
+        "by": "user:shuxian",
+        "feedbackId": "search-existing-target-20261128",
+        "prototypeId": "ui-system",
+        "request": "可以了，用吧",
+        "sourceDigest": "f70074f81b0310ae5f18e117b6229f61fb710b69806125efda6641f8a5d50a03",
+        "evidence": "本次对话对现有完整 Search 的确认；.local/ui-search-promotion/REPORT.md 和 experiment.json 记录 18→30→18 精确还原与双宿主验证。绑定既有 18px 版本，不授权后续草稿。"
+      }
+    }
+  ]
+}
+```
+
+检查入口：`node tooling/scripts/review/ui-surface-authority.mjs context <目标路径>`、
+`digest`、`verify`。本地 review 和 CI 的 `review/run.sh` 使用同一守卫。
+本节当前覆盖 Desktop 完整 Search；其余界面须逐面登记，不能从 Search
+的通过结果推导全项目已受到同样的机器保护。
+
 ## 5. 一级站点全屏预览
 
 - `desktop`、`mobile`、`dashboard`、`control`、`frontend-eles` 的 Live Preview / Remote Preview 顶栏
@@ -143,4 +290,4 @@ L2 截图要求：
 |------|------|
 | 技术栈 | React + Vite；Frontend Eles 使用 `@peers-touch/ui`，既有产品原型在迁移前可保留其登记的技术栈 |
 | 运行 | 统一使用 `make run-prototype`；在 Prototype Portal 内切换 desktop / mobile / dashboard / control；`pnpm dev` / Vite 只作为 Makefile 内部实现细节 |
-| 落地 | 由对应工程参照原型按其运行时重新实现（如 Applet 用 Lynx），原型本身不要求能直接搬成产物 |
+| 落地 | 同运行时共用完整 UI，生产宿主只接数据和动作；跨运行时按已确认合同适配并复验，见 §4.2 |

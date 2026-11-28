@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 
 import { isDirectInvocation } from '../lib/machine-dev-paths.mjs';
+import { createHash } from 'node:crypto';
+import {
+  readSurfaceLedger, sourceRoot, surfaceContext, updateSurfaceFeedback, verifySurfaceAuthority,
+} from '../review/ui-surface-authority.mjs';
 import {
   createTaskProgress,
   listTaskProgress,
@@ -37,6 +41,15 @@ const OPTION_NAMES = {
   'resource-refs': 'resourceRefsJson',
   blocker: 'blockerJson',
   'workspace-root': 'workspaceRoot',
+  kind: 'kind',
+  surface: 'surfaceId',
+  feedback: 'feedbackId',
+  request: 'request',
+  'request-ref': 'requestRef',
+  target: 'target',
+  evidence: 'evidence',
+  by: 'by',
+  'source-digest': 'sourceDigest',
 };
 
 function parseJson(value, field) {
@@ -112,6 +125,30 @@ export function runCli(argv, io = {}) {
   const write = io.output ?? output;
   let result;
   switch (action) {
+    case 'intake': {
+      const root = options.workspaceRoot ?? sourceRoot;
+      if (options.kind !== 'ui-feedback') {
+        if (options.kind !== undefined) throw new TaskProgressError('TASK_PROGRESS_INVALID', 'unknown intake kind');
+        result = { stage: 'intake', uiSurfaces: surfaceContext(root, options.scopePaths ?? [], { optional: true }) };
+        break;
+      }
+      const matches = options.surfaceId ? readSurfaceLedger(root).filter(surface => surface.id === options.surfaceId)
+        : surfaceContext(root, options.scopePaths ?? []);
+      if (matches.length !== 1) throw new TaskProgressError('UI_SURFACE_SELECTION_REQUIRED', 'select one registered UI surface');
+      const surfaceId = matches[0].id;
+      if (!options.requestRef?.trim()) throw new TaskProgressError('UI_SURFACE_ARGUMENT_INVALID', 'request-ref is required');
+      const feedbackId = options.feedbackId ?? `feedback-${createHash('sha256').update(`${surfaceId}\0${options.requestRef}`).digest('hex').slice(0, 24)}`;
+      result = updateSurfaceFeedback(root, 'feedback', { ...options, surfaceId, feedbackId });
+      break;
+    }
+    case 'ui-review':
+    case 'ui-confirm':
+      result = updateSurfaceFeedback(options.workspaceRoot ?? sourceRoot, action.slice(3), options);
+      break;
+    case 'before-implement':
+      if (!options.surfaceId) throw new TaskProgressError('UI_SURFACE_SELECTION_REQUIRED', 'surface is required');
+      result = verifySurfaceAuthority(options.workspaceRoot ?? sourceRoot, { surfaceIds: [options.surfaceId] });
+      break;
     case 'start':
       result = createTaskProgress(options);
       break;
@@ -127,7 +164,7 @@ export function runCli(argv, io = {}) {
     default:
       throw new TaskProgressError(
         'TASK_PROGRESS_INVALID',
-        'action must be start, update, status, or status-all',
+        'action must be intake, ui-review, ui-confirm, before-implement, start, update, status, or status-all',
       );
   }
   write(result);

@@ -80,6 +80,7 @@ import * as socialApi from '../services/social_api';
 import * as publicFeedNative from '../services/publicFeedNative';
 import { QueryClient } from '@tanstack/query-core';
 import { searchRowKey, searchService } from '../services/search';
+import * as searchApi from '../services/search';
 
 vi.mock('@tauri-apps/api/core', () => ({
   convertFileSrc: vi.fn((path: string, protocol = 'asset') => (
@@ -189,7 +190,7 @@ afterEach(() => {
 });
 
 describe('Desktop Search no-store page continuity', () => {
-  function searchFixture(remoteOwner = false) {
+  function searchFixture(remoteOwner = false, noStore = true) {
     useSessionStore.setState({
       authenticated: true, currentUser: { actorPtid: 'alice' } as never, sessionEpoch: 1,
     });
@@ -204,7 +205,7 @@ describe('Desktop Search no-store page continuity', () => {
       const source = {
         sourceId: 'social-private', bindingId: 'private', readScope: 'alice',
         sourceRevision: readRevision, policyRevision: readRevision,
-        state: SourceState.READY, noStore: true,
+        state: SourceState.READY, noStore,
       };
       const publicSource = { ...source, sourceId: 'social-public', bindingId: 'public' };
       return [source, publicSource];
@@ -267,6 +268,121 @@ describe('Desktop Search no-store page continuity', () => {
   async function settle() {
     await vi.waitFor(() => expect(useSearchStore.getState().status).toBe('ready'));
   }
+
+  it.each([false, true])('keeps an in-flight continuation on focus reconciliation (noStore=%s)', async noStore => {
+    const { submit } = searchFixture(false, noStore);
+    await runSearchQuery('en');
+    await settle();
+    await runSearchQuery('en', false, true);
+    await settle();
+    const selectedKey = selectResult(0);
+    const complete = submit.getMockImplementation()!;
+    let release!: () => void;
+    submit.mockImplementationOnce(async input => {
+      const reply = await complete(input);
+      await new Promise<void>(resolve => { release = resolve; });
+      return reply;
+    });
+    await runSearchQuery('en', false, true);
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    try {
+      await reconcileSearchQuery('en');
+      expect(submit).toHaveBeenCalledTimes(3);
+      expect(useSearchStore.getState().status).toBe('loading');
+    } finally {
+      release();
+    }
+    await settle();
+    expect(resultIds()).toEqual(noStore ? ['last'] : ['first', 'later-a', 'later-b', 'last']);
+    expect(submit).toHaveBeenCalledTimes(3);
+    expect(useSearchStore.getState().traversal?.ordinal).toBe(2);
+    if (!noStore) expect(useSearchStore.getState()).toMatchObject({ selectedKey, scrollTop: 93 });
+  });
+
+  it.each([
+    ['history', ['first']],
+    ['changed', ['first']],
+    ['changed', []],
+  ] as const)('keeps the committed %s frame during progressive delivery (%j)', async (query, priorIds) => {
+    let receiveFrame!: Parameters<typeof searchApi.subscribeSearchFrames>[0];
+    vi.spyOn(searchApi, 'subscribeSearchFrames').mockImplementation(async handler => {
+      receiveFrame = handler;
+      return () => {};
+    });
+    const { submit, changePages } = searchFixture();
+    changePages([[...priorIds]]);
+    await runSearchQuery('en');
+    await settle();
+    const prior = useSearchStore.getState().response!;
+    useSearchStore.setState({ query, status: 'loading', selectedKey: 'retained', scrollTop: 93 });
+    const complete = submit.getMockImplementation()!;
+    let release!: () => void;
+    submit.mockImplementationOnce(async input => {
+      const reply = await complete(input);
+      receiveFrame({
+        requestId: input.requestId, sourceId: 'social-private',
+        response: create(SearchResponseSchema, {
+          sources: prior.sources, items: [], coverage: prior.coverage,
+        }),
+      });
+      await new Promise<void>(resolve => { release = resolve; });
+      return reply;
+    });
+    const request = runSearchQuery('en', true);
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    try {
+      expect(useSearchStore.getState()).toMatchObject({
+        response: prior, displayedQuery: 'history', progressive: null,
+        progressiveRequestId: null, selectedKey: 'retained', scrollTop: 93,
+      });
+      expect(resultIds()).toEqual([...priorIds]);
+    } finally {
+      release();
+      await request;
+    }
+    await settle();
+    expect(useSearchStore.getState().displayedQuery).toBe(query);
+  });
+
+  it('reacquires after invalidation supersedes an already shared read-state check', async () => {
+    const { submit, changePages, changeReadRevision } = searchFixture();
+    changePages([[]]);
+    await runSearchQuery('en');
+    await settle();
+    const originalInvoke = invokeMock.getMockImplementation()!;
+    let release!: () => void;
+    let hold = true;
+    invokeMock.mockImplementation((command, args) => {
+      const reply = originalInvoke(command, args);
+      if (command !== 'search_read_state' || !hold) return reply;
+      hold = false;
+      return new Promise(resolve => { release = () => resolve(reply); });
+    });
+    const readsBefore = invokeMock.mock.calls.filter(([command]) =>
+      command === 'search_read_state').length;
+    const stale = reconcileSearchQuery('en');
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    const shared = reconcileSearchQuery('en');
+    let current: Promise<void> | undefined;
+    try {
+      expect(invokeMock.mock.calls.filter(([command]) =>
+        command === 'search_read_state')).toHaveLength(readsBefore + 1);
+      changePages([['received-attachment']]);
+      changeReadRevision();
+      expect(invalidateSearchSources(['social-private'])).toBe(true);
+      useSearchStore.setState({ status: 'idle' });
+      current = reconcileSearchQuery('en');
+    } finally {
+      release();
+      await Promise.all([stale, shared, current]);
+    }
+    await settle();
+    expect(resultIds()).toEqual(['received-attachment']);
+    expect(submit).toHaveBeenCalledTimes(2);
+    expect(useSearchStore.getState().response?.coverage.every(
+      source => source.state === SourceState.READY,
+    )).toBe(true);
+  });
 
   it('reacquires an invalidated remote no-store result even without an owner revision change', async () => {
     const { submit, changePages } = searchFixture(true);

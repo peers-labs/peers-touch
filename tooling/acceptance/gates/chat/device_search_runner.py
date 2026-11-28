@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import math
 import re
+import subprocess
 import tempfile
 import time
 import uuid
@@ -32,12 +33,12 @@ UI_ASSERTIONS = {
     "repeat_cache", "reopen_cache", "backspace_cache", "return_cache",
     "input_continuity", "responsive_geometry",
     "explicit_refresh", "edit_invalidation", "hide_invalidation",
-    "functions_navigation", "empty_state", "invalid_query_recovery",
+    "functions_navigation", "empty_state", "invalid_query_error", "invalid_query_recovery",
     "logout_clears_search", "same_window_account_isolation",
 }
 RESULT_ASSERTIONS = UI_ASSERTIONS - {
     "historical_open", "thread_open", "hide_invalidation",
-    "functions_navigation", "empty_state", "logout_clears_search",
+    "functions_navigation", "empty_state", "invalid_query_error", "logout_clears_search",
 }
 REQUIRED_ASSERTIONS = UI_ASSERTIONS | {
     "native_runtime", "source_build_runtime_identity", "actor_isolation",
@@ -124,6 +125,7 @@ class DeviceSearchGate(NativeTwoClientGate):
     bom = ("SEARCH-DEVICE-FIND-OPEN",)
     spec = ("chat-device-search",)
     history_count = 55
+    history_batch_size = 10
 
     def __init__(self) -> None:
         selected = selected_native_runtime(self.gate_id)
@@ -198,6 +200,15 @@ class DeviceSearchGate(NativeTwoClientGate):
                 ])),
             };
             result.opacity = getComputedStyle(modal).opacity;
+            result.presentation = {
+                panelRadius: getComputedStyle(panel).borderRadius,
+                font: getComputedStyle(modal).fontFamily,
+                lineHeight: getComputedStyle(modal).lineHeight,
+                rows: [...modal.querySelectorAll('.pt-search-row')].map(row => ({
+                    rowKey: row.dataset.searchRowKey,
+                    height: row.getBoundingClientRect().height,
+                })),
+            };
             result.motionActive = false;
             let visible = rect.width > 0 && rect.height > 0
                 && rect.left >= 0 && rect.top >= 0
@@ -251,6 +262,246 @@ class DeviceSearchGate(NativeTwoClientGate):
         samples.append({"name": name, **rendering.get("geometry", {})})
         self.assert_condition("search_geometry_stability", stable_search_geometry(samples),
                               f"painted Search geometry across {len(samples)} observations")
+        # Observe the real info action, then restore the original Search frame.
+        self.receiver.find_element(".pt-search-info", 10).click()
+        self.wait_js("!!document.querySelector('.ptc-search-popover')", "Search authority explanation")
+        deadline = time.monotonic() + 30
+        def painted_info() -> dict[str, Any] | None:
+            presentation = self.receiver.execute_script(search_capture.TARGET_VISIBILITY_JS + """
+                const root = document.querySelector('.ptc-search-popover');
+                const visibility = targetVisibility(root);
+                if (!visibility.visible) return null;
+                const panel = root.closest('.pt-overlay');
+                const style = getComputedStyle(panel);
+                return {
+                    bounds: root.getBoundingClientRect().toJSON(),
+                    panel: panel.getBoundingClientRect().toJSON(),
+                    font: style.fontFamily,
+                    fontToken: style.getPropertyValue('--pt-font').trim(),
+                    lineHeight: style.lineHeight,
+                    background: style.backgroundColor, radius: style.borderRadius,
+                    text: root.innerText, opacity: visibility.opacity,
+                };
+            """)
+            if presentation is None:
+                return None
+            painted = self.receiver.execute_async_script(
+                search_capture.CAPTURE_PAINT_JS,
+                max(1, int((deadline - time.monotonic()) * 1000)),
+            )
+            if not painted or time.monotonic() >= deadline:
+                raise GateError("Search explanation paint frames timed out")
+            return presentation
+        info_presentation = wait_until(painted_info, "painted Search authority explanation", timeout=30)
+        info = self.receiver.execute_script("""
+            const root = document.querySelector('.ptc-search-popover');
+            return {
+                title: root.querySelector('h5').innerText,
+                sections: [...root.querySelectorAll('section')].map(section => ({
+                    title: section.querySelector('h6').innerText,
+                    paragraphs: [...section.querySelectorAll('p')].map(node => node.innerText),
+                    items: [...section.querySelectorAll('li')].map(node => node.innerText),
+                })),
+            };
+        """)
+        info_screenshot = self.save_screenshot(self.receiver, f"{name}-{len(samples):03}-info")
+        self.receiver.find_element(".pt-search-info", 10).click()
+        self.wait_js("!document.querySelector('.ptc-search-popover')", "Search explanation closed")
+        self.field().click()
+        def presentation_frame() -> dict[str, Any] | None:
+            return self.receiver.execute_script("""
+            const modal = document.querySelector('.pt-search-overlay');
+            if (!modal) return null;
+            const panel = modal.querySelector('.pt-search-panel');
+            const watch = window.__PT_SEARCH_CAPTURE_WATCH__;
+            if (watch && watch.observer.takeRecords().length) watch.revision += 1;
+            const text = selector => modal.querySelector(selector)?.innerText || '';
+            const groups = [...modal.querySelectorAll('.ptc-search-group')].map(group => ({
+                key: group.dataset.searchGroup,
+                labelKey: group.querySelector('.ptc-search-group-title').innerText.replace(/\\s*·\\s*\\d+$/, ''),
+                rows: [...group.querySelectorAll('button.pt-search-row')].map(row => ({
+                    rowKey: row.dataset.searchRowKey,
+                    kind: row.dataset.searchResult || 'function',
+                    title: row.querySelector('.ptc-search-row-title')?.innerText || '',
+                    snippet: row.querySelector('.ptc-search-row-snippet')?.innerText,
+                    metaText: row.querySelector('.ptc-search-row-meta')?.innerText,
+                     iconId: [...(row.querySelector('.ptc-search-row-icon svg')?.classList || [])]
+                         .find(name => name.startsWith('lucide-'))?.slice(7),
+                    zoneKey: row.querySelector('.ptc-search-row-zone')?.innerText,
+                    copyable: !!row.parentElement.querySelector('.ptc-search-copy'),
+                    resource: row.dataset.resourceId ? {
+                        id: row.dataset.resourceId, sourceId: row.dataset.sourceId,
+                        kind: row.dataset.resourceKind,
+                    } : undefined,
+                })),
+            }));
+            const selected = modal.querySelector('.ptc-search-row.is-active');
+            const style = getComputedStyle(modal);
+            return {
+                domRevision: watch?.revision || 0,
+                geometry: {
+                    viewport: {width: innerWidth, height: innerHeight},
+                    ...Object.fromEntries(Object.entries({
+                        panel: '.pt-search-panel', field: '.pt-search-field',
+                        intents: '.pt-search-intents', body: '.pt-search-body',
+                        footer: '.pt-search-footer', coverage: '.pt-search-coverage',
+                        actions: '.pt-search-footer-actions',
+                    }).map(([region, selector]) => [
+                        region, modal.querySelector(selector)?.getBoundingClientRect().toJSON(),
+                    ])),
+                },
+                presentation: {
+                    panelRadius: getComputedStyle(panel).borderRadius,
+                    font: style.fontFamily,
+                    lineHeight: style.lineHeight,
+                    rows: [...modal.querySelectorAll('.pt-search-row')].map(row => ({
+                        rowKey: row.dataset.searchRowKey,
+                        height: row.getBoundingClientRect().height,
+                    })),
+                },
+                model: {
+                    query: modal.querySelector('input').value,
+                    displayedQuery: modal.querySelector('.ptc-search-body').dataset.displayedQuery,
+                    status: text('.ptc-search-error') ? 'error' : 'ready',
+                     loadingVisible: !!modal.querySelector('.ptc-search-status'),
+                     functionsMode: modal.querySelector('[data-search-filter="functions"]')
+                         ?.getAttribute('aria-selected') === 'true',
+                    isProgressive: modal.querySelector('.ptc-search-body').getAttribute('aria-busy') === 'true',
+                    groups: groups.filter(group => group.key !== 'quick' && group.key !== 'recent'),
+                    quickFunctions: groups.find(group => group.key === 'quick')?.rows,
+                    recentItems: groups.find(group => group.key === 'recent')?.rows,
+                    showEmpty: !!modal.querySelector('.ptc-search-empty'),
+                    emptyTitleKey: text('.ptc-search-empty strong'),
+                    errorKey: text('.ptc-search-error > span') || null,
+                    filters: [...modal.querySelectorAll('[data-search-filter]')].map(button => ({
+                        id: button.dataset.searchFilter, labelKey: button.innerText,
+                        active: button.getAttribute('aria-selected') === 'true',
+                    })),
+                    pendingSources: modal.querySelector('.ptc-search-status-pending') ? ['pending'] : [],
+                    coverage: [...modal.querySelectorAll('.ptc-search-status-chip')].map((chip, i) => ({
+                        zoneKey: String(i), detailKey: chip.innerText,
+                    })),
+                    hasMore: !!modal.querySelector('.ptc-search-more'),
+                    opening: !!modal.querySelector('.ptc-search-opening'),
+                    groupTitleKey: 'search.results',
+                    selectedKey: selected?.dataset.searchRowKey || null,
+                    scrollTop: modal.querySelector('.ptc-search-body').scrollTop,
+                },
+                text: modal.innerText,
+                accessibleNames: [...modal.querySelectorAll('input, button')].map(node => ({
+                    role: node.getAttribute('role') || node.tagName.toLowerCase(),
+                    name: node.getAttribute('aria-label') || (node.getAttribute('aria-labelledby')
+                        ? node.getAttribute('aria-labelledby').split(/\\s+/)
+                            .map(id => document.getElementById(id)?.textContent || '').join(' ')
+                        : node.innerText),
+                    disabled: node.disabled || node.getAttribute('aria-disabled') === 'true',
+                })),
+                 labels: {
+                     'search.boundary': text('.ptc-search-boundary'),
+                     'search.label': modal.getAttribute('aria-label'),
+                     'search.input.placeholder': modal.querySelector('input').placeholder,
+                     'search.close': modal.querySelector('.ptc-search-close').getAttribute('aria-label'),
+                     'search.empty.detail': text('.ptc-search-empty > span'),
+                     'search.retry': text('.ptc-search-error button'),
+                     'search.more': text('.ptc-search-more'),
+                     'search.opening': text('.ptc-search-opening'),
+                     'search.coverage.pending': text('.ptc-search-status-pending'),
+                     'search.copy.label': text('.ptc-search-visuallyhidden'),
+                     'search.refresh': modal.querySelector('.ptc-search-refresh')?.getAttribute('aria-label'),
+                     'search.moreInfo': modal.querySelector('.ptc-search-info')?.getAttribute('aria-label'),
+                     'search.quickFunctions': groups.find(group => group.key === 'quick')?.labelKey || '',
+                     'search.recent': groups.find(group => group.key === 'recent')?.labelKey || '',
+                     'search.results': modal.querySelector('.ptc-search-list')?.getAttribute('aria-label') || '',
+                     'search.range': modal.querySelector('.ptc-search-intents')?.getAttribute('aria-label') || '',
+                 },
+                theme: Object.fromEntries([...style].filter(key => key.startsWith('--pt-'))
+                    .map(key => [key, style.getPropertyValue(key).trim()])),
+            };
+        """)
+        # The explanation action can allow an asynchronous source to publish
+        # new rows. Freeze the replay payload and its own real native image
+        # together; the original Journey frame and geometry remain untouched.
+        deadline = time.monotonic() + 30
+        self.receiver.execute_script(search_capture.CAPTURE_START_JS)
+        try:
+            with tempfile.TemporaryDirectory(prefix="search-presentation-") as directory:
+                screenshot_path = Path(directory) / "frame.png"
+                dom_path = Path(directory) / "frame.html"
+
+                def stable_presentation() -> dict[str, Any] | None:
+                    before = self.surface()
+                    if not before.get("painted"):
+                        return None
+                    data = presentation_frame()
+                    if data is None:
+                        return None
+                    painted = self.receiver.execute_async_script(
+                        search_capture.CAPTURE_PAINT_JS,
+                        max(1, int((deadline - time.monotonic()) * 1000)),
+                    )
+                    if not painted or time.monotonic() >= deadline:
+                        raise GateError(f"{name} presentation paint frames timed out")
+                    self.receiver.save_screenshot(screenshot_path)
+                    dom_path.write_text(self.receiver.get_page_source())
+                    if time.monotonic() >= deadline:
+                        raise GateError(f"{name} stable presentation capture timed out")
+                    if self.surface() != before or presentation_frame() != data:
+                        return None
+                    return data
+
+                capture = wait_until(
+                    stable_presentation, f"stable native presentation for {name}", timeout=30,
+                )
+                prefix = f"{name}-{len(samples):03}-presentation"
+                presentation_screenshot = self.report.add_evidence_file(
+                    f"{prefix}-screenshot", screenshot_path, destination_dir=self.evidence_dir,
+                )
+                presentation_dom = self.report.add_evidence_file(
+                    f"{prefix}-dom", dom_path, destination_dir=self.evidence_dir,
+                )
+        finally:
+            self.receiver.execute_script(search_capture.CAPTURE_END_JS)
+        capture["model"]["info"] = info
+        capture["infoPresentation"] = info_presentation
+        copyable = [row for group in capture["model"]["groups"] for row in group["rows"]
+                    if row.get("copyable")]
+        if copyable:
+            # Observe the current public presentation; this does not issue FIND
+            # or alter the cache counters measured by the original Journey.
+            page = async_harness(self.receiver, "deviceSearchPresentation", {}).get("page") or {}
+            items = page.get("items") or []
+            for row in copyable:
+                item = next((item for item in items
+                             if item.get("sourceId") == row.get("resource", {}).get("sourceId")
+                             and item.get("resource", {}).get("id") == row.get("resource", {}).get("id")), None)
+                if item is None:
+                    raise GateError("Copyable native row has no current qualified presentation item")
+                row["copyText"] = "\n".join(value for value in (item.get("title"), item.get("snippet")) if value)
+            if "copyAction" not in self.report.runtime["search"]:
+                row = copyable[0]
+                selector = f'.ptc-search-item:has(> button[data-search-row-key={json.dumps(row["rowKey"])}]) .pt-search-copy'
+                self.receiver.find_element(selector, 10).click()
+                wait_until(lambda: subprocess.check_output(["pbpaste"], text=True) == row["copyText"],
+                           "real Search clipboard effect", timeout=5)
+                self.assert_condition("copy_action", True, row["rowKey"])
+                self.report.runtime["search"]["copyAction"] = {
+                    "rowKey": row["rowKey"], "text": row["copyText"], "clipboardMatched": True,
+                }
+        for group in capture["model"]["groups"]:
+            # "key" alone is a secret field to the general text redactor.
+            # Name this public presentation identifier explicitly in transport.
+            group["groupId"] = group.pop("key")
+        self.report.runtime["search"].setdefault("presentationCaptures", []).append({
+            "name": name, "viewport": capture["geometry"]["viewport"],
+            "geometry": capture["geometry"],
+            "presentation": capture["presentation"],
+            "screenshot": presentation_screenshot, "dom": presentation_dom,
+            "infoScreenshot": info_screenshot,
+            # Standard JSON text receives the normal evidence text redactor.
+            # Public compound DOM fields (groupId, rowKey, labelKey) remain replayable;
+            # actual credentials still receive all existing secret scans.
+            "dataJson": json.dumps(capture, ensure_ascii=False),
+        })
 
     def settled(self) -> None:
         try:
@@ -294,6 +545,15 @@ class DeviceSearchGate(NativeTwoClientGate):
         if messages.get_attribute("aria-selected") != "true":
             messages.click()
         self.fill(query)
+        # A same-intent return correctly retains selection. Submission is a
+        # distinct action: move that retained cursor back to the input before
+        # Enter, rather than accidentally opening the selected result.
+        moves = self.receiver.execute_script("""
+            const rows = [...document.querySelectorAll('.pt-search-row')];
+            return rows.findIndex(row => row.classList.contains('is-active')) + 1;
+        """)
+        for _ in range(moves):
+            self.press(Keys.ARROW_UP)
         self.press(Keys.ENTER)
         self.settled()
 
@@ -335,8 +595,25 @@ class DeviceSearchGate(NativeTwoClientGate):
             # A diagnostic failure must never replace the original product failure.
             diagnostic["errorType"] = type(error).__name__
 
-    def visible(self, name: str, predicate: Any, detail: Any = None) -> None:
+    def visible(self, name: str, predicate: Any, detail: Any = None,
+                target_selector: str | None = None) -> None:
         def observe() -> None:
+            def frame() -> dict[str, Any]:
+                if target_selector is None:
+                    return self.surface()
+                return self.receiver.execute_script(search_capture.TARGET_VISIBILITY_JS + """
+                    const target = document.querySelector(arguments[0]);
+                    const visibility = targetVisibility(target);
+                    return {searchOpen: false, painted: visibility.visible, visibility,
+                        loading: false, busy: false, query: '',
+                        resultCount: document.querySelectorAll('.pt-search-row').length,
+                        destination: target?.getAttribute('data-pt-section-host')
+                            || target?.getAttribute('data-message-ulid')
+                            || target?.getAttribute('data-message-content')
+                            || target?.getAttribute('data-thread-message-id') || arguments[0],
+                        geometry: target?.getBoundingClientRect().toJSON()};
+                """, target_selector)
+
             deadline = time.monotonic() + 30
             self.receiver.execute_script(search_capture.CAPTURE_START_JS)
             with tempfile.TemporaryDirectory(prefix="search-capture-") as directory:
@@ -344,7 +621,7 @@ class DeviceSearchGate(NativeTwoClientGate):
                 dom_path = Path(directory) / "frame.html"
 
                 def capture() -> dict[str, Any] | None:
-                    rendering = self.surface()
+                    rendering = frame()
                     if not rendering["painted"] or rendering["loading"] or rendering["busy"] or not predicate():
                         return None
                     painted = self.receiver.execute_async_script(
@@ -357,7 +634,7 @@ class DeviceSearchGate(NativeTwoClientGate):
                     dom_path.write_text(self.receiver.get_page_source())
                     if time.monotonic() >= deadline:
                         raise GateError(f"{name} stable native capture timed out")
-                    after = self.surface()
+                    after = frame()
                     matched = bool(predicate())
                     if after != rendering or not matched:
                         return None
@@ -369,7 +646,7 @@ class DeviceSearchGate(NativeTwoClientGate):
                     )
                 except GateError:
                     self.report.runtime["search"]["captureFailure"] = {
-                        "assertion": name, "rendering": self.surface(),
+                        "assertion": name, "rendering": frame(),
                         "screenshot": self.save_screenshot(self.receiver, f"{name}-capture-failure"),
                         "dom": self.save_dom(self.receiver, f"{name}-capture-failure"),
                     }
@@ -481,16 +758,12 @@ class DeviceSearchGate(NativeTwoClientGate):
         self.reply = str(reply.get("messageId") or "")
         if not self.message or not self.reply:
             raise GateError("Search seed requires real committed message identities")
-        filler = async_harness(self.clients["bob"], "sendInteractionMessageBatch", {
-            **payload, "prefix": f"filler-{self.token}", "count": self.history_count,
-        }, timeout=180)
-        if len(filler.get("messageIds", [])) != self.history_count:
-            raise GateError("Search history fixture did not commit every required message")
-        # Sender commits do not prove the receiver has synchronized the batch.
+        # Submit admits durable drafts; it does not prove transport completion.
         # This native-owner receipt is Fixture readiness; Search still uses UI.
+        filler_ids: list[str] = []
         self.report.runtime["search"]["resources"].update({
             "conversationId": self.conversation, "messageId": self.message,
-            "replyId": self.reply, "fillerIds": filler["messageIds"],
+            "replyId": self.reply, "fillerIds": filler_ids,
         })
         received: set[str] = set()
 
@@ -502,13 +775,30 @@ class DeviceSearchGate(NativeTwoClientGate):
                 received.update(page.get("messageIds", []))
             return message_id in received
 
-        for message_id in filler["messageIds"]:
-            wait_until(
-                lambda message_id=message_id: received_message(message_id),
-                "receiver commits seeded message", timeout=30,
-            )
+        # Thread replies are not part of messagePage's main timeline. The
+        # original thread_open step independently proves that reply later.
+        wait_until(
+            lambda: received_message(self.message),
+            "receiver commits seeded message", timeout=30,
+        )
+        for start in range(1, self.history_count + 1, self.history_batch_size):
+            count = min(self.history_batch_size, self.history_count - start + 1)
+            filler = async_harness(self.clients["bob"], "sendInteractionMessageBatch", {
+                **payload, "prefix": f"filler-{self.token}", "count": count,
+                "startIndex": start,
+            }, timeout=180)
+            batch_ids = filler.get("messageIds", [])
+            if len(batch_ids) != count:
+                raise GateError("Search history fixture did not admit every required message")
+            filler_ids.extend(batch_ids)
+            # Bound outstanding draft work before admitting the next batch.
+            for message_id in batch_ids:
+                wait_until(
+                    lambda message_id=message_id: received_message(message_id),
+                    "receiver commits seeded message", timeout=30,
+                )
         self.report.runtime["search"]["resources"]["receiverFillerIds"] = sorted(
-            received.intersection(filler["messageIds"]),
+            received.intersection(filler_ids),
         )
 
     def upload(self) -> None:
@@ -532,20 +822,95 @@ class DeviceSearchGate(NativeTwoClientGate):
                 "attachmentIds": sent["attachmentIds"], "attachmentFilename": source.name,
             })
             self.submit("附件计划")
-            self.wait_js(
-                f"document.querySelector('.pt-search-body')?.innerText.includes({json.dumps(source.name)})",
-                "received attachment filename in Search", timeout=90,
-            )
+            try:
+                self.wait_js(
+                    f"document.querySelector('.pt-search-body')?.innerText.includes({json.dumps(source.name)})",
+                    "received attachment filename in Search", timeout=90,
+                )
+            except (TimeoutException, GateError):
+                diagnostic: dict[str, Any] = {
+                    "messageId": sent["messageId"],
+                    "attachmentIds": sent["attachmentIds"],
+                    "filename": source.name,
+                }
+                self.report.runtime["search"]["attachmentFailure"] = diagnostic
+                probes = (
+                    ("surface", lambda: self.surface()),
+                    ("presentation", lambda: async_harness(
+                        self.receiver, "deviceSearchPresentation", {}, timeout=10,
+                    )),
+                    ("nativeState", lambda: async_harness(
+                        self.receiver, "deviceSearchState", {}, timeout=10,
+                    )),
+                    ("receiverMessages", lambda: async_harness(
+                        self.receiver, "messagePage",
+                        {"conversationId": self.conversation, "limit": 100}, timeout=10,
+                    )),
+                    ("screenshot", lambda: self.save_screenshot(
+                        self.receiver, "attachment-filename-failure",
+                    )),
+                    ("dom", lambda: self.save_dom(
+                        self.receiver, "attachment-filename-failure",
+                    )),
+                )
+                for key, probe in probes:
+                    try:
+                        diagnostic[key] = probe()
+                    except Exception as error:
+                        diagnostic[key + "ErrorType"] = type(error).__name__
+                raise
             self.visible("attachment_filename", lambda: source.name in self.rows())
 
     def open_target(self, name: str, query: str, target: str, attribute: str) -> None:
         self.submit(query)
         self.receiver.find_element(".pt-search-row", 20).click()
-        self.wait_js(
-            f"document.activeElement?.getAttribute({json.dumps(attribute)}) === {json.dumps(target)}",
-            "actual Chat anchor",
-        )
-        self.visible(name, lambda: not self.receiver.find_elements(".pt-search-field"))
+        try:
+            self.wait_js(
+                f"document.activeElement?.getAttribute({json.dumps(attribute)}) === {json.dumps(target)}",
+                "actual Chat anchor",
+            )
+        except (TimeoutException, GateError):
+            diagnostic = {"assertion": name, "target": target, "attribute": attribute}
+            self.report.runtime["search"]["openFailure"] = diagnostic
+            try:
+                diagnostic["frame"] = self.receiver.execute_script("""
+                    const attribute = arguments[0], id = arguments[1];
+                    const target = [...document.querySelectorAll('[' + attribute + ']')]
+                        .find(node => node.getAttribute(attribute) === id);
+                    const active = document.activeElement;
+                    const attributes = node => node ? Object.fromEntries(
+                        ['data-message-ulid', 'data-thread-message-id', 'data-action-id',
+                         'data-chat-thread-root'].map(key => [key, node.getAttribute(key)])
+                    ) : null;
+                    const style = target ? getComputedStyle(target) : null;
+                    return {
+                        searchOpen: !!document.querySelector('.pt-search-field'),
+                        threadRoot: document.querySelector('[data-chat-thread-root]')
+                            ?.getAttribute('data-chat-thread-root'),
+                        active: {tag: active?.tagName, className: active?.className,
+                            attributes: attributes(active)},
+                        target: target ? {attributes: attributes(target),
+                            tabIndex: target.tabIndex, focused: target === active,
+                            bounds: target.getBoundingClientRect().toJSON(),
+                            display: style.display, visibility: style.visibility,
+                            opacity: style.opacity} : null,
+                    };
+                """, attribute, target)
+                diagnostic["screenshot"] = self.save_screenshot(
+                    self.receiver, f"{name}-anchor-failure",
+                )
+                diagnostic["dom"] = self.save_dom(self.receiver, f"{name}-anchor-failure")
+            except Exception as error:
+                # Diagnosis must never replace the original failed assertion.
+                diagnostic["diagnosticErrorType"] = type(error).__name__
+            raise
+        # The focused message row also owns its floating action toolbar.
+        # Qualify the opened body itself; the toolbar can cover row metadata
+        # while leaving the requested message fully readable.
+        content_selector = f'[data-message-content="{target}"]' \
+            if attribute == "data-message-ulid" else f'[{attribute}="{target}"]'
+        self.visible(name, lambda: not self.receiver.find_elements(".pt-search-field"),
+                     target_selector=content_selector)
         self.receiver.find_element("[data-search-return] button", 20).click()
         self.field()
         self.settled()
@@ -708,6 +1073,9 @@ class DeviceSearchGate(NativeTwoClientGate):
         self.fill("...")
         self.press(Keys.ENTER)
         self.wait_js("!!document.querySelector('.pt-search-error')", "typed invalid-query UI")
+        self.visible("invalid_query_error", lambda: bool(
+            self.receiver.find_elements(".pt-search-error")
+        ))
         self.fill(f"线程 {self.token}")
         self.visible("invalid_query_recovery", lambda: (
             self.token in self.rows() and not self.receiver.find_elements(".pt-search-error")
@@ -716,7 +1084,8 @@ class DeviceSearchGate(NativeTwoClientGate):
         self.receiver.find_element('[data-search-filter="functions"]').click()
         self.receiver.find_element(".pt-search-row", 20).click()
         self.wait_js("!!document.querySelector('[data-pt-section-host=\"security\"]')", "real Settings")
-        self.visible("functions_navigation", lambda: not self.receiver.find_elements('[data-page="search"]'))
+        self.visible("functions_navigation", lambda: not self.receiver.find_elements('[data-page="search"]'),
+                     target_selector='[data-pt-section-host="security"]')
 
     def prove_account_scope(self, observe_account: Callable[[], None] | None = None) -> None:
         client = self.receiver
@@ -738,7 +1107,7 @@ class DeviceSearchGate(NativeTwoClientGate):
         self.wait_js("!document.querySelector('[data-pt-primary-nav=\"chat\"]')", "logout")
         self.visible("logout_clears_search", lambda: (
             not client.find_elements(".pt-search-field") and not client.find_elements("[data-search-return]")
-        ))
+        ), target_selector="[data-pt-login-card]")
         bob_account = str(self.actor_specs["bob"]["accountRef"]).removeprefix("station-account:")
         alice_account = str(self.actor_specs["alice"]["accountRef"]).removeprefix("station-account:")
         try:

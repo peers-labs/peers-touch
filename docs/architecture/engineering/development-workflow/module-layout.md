@@ -21,9 +21,14 @@
 
 ## 2. 工作组织与记录
 
-**`dev-work.mjs`。** 只提供可选任务的 start、update、status 和 status-all；
-使用明确 task 选择、原子快照、checksum 与 revision/CAS，不创建通用资源登记，
-也不从 Hook 解析执行权限。
+**`dev-work.mjs`。** 提供无持久化的普通 Intake；UI 反馈 Intake、送审、确认及
+实现前检查转交原型总账 owner。可选任务仍使用 start、update、status 和
+status-all，以明确 task 选择、原子快照、checksum 与 revision/CAS 保存进度。
+两者不复制状态，不创建通用资源登记，也不从 Hook 解析执行权限。
+
+**`ui-surface-authority.mjs` 及其源码、adapter、样式守卫。** 总账唯一写入者负责
+反馈轮次和确认；源码守卫追踪专属呈现依赖，adapter 守卫核对真实符号和宿主
+消费，样式守卫解析 CSS 选择器。Vite 与 review 消费同一检查，不各自维护确认。
 
 **`development-close.mjs`。** 这是唯一公开关闭入口。收尾只检查本任务证据和资源，
 直接更新同一 `task.json`；没有独立 close store、关闭回执或 workspace 新任务守卫。

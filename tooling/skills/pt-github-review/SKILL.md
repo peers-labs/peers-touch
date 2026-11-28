@@ -129,6 +129,13 @@ the observed calibration sample. See the owning contract:
 
 ### 2. Collect Quality Evidence
 
+For UI feedback, verify that the existing Dev Intake registered the current
+feedback in prototype ledger §4.2. Review and user confirmation must bind that
+round, prototype ID and current presentation dependency digest. A previous
+confirmed status or unchanged prototype cannot establish this round's approval.
+Use the shared surface authority check; do not create review-owned UI state.
+Native Journey and formal Acceptance remain separate proof obligations.
+
 Run the review route first. When it includes `code-structure`, invoke
 `pt-code-structure-review` and record its source-bound decision before quality
 aggregation. Then use `pt-quality-check` before making the final review

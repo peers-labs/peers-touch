@@ -24,6 +24,9 @@
       "tooling/scripts/ui-system/craft-battery.mjs",
       "packages/prototypes/shared/ui-system/search/GlobalSearchOverlay.tsx",
       "packages/prototypes/shared/ui-system/search/global-search.css",
+      "packages/ui/composite/src/search/GlobalSearchSurface.tsx",
+      "packages/ui/composite/src/search/search.types.ts",
+      "packages/ui/composite/src/search/search.css",
       "packages/prototypes/shared/ui-system/chat/ChatFeature.tsx"
     ]
   },

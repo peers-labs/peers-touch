@@ -67,7 +67,7 @@ function isLibraryFile(file) {
 /** Returns the .pt-* class selectors found on a CSS line (selector lists). */
 function cssPrimitiveSelectors(line) {
   const hits = [];
-  const re = /\.pt-[a-zA-Z][a-zA-Z0-9-]*/g;
+  const re = /\.(?:pt|ptc)-[a-zA-Z][a-zA-Z0-9-]*/g;
   let m;
   while ((m = re.exec(line))) hits.push(m[0]);
   return hits;

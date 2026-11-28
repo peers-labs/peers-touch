@@ -1,7 +1,8 @@
-// Source-contract: PublicProfileCard carries the three north-star identity
-// grammars — self rail popover (.sk-self-card), author quick popover
-// (.sk-author-card) and sheet hero (.sk-profile-hero) — on peers-ui
-// primitives and pt tokens, with no antd/lobehub residue.
+// Source-contract: PublicProfileCard is now a thin host adapter over the
+// composite IdentityProfileCard. The three north-star grammars (self rail
+// popover, author quick popover, sheet hero) live in @peers-touch/ui-composite;
+// this file verifies the adapter wiring, geometry mapping, legacy pp-* class
+// injection and that the gate data hooks survive inside the composite.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
@@ -29,6 +30,11 @@ const messageRowSource = readFileSync(
   new URL('../chat/message/ChatMessageRow.tsx', import.meta.url),
   'utf8',
 );
+// The DOM + gate hooks moved into the composite package.
+const compositeSource = readFileSync(
+  new URL('../../../../../packages/ui/composite/src/identity/IdentityProfileCard.tsx', import.meta.url),
+  'utf8',
+);
 
 function rule(css: string, selector: string): string {
   const source = css.replace(/\/\*[\s\S]*?\*\//g, '');
@@ -41,15 +47,13 @@ function rule(css: string, selector: string): string {
   return '';
 }
 
-describe('profile card primitive layer', () => {
-  it('composes peers primitives only — no antd, lobehub or layout-kit imports', () => {
-    for (const source of [cardSource, actionSource]) {
-      expect(source).not.toMatch(/from ['"]antd['"]/);
-      expect(source).not.toMatch(/from ['"]@lobehub\/ui['"]/);
-      expect(source).not.toMatch(/from ['"]react-layout-kit['"]/);
-    }
-    expect(cardSource).toMatch(/from ['"]@peers-touch\/ui['"]/);
-    expect(actionSource).toMatch(/from ['"]@peers-touch\/ui['"]/);
+describe('profile card adapter boundary', () => {
+  it('delegates rendering to the composite and keeps no antd/lobehub residue', () => {
+    expect(cardSource).not.toMatch(/from ['"]antd['"]/);
+    expect(cardSource).not.toMatch(/from ['"]@lobehub\/ui['"]/);
+    expect(cardSource).not.toMatch(/from ['"]react-layout-kit['"]/);
+    expect(cardSource).toContain("from '@peers-touch/ui-composite'");
+    expect(cardSource).toContain('<IdentityProfileCard');
     expect(cardSource).toContain("import './profileCard.css'");
   });
 
@@ -60,97 +64,44 @@ describe('profile card primitive layer', () => {
     expect(actionSource).not.toContain('message.warning');
     expect(actionSource).not.toContain('message.error');
   });
+
+  it('preserves the chat identity data hooks inside the composite component', () => {
+    for (const hook of [
+      'data-chat-profile-card',
+      'data-chat-profile-banner',
+      'data-chat-profile-relation',
+      'data-chat-profile-technical-details',
+      'data-chat-profile-copy',
+      'data-profile-identity',
+    ]) {
+      expect(compositeSource).toContain(hook);
+    }
+  });
 });
 
-describe('self variant (prototype .sk-self-card)', () => {
-  it('uses the 300px card, 92px primary-wash banner and overlapping 64/16 avatar', () => {
-    expect(rule(cardCss, '.pp-card--self')).toContain('width: 300px');
-    const banner = rule(cardCss, '.pp-self-banner');
-    expect(banner).toContain('height: 92px');
-    expect(banner).toContain('var(--pt-primary) 42%, transparent');
-    expect(banner).toContain('var(--pt-primary) 10%, transparent');
-    const body = rule(cardCss, '.pp-self-body');
-    expect(body).toContain('position: relative');
-    expect(body).toContain('padding: 44px 16px 14px');
-    const avatar = rule(cardCss, '.pp-self-avatar');
-    expect(avatar).toContain('top: -28px');
-    expect(avatar).toContain('width: 64px');
-    expect(avatar).toContain('height: 64px');
-    expect(avatar).toContain('border-radius: 16px');
-    expect(avatar).toContain('0 0 0 4px var(--pt-surface)');
-  });
-
-  it('uses the prototype name/handle/stat/joined/action scale', () => {
-    expect(rule(cardCss, '.pp-self-name')).toContain('font-size: 17px');
-    expect(rule(cardCss, '.pp-self-name')).toContain('font-weight: 650');
-    expect(rule(cardCss, '.pp-self-handle')).toContain('font-size: 12px');
-    expect(rule(cardCss, '.pp-stats--self')).toContain('gap: 20px');
-    expect(rule(cardCss, '.pp-stats--self .pp-stat strong')).toContain('font-size: 16px');
-    expect(rule(cardCss, '.pp-self-joined')).toContain('margin-top: 9px');
-    expect(rule(cardCss, '.pp-self-body .pp-actions')).toContain('margin-top: 13px');
-  });
-
-  it('declares the 64/16 avatar geometry and self variant in source', () => {
+describe('adapter keeps the prototype geometry and legacy pp-* bridge', () => {
+  it('declares the 64/16, 44/12 and 72/18 avatar geometry', () => {
     expect(cardSource).toMatch(/self:\s*\{\s*size:\s*64,\s*radius:\s*16\s*\}/);
-  });
-});
-
-describe('author variant (prototype .sk-author-card)', () => {
-  it('uses the 264px flush card with 14px padding and 10px section rhythm', () => {
-    const card = rule(cardCss, '.pp-card--author');
-    expect(card).toContain('width: 264px');
-    expect(card).toContain('padding: 14px');
-    expect(card).toContain('gap: 10px');
-    expect(rule(cardCss, '.pp-author-head')).toContain('gap: 10px');
-  });
-
-  it('uses the 44/12 head avatar with 14.5/650 name and 11.5 station line', () => {
     expect(cardSource).toMatch(/author:\s*\{\s*size:\s*44,\s*radius:\s*12\s*\}/);
-    expect(rule(cardCss, '.pp-author-name')).toContain('font-size: 14.5px');
-    expect(rule(cardCss, '.pp-author-name')).toContain('font-weight: 650');
-    expect(rule(cardCss, '.pp-author-station')).toContain('font-size: 11.5px');
-  });
-
-  it('uses the prototype 12.5/1.55 bio and inline 12px stats', () => {
-    const bio = rule(cardCss, '.pp-bio');
-    expect(bio).toContain('font-size: 12.5px');
-    expect(bio).toContain('line-height: 1.55');
-    expect(rule(cardCss, '.pp-stats--author')).toContain('gap: 12px');
-    expect(rule(cardCss, '.pp-stat strong')).toContain('font-size: 13px');
-  });
-});
-
-describe('sheet variant (prototype .sk-profile-hero)', () => {
-  it('centers the 72/18 avatar with 15/650 name and 11.5 sub line', () => {
     expect(cardSource).toMatch(/sheet:\s*\{\s*size:\s*72,\s*radius:\s*18\s*\}/);
-    const hero = rule(cardCss, '.pp-sheet-hero');
-    expect(hero).toContain('align-items: center');
-    expect(hero).toContain('gap: 6px');
-    expect(rule(cardCss, '.pp-sheet-name')).toContain('font-size: 15px');
-    expect(rule(cardCss, '.pp-sheet-name')).toContain('font-weight: 650');
-    expect(rule(cardCss, '.pp-sheet-sub')).toContain('font-size: 11.5px');
   });
-});
 
-describe('shared card sections', () => {
-  it('renders tone pills, wrapped actions and mono technical rows on tokens', () => {
-    expect(rule(cardCss, '.pp-actions')).toContain('gap: 8px');
-    expect(rule(cardCss, ".pp-pill[data-tone='success']")).toContain('var(--pt-success)');
-    expect(rule(cardCss, ".pp-pill[data-tone='warning']")).toContain('var(--pt-warning)');
+  it('injects pp-* legacy classes through SurfaceHooks so profileCard.css keeps resolving', () => {
+    expect(cardSource).toContain('pp-card--${variant}');
+    expect(cardSource).toContain("'pp-self-banner'");
+    expect(cardSource).toContain("'pp-details'");
+  });
+
+  it('retains the north-star pixel rules in the host stylesheet', () => {
+    expect(rule(cardCss, '.pp-card--self')).toContain('width: 300px');
+    expect(rule(cardCss, '.pp-self-banner')).toContain('height: 92px');
+    expect(rule(cardCss, '.pp-card--author')).toContain('width: 264px');
     expect(rule(cardCss, '.pp-details__value')).toMatch(/font-family:[^;]*var\(--pt-mono\)/);
     expect(cardCss).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
   });
-
-  it('preserves the chat identity data hooks', () => {
-    expect(cardSource).toContain('data-chat-profile-card');
-    expect(cardSource).toContain('data-chat-profile-banner');
-    expect(cardSource).toContain('data-chat-profile-relation');
-    expect(cardSource).toContain('data-chat-profile-technical-details');
-    expect(cardSource).toContain('data-chat-profile-copy');
-  });
 });
 
-describe('call sites pick the matching grammar', () => {
+describe('call sites pick the matching grammar (unchanged consumers)', () => {
   it('sender popover → author, rail popover → self, detail sheet → sheet', () => {
     expect(senderSource).toContain('variant="author"');
     expect(selfPopoverSource).toContain('variant="self"');
